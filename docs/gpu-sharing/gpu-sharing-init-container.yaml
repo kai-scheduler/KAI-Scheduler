@@ -12,6 +12,7 @@ metadata:
     gpu-fraction-container-name: "gpu-init"
 spec:
   schedulerName: kai-scheduler
+  automountServiceAccountToken: false
   initContainers:
     - name: gpu-init
       image: nvidia/cuda:13.0.2-base-ubi8
@@ -21,4 +22,7 @@ spec:
     - name: main-app
       image: ubuntu
       args: ["sleep", "infinity"]
+      resources:
+        limits:
+          memory: 1Gi
 

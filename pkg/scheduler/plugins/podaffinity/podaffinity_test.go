@@ -59,6 +59,21 @@ var _ = Describe("Preferred Pod Affinity", func() {
 				},
 			},
 		}
+		exampleAntiAffinity := &v1.Affinity{
+			PodAntiAffinity: &v1.PodAntiAffinity{
+				PreferredDuringSchedulingIgnoredDuringExecution: []v1.WeightedPodAffinityTerm{
+					{
+						Weight: 10,
+						PodAffinityTerm: v1.PodAffinityTerm{
+							LabelSelector: &metav1.LabelSelector{
+								MatchLabels: exampleLabels,
+							},
+							TopologyKey: nodeLabelName,
+						},
+					},
+				},
+			},
+		}
 
 		for testName, testData := range map[string]testInput{
 			"No Pod Affinity": {
@@ -155,6 +170,42 @@ var _ = Describe("Preferred Pod Affinity", func() {
 					},
 				}, resource_info.NewResourceVectorMap()),
 				expectedScore: 2 * 10 * scores.K8sPlugins,
+			},
+			"Matching Pod Anti-Affinity": {
+				nodes: []*v1.Node{
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "node-1",
+							Labels: map[string]string{
+								nodeLabelName: "node-1",
+							},
+						},
+					},
+				},
+				pods: []*v1.Pod{
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "existing-pod-1",
+							Namespace: "test",
+							Labels:    exampleLabels,
+						},
+						Spec: v1.PodSpec{
+							NodeName: "node-1",
+							Affinity: exampleAntiAffinity.DeepCopy(),
+						},
+					},
+				},
+				task: pod_info.NewTaskInfo(&v1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-pod",
+						Namespace: "test",
+						Labels:    exampleLabels,
+					},
+					Spec: v1.PodSpec{
+						Affinity: exampleAntiAffinity.DeepCopy(),
+					},
+				}, resource_info.NewResourceVectorMap()),
+				expectedScore: -2 * 10 * scores.K8sPlugins,
 			},
 		} {
 			testName := testName

@@ -5,7 +5,10 @@ package cache
 
 import (
 	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/cache"
+
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
 func setSchedulerPodTransform(informer cache.SharedIndexInformer) error {
@@ -18,12 +21,67 @@ func compactSchedulerPod(obj any) (any, error) {
 		return obj, nil
 	}
 
+	if pod.Status.Phase == v1.PodSucceeded {
+		return compactSucceededPod(pod), nil
+	}
+
 	compact := pod.DeepCopy()
 	compact.ManagedFields = nil
 	compact.Spec.Containers = compactContainers(compact.Spec.Containers)
 	compact.Spec.InitContainers = compactInitContainers(compact.Spec.InitContainers)
 	compact.Spec.EphemeralContainers = compactEphemeralContainers(compact.Spec.EphemeralContainers)
+	compact.Status.ContainerStatuses = compactContainerStatuses(compact.Status.ContainerStatuses)
+	compact.Status.InitContainerStatuses = compactContainerStatuses(compact.Status.InitContainerStatuses)
+	compact.Status.Conditions = compactConditions(compact.Status.Conditions)
 	return compact, nil
+}
+
+func compactSucceededPod(pod *v1.Pod) *v1.Pod {
+	compact := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      pod.Name,
+			Namespace: pod.Namespace,
+			UID:       pod.UID,
+		},
+		Status: v1.PodStatus{
+			Phase: pod.Status.Phase,
+		},
+	}
+
+	if podGroup, found := pod.Annotations[commonconstants.PodGroupAnnotationForPod]; found {
+		compact.Annotations = map[string]string{commonconstants.PodGroupAnnotationForPod: podGroup}
+	}
+	if subGroup, found := pod.Labels[commonconstants.SubGroupLabelKey]; found {
+		compact.Labels = map[string]string{commonconstants.SubGroupLabelKey: subGroup}
+	}
+
+	return compact
+}
+
+// compactContainerStatuses retains only the resize-relevant fields from each ContainerStatus.
+// AllocatedResources and Resources are needed for effective-request accounting (KEP-1287).
+func compactContainerStatuses(statuses []v1.ContainerStatus) []v1.ContainerStatus {
+	compact := make([]v1.ContainerStatus, 0, len(statuses))
+	for _, cs := range statuses {
+		if cs.AllocatedResources == nil && cs.Resources == nil {
+			continue
+		}
+		compact = append(compact, v1.ContainerStatus{
+			Name:               cs.Name,
+			AllocatedResources: cs.AllocatedResources.DeepCopy(),
+			Resources:          cs.Resources.DeepCopy(),
+		})
+	}
+	return compact
+}
+
+func compactConditions(conditions []v1.PodCondition) []v1.PodCondition {
+	for _, c := range conditions {
+		if c.Type == v1.PodResizePending {
+			return []v1.PodCondition{c}
+		}
+	}
+	return nil
 }
 
 func compactContainers(containers []v1.Container) []v1.Container {

@@ -19,6 +19,7 @@ import (
 	kaiv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	schedulingv2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
 	schedulingv2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	commonconsts "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
@@ -42,8 +43,10 @@ type NodeConfig struct {
 // DefaultNodeConfig returns a default node configuration
 func DefaultNodeConfig(name string) NodeConfig {
 	return NodeConfig{
-		Name:   name,
-		Labels: map[string]string{},
+		Name: name,
+		Labels: map[string]string{
+			constants.NvidiaGpuMemory: "1000",
+		},
 		CPUs:   "8",
 		Memory: "16Gi",
 		GPUs:   4,

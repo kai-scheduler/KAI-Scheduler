@@ -138,19 +138,14 @@ if [ "$LOCAL_IMAGES_BUILD" = "true" ]; then
 fi
 
 # Package the new helm chart
+helm dependency build ./deployments/kai-scheduler
 helm package ./deployments/kai-scheduler -d ./charts --app-version $PACKAGE_VERSION --version $PACKAGE_VERSION
 export UPGRADE_CHART_PATH=${REPO_ROOT}/charts/kai-scheduler-$PACKAGE_VERSION.tgz
 
 echo "Upgrade chart path: $UPGRADE_CHART_PATH"
 
-# Install ginkgo if it's not installed
-if [ ! -f ${GOBIN}/ginkgo ]; then
-    echo "Installing ginkgo"
-    GOBIN=${GOBIN} go install github.com/onsi/ginkgo/v2/ginkgo@v2.25.3
-fi
-
 echo "Running upgrade tests..."
-${GOBIN}/ginkgo -r --keep-going --trace -vv --label-filter 'upgrade' ${REPO_ROOT}/test/e2e/suites/upgrade
+(cd ${REPO_ROOT} && go tool ginkgo -r --keep-going --trace -vv --label-filter 'upgrade' ${REPO_ROOT}/test/e2e/suites/upgrade)
 
 # Cleanup
 rm -rf ${REPO_ROOT}/charts/kai-scheduler-$PACKAGE_VERSION.tgz

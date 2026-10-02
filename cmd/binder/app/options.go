@@ -36,6 +36,7 @@ type Options struct {
 	FakeGPUNodes                                bool
 	Plugins                                     flags.JSONFlag[binderplugins.Config]
 	RuntimeClassName                            string
+	FIPSOnly                                    bool
 }
 
 func InitOptions(fs *pflag.FlagSet) *Options {
@@ -109,6 +110,9 @@ func InitOptions(fs *pflag.FlagSet) *Options {
 	fs.StringVar(&options.RuntimeClassName,
 		"runtime-class-name", "",
 		"Runtime class for GPU reservation pods. Defaults to empty (no runtime class).")
+	fs.BoolVar(&options.FIPSOnly,
+		"fips-only", false,
+		"Set GODEBUG=fips140=only on resource reservation pods")
 
 	utilfeature.DefaultMutableFeatureGate.AddFlag(fs)
 

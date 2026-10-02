@@ -27,6 +27,7 @@ import (
 	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding/resourcereservation/group_mutex"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/fips"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 )
 
@@ -34,16 +35,18 @@ type Interface interface {
 	Sync(ctx context.Context) error
 	SyncForNode(ctx context.Context, nodeName string) error
 	SyncForGpuGroup(ctx context.Context, gpuGroup string) error
-	ReserveGpuDevice(ctx context.Context, pod *v1.Pod, nodeName string, gpuGroup string) (string, error)
+	ReserveGpuDevice(
+		ctx context.Context, pod *v1.Pod, nodeName string,
+		fractionalGpuGroup schedulingv1alpha2.FractionalGpuGroup,
+	) (string, error)
 	RemovePodGpuGroupsConnection(ctx context.Context, pod *v1.Pod) error
 }
 
 const (
-	resourceReservation     = "resource-reservation"
-	gpuReservationPodPrefix = "gpu-reservation"
-	gpuIndexAnnotationName  = "run.ai/reserve_for_gpu_index"
-	numberOfGPUsToReserve   = 1
-	unknownGpuIndicator     = "-1"
+	resourceReservation    = "resource-reservation"
+	gpuIndexAnnotationName = "run.ai/reserve_for_gpu_index"
+	numberOfGPUsToReserve  = 1
+	unknownGpuIndicator    = "-1"
 )
 
 type service struct {
@@ -60,6 +63,7 @@ type service struct {
 	podResources                        *v1.ResourceRequirements
 	reservationPodSecurityContext       *v1.PodSecurityContext
 	reservationContainerSecurityContext *v1.SecurityContext
+	fipsOnly                            bool
 }
 
 func NewService(
@@ -75,6 +79,7 @@ func NewService(
 	podResources *v1.ResourceRequirements,
 	reservationPodSecurityContext *v1.PodSecurityContext,
 	reservationContainerSecurityContext *v1.SecurityContext,
+	fipsOnly bool,
 ) *service {
 	return &service{
 		fakeGPuNodes:                        fakeGPuNodes,
@@ -90,6 +95,7 @@ func NewService(
 		podResources:                        podResources,
 		reservationPodSecurityContext:       reservationPodSecurityContext,
 		reservationContainerSecurityContext: reservationContainerSecurityContext,
+		fipsOnly:                            fipsOnly,
 	}
 }
 
@@ -226,9 +232,9 @@ func (rsc *service) syncForPods(ctx context.Context, pods []*v1.Pod, gpuGroupToS
 	return nil
 }
 
-// hasActiveBindRequestsForGpuGroup checks if any non-terminal BindRequests reference
-// the given GPU group. This prevents premature reservation pod deletion when the
-// informer cache has not yet propagated GPU group labels on recently-bound fraction pods.
+// hasActiveBindRequestsForGpuGroup checks if BindRequests still protect the GPU group.
+// A succeeded BindRequest also protects the reservation while its pod is still alive:
+// the pod label can lag behind the BindRequest status in the controller cache.
 func (rsc *service) hasActiveBindRequestsForGpuGroup(ctx context.Context, gpuGroup string) (bool, error) {
 	bindRequestList := &schedulingv1alpha2.BindRequestList{}
 	if err := rsc.kubeClient.List(ctx, bindRequestList); err != nil {
@@ -236,23 +242,67 @@ func (rsc *service) hasActiveBindRequestsForGpuGroup(ctx context.Context, gpuGro
 	}
 
 	for _, br := range bindRequestList.Items {
-		if br.Status.Phase == schedulingv1alpha2.BindRequestPhaseSucceeded ||
-			br.Status.Phase == schedulingv1alpha2.BindRequestPhaseFailed {
+		if !slices.Contains(br.Spec.SelectedFractionalGpuGroupIDs(), gpuGroup) {
 			continue
 		}
-		if slices.Contains(br.Spec.SelectedGPUGroups, gpuGroup) {
-			return true, nil
+
+		if br.Status.Phase == schedulingv1alpha2.BindRequestPhaseFailed {
+			continue
 		}
+
+		if br.Status.Phase == schedulingv1alpha2.BindRequestPhaseSucceeded {
+			hasLivePod, err := rsc.hasLivePodForBindRequest(ctx, &br)
+			if err != nil {
+				return false, err
+			}
+			if hasLivePod {
+				return true, nil
+			}
+			continue
+		}
+
+		return true, nil
 	}
 	return false, nil
 }
-func (rsc *service) ReserveGpuDevice(ctx context.Context, pod *v1.Pod, nodeName string, gpuGroup string) (string, error) {
+
+func (rsc *service) hasLivePodForBindRequest(ctx context.Context, bindRequest *schedulingv1alpha2.BindRequest) (bool, error) {
+	pod := &v1.Pod{}
+	err := rsc.kubeClient.Get(ctx, client.ObjectKey{
+		Namespace: bindRequest.Namespace,
+		Name:      bindRequest.Spec.PodName,
+	}, pod)
+	if apierrors.IsNotFound(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("failed to get pod for BindRequest <%s/%s>: %w",
+			bindRequest.Namespace, bindRequest.Name, err)
+	}
+
+	if slices.Contains([]v1.PodPhase{v1.PodSucceeded, v1.PodFailed}, pod.Status.Phase) {
+		return false, nil
+	}
+
+	for _, gpuGroup := range bindRequest.Spec.SelectedFractionalGpuGroupIDs() {
+		if slices.Contains(resources.GetGpuGroups(pod), gpuGroup) {
+			return true, nil
+		}
+	}
+
+	return true, nil
+}
+func (rsc *service) ReserveGpuDevice(
+	ctx context.Context, pod *v1.Pod, nodeName string, fractionalGpuGroup schedulingv1alpha2.FractionalGpuGroup,
+) (string, error) {
 	logger := log.FromContext(ctx)
+	fractionalGpuGroup = fractionalGpuGroup.WithDefaults()
+	gpuGroup := fractionalGpuGroup.ID
 
 	rsc.gpuGroupMutex.LockMutexForGroup(gpuGroup)
 	defer rsc.gpuGroupMutex.ReleaseMutex(gpuGroup)
 
-	gpuIndex, err := rsc.acquireGPUIndexByGroup(ctx, nodeName, gpuGroup)
+	gpuIndex, err := rsc.acquireGPUIndexByGroup(ctx, pod, nodeName, fractionalGpuGroup)
 	if err != nil {
 		return unknownGpuIndicator, err
 	}
@@ -332,15 +382,18 @@ func escapeJSONPointer(s string) string {
 	return s
 }
 
-func (rsc *service) acquireGPUIndexByGroup(ctx context.Context, nodeName, gpuGroup string) (string, error) {
-	gpuIndex, err := rsc.findGPUIndexByGroup(gpuGroup)
+func (rsc *service) acquireGPUIndexByGroup(
+	ctx context.Context, sourcePod *v1.Pod, nodeName string,
+	fractionalGpuGroup schedulingv1alpha2.FractionalGpuGroup,
+) (string, error) {
+	gpuIndex, err := rsc.findGPUIndexByGroup(fractionalGpuGroup.ID)
 	if err != nil {
 		return "", err
 	}
 	if gpuIndex != "" {
 		return gpuIndex, err
 	}
-	return rsc.createGPUReservationPodAndGetIndex(ctx, nodeName, gpuGroup)
+	return rsc.createGPUReservationPodAndGetIndex(ctx, sourcePod, nodeName, fractionalGpuGroup)
 }
 
 func (rsc *service) findGPUIndexByGroup(gpuGroup string) (
@@ -366,10 +419,13 @@ func (rsc *service) findGPUIndexByGroup(gpuGroup string) (
 	return gpuIndex, nil
 }
 
-func (rsc *service) createGPUReservationPodAndGetIndex(ctx context.Context, nodeName, gpuGroup string) (
+func (rsc *service) createGPUReservationPodAndGetIndex(
+	ctx context.Context, sourcePod *v1.Pod, nodeName string,
+	fractionalGpuGroup schedulingv1alpha2.FractionalGpuGroup,
+) (
 	gpuIndex string, err error) {
 	logger := log.FromContext(ctx)
-	pod, err := rsc.createGPUReservationPod(ctx, nodeName, gpuGroup)
+	pod, err := rsc.createGPUReservationPod(ctx, sourcePod, nodeName, fractionalGpuGroup)
 	if err != nil {
 		return unknownGpuIndicator, err
 	}
@@ -421,13 +477,16 @@ func (rsc *service) deleteReservationPod(ctx context.Context, pod *v1.Pod) error
 	return nil
 }
 
-func (rsc *service) createGPUReservationPod(ctx context.Context, nodeName, gpuGroup string) (*v1.Pod, error) {
+func (rsc *service) createGPUReservationPod(
+	ctx context.Context, sourcePod *v1.Pod, nodeName string,
+	fractionalGpuGroup schedulingv1alpha2.FractionalGpuGroup,
+) (*v1.Pod, error) {
 	logger := log.FromContext(ctx)
 	if rsc.isScalingUp(ctx) {
 		return nil, fmt.Errorf("cluster is scaling up, could not create reservation pod")
 	}
 
-	podName := reservationPodName(nodeName, gpuGroup)
+	podName := reservationPodName(nodeName, fractionalGpuGroup.ID)
 
 	// Build resource requirements starting with GPU resources
 	resources := v1.ResourceRequirements{
@@ -450,7 +509,7 @@ func (rsc *service) createGPUReservationPod(ctx context.Context, nodeName, gpuGr
 		}
 	}
 
-	pod, err := rsc.createResourceReservationPod(nodeName, gpuGroup, podName, resources)
+	pod, err := rsc.createResourceReservationPod(sourcePod, nodeName, fractionalGpuGroup, podName, resources)
 	if err != nil {
 		// The reservation pod name is deterministic per (node, gpu-group). AlreadyExists
 		// means another actor (a concurrent bind, a retry, or another binder replica)
@@ -458,7 +517,7 @@ func (rsc *service) createGPUReservationPod(ctx context.Context, nodeName, gpuGr
 		// creating a duplicate on a different physical GPU.
 		if apierrors.IsAlreadyExists(err) {
 			logger.Info("GPU reservation pod already exists for gpu group, reusing",
-				"nodeName", nodeName, "namespace", rsc.namespace, "name", podName, "gpuGroup", gpuGroup)
+				"nodeName", nodeName, "namespace", rsc.namespace, "name", podName, "gpuGroup", fractionalGpuGroup.ID)
 			return pod, nil
 		}
 		logger.Error(err, "Failed to create GPU reservation pod on node",
@@ -525,22 +584,31 @@ func (rsc *service) waitForGPUReservationPodAllocation(
 }
 
 func (rsc *service) createResourceReservationPod(
-	nodeName, gpuGroup, podName string, resources v1.ResourceRequirements,
+	sourcePod *v1.Pod, nodeName string, fractionalGpuGroup schedulingv1alpha2.FractionalGpuGroup,
+	podName string, containerResources v1.ResourceRequirements,
 ) (*v1.Pod, error) {
+	fractionalGpuGroup = fractionalGpuGroup.WithDefaults()
+	var tolerations []v1.Toleration
+	if sourcePod != nil && len(sourcePod.Spec.Tolerations) > 0 {
+		tolerations = sourcePod.Spec.DeepCopy().Tolerations
+	}
+
 	podSpec := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      podName,
 			Namespace: rsc.namespace,
 			Labels: map[string]string{
 				constants.AppLabelName: rsc.appLabelValue,
-				constants.GPUGroup:     gpuGroup,
+				constants.GPUGroup:     fractionalGpuGroup.ID,
 			},
 			Annotations: map[string]string{
-				karpenterv1.DoNotDisruptAnnotationKey: "true",
+				karpenterv1.DoNotDisruptAnnotationKey:                                          "true",
+				resources.CalcGpuComputeSharingModeAnnotationForContainer(resourceReservation): string(fractionalGpuGroup.ComputeSharingMode),
 			},
 		},
 		Spec: v1.PodSpec{
-			NodeName: nodeName,
+			NodeName:    nodeName,
+			Tolerations: tolerations,
 			RuntimeClassName: func() *string {
 				if len(rsc.runtimeClassName) == 0 {
 					return nil
@@ -554,9 +622,9 @@ func (rsc *service) createResourceReservationPod(
 					Name:            resourceReservation,
 					Image:           rsc.reservationPodImage,
 					ImagePullPolicy: v1.PullIfNotPresent,
-					Resources:       resources,
+					Resources:       containerResources,
 					SecurityContext: rsc.reservationContainerSecurityContext,
-					Env: []v1.EnvVar{
+					Env: append([]v1.EnvVar{
 						{
 							Name: "POD_NAME",
 							ValueFrom: &v1.EnvVarSource{
@@ -573,7 +641,7 @@ func (rsc *service) createResourceReservationPod(
 								},
 							},
 						},
-					},
+					}, fips.OnlyEnv(rsc.fipsOnly)...),
 				},
 			},
 		},
@@ -620,7 +688,7 @@ func (rsc *service) isScalingUp(ctx context.Context) bool {
 }
 
 func IsGPUReservationPod(pod *v1.Pod) bool {
-	return strings.HasPrefix(pod.Name, gpuReservationPodPrefix)
+	return strings.HasPrefix(pod.Name, constants.GPUReservationPodPrefix)
 }
 
 // reservationPodName derives a deterministic reservation pod name from the node and
@@ -629,5 +697,5 @@ func IsGPUReservationPod(pod *v1.Pod) bool {
 // pods on different physical GPUs.
 func reservationPodName(nodeName, gpuGroup string) string {
 	hash := sha256.Sum256([]byte(nodeName + "/" + gpuGroup))
-	return fmt.Sprintf("%s-%s", gpuReservationPodPrefix, hex.EncodeToString(hash[:8]))
+	return fmt.Sprintf("%s-%s", constants.GPUReservationPodPrefix, hex.EncodeToString(hash[:8]))
 }

@@ -67,7 +67,7 @@ var _ = Describe("Scale Adjuster Test Suite", func() {
 			}
 
 			scaler := scaler.NewScaler(client, consts.DefaultScalingPodImage, testutils.ScalingPodNamespace,
-				testutils.ScalingPodAppLabel, testutils.ScalingPodServiceAccount)
+				testutils.ScalingPodAppLabel, testutils.ScalingPodServiceAccount, false)
 			sa := NewScaleAdjuster(client, scaler, testutils.ScalingPodNamespace, int64(coolDown),
 				consts.DefaultGPUMemoryToFractionRatio, testutils.SchedulerName)
 			isInCoolDown, err := sa.Adjust()

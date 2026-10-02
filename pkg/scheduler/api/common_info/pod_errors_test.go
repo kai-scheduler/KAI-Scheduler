@@ -12,8 +12,7 @@ import (
 
 func TestFitErrors_Error(t *testing.T) {
 	type fields struct {
-		nodes map[string]*TasksFitError
-		err   string
+		err string
 	}
 	tests := []struct {
 		name   string
@@ -31,13 +30,93 @@ func TestFitErrors_Error(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			f := &TasksFitErrors{
-				nodes: tt.fields.nodes,
-				err:   tt.fields.err,
+				err: tt.fields.err,
 			}
 			if got := f.Error(); got != tt.want {
 				t.Errorf("Error() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestFitErrorsAggregatesNodeReasons(t *testing.T) {
+	fitErrors := NewFitErrors()
+	fitErrors.AddNodeError(NewFitErrorWithDetailedMessage(
+		"pod", "namespace", "node-a",
+		[]string{"node(s) didn't have enough resources: GPUs"},
+		"Node didn't have enough resources: GPUs, requested: 1, used: 8, capacity: 8",
+	))
+	fitErrors.AddNodeError(NewFitErrorWithDetailedMessage(
+		"pod", "namespace", "node-b",
+		[]string{
+			"node(s) didn't have enough resources: GPUs",
+			"node(s) didn't match Pod's node affinity/selector",
+		},
+		"Node didn't have enough resources: GPUs, requested: 1, used: 8, capacity: 8",
+		"node(s) didn't match Pod's node affinity/selector",
+	))
+	want := "no nodes with enough resources were found: 1 node(s) didn't match Pod's node affinity/selector. \n" +
+		"2 node(s) didn't have enough resources: GPUs."
+	if got := fitErrors.Error(); got != want {
+		t.Fatalf("Error() = %q, want %q", got, want)
+	}
+	if got := fitErrors.ReasonCount("node(s) didn't have enough resources: GPUs"); got != 2 {
+		t.Fatalf("ReasonCount(GPUs) = %d, want 2", got)
+	}
+	if got := fitErrors.UniqueReasonCount(); got != 2 {
+		t.Fatalf("UniqueReasonCount() = %d, want 2", got)
+	}
+	if !fitErrors.HasNodeErrors() {
+		t.Fatal("HasNodeErrors() = false, want true")
+	}
+}
+
+func TestFitErrorsDetailedErrorUsesTransientNodeErrors(t *testing.T) {
+	fitErrors := NewFitErrors()
+	fitErrors.AddNodeError(NewFitError("pod", "namespace", "node-a", "MissingGPU"))
+
+	nodeErrors := []*TasksFitError{
+		NewFitErrorWithDetailedMessage(
+			"pod", "namespace", "node-b", []string{"NoStorage"}, "node-b detailed storage message"),
+		NewFitErrorWithDetailedMessage(
+			"pod", "namespace", "node-a", []string{"MissingGPU"}, "node-a detailed GPU message"),
+	}
+	want := "\n<node-a>: node-a detailed GPU message." +
+		"\n<node-b>: node-b detailed storage message." +
+		"\nno nodes with enough resources were found."
+	if got := fitErrors.DetailedError(nodeErrors); got != want {
+		t.Fatalf("DetailedError() = %q, want %q", got, want)
+	}
+	if got := fitErrors.ReasonCount("MissingGPU"); got != 1 {
+		t.Fatalf("ReasonCount(MissingGPU) after DetailedError = %d, want 1", got)
+	}
+}
+
+func TestAddNodeErrorDoesNotFormatStructuredFitError(t *testing.T) {
+	fitErrors := NewFitErrors()
+	fitError := NewFitError("pod", "namespace", "node-a", "MissingGPU")
+	fitErrors.AddNodeError(fitError)
+
+	allocations := testing.AllocsPerRun(100, func() {
+		fitErrors.AddNodeError(fitError)
+	})
+	if allocations != 0 {
+		t.Fatalf("AddNodeError() allocations = %v, want 0", allocations)
+	}
+}
+
+func TestAddNodeErrorIgnoresTypedNilFitError(t *testing.T) {
+	fitErrors := NewFitErrors()
+	var fitError *TasksFitError
+	var err error = fitError
+
+	fitErrors.AddNodeError(err)
+
+	if fitErrors.HasNodeErrors() {
+		t.Fatal("HasNodeErrors() = true after typed nil error, want false")
+	}
+	if got := fitErrors.Error(); got != ResourcesWereNotFoundMsg {
+		t.Fatalf("Error() = %q, want %q", got, ResourcesWereNotFoundMsg)
 	}
 }
 

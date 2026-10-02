@@ -49,6 +49,7 @@ func init() {
 	registerCustomResourceDefinitions()
 	registerPrometheus()
 	registerVerticalPodAutoscalers()
+	registerPodDisruptionBudgets()
 }
 
 func SetupKAIConfigOwned(fn *Collectable) {

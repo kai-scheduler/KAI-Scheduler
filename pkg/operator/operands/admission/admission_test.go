@@ -18,6 +18,7 @@ import (
 	kaiv1admission "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/admission"
 	kaiv1common "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common/test_utils"
+	nvidiav1 "github.com/kai-scheduler/KAI-scheduler/third_party/nvidia/gpu-operator/api/nvidia/v1"
 
 	admissionv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -45,6 +46,7 @@ var _ = Describe("Admission", func() {
 		ctx = context.Background()
 		testScheme := scheme.Scheme
 		utilruntime.Must(kaiv1.AddToScheme(testScheme))
+		utilruntime.Must(nvidiav1.AddToScheme(testScheme))
 
 		fakeKubeClient = fake.NewClientBuilder().WithScheme(testScheme).Build()
 		a = &Admission{}
@@ -83,8 +85,9 @@ var _ = Describe("Admission", func() {
 				Expect(mutatingWebhook.Webhooks).To(HaveLen(1))
 				Expect(mutatingWebhook.Webhooks[0].ClientConfig.CABundle).To(Equal(secret.Data[certKey]))
 
-				// One webhook for pods, one for the Topology one-to-one alias validation.
-				Expect(validatingWebhook.Webhooks).To(HaveLen(2))
+				// One webhook for pods, one for the Topology one-to-one alias validation,
+				// and one for the pods/resize validation.
+				Expect(validatingWebhook.Webhooks).To(HaveLen(3))
 				for _, wh := range validatingWebhook.Webhooks {
 					Expect(wh.ClientConfig.CABundle).To(Equal(secret.Data[certKey]))
 					Expect(wh.ClientConfig.Service.Name).To(Equal(defaultResourceName))

@@ -74,7 +74,7 @@ func NewBindRequestReconciler(
 // +kubebuilder:rbac:groups=core,resources=pods/finalizers,verbs=create;patch;update
 // +kubebuilder:rbac:groups=core,resources=pods/status,verbs=get;list;watch;create;patch;update
 // +kubebuilder:rbac:groups=resource.k8s.io,resources=deviceclasses;resourceslices,verbs=get;list;watch
-// +kubebuilder:rbac:groups=resource.k8s.io,resources=resourceclaims,verbs=get;list;watch;patch;update
+// +kubebuilder:rbac:groups=resource.k8s.io,resources=resourceclaims,verbs=get;list;watch;patch;update;create;delete
 // +kubebuilder:rbac:groups=resource.k8s.io,resources=resourceclaims/status,verbs=get;list;watch;patch;update
 // +kubebuilder:rbac:groups=resource.k8s.io,resources=resourceclaims/binding,verbs=update;patch
 // +kubebuilder:rbac:groups=scheduling.run.ai,resources=bindrequests,verbs=get;list;watch;patch;update;delete
@@ -119,7 +119,7 @@ func (r *BindRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 		result, err = r.UpdateStatus(ctx, bindRequest, result, err)
 		if pod != nil {
-			r.updatePodCondition(ctx, bindRequest, pod, result, err)
+			r.updatePodCondition(ctx, bindRequest, pod)
 		}
 
 		if finalError != nil {
@@ -214,7 +214,7 @@ func (r *BindRequestReconciler) deleteHandler(ctx context.Context, event event.T
 	}
 
 	if common.IsSharedGPUAllocation(bindRequest) {
-		for _, gpuGroup := range bindRequest.Spec.SelectedGPUGroups {
+		for _, gpuGroup := range bindRequest.Spec.SelectedFractionalGpuGroupIDs() {
 			err := r.resourceReservation.SyncForGpuGroup(ctx, gpuGroup)
 			if err != nil {
 				logger.Error(err, "Failed to sync reservation for GPU Group",
@@ -256,7 +256,7 @@ func (r *BindRequestReconciler) UpdateStatus(
 }
 
 func (r *BindRequestReconciler) updatePodCondition(
-	ctx context.Context, bindRequest *schedulingv1alpha2.BindRequest, pod *v1.Pod, result ctrl.Result, err error,
+	ctx context.Context, bindRequest *schedulingv1alpha2.BindRequest, pod *v1.Pod,
 ) {
 	logger := log.FromContext(ctx)
 
@@ -265,7 +265,7 @@ func (r *BindRequestReconciler) updatePodCondition(
 	var eventType string
 	var reason string
 
-	if err == nil || result.RequeueAfter != 0 {
+	if bindRequest.Status.Phase == schedulingv1alpha2.BindRequestPhaseSucceeded {
 		message = fmt.Sprintf("Pod bound successfully to node %s", bindRequest.Spec.SelectedNode)
 		condition = &v1.PodCondition{
 			Type:    podBoundCondition,
@@ -278,7 +278,7 @@ func (r *BindRequestReconciler) updatePodCondition(
 	} else {
 		message = fmt.Sprintf(
 			"Failed to bind pod %s/%s to node %s: %s", pod.Namespace, pod.Name,
-			bindRequest.Spec.SelectedNode, err.Error(),
+			bindRequest.Spec.SelectedNode, bindRequest.Status.Reason,
 		)
 		condition = &v1.PodCondition{
 			Type:    podBoundCondition,

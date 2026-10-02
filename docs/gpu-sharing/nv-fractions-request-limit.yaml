@@ -1,0 +1,19 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nv-fractions-request-limit
+  labels:
+    kai.scheduler/queue: default-queue
+  annotations:
+    nvidia.com/container.gpu-workload.gpu-memory.request: 4096Mi
+    nvidia.com/container.gpu-workload.gpu-memory.limit: 8192Mi
+spec:
+  schedulerName: kai-scheduler
+  containers:
+    - name: gpu-workload
+      image: nvidia/cuda:13.0.2-base-ubi8
+      command: ["nvidia-smi"]
+      args: ["--query-gpu=name,utilization.gpu,utilization.memory,memory.total", "--format=csv,noheader"]

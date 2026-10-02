@@ -76,6 +76,7 @@ type Session struct {
 	NodePreOrderFns                       []api.NodePreOrderFn
 	NodeOrderFns                          []api.NodeOrderFn
 	JobOrderFns                           []common_info.CompareFn
+	VictimOrderFns                        []common_info.CompareFn
 	SubGroupOrderFns                      []common_info.CompareFn
 	TaskOrderFns                          []common_info.CompareFn
 	QueueOrderFns                         []api.CompareQueueFn
@@ -100,8 +101,10 @@ type Session struct {
 	PreJobAllocationFns                   []api.PreJobAllocationFn
 	ScenarioGeneratorRegistrations        []ScenarioGeneratorRegistration
 
-	Config          *conf.SchedulerConfiguration
-	plugins         map[string]Plugin
+	Config  *conf.SchedulerConfiguration
+	plugins map[string]Plugin
+	// pluginsInOrder records the order plugins were opened in, so they can be closed in reverse.
+	pluginsInOrder  []Plugin
 	eventHandlers   []*EventHandler
 	SchedulerParams conf.SchedulerParams
 	mux             *http.ServeMux
@@ -193,7 +196,7 @@ func (ssn *Session) FittingGPUs(node *node_info.NodeInfo, pod *pod_info.PodInfo)
 func filterGpusByEnoughResources(node *node_info.NodeInfo, pod *pod_info.PodInfo) []string {
 	filteredGPUs := []string{}
 	for gpuIdx := range node.UsedSharedGPUsMemory {
-		if node.IsTaskFitOnGpuGroup(&pod.GpuRequirement, gpuIdx) {
+		if node.IsTaskFitOnGpuGroup(pod, gpuIdx) {
 			filteredGPUs = append(filteredGPUs, gpuIdx)
 		}
 	}
@@ -231,24 +234,30 @@ func (ssn *Session) FittingNode(task *pod_info.PodInfo, node *node_info.NodeInfo
 
 	job := ssn.ClusterInfo.PodGroupInfos[task.Job]
 
-	log.InfraLogger.V(6).Infof("Checking if task <%v/%v> is allocatable on node <%v>: <%v> vs. <%v>",
-		task.Namespace, task.Name, node.Name, task.ResReqVector, node.IdleVector)
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("Checking if task <%v/%v> is allocatable on node <%v>: <%v> vs. <%v>",
+			task.Namespace, task.Name, node.Name, task.ResReqVector, node.IdleVector)
+	})
 	allocatable, fitError := ssn.isTaskAllocatableOnNode(task, job, node, writeFittingDelta)
 	if !allocatable {
 		if fitError != nil && writeFittingDelta {
-			fitErrors.SetNodeError(node.Name, fitError)
+			fitErrors.AddNodeError(fitError)
 			job.AddTaskFitErrors(task, fitErrors)
 		}
 		return false
 	}
 
-	log.InfraLogger.V(6).Infof("Running predicates for task <%v/%v> on node <%v>",
-		task.Namespace, task.Name, node.Name)
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("Running predicates for task <%v/%v> on node <%v>",
+			task.Namespace, task.Name, node.Name)
+	})
 	if err := ssn.PredicateFn(task, job, node); err != nil {
-		log.InfraLogger.V(6).Infof("Predicates failed for task <%s/%s> on node <%s>: %v",
-			task.Namespace, task.Name, node.Name, err)
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof("Predicates failed for task <%s/%s> on node <%s>: %v",
+				task.Namespace, task.Name, node.Name, err)
+		})
 		if writeFittingDelta {
-			fitErrors.SetNodeError(node.Name, err)
+			fitErrors.AddNodeError(err)
 			job.AddTaskFitErrors(task, fitErrors)
 		}
 		return false
@@ -315,8 +324,10 @@ func (ssn *Session) scoreNodes(nodes []*node_info.NodeInfo, task *pod_info.PodIn
 			continue
 		}
 		workerScores[score] = append(workerScores[score], node)
-		log.InfraLogger.V(5).Infof("Overall priority node score of node <%v> for task <%v/%v> is: %f",
-			node.Name, task.Namespace, task.Name, score)
+		log.InfraLogger.V(5).Do(func() {
+			log.InfraLogger.Infof("Overall priority node score of node <%v> for task <%v/%v> is: %f",
+				node.Name, task.Namespace, task.Name, score)
+		})
 	}
 	return workerScores
 }
@@ -328,9 +339,11 @@ func (ssn *Session) isTaskAllocatableOnNode(task *pod_info.PodInfo, job *podgrou
 
 	if !node.IsTaskAllocatableOnReleasingOrIdle(task) {
 		allocatable = false
-		log.InfraLogger.V(6).Infof("Not enough resources for task: <%s/%s>, init requested: <%v>. "+
-			"Node <%s> with limited resources, releasing: <%v>, idle: <%v>",
-			task.Namespace, task.Name, task.ResReqVector, node.Name, node.ReleasingVector, node.IdleVector)
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof("Not enough resources for task: <%s/%s>, init requested: <%v>. "+
+				"Node <%s> with limited resources, releasing: <%v>, idle: <%v>",
+				task.Namespace, task.Name, task.ResReqVector, node.Name, node.ReleasingVector, node.IdleVector)
+		})
 		if writeFittingDelta {
 			if taskAllocatable := node.IsTaskAllocatable(task); !taskAllocatable {
 				fitError = node.FittingError(task, len(job.GetAllPodsMap()) > 1)
@@ -338,6 +351,47 @@ func (ssn *Session) isTaskAllocatableOnNode(task *pod_info.PodInfo, job *podgrou
 		}
 	}
 	return allocatable, fitError
+}
+
+func (ssn *Session) RecomputeDetailedFitErrors(
+	job *podgroup_info.PodGroupInfo, task *pod_info.PodInfo,
+) ([]*common_info.TasksFitError, error) {
+	if err := ssn.PrePredicateFn(task, job); err != nil {
+		return nil, nil
+	}
+
+	nodeErrors := make([]*common_info.TasksFitError, 0)
+	for _, node := range ssn.ClusterInfo.Nodes {
+		allocatable, fitError := ssn.isTaskAllocatableOnNode(task, job, node, true)
+		if !allocatable {
+			if fitError != nil {
+				nodeErrors = append(nodeErrors, fitError)
+			}
+			continue
+		}
+		if err := ssn.PredicateFn(task, job, node); err != nil {
+			if fitError := taskFitErrorFromError(task, node, err); fitError != nil {
+				nodeErrors = append(nodeErrors, fitError)
+			}
+		}
+	}
+	return nodeErrors, nil
+}
+
+func taskFitErrorFromError(
+	task *pod_info.PodInfo, node *node_info.NodeInfo, err error,
+) *common_info.TasksFitError {
+	if fitError, ok := err.(*common_info.TasksFitError); ok {
+		if fitError == nil {
+			return nil
+		}
+		fitErrorCopy := *fitError
+		fitErrorCopy.NodeName = node.Name
+		fitErrorCopy.Reasons = append([]string(nil), fitError.Reasons...)
+		fitErrorCopy.DetailedReasons = append([]string(nil), fitError.DetailedReasons...)
+		return &fitErrorCopy
+	}
+	return common_info.NewFitError(task.Name, task.Namespace, node.Name, err.Error())
 }
 
 func (ssn *Session) String() string {
@@ -388,11 +442,13 @@ func (ssn *Session) updatePodOnSession(pod *pod_info.PodInfo, status pod_status.
 func (ssn *Session) clear() {
 	ssn.ClusterInfo = nil
 	ssn.plugins = nil
+	ssn.pluginsInOrder = nil
 	ssn.eventHandlers = nil
 	ssn.GpuOrderFns = nil
 	ssn.NodePreOrderFns = nil
 	ssn.NodeOrderFns = nil
 	ssn.JobOrderFns = nil
+	ssn.VictimOrderFns = nil
 	ssn.SubGroupOrderFns = nil
 	ssn.TaskOrderFns = nil
 	ssn.QueueOrderFns = nil
@@ -446,6 +502,7 @@ func openSession(cache cache.Cache, sessionId string, schedulerParams conf.Sched
 		ClusterInfo: &api.ClusterInfo{},
 
 		plugins:               map[string]Plugin{},
+		pluginsInOrder:        []Plugin{},
 		SchedulerParams:       schedulerParams,
 		mux:                   mux,
 		k8sResourceStateCache: sync.Map{},
@@ -471,12 +528,18 @@ func openSession(cache cache.Cache, sessionId string, schedulerParams conf.Sched
 }
 
 func closeSession(ssn *Session) {
-	log.InfraLogger.V(6).Infof("Close Session %v with <%d> Jobs and <%d> Queues",
-		ssn.ID, len(ssn.ClusterInfo.PodGroupInfos), len(ssn.ClusterInfo.Queues))
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("Close Session %v with <%d> Jobs and <%d> Queues",
+			ssn.ID, len(ssn.ClusterInfo.PodGroupInfos), len(ssn.ClusterInfo.Queues))
+	})
 
 	// Push all jobs for status update into the channel
+	resolveDetailedFitErrors := ssn.RecomputeDetailedFitErrors
 	for _, job := range ssn.ClusterInfo.PodGroupInfos {
-		if err := ssn.Cache.RecordJobStatusEvent(job); err != nil {
+		if job.IsSemiPreemptibleJob() {
+			job.CorePodNames = podgroup_info.GetCorePodNames(job, ssn.TaskOrderFn)
+		}
+		if err := ssn.Cache.RecordJobStatusEvent(job, resolveDetailedFitErrors); err != nil {
 			log.InfraLogger.Errorf("Failed to record job status event for job <%s>: %v", job.Name, err)
 		}
 	}
@@ -486,7 +549,9 @@ func closeSession(ssn *Session) {
 	stopCh := make(chan struct{})
 	ssn.Cache.WaitForWorkers(stopCh)
 
-	log.InfraLogger.V(6).Infof("Done updating job statuses for session: %v", ssn.ID)
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("Done updating job statuses for session: %v", ssn.ID)
+	})
 }
 
 func (ssn *Session) GetMaxNumberConsolidationPreemptees() int {

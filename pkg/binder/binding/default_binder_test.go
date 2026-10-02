@@ -71,7 +71,7 @@ func TestBind(t *testing.T) {
 	kubeClient := fake.NewClientBuilder().WithRuntimeObjects(kubeObjects...).WithInterceptorFuncs(test_utils.EmptyBind).Build()
 
 	binderPlugins := plugins.New()
-	bindingGpuSharingPlugin := bindinggpusharing.New(kubeClient, false)
+	bindingGpuSharingPlugin := bindinggpusharing.New(kubeClient, false, false)
 	binderPlugins.RegisterPlugin(bindingGpuSharingPlugin)
 
 	binder := NewBinder(kubeClient, rrs, binderPlugins)
@@ -175,13 +175,16 @@ func TestBindApplyResourceReceivedType(t *testing.T) {
 	kubeClient := fake.NewClientBuilder().WithRuntimeObjects(kubeObjects...).WithInterceptorFuncs(test_utils.EmptyBind).Build()
 
 	binderPlugins := plugins.New()
-	bindingGpuSharingPlugin := bindinggpusharing.New(kubeClient, false)
+	bindingGpuSharingPlugin := bindinggpusharing.New(kubeClient, false, false)
 	binderPlugins.RegisterPlugin(bindingGpuSharingPlugin)
 
 	binder := NewBinder(kubeClient, rrs, binderPlugins)
 
 	err := binder.Bind(context.TODO(), pod, &v1.Node{ObjectMeta: metav1.ObjectMeta{
 		Name: "my-node",
+		Labels: map[string]string{
+			constants.NvidiaGpuMemory: "1000",
+		},
 	}}, bindRequest)
 
 	assert.Nil(t, err)
@@ -222,7 +225,7 @@ func TestBindFail(t *testing.T) {
 	kubeClient := fake.NewClientBuilder().WithRuntimeObjects(kubeObjects...).WithInterceptorFuncs(test_utils.EmptyBind).Build()
 
 	binderPlugins := plugins.New()
-	bindingGpuSharingPlugin := bindinggpusharing.New(kubeClient, false)
+	bindingGpuSharingPlugin := bindinggpusharing.New(kubeClient, false, false)
 	binderPlugins.RegisterPlugin(bindingGpuSharingPlugin)
 
 	binder := NewBinder(kubeClient, rrs, binderPlugins)

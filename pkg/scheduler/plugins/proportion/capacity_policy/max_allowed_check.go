@@ -58,7 +58,7 @@ func isOverLimit(queueAttributes *rs.QueueAttributes, requested rs.ResourceQuant
 		if !found || requestedQty == 0 {
 			continue
 		}
-		if resourceShare.MaxAllowed < resourceShare.Allocated+requestedQty {
+		if !resource_info.LessOrEqualWithTolerance(resourceShare.Allocated+requestedQty, resourceShare.MaxAllowed) {
 			return true, resource
 		}
 	}

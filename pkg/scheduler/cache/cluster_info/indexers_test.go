@@ -16,6 +16,7 @@ import (
 func TestPodByPodGroupIndexerValidPod(t *testing.T) {
 	pod := &v1.Pod{
 		ObjectMeta: v12.ObjectMeta{
+			Namespace: "my-namespace",
 			Annotations: map[string]string{
 				commonconstants.PodGroupAnnotationForPod: "my-pod-group",
 			},
@@ -26,7 +27,7 @@ func TestPodByPodGroupIndexerValidPod(t *testing.T) {
 
 	assert.Equal(t, nil, err)
 	assert.Equal(t, 1, len(podGroups))
-	assert.Equal(t, "my-pod-group", podGroups[0])
+	assert.Equal(t, "my-namespace/my-pod-group", podGroups[0])
 }
 
 func TestPodByPodGroupIndexerNotPod(t *testing.T) {
@@ -37,4 +38,13 @@ func TestPodByPodGroupIndexerNotPod(t *testing.T) {
 	assert.Equal(t, nil, err)
 	assert.Equal(t, 1, len(podGroups))
 	assert.Equal(t, "", podGroups[0])
+}
+
+func TestPodByPodGroupIndexerPodWithoutPodGroup(t *testing.T) {
+	pod := &v1.Pod{ObjectMeta: v12.ObjectMeta{Namespace: "my-namespace"}}
+
+	podGroups, err := podByPodGroupIndexer(pod)
+
+	assert.NoError(t, err)
+	assert.Equal(t, []string{""}, podGroups)
 }

@@ -101,7 +101,7 @@ var _ = Describe("MinSubGroup validation", Ordered, func() {
 		Expect(warningCapture.Messages[0]).To(ContainSubstring("minSubGroup (5) exceeds the number of direct child SubGroups (4)"))
 	})
 
-	It("should reject minSubGroup = 0", func(ctx context.Context) {
+	It("should accept minSubGroup = 0", func(ctx context.Context) {
 		pg := createMinSubGroupPodGroup(testCtx, ptr.To[int32](0), 0,
 			[]schedulingv2alpha2.SubGroup{
 				{Name: "prefill-0", MinMember: ptr.To[int32](8)},
@@ -110,7 +110,7 @@ var _ = Describe("MinSubGroup validation", Ordered, func() {
 
 		_, err := testCtx.KubeAiSchedClientset.SchedulingV2alpha2().PodGroups(pg.Namespace).Create(ctx,
 			pg, metav1.CreateOptions{})
-		Expect(err).ToNot(Succeed())
+		Expect(err).To(Succeed())
 	})
 
 	It("should reject SubGroup with both minMember and minSubGroup", func(ctx context.Context) {

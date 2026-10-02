@@ -19,11 +19,14 @@ import (
 
 	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
 	kaiv1binder "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/binder"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
 	binderplugins "github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common/test_utils"
 
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -124,6 +127,21 @@ var _ = Describe("Binder", func() {
 				Expect(*pluginConfig[binderplugins.HamiCorePluginName].Enabled).To(BeFalse())
 			})
 
+			It("passes --fips-only only when global.fipsOnly is set", func(ctx context.Context) {
+				objects, err := b.DesiredState(ctx, fakeKubeClient, kaiConfig)
+				Expect(err).To(BeNil())
+				deploymentT := test_utils.FindTypeInObjects[*appsv1.Deployment](objects)
+				Expect(deploymentT).NotTo(BeNil())
+				Expect((*deploymentT).Spec.Template.Spec.Containers[0].Args).NotTo(ContainElement("--fips-only"))
+
+				kaiConfig.Spec.Global.FIPSOnly = ptr.To(true)
+				objects, err = b.DesiredState(ctx, fakeKubeClient, kaiConfig)
+				Expect(err).To(BeNil())
+				deploymentT = test_utils.FindTypeInObjects[*appsv1.Deployment](objects)
+				Expect(deploymentT).NotTo(BeNil())
+				Expect((*deploymentT).Spec.Template.Spec.Containers[0].Args).To(ContainElement("--fips-only"))
+			})
+
 			It("passes volume binding timeout through plugin arguments", func(ctx context.Context) {
 				kaiConfig = kaiConfigForBinderWithConfig(&kaiv1binder.Binder{
 					VolumeBindingTimeoutSeconds: ptr.To(45),
@@ -172,6 +190,17 @@ var _ = Describe("Binder", func() {
 					expectGPUSharingCDI((*deploymentT).Spec.Template.Spec.Containers[0].Args, true)
 				})
 
+				It("resolves CDI flag for the nvfractions plugin from cluster policy, like gpusharing", func(ctx context.Context) {
+					kaiConfig = kaiConfigForBinderNvFractions()
+					Expect(fakeKubeClient.Create(ctx, clusterPolicy)).To(Succeed())
+					objects, err := b.DesiredState(ctx, fakeKubeClient, kaiConfig)
+					Expect(err).To(BeNil())
+
+					deploymentT := test_utils.FindTypeInObjects[*appsv1.Deployment](objects)
+					Expect(deploymentT).NotTo(BeNil())
+					expectNvFractionsCDI((*deploymentT).Spec.Template.Spec.Containers[0].Args, true)
+				})
+
 				It("sets CDI flag to false if not set by default cluser policy", func(ctx context.Context) {
 					clusterPolicy.Spec.CDI.Default = ptr.To(false)
 					Expect(fakeKubeClient.Create(ctx, clusterPolicy)).To(Succeed())
@@ -211,6 +240,19 @@ var _ = Describe("Binder", func() {
 					deploymentT := test_utils.FindTypeInObjects[*appsv1.Deployment](objects)
 					Expect(deploymentT).NotTo(BeNil())
 					expectGPUSharingCDI((*deploymentT).Spec.Template.Spec.Containers[0].Args, false)
+				})
+
+				It("resolves NRI plugin flag from the gpu-operator cluster-policy", func(ctx context.Context) {
+					clusterPolicy.Name = "cluster-policy"
+					clusterPolicy.Spec.CDI.NRIPluginEnabled = ptr.To(true)
+					Expect(fakeKubeClient.Create(ctx, clusterPolicy)).To(Succeed())
+
+					objects, err := b.DesiredState(ctx, fakeKubeClient, kaiConfig)
+					Expect(err).To(BeNil())
+
+					deploymentT := test_utils.FindTypeInObjects[*appsv1.Deployment](objects)
+					Expect(deploymentT).NotTo(BeNil())
+					expectGPUSharingNRIPlugin((*deploymentT).Spec.Template.Spec.Containers[0].Args, true)
 				})
 
 				It("uses explicit CDIEnabled=true from config, ignoring ClusterPolicy", func(ctx context.Context) {
@@ -328,6 +370,133 @@ var _ = Describe("Binder", func() {
 				Expect(newReservationSA.ImagePullSecrets).To(ContainElement(v1.LocalObjectReference{Name: "test-secret"}))
 			})
 		})
+
+		Context("PodDisruptionBudget", func() {
+			It("includes PDB when HA and enabled with matching deployment selector", func(ctx context.Context) {
+				kaiConfig.Spec.Binder.Replicas = ptr.To(int32(2))
+				kaiConfig.Spec.Binder.Service.PodDisruptionBudget = &common.PodDisruptionBudget{
+					Enabled:        ptr.To(true),
+					MaxUnavailable: ptr.To(int32(1)),
+				}
+
+				objects, err := b.DesiredState(ctx, fakeKubeClient, kaiConfig)
+				Expect(err).To(BeNil())
+
+				pdbs := test_utils.FindTypesInObjects[*policyv1.PodDisruptionBudget](objects)
+				Expect(pdbs).To(HaveLen(1))
+				Expect(pdbs[0].Name).To(Equal(defaultResourceName))
+				Expect(pdbs[0].Namespace).To(Equal(constants.DefaultKAINamespace))
+				Expect(pdbs[0].Spec.MaxUnavailable).NotTo(BeNil())
+				Expect(pdbs[0].Spec.MaxUnavailable.IntVal).To(Equal(int32(1)))
+				Expect(pdbs[0].Spec.Selector.MatchLabels["app"]).To(Equal(defaultResourceName))
+
+				deploymentT := test_utils.FindTypeInObjects[*appsv1.Deployment](objects)
+				Expect(deploymentT).NotTo(BeNil())
+				Expect(pdbs[0].Spec.Selector.MatchLabels["app"]).To(Equal((*deploymentT).Spec.Template.Labels["app"]))
+			})
+
+			It("uses custom maxUnavailable", func(ctx context.Context) {
+				b.BaseResourceName = defaultResourceName
+				kaiConfig.Spec.Binder.Replicas = ptr.To(int32(2))
+				kaiConfig.Spec.Binder.Service.PodDisruptionBudget = &common.PodDisruptionBudget{
+					Enabled:        ptr.To(true),
+					MaxUnavailable: ptr.To(int32(2)),
+				}
+
+				objects, err := b.podDisruptionBudgetForKAIConfig(ctx, fakeKubeClient, kaiConfig)
+				Expect(err).To(BeNil())
+				Expect(objects).To(HaveLen(1))
+
+				pdb := objects[0].(*policyv1.PodDisruptionBudget)
+				Expect(pdb.Spec.MaxUnavailable).NotTo(BeNil())
+				Expect(pdb.Spec.MaxUnavailable.IntVal).To(Equal(int32(2)))
+			})
+
+			It("preserves resourceVersion from an existing PDB", func(ctx context.Context) {
+				existing := &policyv1.PodDisruptionBudget{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:            defaultResourceName,
+						Namespace:       constants.DefaultKAINamespace,
+						ResourceVersion: "42",
+						Labels: map[string]string{
+							"app": defaultResourceName,
+						},
+					},
+				}
+				fakeKubeClient = fake.NewClientBuilder().WithObjects(existing).Build()
+				b.BaseResourceName = defaultResourceName
+
+				kaiConfig.Spec.Binder.Replicas = ptr.To(int32(2))
+				kaiConfig.Spec.Binder.Service.PodDisruptionBudget = &common.PodDisruptionBudget{
+					Enabled:        ptr.To(true),
+					MaxUnavailable: ptr.To(int32(1)),
+				}
+
+				objects, err := b.podDisruptionBudgetForKAIConfig(ctx, fakeKubeClient, kaiConfig)
+				Expect(err).To(BeNil())
+				Expect(objects).To(HaveLen(1))
+
+				pdb := objects[0].(*policyv1.PodDisruptionBudget)
+				Expect(pdb.ResourceVersion).To(Equal("42"))
+				Expect(pdb.Spec.MaxUnavailable).NotTo(BeNil())
+				Expect(pdb.Spec.MaxUnavailable.IntVal).To(Equal(int32(1)))
+			})
+
+			It("omits PDB when HA but disabled", func(ctx context.Context) {
+				kaiConfig.Spec.Binder.Replicas = ptr.To(int32(2))
+				kaiConfig.Spec.Binder.Service.PodDisruptionBudget = &common.PodDisruptionBudget{
+					Enabled: ptr.To(false),
+				}
+
+				objects, err := b.DesiredState(ctx, fakeKubeClient, kaiConfig)
+				Expect(err).To(BeNil())
+
+				for _, obj := range objects {
+					Expect(obj).NotTo(BeAssignableToTypeOf(&policyv1.PodDisruptionBudget{}))
+				}
+			})
+
+			It("omits PDB when single replica even if enabled", func(ctx context.Context) {
+				kaiConfig.Spec.Binder.Replicas = ptr.To(int32(1))
+				kaiConfig.Spec.Binder.Service.PodDisruptionBudget = &common.PodDisruptionBudget{
+					Enabled: ptr.To(true),
+				}
+
+				objects, err := b.DesiredState(ctx, fakeKubeClient, kaiConfig)
+				Expect(err).To(BeNil())
+
+				for _, obj := range objects {
+					Expect(obj).NotTo(BeAssignableToTypeOf(&policyv1.PodDisruptionBudget{}))
+				}
+			})
+
+			It("omits PDB when PDB config is missing and defaults apply", func(ctx context.Context) {
+				kaiConfig.Spec.Binder.Replicas = ptr.To(int32(2))
+				kaiConfig.Spec.Binder.Service.PodDisruptionBudget = nil
+				kaiConfig.Spec.Binder.Service.SetDefaultsWhereNeeded("")
+
+				objects, err := b.DesiredState(ctx, fakeKubeClient, kaiConfig)
+				Expect(err).To(BeNil())
+				Expect(kaiConfig.Spec.Binder.Service.PodDisruptionBudget).NotTo(BeNil())
+				Expect(*kaiConfig.Spec.Binder.Service.PodDisruptionBudget.Enabled).To(BeFalse())
+
+				for _, obj := range objects {
+					Expect(obj).NotTo(BeAssignableToTypeOf(&policyv1.PodDisruptionBudget{}))
+				}
+			})
+
+			It("returns empty desired state when binder is disabled", func(ctx context.Context) {
+				kaiConfig.Spec.Binder.Service.Enabled = ptr.To(false)
+				kaiConfig.Spec.Binder.Replicas = ptr.To(int32(2))
+				kaiConfig.Spec.Binder.Service.PodDisruptionBudget = &common.PodDisruptionBudget{
+					Enabled: ptr.To(true),
+				}
+
+				objects, err := b.DesiredState(ctx, fakeKubeClient, kaiConfig)
+				Expect(err).To(BeNil())
+				Expect(objects).To(BeEmpty())
+			})
+		})
 	})
 })
 
@@ -354,6 +523,32 @@ func expectGPUSharingCDI(args []string, enabled bool) {
 	pluginConfig := binderPluginsConfig(args)
 	Expect(pluginConfig[binderplugins.GPUSharingPluginName].Arguments[binderplugins.CDIEnabledArgument]).
 		To(Equal(strconv.FormatBool(enabled)))
+}
+
+func expectNvFractionsCDI(args []string, enabled bool) {
+	expectNoStandalonePluginArgs(args)
+	pluginConfig := binderPluginsConfig(args)
+	Expect(pluginConfig[binderplugins.NvFractionsPluginName].Arguments[binderplugins.CDIEnabledArgument]).
+		To(Equal(strconv.FormatBool(enabled)))
+}
+
+func expectGPUSharingNRIPlugin(args []string, enabled bool) {
+	expectNoStandalonePluginArgs(args)
+	pluginConfig := binderPluginsConfig(args)
+	Expect(pluginConfig[binderplugins.GPUSharingPluginName].Arguments[binderplugins.NRIPluginEnabledArgument]).
+		To(Equal(strconv.FormatBool(enabled)))
+}
+
+func kaiConfigForBinderNvFractions() *kaiv1.Config {
+	kaiConfig := &kaiv1.Config{}
+	kaiConfig.Spec.Binder = &kaiv1binder.Binder{
+		Plugins: map[string]kaiv1binder.PluginConfig{
+			kaiv1binder.NvFractionsPluginName: {Enabled: ptr.To(true)},
+		},
+	}
+	kaiConfig.Spec.SetDefaultsWhereNeeded()
+	kaiConfig.Spec.Binder.Service.Enabled = ptr.To(true)
+	return kaiConfig
 }
 
 func binderPluginsConfig(args []string) binderplugins.Config {

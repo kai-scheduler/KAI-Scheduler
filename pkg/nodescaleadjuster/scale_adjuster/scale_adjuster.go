@@ -14,7 +14,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/nodescaleadjuster/scaler"
 )
@@ -100,12 +99,12 @@ func (sa *ScaleAdjuster) isInCoolDown() bool {
 }
 
 func (sa *ScaleAdjuster) createNewScalingPods(existingScalingPods []*corev1.Pod) (int, error) {
-	pods, err := sa.getUnschedulablePods()
+	pods, err := sa.getUnschedulableFractionalPods()
 	if err != nil {
 		return 0, fmt.Errorf("could not get unschedulable pods. err: %v", err)
 	}
 
-	log.Printf("Found %d unschedulable pods", len(pods))
+	log.Printf("Found %d unschedulable fractional pods", len(pods))
 
 	numNeededDevices, podsToScale := sa.calculator.calculateNumNeededDevices(pods)
 	if numNeededDevices == 0 {
@@ -144,7 +143,7 @@ func (sa *ScaleAdjuster) createNewScalingPods(existingScalingPods []*corev1.Pod)
 	return numCreatedPods, nil
 }
 
-func (sa *ScaleAdjuster) getUnschedulablePods() ([]*corev1.Pod, error) {
+func (sa *ScaleAdjuster) getUnschedulableFractionalPods() ([]*corev1.Pod, error) {
 	podsList := &corev1.PodList{}
 	err := sa.client.List(context.Background(), podsList)
 	if err != nil {
@@ -160,7 +159,7 @@ func (sa *ScaleAdjuster) getUnschedulablePods() ([]*corev1.Pod, error) {
 		if pod.Spec.SchedulerName != sa.schedulerName {
 			continue
 		}
-		if !requestFractionalGPU(&pod) {
+		if !resources.RequestsGPUFraction(&pod) {
 			continue
 		}
 		if !isPodAlive(&pod) {
@@ -173,10 +172,6 @@ func (sa *ScaleAdjuster) getUnschedulablePods() ([]*corev1.Pod, error) {
 	}
 
 	return pods, nil
-}
-
-func requestFractionalGPU(pod *corev1.Pod) bool {
-	return pod.Annotations[constants.GpuFraction] != "" || pod.Annotations[constants.GpuMemory] != ""
 }
 
 func isPodAlive(pod *corev1.Pod) bool {

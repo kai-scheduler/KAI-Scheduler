@@ -70,6 +70,28 @@ func (q *QueueController) deploymentForKAIConfig(
 	return []client.Object{deployment}, nil
 }
 
+func (q *QueueController) podDisruptionBudgetForKAIConfig(
+	ctx context.Context, runtimeClient client.Reader, kaiConfig *kaiv1.Config,
+) ([]client.Object, error) {
+	config := kaiConfig.Spec.QueueController
+	pdbObj, err := common.PodDisruptionBudgetForKAIConfig(
+		ctx,
+		runtimeClient,
+		kaiConfig.Spec.Namespace,
+		q.BaseResourceName,
+		config.Replicas,
+		config.Service,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if pdbObj == nil {
+		return nil, nil
+	}
+
+	return []client.Object{pdbObj}, nil
+}
+
 func (q *QueueController) serviceAccountForKAIConfig(
 	ctx context.Context, runtimeClient client.Reader, kaiConfig *kaiv1.Config,
 ) ([]client.Object, error) {
@@ -274,6 +296,6 @@ func buildArgsList(kaiConfig *kaiv1.Config) []string {
 		args = append(args, "--queue-label-to-default-metric-value", *config.QueueLabelToDefaultMetricValue)
 	}
 
-	common.AddK8sClientConfigToArgs(config.Service.K8sClientConfig, args)
+	args = common.AddK8sClientConfigToArgs(config.Service.K8sClientConfig, args)
 	return common.AddControllerRuntimeJSONLogArg(kaiConfig.Spec.Global.JSONLog, args)
 }

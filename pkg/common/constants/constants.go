@@ -21,6 +21,7 @@ const (
 	DefaultSchedulerName                  = "kai-scheduler"
 	DefaultKAINamespace                   = "kai-scheduler"
 	DefaultResourceReservationName        = "kai-resource-reservation"
+	GPUReservationPodPrefix               = "gpu-reservation"
 	DefaultScaleAdjustName                = "kai-scale-adjust"
 	DefaultKAIConfigSingeltonInstanceName = "kai-config"
 	DefaultNodePoolLabelKey               = "kai.scheduler/node-pool"
@@ -54,8 +55,10 @@ const (
 	PodGroupAnnotationForPod      = "pod-group-name"
 	SkipPodGrouperAnnotation      = "kai.scheduler/skip-podgrouper"
 	GpuFraction                   = "gpu-fraction"
+	GpuFractionLimit              = GpuFraction + ".limit"
 	GpuFractionContainerName      = "gpu-fraction-container-name"
 	GpuMemory                     = "gpu-memory"
+	GpuMemoryLimit                = GpuMemory + ".limit"
 	ReceivedResourceType          = "received-resource-type"
 	GpuFractionsNumDevices        = "gpu-fraction-num-devices"
 	MpsAnnotation                 = "mps"
@@ -77,6 +80,18 @@ const (
 	MigStrategyLabel         = "nvidia.com/mig.strategy"
 	GpuCountLabel            = "nvidia.com/gpu.count"
 	SubGroupLabelKey         = "kai.scheduler/subgroup-name"
+
+	NvFractionsAnnotationPrefix     = "nvidia.com/container."
+	NvFractionsMemoryRequestSuffix  = ".gpu-memory.request"
+	NvFractionsMemoryLimitSuffix    = ".gpu-memory.limit"
+	NvFractionsVisibleDevicesSuffix = ".gpus.devices"
+	GpuComputeSharingModeSuffix     = ".gpu-compute.mode"
+
+	KaiFractionContainerAnnotationPrefix = "kai.scheduler/container."
+	GpuMemoryPortionLimitSuffix          = ".gpu-memory.portion.limit"
+
+	// gpu-fractioning statuses
+	NvFractionNodeReadyConditionType = "gpu-fractioning.nvidia.com/Ready"
 )
 
 // QueueValidatedVersions returns the list of queue versions that we validate with a webhook. This will be used by the

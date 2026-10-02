@@ -18,6 +18,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/minmember"
 )
 
 const (
@@ -113,15 +114,12 @@ func computePodGroupMinSubGroup(jobSet *unstructured.Unstructured, replicatedJob
 	numReplicatedJobs := int32(len(replicatedJobs))
 
 	if override, ok := jobSet.GetAnnotations()[constants.MinMemberOverrideKey]; ok {
-		userSetMinSubGroup, err := strconv.ParseInt(override, 10, 32)
+		userSetMinSubGroup, err := minmember.Parse(override, "JobSet")
 		if err != nil {
-			return 0, fmt.Errorf("invalid %s annotation on JobSet: %w", constants.MinMemberOverrideKey, err)
+			return 0, err
 		}
-		if userSetMinSubGroup < 1 {
-			return 0, fmt.Errorf("invalid %s annotation on JobSet: value %d must be >= 1", constants.MinMemberOverrideKey, userSetMinSubGroup)
-		}
-		if int32(userSetMinSubGroup) < numReplicatedJobs {
-			return int32(userSetMinSubGroup), nil
+		if userSetMinSubGroup < numReplicatedJobs {
+			return userSetMinSubGroup, nil
 		}
 		return numReplicatedJobs, nil
 	}
@@ -218,14 +216,11 @@ func singleReplicaSubGroupMinMember(rj map[string]any) (int32, error) {
 		return parallelism, nil
 	}
 
-	userSetMinMember, err := strconv.ParseInt(singleReplicaUserSetMinMember, 10, 32)
+	userSetMinMember, err := minmember.Parse(singleReplicaUserSetMinMember, "replicatedJob template")
 	if err != nil {
-		return 0, fmt.Errorf("invalid %s annotation on replicatedJob template: %w", constants.MinMemberOverrideKey, err)
+		return 0, err
 	}
-	if userSetMinMember < 1 {
-		return 0, fmt.Errorf("invalid %s annotation on replicatedJob template: value %d must be >= 1", constants.MinMemberOverrideKey, userSetMinMember)
-	}
-	if int32(userSetMinMember) > parallelism {
+	if userSetMinMember > parallelism {
 		log.FromContext(context.Background()).Info(
 			"min-member annotation exceeds parallelism; applying user value",
 			"annotation", constants.MinMemberOverrideKey,
@@ -233,7 +228,7 @@ func singleReplicaSubGroupMinMember(rj map[string]any) (int32, error) {
 			"parallelism", parallelism,
 		)
 	}
-	return int32(userSetMinMember), nil
+	return userSetMinMember, nil
 }
 
 func readReplicatedJobTemplateAnnotation(rj map[string]any, key string) (string, error) {

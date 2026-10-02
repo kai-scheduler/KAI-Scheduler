@@ -33,6 +33,27 @@ tests:
         template: rbac/scc.yaml
         documentIndex: 2
 
+  - it: should grant the post-delete cleanup ServiceAccount access to the SCC
+    release:
+      namespace: custom-ns
+    set:
+      openshift: true
+      postCleanup.serviceAccountName: custom-cleanup-sa
+    asserts:
+      - contains:
+          path: users
+          content: system:serviceaccount:custom-ns:custom-cleanup-sa
+        template: rbac/scc.yaml
+        documentIndex: 0
+      - contains:
+          path: subjects
+          content:
+            kind: ServiceAccount
+            name: custom-cleanup-sa
+            namespace: custom-ns
+        template: rbac/scc.yaml
+        documentIndex: 2
+
   - it: should use the default securityContext in hook pods by default
     asserts:
       - notExists:

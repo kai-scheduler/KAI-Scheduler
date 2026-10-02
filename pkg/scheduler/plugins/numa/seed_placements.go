@@ -36,7 +36,7 @@ func (pp *numaPlugin) seedPlacements(ssn *framework.Session) {
 				continue
 			}
 			node := ssn.ClusterInfo.Nodes[task.NodeName]
-			if node == nil || !pp.shouldHandle(task, node.NumaTopology) {
+			if node == nil || !pp.shouldScore(task, node.NumaTopology) {
 				continue
 			}
 			record := resolvePlacementRecord(task.Pod, bindRequestZones(ssn, task.Pod))

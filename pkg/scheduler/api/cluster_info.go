@@ -37,6 +37,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/storageclaim_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/storageclass_info"
 	resourceapi "k8s.io/api/resource/v1"
+	"k8s.io/dynamic-resource-allocation/deviceclass/extendedresourcecache"
 )
 
 // ClusterInfo is a snapshot of cluster by cache.
@@ -64,6 +65,10 @@ type ClusterInfo struct {
 
 	// Shared resource vector index map for this scheduling cycle
 	ResourceVectorMap *resource_info.ResourceVectorMap
+
+	// DeviceClassByResource resolves an extended resource name to the DeviceClass that backs it.
+	// Built each scheduling session from the DeviceClasses snapshot.
+	DeviceClassByResource *extendedresourcecache.ExtendedResourceCache
 }
 
 func NewClusterInfo() *ClusterInfo {

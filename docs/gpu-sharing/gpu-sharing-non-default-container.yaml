@@ -15,15 +15,25 @@ metadata:
     gpu-fraction-container-name: "gpu-workload"
 spec:
   schedulerName: kai-scheduler
+  automountServiceAccountToken: false
   containers:
     - name: sidecar
       image: busybox
       args: ["sleep", "infinity"]
+      resources:
+        limits:
+          memory: 128Mi
     - name: gpu-workload
       image: nvidia/cuda:13.0.2-base-ubi8
       command: ["nvidia-smi"]
       args: ["-L"]
+      resources:
+        limits:
+          memory: 1Gi
     - name: another-sidecar
       image: busybox
       args: ["sleep", "infinity"]
+      resources:
+        limits:
+          memory: 128Mi
 

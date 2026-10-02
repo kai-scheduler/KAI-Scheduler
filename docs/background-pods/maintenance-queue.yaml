@@ -1,0 +1,26 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# Queue for background workloads.
+# Quota 0 with over-quota weight 0 gives it a fair share of zero, so it never
+# claims capacity from any user queue. Limit -1 leaves it unbounded, so
+# background pods are still placed while the cluster has room.
+
+apiVersion: scheduling.run.ai/v2
+kind: Queue
+metadata:
+  name: maintenance
+spec:
+  resources:
+    gpu:
+      quota: 0
+      overQuotaWeight: 0
+      limit: -1
+    cpu:
+      quota: 0
+      overQuotaWeight: 0
+      limit: -1
+    memory:
+      quota: 0
+      overQuotaWeight: 0
+      limit: -1

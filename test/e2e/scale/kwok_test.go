@@ -5,6 +5,8 @@ package scale
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -17,6 +19,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
@@ -133,13 +136,25 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 
 			clusterTopology kaiv1alpha1.Topology
 
+			topologyConfig topologyScaleConfig
 			topologyLevels []topology.TopologyLevel
-			nodesPerDomain = 2
+			nodesPerDomain int
 			totalNodes     int
 			topologyName   string
 		)
 		BeforeAll(func(ctx context.Context) {
 			crd.SkipIfCrdIsNotInstalled(ctx, testCtx.KubeConfig, "topologies.kai.scheduler", "v1alpha1")
+			var err error
+			totalNodes, err = topologyNodeCount(numberOfNodes)
+			Expect(err).NotTo(HaveOccurred())
+			topologyConfig, err = topologyConfigForNodeCount(totalNodes)
+			Expect(err).NotTo(HaveOccurred())
+			topologyLevels = topologyConfig.levels()
+			nodesPerDomain = topologyConfig.nodesPerRack
+			GinkgoLogr.Info("Configuring topology scale",
+				"requestedNodeCount", numberOfNodes,
+				"topologyNodeCount", totalNodes,
+			)
 
 			updateFakeGPUOperatorGPUsPerNode(ctx, testCtx)
 
@@ -153,43 +168,13 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 				Expect(testCtx.ControllerClient.Patch(ctx, &nodePool, runtimeClient.MergeFrom(baseNodePool))).To(Succeed(), "Failed to scale node pool to 0", "nodePool", nodePool.Name)
 			}
 
-			topologyLevels = []topology.TopologyLevel{
-				{
-					Name:      "cloud.provider.com/topology-zone",
-					Count:     4,
-					ShortName: "zone",
-				},
-				{
-					Name:      "cloud.provider.com/topology-block",
-					Count:     8,
-					ShortName: "block",
-				},
-				{
-					Name:      "cloud.provider.com/topology-rack",
-					Count:     8,
-					ShortName: "rack",
-				},
-			}
-			totalNodes = nodesPerDomain
-			for _, level := range topologyLevels {
-				totalNodes *= level.Count
-			}
-
 			topologyName = "e2e-topology-tree"
 			clusterTopology = topology.GenerateTopology(topologyLevels, topologyName)
 			Expect(testCtx.ControllerClient.Create(ctx, &clusterTopology)).To(Succeed())
 
 			topologyNodePools = topology.GenerateNodePools(topologyLevels, nodesPerDomain, map[string]string{"test": "topology-e2e"})
-			var wg sync.WaitGroup
-			for _, nodePool := range topologyNodePools {
-				wg.Add(1)
-				go func(nodePool kwok.NodePool) {
-					defer wg.Done()
-					defer GinkgoRecover()
-					Expect(testCtx.ControllerClient.Create(ctx, &nodePool)).To(Succeed(), "Failed to create topology node pool", "nodePool", nodePool.Name)
-				}(nodePool)
-			}
-			wg.Wait()
+			Expect(topologyNodePools).To(HaveLen(topologyConfig.nodePoolCount()))
+			Expect(createTopologyNodePools(ctx, testCtx, topologyNodePools)).To(Succeed())
 
 			startTime := time.Now()
 			wait.ForExactlyNKWOKOperatorNodePools(ctx, testCtx.ControllerClient, map[string]string{"test": "topology-e2e"}, len(topologyNodePools))
@@ -197,7 +182,7 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 			GinkgoLogr.Info("Time to create and wait for topology node pools", "duration", duration)
 
 			startTime = time.Now()
-			wait.ForAtLeastNNodes(ctx, testCtx.ControllerClient, map[string]string{"test": "topology-e2e"}, len(topologyNodePools))
+			wait.ForAtLeastNNodes(ctx, testCtx.ControllerClient, map[string]string{"test": "topology-e2e"}, totalNodes)
 			duration = time.Since(startTime)
 			GinkgoLogr.Info("Time to wait for topology nodes to be ready", "duration", duration)
 
@@ -215,14 +200,17 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 				To(Succeed(), "Failed to delete topology node pools")
 
 			wait.ForExactlyNKWOKOperatorNodePools(ctx, testCtx.ControllerClient, map[string]string{"test": "topology-e2e"}, 0)
+			wait.ForZeroKWOKNodes(ctx, testCtx.ControllerClient)
 
+			originalNodeCount := 0
 			for _, nodePool := range originalNodePools {
+				originalNodeCount += int(nodePool.Spec.NodeCount)
 				baseNodePool := nodePool.DeepCopy()
 				baseNodePool.Spec.NodeCount = 0
 				Expect(testCtx.ControllerClient.Patch(ctx, &nodePool, runtimeClient.MergeFrom(baseNodePool))).To(Succeed(), "Failed to restore node pool", "nodePool", nodePool.Name)
 				wait.ForKWOKOperatorNodePool(ctx, testCtx.ControllerClient, nodePool.Name)
 			}
-			wait.ForZeroKWOKNodes(ctx, testCtx.ControllerClient) // Wait until all kwok nodes are deleted
+			wait.ForAtLeastNNodes(ctx, testCtx.ControllerClient, map[string]string{"type": "kwok"}, originalNodeCount)
 		})
 
 		AfterEach(func(ctx context.Context) {
@@ -234,7 +222,7 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 
 		It("Allocate single distributed job with preferred topology", func(ctx context.Context) {
 			distributedJobsScaleTestInternal(ctx, testCtx, sanityTestQueue,
-				1, totalNodes, 2, "Allocate with preferred topology", totalNodes,
+				1, legacyTopologyWorkloadPods, 2, "Allocate with preferred topology", totalNodes,
 				&v2alpha2.TopologyConstraint{
 					PreferredTopologyLevel: topologyLevels[2].Name,
 					Topology:               topologyName,
@@ -243,8 +231,54 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 
 		It("Allocate single distributed job without preferred topology", func(ctx context.Context) {
 			distributedJobsScaleTestInternal(ctx, testCtx, sanityTestQueue,
-				1, totalNodes, 2, "Allocate without preferred topology", totalNodes,
+				1, legacyTopologyWorkloadPods, 2, "Allocate without preferred topology", totalNodes,
 				nil)
+		})
+
+		Context("Workload scale scenarios", Ordered, func() {
+			var topologyReclaimQueue *v2.Queue
+
+			BeforeAll(func(ctx context.Context) {
+				Expect(patchQueueGPU(ctx, testCtx, sanityTestQueue, v2.QueueResource{
+					Quota: 0, OverQuotaWeight: 1, Limit: -1,
+				})).To(Succeed())
+
+				topologyReclaimQueue = queue.CreateQueueObject(
+					"topology-reclaim-"+utils.GenerateRandomK8sName(10), parentQueue.Name)
+				topologyReclaimQueue.Spec.Resources.GPU.Quota = float64(totalNodes * gpusPerNode / 2)
+				testCtx.AddQueues(ctx, []*v2.Queue{topologyReclaimQueue})
+			})
+
+			AfterAll(func(ctx context.Context) {
+				if CurrentSpecReport().Failed() {
+					return
+				}
+				Expect(patchQueueGPU(ctx, testCtx, sanityTestQueue, v2.QueueResource{
+					Quota: -1, OverQuotaWeight: 1, Limit: -1,
+				})).To(Succeed())
+			})
+
+			AfterEach(func(ctx context.Context) {
+				if CurrentSpecReport().Failed() {
+					return
+				}
+				cleanupTestQueue(ctx, testCtx, topologyReclaimQueue)
+			})
+
+			It("workload scale scenario: disaggregated inference allocation and reclaim", func(ctx context.Context) {
+				victimBatchLabels := disaggregatedInferenceAllocate(
+					ctx, testCtx, sanityTestQueue, totalNodes, topologyName)
+				disaggregatedInferenceReclaim(
+					ctx, testCtx, sanityTestQueue, topologyReclaimQueue,
+					totalNodes, topologyName, victimBatchLabels)
+			}, SpecTimeout(maxFlowTimeoutMinutes*time.Minute))
+
+			It("workload scale scenario: zone-constrained hero job reclaim", func(ctx context.Context) {
+				fillClusterWithJobs(ctx, testCtx, sanityTestQueue, true, totalNodes, SingleGPURequirement)
+				heroJobReclaim(
+					ctx, testCtx, sanityTestQueue, topologyReclaimQueue,
+					topologyConfig.nodesPerZone(), topologyName)
+			}, SpecTimeout(maxFlowTimeoutMinutes*time.Minute))
 		})
 	})
 
@@ -329,18 +363,29 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 			})
 
 			It("schedules jobs with pending tasks in background", func(ctx context.Context) {
+				creationErrors := make(chan error, pendingBackgroundTasks)
 				var wg sync.WaitGroup
 				for range pendingBackgroundTasks {
 					wg.Add(1)
 					go func() {
 						defer wg.Done()
-						createJobObjectForKwok(
+						_, err := createJobObjectForKwok(
 							ctx, testCtx, noGPUQuotaQueue,
 							SingleGPURequirement, map[string]string{},
 						)
+						if err != nil {
+							creationErrors <- err
+						}
 					}()
 				}
 				wg.Wait()
+				close(creationErrors)
+
+				var creationError error
+				for err := range creationErrors {
+					creationError = errors.Join(creationError, err)
+				}
+				Expect(creationError).NotTo(HaveOccurred(), "Failed to create some pending background jobs")
 
 				wait.ForAtLeastNPodCreation(ctx, testCtx.ControllerClient, metav1.LabelSelector{
 					MatchLabels: map[string]string{
@@ -358,12 +403,11 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 
 			Context("Reclaim", func() {
 				BeforeAll(func(ctx context.Context) {
-					sanityTestQueue.Spec.Resources.GPU = v2.QueueResource{
+					Expect(patchQueueGPU(ctx, testCtx, sanityTestQueue, v2.QueueResource{
 						Quota:           0,
 						OverQuotaWeight: 0,
 						Limit:           -1,
-					}
-					Expect(testCtx.ControllerClient.Patch(ctx, sanityTestQueue, runtimeClient.MergeFrom(&v2.Queue{}))).To(Succeed())
+					})).To(Succeed())
 
 					reclaimSingleGPUJobsQueue = queue.CreateQueueObject("reclaim-single-"+utils.GenerateRandomK8sName(10), parentQueue.Name)
 					testCtx.AddQueues(ctx, []*v2.Queue{reclaimSingleGPUJobsQueue})
@@ -376,24 +420,28 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 
 					Context("measure reclaim failure time", func() {
 						BeforeAll(func(ctx context.Context) {
-							Expect(testCtx.ControllerClient.Get(ctx, runtimeClient.ObjectKeyFromObject(sanityTestQueue), sanityTestQueue)).To(Succeed())
-							sanityTestQueue.Spec.Resources.GPU.Quota = float64((numberOfNodes * gpusPerNode) - (defaultPodsPerDistributedJob * gpusPerNode) + 1)
-							Expect(testCtx.ControllerClient.Update(ctx, sanityTestQueue)).To(Succeed())
+							Expect(patchQueueGPU(ctx, testCtx, sanityTestQueue, v2.QueueResource{
+								Quota:           float64((numberOfNodes * gpusPerNode) - (defaultPodsPerDistributedJob * gpusPerNode) + 1),
+								OverQuotaWeight: 0,
+								Limit:           -1,
+							})).To(Succeed())
 						})
 
 						AfterAll(func(ctx context.Context) {
 							if CurrentSpecReport().Failed() {
 								return
 							}
-							Expect(testCtx.ControllerClient.Get(ctx, runtimeClient.ObjectKeyFromObject(sanityTestQueue), sanityTestQueue)).To(Succeed())
-							sanityTestQueue.Spec.Resources.GPU.Quota = 0
-							Expect(testCtx.ControllerClient.Update(ctx, sanityTestQueue)).To(Succeed())
+							Expect(patchQueueGPU(ctx, testCtx, sanityTestQueue, v2.QueueResource{
+								Quota:           0,
+								OverQuotaWeight: 0,
+								Limit:           -1,
+							})).To(Succeed())
 						})
 
 						It("measure time for reclaim to fail on distributed job last pod", func(ctx context.Context) {
 							averageTimeToUnschedulable := measureUnschedulableDelayInSeconds(
 								ctx, testCtx, reclaimSingleGPUJobsQueue,
-								func(ctx context.Context, testCtx *testcontext.TestContext, queue *v2.Queue) (*v2alpha2.PodGroup, []*v1.Pod, error) {
+								func(ctx context.Context, testCtx *testcontext.TestContext, queue *v2.Queue) (*rd.JobResult, error) {
 									return createDistributedJobForKwok(
 										ctx, testCtx, queue,
 										v1.ResourceRequirements{
@@ -539,8 +587,88 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 				// })
 			})
 		})
+
+		Context("Workload scale scenarios", Ordered, func() {
+			var elasticVictimQueue, elasticReclaimQueue *v2.Queue
+
+			BeforeAll(func(ctx context.Context) {
+				_, reclaimerPods, err := splitClusterForElasticReclaim(numberOfNodes)
+				Expect(err).NotTo(HaveOccurred())
+
+				elasticVictimQueue = queue.CreateQueueObject(
+					"elastic-victim-"+utils.GenerateRandomK8sName(10), parentQueue.Name)
+				elasticVictimQueue.Spec.Resources.GPU = v2.QueueResource{
+					Quota: 0, OverQuotaWeight: 1, Limit: -1,
+				}
+				elasticReclaimQueue = queue.CreateQueueObject(
+					"elastic-reclaim-"+utils.GenerateRandomK8sName(10), parentQueue.Name)
+				elasticReclaimQueue.Spec.Resources.GPU.Quota = float64(reclaimerPods * gpusPerNode)
+				testCtx.AddQueues(ctx, []*v2.Queue{elasticVictimQueue, elasticReclaimQueue})
+			})
+
+			AfterEach(func(ctx context.Context) {
+				if CurrentSpecReport().Failed() {
+					return
+				}
+				cleanupTestQueue(ctx, testCtx, elasticVictimQueue)
+				cleanupTestQueue(ctx, testCtx, elasticReclaimQueue)
+			})
+
+			It("workload scale scenario: elastic distributed job reclaim", func(ctx context.Context) {
+				elasticJobReclaim(ctx, testCtx, elasticVictimQueue, elasticReclaimQueue, numberOfNodes)
+			}, SpecTimeout(maxFlowTimeoutMinutes*time.Minute))
+		})
 	})
 })
+
+func createTopologyNodePools(
+	ctx context.Context, testCtx *testcontext.TestContext, nodePools []kwok.NodePool,
+) error {
+	if len(nodePools) == 0 {
+		return nil
+	}
+
+	workerCount := min(topologyNodePoolCreateConcurrency, len(nodePools))
+	nodePoolJobs := make(chan kwok.NodePool)
+	var wg sync.WaitGroup
+	var lock sync.Mutex
+	var creationError error
+	for range workerCount {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for nodePool := range nodePoolJobs {
+				if err := testCtx.ControllerClient.Create(ctx, &nodePool); err != nil {
+					lock.Lock()
+					creationError = errors.Join(creationError,
+						fmt.Errorf("create topology node pool %s: %w", nodePool.Name, err))
+					lock.Unlock()
+				}
+			}
+		}()
+	}
+
+	for _, nodePool := range nodePools {
+		nodePoolJobs <- nodePool
+	}
+	close(nodePoolJobs)
+	wg.Wait()
+	return creationError
+}
+
+func patchQueueGPU(ctx context.Context, testCtx *testcontext.TestContext, queue *v2.Queue, gpu v2.QueueResource) error {
+	patch, err := json.Marshal(map[string]interface{}{
+		"spec": map[string]interface{}{
+			"resources": map[string]interface{}{
+				"gpu": gpu,
+			},
+		},
+	})
+	if err != nil {
+		return err
+	}
+	return testCtx.ControllerClient.Patch(ctx, queue, runtimeClient.RawPatch(types.MergePatchType, patch))
+}
 
 func updateFakeGPUOperatorGPUsPerNode(ctx context.Context, testCtx *testcontext.TestContext) {
 	topologyConfig := &v1.ConfigMap{}

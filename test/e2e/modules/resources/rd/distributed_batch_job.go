@@ -49,6 +49,8 @@ type DistributedBatchJobOptions struct {
 	PriorityClassName string
 	// Preemptibility is set as a Job label; the podgrouper reads it onto the PodGroup.
 	Preemptibility v2alpha2.Preemptibility
+	// JobLabels are merged into Job labels.
+	JobLabels map[string]string
 	// ExtraLabels are merged into pod template labels (e.g. for test filtering).
 	ExtraLabels map[string]string
 	// PodSpecMutator is applied to the pod template spec after defaults are set. Scale
@@ -56,34 +58,64 @@ type DistributedBatchJobOptions struct {
 	PodSpecMutator func(*v1.PodSpec)
 }
 
+// JobResult contains a distributed Job and resources created for it.
+type JobResult struct {
+	Job      *batchv1.Job
+	PodGroup *v2alpha2.PodGroup
+	Pods     []*v1.Pod
+}
+
 // CreateDistributedBatchJob submits a batch Job annotated with kai.scheduler/batch-min-member
-// so the podgrouper produces a single PodGroup with MinAvailable=opts.MinMember. Returns the
-// Job, the PodGroup (once the podgrouper has created it), and the pods the Job spawned.
+// so the podgrouper produces a single PodGroup with MinAvailable=opts.MinMember. Returns a
+// JobResult once the podgrouper creates the PodGroup and the Job spawns its pods.
 func CreateDistributedBatchJob(
 	ctx context.Context,
 	kubeClient runtimeClient.Client,
 	jobQueue *v2.Queue,
 	opts DistributedBatchJobOptions,
-) (*batchv1.Job, *v2alpha2.PodGroup, []*v1.Pod, error) {
+) (*JobResult, error) {
+	job, err := SubmitDistributedBatchJob(ctx, kubeClient, jobQueue, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	return waitForDistributedBatchJob(ctx, kubeClient, job)
+}
+
+// SubmitDistributedBatchJob submits a batch Job annotated with kai.scheduler/batch-min-member.
+func SubmitDistributedBatchJob(
+	ctx context.Context,
+	kubeClient runtimeClient.Client,
+	jobQueue *v2.Queue,
+	opts DistributedBatchJobOptions,
+) (*batchv1.Job, error) {
 	parallelism := ptr.Deref(opts.Parallelism, 1)
 	minMember := ptr.Deref(opts.MinMember, parallelism)
 
 	job := buildDistributedBatchJob(jobQueue, opts, parallelism, minMember)
-	if err := kubeClient.Create(ctx, job); err != nil {
-		return nil, nil, nil, fmt.Errorf("create Job: %w", err)
+	if err := CreateObjectWithRetries(ctx, kubeClient, job); err != nil {
+		return nil, fmt.Errorf("create Job: %w", err)
 	}
 
+	return job, nil
+}
+
+func waitForDistributedBatchJob(
+	ctx context.Context,
+	kubeClient runtimeClient.Client,
+	job *batchv1.Job,
+) (*JobResult, error) {
 	podGroup, err := waitForPodGroup(ctx, kubeClient, job)
 	if err != nil {
-		return job, nil, nil, err
+		return &JobResult{Job: job}, err
 	}
 
-	pods, err := waitForJobPods(ctx, kubeClient, job, parallelism)
+	pods, err := waitForJobPods(ctx, kubeClient, job, ptr.Deref(job.Spec.Parallelism, 1))
 	if err != nil {
-		return job, podGroup, nil, err
+		return &JobResult{Job: job, PodGroup: podGroup}, err
 	}
 
-	return job, podGroup, pods, nil
+	return &JobResult{Job: job, PodGroup: podGroup, Pods: pods}, nil
 }
 
 func buildDistributedBatchJob(
@@ -114,6 +146,7 @@ func buildDistributedBatchJob(
 	if opts.Preemptibility != "" {
 		job.Labels[pgconstants.PreemptibilityLabelKey] = string(opts.Preemptibility)
 	}
+	maps.Copy(job.Labels, opts.JobLabels)
 
 	if opts.PriorityClassName != "" {
 		job.Spec.Template.Spec.PriorityClassName = opts.PriorityClassName
@@ -150,7 +183,10 @@ func waitForPodGroup(
 }
 
 func waitForJobPods(
-	ctx context.Context, kubeClient runtimeClient.Client, job *batchv1.Job, expected int32,
+	ctx context.Context,
+	kubeClient runtimeClient.Client,
+	job *batchv1.Job,
+	expected int32,
 ) ([]*v1.Pod, error) {
 	var pods []*v1.Pod
 	err := wait.PollUntilContextTimeout(ctx, podGroupFetchPoll, podGroupFetchTimeout, true,
@@ -163,13 +199,18 @@ func waitForJobPods(
 			if err != nil {
 				return false, err
 			}
-			if int32(len(list.Items)) < expected {
+			livePods := make([]*v1.Pod, 0, len(list.Items))
+			for i := range list.Items {
+				pod := &list.Items[i]
+				if pod.DeletionTimestamp != nil {
+					continue
+				}
+				livePods = append(livePods, pod)
+			}
+			if int32(len(livePods)) < expected {
 				return false, nil
 			}
-			pods = make([]*v1.Pod, 0, len(list.Items))
-			for i := range list.Items {
-				pods = append(pods, &list.Items[i])
-			}
+			pods = livePods
 			return true, nil
 		})
 	if err != nil {

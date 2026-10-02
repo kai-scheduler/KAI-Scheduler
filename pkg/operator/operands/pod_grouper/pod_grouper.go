@@ -36,11 +36,15 @@ func (p *PodGrouper) DesiredState(
 	var objects []client.Object
 	for _, resourceFunc := range []resourceForKAIConfig{
 		p.deploymentForKAIConfig,
+		p.podDisruptionBudgetForKAIConfig,
 		p.serviceAccountForKAIConfig,
 	} {
 		obj, err := resourceFunc(ctx, runtimeClient, kaiConfig)
 		if err != nil {
 			return nil, err
+		}
+		if obj == nil {
+			continue
 		}
 		objects = append(objects, obj)
 	}

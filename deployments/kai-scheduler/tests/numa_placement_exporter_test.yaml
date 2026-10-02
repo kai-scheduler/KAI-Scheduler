@@ -48,3 +48,45 @@ tests:
       - equal:
           path: spec.numaPlacementExporter.tolerations[0].operator
           value: Exists
+
+  - it: should not render global.daemonsetsTolerations when the list is empty
+    asserts:
+      - notExists:
+          path: spec.global.daemonsetsTolerations
+
+  - it: should render global.daemonsetsTolerations onto spec.global
+    set:
+      global.daemonsetsTolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+    asserts:
+      - equal:
+          path: spec.global.daemonsetsTolerations[0].key
+          value: nvidia.com/gpu
+      - equal:
+          path: spec.global.daemonsetsTolerations[0].operator
+          value: Exists
+      - equal:
+          path: spec.global.daemonsetsTolerations[0].effect
+          value: NoSchedule
+
+  - it: should render global.daemonsetsTolerations independently of exporter tolerations
+    set:
+      global.daemonsetsTolerations:
+        - key: dedicated
+          operator: Equal
+          value: gpu
+          effect: NoSchedule
+      numaPlacementExporter.tolerations:
+        - operator: Exists
+    asserts:
+      - equal:
+          path: spec.global.daemonsetsTolerations[0].key
+          value: dedicated
+      - equal:
+          path: spec.global.daemonsetsTolerations[0].value
+          value: gpu
+      - equal:
+          path: spec.numaPlacementExporter.tolerations[0].operator
+          value: Exists

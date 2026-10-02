@@ -15,8 +15,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 )
 
-type staleGangEviction struct {
-}
+type staleGangEviction struct{}
 
 func New() *staleGangEviction {
 	return &staleGangEviction{}
@@ -44,13 +43,19 @@ func handleStaleJob(ssn *framework.Session, job *podgroup_info.PodGroupInfo) {
 		job.StalenessInfo.TimeStamp = &timeNow
 	}
 
-	defaultGracePeriod := ssn.GetGlobalDefaultStalenessGracePeriod()
-	if defaultGracePeriod < 0 { // negative duration means no eviction
+	var gracePeriod time.Duration
+	if job.PodGroup.Spec.StalenessGracePeriod != nil {
+		gracePeriod = job.PodGroup.Spec.StalenessGracePeriod.Duration
+	} else {
+		gracePeriod = ssn.GetGlobalDefaultStalenessGracePeriod()
+	}
+
+	if gracePeriod < 0 { // negative duration means no eviction
 		return
 	}
 
 	timeInStaleStatus := time.Since(*job.StalenessInfo.TimeStamp)
-	if timeInStaleStatus < ssn.GetGlobalDefaultStalenessGracePeriod() {
+	if timeInStaleStatus < gracePeriod {
 		return
 	}
 
@@ -61,8 +66,10 @@ func handleStaleJob(ssn *framework.Session, job *podgroup_info.PodGroupInfo) {
 		if pod_status.IsActiveAllocatedStatus(task.Status) {
 			tasksToEvict = append(tasksToEvict, task)
 		} else {
-			log.InfraLogger.V(6).Infof("Not evicting task: <%v/%v> its status: <%v>",
-				task.Namespace, task.Name, task.Status)
+			log.InfraLogger.V(6).Do(func() {
+				log.InfraLogger.Infof("Not evicting task: <%v/%v> its status: <%v>",
+					task.Namespace, task.Name, task.Status)
+			})
 		}
 	}
 	evictionMetadata := eviction_info.EvictionMetadata{

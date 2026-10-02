@@ -27,6 +27,7 @@ import (
 
 	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
@@ -40,7 +41,13 @@ type Cache interface {
 	WaitForCacheSync(stopCh <-chan struct{})
 	Bind(podInfo *pod_info.PodInfo, hostname string, bindRequestAnnotations map[string]string, predictedNUMAZones []schedulingv1alpha2.NUMAZonePlacement) error
 	Evict(ssnPod *v1.Pod, job *podgroup_info.PodGroupInfo, evictionMetadata eviction_info.EvictionMetadata, message string) error
-	RecordJobStatusEvent(job *podgroup_info.PodGroupInfo) error
+	RecordJobStatusEvent(
+		job *podgroup_info.PodGroupInfo,
+		resolveDetailedFitErrors func(
+			*podgroup_info.PodGroupInfo,
+			*pod_info.PodInfo,
+		) ([]*common_info.TasksFitError, error),
+	) error
 	TaskPipelined(task *pod_info.PodInfo, message string)
 	KubeClient() kubernetes.Interface
 	KubeInformerFactory() informers.SharedInformerFactory

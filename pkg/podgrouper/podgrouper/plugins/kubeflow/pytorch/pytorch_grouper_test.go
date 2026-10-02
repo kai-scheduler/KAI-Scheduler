@@ -8,9 +8,11 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
@@ -388,6 +390,8 @@ func TestGetPodGroupMetadata_Segments_HappyFlow_4Workers_2PerSegment(t *testing.
 
 	workerSubgroup := findSubGroupByName(metadata.SubGroups, strings.ToLower(replicaTypeWorker))
 	assert.NotNil(t, workerSubgroup)
+	assert.Equal(t, int32(0), workerSubgroup.MinAvailable)
+	assert.Equal(t, ptr.To(int32(2)), workerSubgroup.MinSubGroup)
 
 	workerSegment0 := findSubGroupByName(metadata.SubGroups, "worker-0")
 	assert.NotNil(t, workerSegment0)
@@ -467,6 +471,11 @@ func TestGetPodGroupMetadata_Segments_5Workers_2PerSegment(t *testing.T) {
 	masterSubGroup := findSubGroupByName(metadata.SubGroups, strings.ToLower(replicaTypeMaster))
 	assert.NotNil(t, masterSubGroup)
 
+	workerParent := findSubGroupByName(metadata.SubGroups, strings.ToLower(replicaTypeWorker))
+	assert.NotNil(t, workerParent)
+	assert.Equal(t, int32(0), workerParent.MinAvailable)
+	assert.Equal(t, ptr.To(int32(3)), workerParent.MinSubGroup)
+
 	workerSegment0 := findSubGroupByName(metadata.SubGroups, "worker-0")
 	assert.NotNil(t, workerSegment0)
 	assert.Equal(t, 1, len(workerSegment0.PodsReferences))
@@ -500,6 +509,50 @@ func TestGetPodGroupMetadata_Segments_5Workers_2PerSegment(t *testing.T) {
 	assert.NotNil(t, workerSegment2)
 	assert.Equal(t, 1, len(workerSegment2.PodsReferences))
 	assert.Equal(t, "test-job-worker-4", workerSegment2.PodsReferences[0])
+}
+
+func TestGetPodGroupMetadata_Segments_ElasticMinReplicas(t *testing.T) {
+	// 1 master + 8 workers, minReplicas=5, segment size 2 → 4 segments, 2 mandatory
+	pytorchJob := getPytorchJobWithSegments(1, 8, "2")
+	err := unstructured.SetNestedField(pytorchJob.Object, int64(5), "spec", "elasticPolicy", "minReplicas")
+	assert.Nil(t, err)
+	grouper := newTestPyTorchGrouper()
+
+	workerPod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-job-worker-0",
+			Namespace: "test_namespace",
+			Labels: map[string]string{
+				replicaTypeLabel:                      "worker",
+				"training.kubeflow.org/replica-index": "0",
+			},
+			Annotations: map[string]string{
+				"kai.scheduler/segment-size": "2",
+			},
+		},
+	}
+
+	metadata, err := grouper.GetPodGroupMetadata(pytorchJob, workerPod)
+	assert.Nil(t, err)
+	assert.Equal(t, int32(5), metadata.MinAvailable)
+
+	workerParent := findSubGroupByName(metadata.SubGroups, strings.ToLower(replicaTypeWorker))
+	assert.NotNil(t, workerParent)
+	assert.Equal(t, ptr.To(int32(4)), workerParent.MinSubGroup)
+
+	for _, tc := range []struct {
+		name         string
+		minAvailable int32
+	}{
+		{"worker-0", 2},
+		{"worker-1", 2},
+		{"worker-2", 0},
+		{"worker-3", 0},
+	} {
+		sg := findSubGroupByName(metadata.SubGroups, tc.name)
+		assert.NotNil(t, sg, "segment %s not found", tc.name)
+		assert.Equal(t, tc.minAvailable, sg.MinAvailable, "segment %s MinAvailable", tc.name)
+	}
 }
 
 func TestGetPodGroupMetadata_Segments_MalformedAnnotation(t *testing.T) {
@@ -912,4 +965,35 @@ func TestGetPodGroupMetadata_Segments_TopologyFromTemplate(t *testing.T) {
 	assert.NotNil(t, workerSegment0.TopologyConstraints)
 	assert.Equal(t, "cluster-topology", workerSegment0.TopologyConstraints.Topology)
 	assert.Equal(t, "rack", workerSegment0.TopologyConstraints.RequiredTopologyLevel)
+}
+
+// workers=0 with segmentation configured produces no segment children, so the worker
+// subgroup must stay a leaf (MinAvailable set, MinSubGroup nil) to satisfy webhook
+// leaf rules. This path is only reachable when runPolicy.schedulingPolicy.minAvailable
+// is set (bypassing the calcJobNumOfPods zero-check).
+func TestGetPodGroupMetadata_Segments_ZeroWorkersFallsBackToLeaf(t *testing.T) {
+	pytorchJob := getPytorchJobWithSegments(1, 0, "2")
+	require.NoError(t,
+		unstructured.SetNestedField(pytorchJob.Object, int64(1), "spec", "runPolicy", "schedulingPolicy", "minAvailable"))
+	grouper := newTestPyTorchGrouper()
+
+	masterPod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-job-master-0",
+			Namespace: "test_namespace",
+			Labels: map[string]string{
+				replicaTypeLabel:                      "master",
+				"training.kubeflow.org/replica-index": "0",
+			},
+			Annotations: map[string]string{
+				"kai.scheduler/segment-size": "2",
+			},
+		},
+	}
+	metadata, err := grouper.GetPodGroupMetadata(pytorchJob, masterPod)
+	require.NoError(t, err)
+
+	workerSubgroup := findSubGroupByName(metadata.SubGroups, strings.ToLower(replicaTypeWorker))
+	require.NotNil(t, workerSubgroup)
+	assert.Nil(t, workerSubgroup.MinSubGroup, "workers=0 must not turn the leaf worker subgroup into a parent")
 }

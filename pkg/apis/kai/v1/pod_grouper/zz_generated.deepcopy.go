@@ -21,6 +21,16 @@ func (in *Args) DeepCopyInto(out *Args) {
 		*out = new(bool)
 		**out = **in
 	}
+	if in.GangScheduleDeployment != nil {
+		in, out := &in.GangScheduleDeployment, &out.GangScheduleDeployment
+		*out = new(bool)
+		**out = **in
+	}
+	if in.GenericKartaFallback != nil {
+		in, out := &in.GenericKartaFallback, &out.GenericKartaFallback
+		*out = new(bool)
+		**out = **in
+	}
 	if in.DefaultPrioritiesConfigMapName != nil {
 		in, out := &in.DefaultPrioritiesConfigMapName, &out.DefaultPrioritiesConfigMapName
 		*out = new(string)

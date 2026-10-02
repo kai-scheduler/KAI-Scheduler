@@ -4,9 +4,6 @@
 package podaffinity
 
 import (
-	ksf "k8s.io/kube-scheduler/framework"
-	k8sframework "k8s.io/kubernetes/pkg/scheduler/framework"
-
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
@@ -50,13 +47,8 @@ func (pp *podAffinityPlugin) OnSessionOpen(ssn *framework.Session) {
 }
 
 func (pp *podAffinityPlugin) nodePreOrderFn(k8sPlugins *k8s_internal.SessionScoreFns) api.NodePreOrderFn {
-	return func(task *pod_info.PodInfo, fittingNodes []*node_info.NodeInfo) error {
-		var nodes []ksf.NodeInfo
-		for range fittingNodes {
-			nodes = append(nodes, &k8sframework.NodeInfo{})
-		}
-
-		status := k8sPlugins.PrePodAffinity(task.Pod, nodes)
+	return func(task *pod_info.PodInfo, _ []*node_info.NodeInfo) error {
+		status := k8sPlugins.PrePodAffinity(task.Pod, nil)
 		if status.IsSkip() {
 			pp.skipOrderFn.add(task.UID)
 		}
@@ -74,9 +66,11 @@ func (pp *podAffinityPlugin) nodeOrderFn(k8sPlugins *k8s_internal.SessionScoreFn
 		k8sNodeInfo := node.PodAffinityInfo.(*cluster_info.K8sNodePodAffinityInfo).NodeInfo
 		score, reasons, err := k8sPlugins.PodAffinity(task.Pod, k8sNodeInfo)
 		if err != nil {
-			log.InfraLogger.V(6).Infof(
-				"Pod Affinity plugin failed to score on Task <%s/%s> on Node <%s>: reasons %v, err %v",
-				task.Namespace, task.Name, node.Name, reasons, err)
+			log.InfraLogger.V(6).Do(func() {
+				log.InfraLogger.Infof(
+					"Pod Affinity plugin failed to score on Task <%s/%s> on Node <%s>: reasons %v, err %v",
+					task.Namespace, task.Name, node.Name, reasons, err)
+			})
 			return 0, err
 		}
 		return scores.K8sPlugins * float64(score), nil

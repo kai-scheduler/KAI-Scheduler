@@ -185,7 +185,8 @@ func newPortfolioTestByNodeScenario(
 ) *scenario.ByNodeScenario {
 	t.Helper()
 
-	pendingTasks := podgroup_info.GetTasksToAllocate(pendingJob, ssn.SubGroupOrderFn, ssn.TaskOrderFn, false)
+	pendingTasks := podgroup_info.GetTasksToAllocate(pendingJob, ssn.SubGroupOrderFn, ssn.TaskOrderFn,
+		podgroup_info.SimulatedTaskAllocation)
 	return scenario.NewByNodeScenario(ssn, pendingJob, pendingTasks, nil, nil)
 }
 

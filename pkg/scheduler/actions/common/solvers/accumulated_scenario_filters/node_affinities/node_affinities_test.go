@@ -154,6 +154,19 @@ func podWithNodeAffinityMatchFields(uid, name, jobID, targetNodeName string) *po
 	}, resource_info.NewResourceVectorMap())
 }
 
+func podWithMixedNodeAffinityMatchFields(uid, name, jobID, targetNodeName, labelKey, labelValue string) *pod_info.PodInfo {
+	pod := podWithNodeAffinityMatchFields(uid, name, jobID, targetNodeName)
+	pod.Pod.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms = append(
+		pod.Pod.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms,
+		v1.NodeSelectorTerm{MatchExpressions: []v1.NodeSelectorRequirement{{
+			Key:      labelKey,
+			Operator: v1.NodeSelectorOpIn,
+			Values:   []string{labelValue},
+		}}},
+	)
+	return pod
+}
+
 func podWithPreferredNodeAffinityOnly(uid, name, jobID, labelKey, labelValue string, weight int32) *pod_info.PodInfo {
 	return pod_info.NewTaskInfo(&v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -372,6 +385,20 @@ func TestNodeAffinitiesFilter_Filter(t *testing.T) {
 			wantFilterResult: false,
 		},
 		{
+			name: "mixed MatchFields and label terms require a feasible match",
+			allNodes: map[string]*node_info.NodeInfo{
+				"node-a100": newNodeInfo(newNode("node-a100", map[string]string{"gpu-type": "A100"})),
+				"node-v100": newNodeInfo(newNode("node-v100", map[string]string{"gpu-type": "V100"})),
+			},
+			feasibleNodes: map[string]*node_info.NodeInfo{
+				"node-v100": newNodeInfo(newNode("node-v100", map[string]string{"gpu-type": "V100"})),
+			},
+			pendingTasks: []*pod_info.PodInfo{
+				podWithMixedNodeAffinityMatchFields("uid-1", "pod-1", "job-1", "missing-node", "gpu-type", "A100"),
+			},
+			wantFilterResult: false,
+		},
+		{
 			name: "victim on non-matching node does not satisfy affinity - filter fails",
 			allNodes: map[string]*node_info.NodeInfo{
 				"node-a100": newNodeInfo(newNode("node-a100", map[string]string{"gpu-type": "A100"})),
@@ -429,4 +456,23 @@ func TestNodeAffinitiesFilter_Filter(t *testing.T) {
 			assert.Equal(t, tt.wantFilterResult, got)
 		})
 	}
+}
+
+func TestNodeAffinitiesFilterCachesEquivalentConstraints(t *testing.T) {
+	node := newNodeInfo(newNode("node-a100", map[string]string{"gpu-type": "A100"}))
+	nodes := map[string]*node_info.NodeInfo{"node-a100": node}
+	pendingTasks := []*pod_info.PodInfo{
+		podWithNodeSelector("uid-1", "pod-1", "job-1", map[string]string{"gpu-type": "A100"}),
+		podWithNodeSelector("uid-2", "pod-2", "job-1", map[string]string{"gpu-type": "A100"}),
+	}
+	pendingPG := podgroup_info.NewPodGroupInfo("job-1", pendingTasks...)
+	ssn := newTestSession(t, nodes, map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{"job-1": pendingPG})
+	sn := scenario.NewByNodeScenario(ssn, nil, pendingTasks, nil, nil)
+	filter := NewNodeAffinitiesFilter(sn, nodes, ssn)
+
+	passed, err := filter.Filter(sn)
+
+	assert.NoError(t, err)
+	assert.True(t, passed)
+	assert.Len(t, filter.matchingNodes, 1)
 }

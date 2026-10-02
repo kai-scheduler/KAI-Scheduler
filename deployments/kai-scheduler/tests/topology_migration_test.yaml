@@ -1,0 +1,23 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+suite: test topology-migration hook configuration
+templates:
+  - hooks/pre/topology-migration/job.yaml
+tests:
+  - it: should run the migrate-topologies subcommand without a script volume
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].args
+          value: ["migrate-topologies"]
+      - notExists:
+          path: spec.template.spec.volumes
+      - notExists:
+          path: spec.template.spec.containers[0].volumeMounts
+
+  - it: should not render when topologyMigration is disabled
+    set:
+      topologyMigration.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0

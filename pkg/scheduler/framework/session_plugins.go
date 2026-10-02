@@ -68,6 +68,22 @@ func (ssn *Session) AddJobOrderFn(jof common_info.CompareFn) {
 	ssn.JobOrderFns = append(ssn.JobOrderFns, jof)
 }
 
+// AddVictimOrderFn registers a comparator used only to rank candidate
+// eviction victims, without affecting pending-job allocation order.
+//
+// The registered JobOrderFns chain is always checked first (inverted,
+// matching existing allocation-order semantics); comparators registered
+// here apply only as a tiebreak, when every JobOrderFn treats l and r as
+// equal. This ensures job-level protections (e.g. elastic at-min/above-min
+// status) take precedence over any victim-specific comparator.
+//
+// Sign convention: vof(l, r) < 0 means l should be evicted before r. This
+// is the direct, non-inverted sense -- unlike the JobOrderFn chain, which
+// VictimOrderFn inverts internally when using it for the eviction path.
+func (ssn *Session) AddVictimOrderFn(vof common_info.CompareFn) {
+	ssn.VictimOrderFns = append(ssn.VictimOrderFns, vof)
+}
+
 func (ssn *Session) AddTaskOrderFn(tof common_info.CompareFn) {
 	ssn.TaskOrderFns = append(ssn.TaskOrderFns, tof)
 }
@@ -268,21 +284,42 @@ func (ssn *Session) QueueAllocatedResources(queue *queue_info.QueueInfo) *resour
 	return nil
 }
 
+func jobOrderCreationFallback(l, r interface{}) bool {
+	lv := l.(*podgroup_info.PodGroupInfo)
+	rv := r.(*podgroup_info.PodGroupInfo)
+	if lv.CreationTimestamp.Equal(&rv.CreationTimestamp) {
+		return lv.UID < rv.UID
+	}
+	return lv.CreationTimestamp.Before(&rv.CreationTimestamp)
+}
+
 func (ssn *Session) JobOrderFn(l, r interface{}) bool {
 	for _, jof := range ssn.JobOrderFns {
 		if j := jof(l, r); j != 0 {
 			return j < 0
 		}
 	}
+	return jobOrderCreationFallback(l, r)
+}
 
-	// If no job order funcs, order job by CreationTimestamp first, then by UID.
-	lv := l.(*podgroup_info.PodGroupInfo)
-	rv := r.(*podgroup_info.PodGroupInfo)
-	if lv.CreationTimestamp.Equal(&rv.CreationTimestamp) {
-		return lv.UID < rv.UID
-	} else {
-		return lv.CreationTimestamp.Before(&rv.CreationTimestamp)
+// VictimOrderFn reports whether l should be evicted before r.
+//
+// The JobOrderFns chain is consulted first, inverted; VictimOrderFns
+// registered via AddVictimOrderFn apply only when every JobOrderFn treats
+// l and r as equal. With no VictimOrderFns registered, this reduces to
+// the original !JobOrderFn(l, r) behavior.
+func (ssn *Session) VictimOrderFn(l, r interface{}) bool {
+	for _, jof := range ssn.JobOrderFns {
+		if j := jof(l, r); j != 0 {
+			return j > 0
+		}
 	}
+	for _, vof := range ssn.VictimOrderFns {
+		if v := vof(l, r); v != 0 {
+			return v < 0
+		}
+	}
+	return !jobOrderCreationFallback(l, r)
 }
 
 func (ssn *Session) TaskOrderFn(l, r interface{}) bool {
@@ -381,8 +418,10 @@ func (ssn *Session) SubsetNodesFn(
 ) ([]node_info.NodeSet, error) {
 	nodeSets := []node_info.NodeSet{initNodeSet}
 	for _, subsetNodesFn := range ssn.SubsetNodesFns {
-		log.InfraLogger.V(7).Infof(
-			"Running plugin func <%v> on podGroup <%s/%s>", subsetNodesFn, podGroup.Namespace, podGroup.Namespace)
+		log.InfraLogger.V(7).Do(func() {
+			log.InfraLogger.Infof(
+				"Running plugin func <%v> on podGroup <%s/%s>", subsetNodesFn, podGroup.Namespace, podGroup.Namespace)
+		})
 		var newNodeSets []node_info.NodeSet
 		for _, nodeSet := range nodeSets {
 			nodeSubsets, err := subsetNodesFn(podGroup, subGroupInfo, podSets, tasks, nodeSet)
@@ -408,7 +447,7 @@ func logNodeSetsPluginResult(subsetNodesFn api.SubsetNodesFn, podGroup *podgroup
 			}
 			nodeSetNames = append(nodeSetNames, names)
 		}
-		log.InfraLogger.V(7).Infof(
+		log.InfraLogger.Infof(
 			"Result of plugin func <%v> on podGroup <%s/%s> is %v", subsetNodesFn, podGroup.Namespace, podGroup.Namespace,
 			nodeSetNames)
 	})
@@ -418,8 +457,10 @@ func (ssn *Session) PrePredicateFn(task *pod_info.PodInfo, job *podgroup_info.Po
 	for _, prePredicate := range ssn.PrePredicateFns {
 		err := prePredicate(task, job)
 		if err != nil {
-			log.InfraLogger.V(6).Infof(
-				"Failed to run Pre-Predicate on task %s", task.Name)
+			log.InfraLogger.V(6).Do(func() {
+				log.InfraLogger.Infof(
+					"Failed to run Pre-Predicate on task %s", task.Name)
+			})
 			return err
 		}
 	}
@@ -442,8 +483,10 @@ func (ssn *Session) PredicateFn(task *pod_info.PodInfo, job *podgroup_info.PodGr
 	for _, pfn := range ssn.PredicateFns {
 		err := pfn(task, job, node)
 		if err != nil {
-			log.InfraLogger.V(6).Infof(
-				"Failed to run Predicate on task %s", task.Name)
+			log.InfraLogger.V(6).Do(func() {
+				log.InfraLogger.Infof(
+					"Failed to run Predicate on task %s", task.Name)
+			})
 			return err
 		}
 	}

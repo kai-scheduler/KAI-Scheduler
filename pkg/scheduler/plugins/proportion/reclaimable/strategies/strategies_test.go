@@ -965,4 +965,115 @@ var _ = Describe("Reclaim strategies", func() {
 			})
 		}
 	})
+
+	Context("In Quota Queue Priority Strategy", func() {
+		tests := map[string]struct {
+			reclaimerResources resource_info.ResourceVector
+			reclaimerQueue     *rs.QueueAttributes
+			reclaimeeQueue     *rs.QueueAttributes
+			expected           bool
+		}{
+			"Reclaimer has higher priority and fits its own deserved quota": {
+				reclaimerResources: resource_info.NewResource(0, 0, 1).ToVector(testVectorMap),
+				reclaimerQueue: &rs.QueueAttributes{
+					Name:     "p1",
+					Priority: 1,
+					QueueResourceShare: rs.QueueResourceShare{
+						GPU: rs.ResourceShare{Deserved: 5, Allocated: 2},
+					},
+				},
+				reclaimeeQueue: &rs.QueueAttributes{
+					Name:     "p2",
+					Priority: 0,
+					QueueResourceShare: rs.QueueResourceShare{
+						GPU: rs.ResourceShare{Deserved: 5, Allocated: 1},
+					},
+				},
+				expected: true,
+			},
+			"Reclaimer and reclaimee have equal priority": {
+				reclaimerResources: resource_info.NewResource(0, 0, 1).ToVector(testVectorMap),
+				reclaimerQueue: &rs.QueueAttributes{
+					Name:     "p1",
+					Priority: 0,
+					QueueResourceShare: rs.QueueResourceShare{
+						GPU: rs.ResourceShare{Deserved: 5, Allocated: 2},
+					},
+				},
+				reclaimeeQueue: &rs.QueueAttributes{
+					Name:     "p2",
+					Priority: 0,
+					QueueResourceShare: rs.QueueResourceShare{
+						GPU: rs.ResourceShare{Deserved: 5, Allocated: 1},
+					},
+				},
+				expected: false,
+			},
+			"Reclaimer has lower priority than reclaimee": {
+				reclaimerResources: resource_info.NewResource(0, 0, 1).ToVector(testVectorMap),
+				reclaimerQueue: &rs.QueueAttributes{
+					Name:     "p1",
+					Priority: 0,
+					QueueResourceShare: rs.QueueResourceShare{
+						GPU: rs.ResourceShare{Deserved: 5, Allocated: 2},
+					},
+				},
+				reclaimeeQueue: &rs.QueueAttributes{
+					Name:     "p2",
+					Priority: 1,
+					QueueResourceShare: rs.QueueResourceShare{
+						GPU: rs.ResourceShare{Deserved: 5, Allocated: 1},
+					},
+				},
+				expected: false,
+			},
+			"Reclaimer has higher priority but would go over its own deserved quota": {
+				reclaimerResources: resource_info.NewResource(0, 0, 1).ToVector(testVectorMap),
+				reclaimerQueue: &rs.QueueAttributes{
+					Name:     "p1",
+					Priority: 1,
+					QueueResourceShare: rs.QueueResourceShare{
+						GPU: rs.ResourceShare{Deserved: 2, Allocated: 2},
+					},
+				},
+				reclaimeeQueue: &rs.QueueAttributes{
+					Name:     "p2",
+					Priority: 0,
+					QueueResourceShare: rs.QueueResourceShare{
+						GPU: rs.ResourceShare{Deserved: 5, Allocated: 1},
+					},
+				},
+				expected: false,
+			},
+			"Reclaimer has higher priority and reaches exactly its own deserved quota": {
+				reclaimerResources: resource_info.NewResource(0, 0, 1).ToVector(testVectorMap),
+				reclaimerQueue: &rs.QueueAttributes{
+					Name:     "p1",
+					Priority: 1,
+					QueueResourceShare: rs.QueueResourceShare{
+						GPU: rs.ResourceShare{Deserved: 3, Allocated: 2},
+					},
+				},
+				reclaimeeQueue: &rs.QueueAttributes{
+					Name:     "p2",
+					Priority: 0,
+					QueueResourceShare: rs.QueueResourceShare{
+						GPU: rs.ResourceShare{Deserved: 5, Allocated: 1},
+					},
+				},
+				expected: true,
+			},
+		}
+
+		strategy := &InQuotaQueuePriorityStrategy{}
+		for testName, testData := range tests {
+			testName := testName
+			testData := testData
+			It(testName, func() {
+				reclaimable := strategy.Reclaimable(testData.reclaimerResources, testVectorMap, testData.reclaimerQueue,
+					testData.reclaimeeQueue, testData.reclaimeeQueue.GetAllocatedShare())
+				Expect(reclaimable).To(Equal(testData.expected))
+			})
+		}
+	})
 })

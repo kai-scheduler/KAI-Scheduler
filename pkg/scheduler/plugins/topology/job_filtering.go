@@ -10,6 +10,8 @@ import (
 	"slices"
 	"strings"
 
+	"k8s.io/dynamic-resource-allocation/deviceclass/extendedresourcecache"
+
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -60,7 +62,11 @@ func (t *topologyPlugin) subSetNodesFn(
 
 	tasksResources, tasksCount := getTasksAllocationMetadata(tasks)
 
-	if err := checkJobDomainFit(job, subGroup, tasksResources, tasksCount, domain, topologyTree.VectorMap); err != nil {
+	var dbc *extendedresourcecache.ExtendedResourceCache
+	if t.session != nil {
+		dbc = t.session.ClusterInfo.DeviceClassByResource
+	}
+	if err := checkJobDomainFit(job, subGroup, tasksResources, tasksCount, domain, topologyTree.VectorMap, dbc); err != nil {
 		if domain.ID == rootDomainId {
 			job.AddSimpleJobFitError(
 				podgroup_info.PodSchedulingErrors,
@@ -82,12 +88,12 @@ func (t *topologyPlugin) subSetNodesFn(
 	if maxDepthLevel == "" {
 		maxDepthLevel = requiredLevel
 	}
-	sortTreeFromRoot(tasks, domain, maxDepthLevel, topologyTree.VectorMap)
+	sortTreeFromRoot(tasks, domain, maxDepthLevel, topologyTree.VectorMap, dbc)
 	if preferredLevel != "" {
 		t.subGroupNodeScores[subGroup.GetName()] = calculateNodeScores(domain, preferredLevel)
 	}
 
-	jobAllocatableDomains, err := t.getJobAllocatableDomains(job, subGroup, podSets, tasksResources, tasksCount, topologyTree)
+	jobAllocatableDomains, err := t.getJobAllocatableDomains(job, subGroup, podSets, tasksResources, tasksCount, topologyTree, dbc)
 	if err != nil {
 		return nil, err
 	}
@@ -209,7 +215,7 @@ func calcSubTreeFreeResources(domain *DomainInfo) resource_info.ResourceVector {
 }
 
 func calcNodeAccommodation(jobAllocationMetaData *jobAllocationMetaData, node *node_info.NodeInfo) int {
-	maxPodVector := jobAllocationMetaData.maxPodResourcesVector
+	maxPodVector := jobAllocationMetaData.maxPodResourcesVector.Clone()
 
 	onePodOnlyVector := resource_info.NewResourceVector(node.VectorMap)
 	onePodOnlyVector.Set(resource_info.PodsIndex, 1)
@@ -231,6 +237,16 @@ func calcNodeAccommodation(jobAllocationMetaData *jobAllocationMetaData, node *n
 		nonAllocated.Set(resource_info.GPUIndex, nonAllocated.Get(resource_info.GPUIndex)+node.AvailableSharedGPUFractions())
 	}
 
+	// Zero non-GPU DRA-backed dims: they are not tracked in node vectors, so leaving
+	// them in would always fail the check even when DRA can satisfy the request.
+	if node.DeviceClassByResource != nil {
+		for i := 0; i < len(maxPodVector); i++ {
+			if i != resource_info.GPUIndex && node.DeviceClassByResource.GetDeviceClass(node.VectorMap.ResourceAt(i)) != nil {
+				maxPodVector.Set(i, 0)
+				nonAllocated.Set(i, 0)
+			}
+		}
+	}
 	if !maxPodVector.LessEqual(nonAllocated) {
 		return 0
 	}
@@ -255,6 +271,7 @@ func calcNodeAccommodation(jobAllocationMetaData *jobAllocationMetaData, node *n
 func (t *topologyPlugin) getJobAllocatableDomains(
 	job *podgroup_info.PodGroupInfo, subGroup *subgroup_info.SubGroupInfo, podSets map[string]*subgroup_info.PodSet,
 	tasksResources resource_info.ResourceVector, tasksCount int, topologyTree *Info,
+	dbc *extendedresourcecache.ExtendedResourceCache,
 ) ([]*DomainInfo, error) {
 	relevantLevels, err := t.calculateRelevantDomainLevels(subGroup, topologyTree)
 	if err != nil {
@@ -274,7 +291,7 @@ func (t *topologyPlugin) getJobAllocatableDomains(
 	var topLevelFitErrors []common_info.JobFitError
 	for levelIndex, level := range relevantLevels {
 		for _, domain := range relevantDomainsByLevel[level] {
-			err := checkJobDomainFit(job, subGroup, tasksResources, tasksCount, domain, topologyTree.VectorMap)
+			err := checkJobDomainFit(job, subGroup, tasksResources, tasksCount, domain, topologyTree.VectorMap, dbc)
 			if err != nil { // Filter domains that cannot allocate the job
 				if levelIndex == len(relevantLevels)-1 {
 					topLevelFitErrors = append(topLevelFitErrors, err)
@@ -351,7 +368,7 @@ func hasTopologyRequiredConstraint(subGroup *subgroup_info.SubGroupInfo) bool {
 
 func checkJobDomainFit(job *podgroup_info.PodGroupInfo, subGroup *subgroup_info.SubGroupInfo,
 	tasksResources resource_info.ResourceVector, tasksCount int, domain *DomainInfo,
-	vectorMap *resource_info.ResourceVectorMap) *common_info.TopologyFitError {
+	vectorMap *resource_info.ResourceVectorMap, dbc *extendedresourcecache.ExtendedResourceCache) *common_info.TopologyFitError {
 	if domain.AllocatablePods != allocatablePodsNotSet {
 		if domain.AllocatablePods < tasksCount {
 			return common_info.NewTopologyFitError(
@@ -361,7 +378,7 @@ func checkJobDomainFit(job *podgroup_info.PodGroupInfo, subGroup *subgroup_info.
 		return nil
 	}
 
-	if getJobRatioToFreeResources(tasksResources, domain, vectorMap) > maxAllocatableTasksRatio {
+	if getJobRatioToFreeResources(tasksResources, domain, vectorMap, dbc) > maxAllocatableTasksRatio {
 		err := common_info.NewTopologyInsufficientResourcesError(
 			job.Name, subGroup.GetName(), job.Namespace, string(domain.ID), tasksResources, domain.IdleOrReleasingVector, vectorMap)
 		return err
@@ -436,7 +453,7 @@ func (*topologyPlugin) treeAllocatableCleanup(topologyTree *Info) {
 }
 
 func sortTreeFromRoot(tasks []*pod_info.PodInfo, root *DomainInfo, maxDepthLevel DomainLevel,
-	vectorMap *resource_info.ResourceVectorMap) {
+	vectorMap *resource_info.ResourceVectorMap, dbc *extendedresourcecache.ExtendedResourceCache) {
 	var tasksResources resource_info.ResourceVector
 	for _, task := range tasks {
 		if tasksResources == nil {
@@ -446,7 +463,7 @@ func sortTreeFromRoot(tasks []*pod_info.PodInfo, root *DomainInfo, maxDepthLevel
 		}
 	}
 
-	sortTree(tasksResources, root, maxDepthLevel, vectorMap)
+	sortTree(tasksResources, root, maxDepthLevel, vectorMap, dbc)
 }
 
 // sortTree recursively sorts the topology tree for bin-packing behavior.
@@ -454,14 +471,14 @@ func sortTreeFromRoot(tasks []*pod_info.PodInfo, root *DomainInfo, maxDepthLevel
 // with fewer available resources first, implementing a bin-packing strategy.
 // Within domains with equal AllocatablePods, sorts by ID for deterministic ordering.
 func sortTree(tasksResources resource_info.ResourceVector, root *DomainInfo, maxDepthLevel DomainLevel,
-	vectorMap *resource_info.ResourceVectorMap) {
+	vectorMap *resource_info.ResourceVectorMap, dbc *extendedresourcecache.ExtendedResourceCache) {
 	if root == nil || maxDepthLevel == "" {
 		return
 	}
 
 	domainRatiosCache := make(map[DomainID]float64, len(root.Children))
 	for _, child := range root.Children {
-		domainRatiosCache[child.ID] = getJobRatioToFreeResources(tasksResources, child, vectorMap)
+		domainRatiosCache[child.ID] = getJobRatioToFreeResources(tasksResources, child, vectorMap, dbc)
 	}
 
 	slices.SortFunc(root.Children, func(i, j *DomainInfo) int {
@@ -478,7 +495,7 @@ func sortTree(tasksResources resource_info.ResourceVector, root *DomainInfo, max
 	}
 
 	for _, child := range root.Children {
-		sortTree(tasksResources, child, maxDepthLevel, vectorMap)
+		sortTree(tasksResources, child, maxDepthLevel, vectorMap, dbc)
 	}
 }
 
@@ -486,7 +503,7 @@ func sortTree(tasksResources resource_info.ResourceVector, root *DomainInfo, max
 // The higher the ratio, the more "packed" the domain will be after the job is allocated.
 // If the ratio is higher then 1, the domain will not be able to allocate the job.
 func getJobRatioToFreeResources(tasksResources resource_info.ResourceVector, domain *DomainInfo,
-	vectorMap *resource_info.ResourceVectorMap) float64 {
+	vectorMap *resource_info.ResourceVectorMap, dbc *extendedresourcecache.ExtendedResourceCache) float64 {
 	dominantResourceRatio := 0.0
 
 	emptyVec := make(resource_info.ResourceVector, len(tasksResources))
@@ -500,6 +517,11 @@ func getJobRatioToFreeResources(tasksResources resource_info.ResourceVector, dom
 			continue
 		}
 		if i == resource_info.PodsIndex {
+			continue
+		}
+		// Non-GPU DRA-backed resources are not tracked in domain vectors; the DRA
+		// allocator handles fit — skip them to avoid falsely rejecting domains.
+		if i != resource_info.GPUIndex && dbc != nil && dbc.GetDeviceClass(vectorMap.ResourceAt(i)) != nil {
 			continue
 		}
 		var resourceRatio float64

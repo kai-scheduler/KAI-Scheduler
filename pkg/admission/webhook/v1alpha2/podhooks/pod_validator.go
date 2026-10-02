@@ -48,22 +48,22 @@ func NewPodValidator(kubeClient client.Client, plugins *plugins.KaiAdmissionPlug
 	}
 }
 
-func (v *podValidator) ValidateCreate(_ context.Context, pod *corev1.Pod) (admission.Warnings, error) {
+func (v *podValidator) ValidateCreate(ctx context.Context, pod *corev1.Pod) (admission.Warnings, error) {
 	validatorlog.Info("pod validator", "kind", pod.GetObjectKind().GroupVersionKind().Kind)
 	if pod.Spec.SchedulerName != v.schedulerName {
 		return nil, nil
 	}
 
-	return nil, v.plugins.Validate(pod)
+	return nil, v.plugins.Validate(ctx, nil, pod)
 }
 
-func (v *podValidator) ValidateUpdate(_ context.Context, _, pod *corev1.Pod) (
+func (v *podValidator) ValidateUpdate(ctx context.Context, oldPod, pod *corev1.Pod) (
 	warnings admission.Warnings, err error) {
 	if pod.Spec.SchedulerName != v.schedulerName {
 		return nil, nil
 	}
 
-	return nil, v.plugins.Validate(pod)
+	return nil, v.plugins.Validate(ctx, oldPod, pod)
 }
 
 func (v *podValidator) ValidateDelete(_ context.Context, _ *corev1.Pod) (admission.Warnings, error) {

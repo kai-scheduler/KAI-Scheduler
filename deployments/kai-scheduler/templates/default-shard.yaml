@@ -11,6 +11,10 @@ metadata:
     argocd.argoproj.io/sync-options: Prune=false
 spec:
   partitionLabelValue: ""
+  goMemLimitRatio: {{ .Values.scheduler.goMemLimitRatio }}
+  {{- if .Values.scheduler.goMemLimit }}
+  goMemLimit: {{ .Values.scheduler.goMemLimit | quote }}
+  {{- end }}
   {{- if .Values.scheduler.args }}
   args:
     {{- toYaml .Values.scheduler.args | nindent 4 }}

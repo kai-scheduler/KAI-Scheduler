@@ -143,8 +143,8 @@ func Test_getReceivedFraction(t *testing.T) {
 
 func Test_getFractionFromMemoryRequest(t *testing.T) {
 	type args struct {
-		gpuMemoryStr string
-		nodeName     string
+		gpuMemory int64
+		nodeName  string
 	}
 	tests := []struct {
 		name    string
@@ -156,8 +156,8 @@ func Test_getFractionFromMemoryRequest(t *testing.T) {
 		{
 			"Node with Nvidia memory label",
 			args{
-				gpuMemoryStr: "2000",
-				nodeName:     "n1",
+				gpuMemory: 2000,
+				nodeName:  "n1",
 			},
 			&v1.Node{
 				ObjectMeta: metav1.ObjectMeta{
@@ -171,8 +171,8 @@ func Test_getFractionFromMemoryRequest(t *testing.T) {
 		{
 			"Node with Amd memory label",
 			args{
-				gpuMemoryStr: "4000",
-				nodeName:     "n1",
+				gpuMemory: 4000,
+				nodeName:  "n1",
 			},
 			&v1.Node{
 				ObjectMeta: metav1.ObjectMeta{
@@ -182,21 +182,6 @@ func Test_getFractionFromMemoryRequest(t *testing.T) {
 			},
 			resource.MustParse("0.25"),
 			false,
-		},
-		{
-			"invalid gpu memory value",
-			args{
-				gpuMemoryStr: "abc",
-				nodeName:     "n1",
-			},
-			&v1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:   "n1",
-					Labels: map[string]string{constants.NvidiaGpuMemory: "4000"},
-				},
-			},
-			resource.Quantity{},
-			true,
 		},
 	}
 	for _, tt := range tests {
@@ -208,7 +193,7 @@ func Test_getFractionFromMemoryRequest(t *testing.T) {
 			}
 			kubeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(tt.node).Build()
 
-			got, err := getFractionFromMemoryRequest(context.TODO(), tt.args.gpuMemoryStr, tt.args.nodeName, kubeClient)
+			got, err := getFractionFromMemoryRequest(context.TODO(), tt.args.gpuMemory, tt.args.nodeName, kubeClient)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("getFractionFromMemoryRequest() error = %v, wantErr %v", err, tt.wantErr)
 				return

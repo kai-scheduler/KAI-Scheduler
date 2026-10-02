@@ -25,7 +25,7 @@ spec:
         imagePullPolicy: {{ .Values.operator.image.pullPolicy }}
         {{- with .Values.operator.resources }}
         resources:
-          {{- toYaml . | nindent 12 }}
+          {{- toYaml . | nindent 10 }}
         {{- end }}
         args:
           - --metrics-bind-address={{ .Values.operator.metricsBindAddress | default ":8080" }}
@@ -53,6 +53,7 @@ spec:
           value: {{ .Values.global.registry }}
         - name: MS_TAG
           value: {{ include "kai-scheduler.imageTag" (dict "root" $ "tag" .Values.operator.image.tag) }}
+        {{- include "kai-scheduler.fipsOnlyEnv" . | nindent 8 }}
         ports:
         - containerPort: 8080
           name: metrics
@@ -89,6 +90,9 @@ spec:
       {{- if .Values.global.nodeSelector }}
       nodeSelector:
         {{- toYaml .Values.global.nodeSelector | nindent 8 }}
+      {{- end }}
+      {{- if .Values.global.priorityClassName }}
+      priorityClassName: {{ .Values.global.priorityClassName | quote }}
       {{- end }}
       {{- with .Values.global.podSecurityContext }}
       securityContext:

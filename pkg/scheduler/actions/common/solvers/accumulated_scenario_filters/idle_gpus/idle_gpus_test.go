@@ -6,6 +6,7 @@ package accumulated_scenario_filters
 import (
 	"cmp"
 	"reflect"
+	"strconv"
 	"testing"
 
 	"go.uber.org/mock/gomock"
@@ -14,6 +15,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
@@ -26,6 +28,8 @@ import (
 )
 
 var testVectorMap = resource_info.NewResourceVectorMap()
+
+var greedyMatchResult bool
 
 func Test_orderedInsert(t *testing.T) {
 	type args[T cmp.Ordered] struct {
@@ -171,11 +175,29 @@ func Test_greedyMatchRequirements(t *testing.T) {
 			want: true,
 		},
 		{
+			name: "fractional requirements exactly fit holder capacity",
+			args: args{
+				requirements: []float64{0.2, 0.1},
+				holders:      []string{"n1"},
+				capacity:     map[string]float64{"n1": 0.3},
+			},
+			want: true,
+		},
+		{
 			name: "second holder used after first is saturated",
 			args: args{
 				requirements: []float64{1.0, 1.0},
 				holders:      []string{"n2", "n1"},
 				capacity:     map[string]float64{"n1": 1.0, "n2": 2.0},
+			},
+			want: true,
+		},
+		{
+			name: "dedicated holders satisfy all requirements",
+			args: args{
+				requirements: []float64{6, 5, 4},
+				holders:      []string{"n1", "n2", "n3"},
+				capacity:     map[string]float64{"n1": 8, "n2": 8, "n3": 8},
 			},
 			want: true,
 		},
@@ -195,6 +217,134 @@ func Test_greedyMatchRequirements(t *testing.T) {
 				func(node string) float64 { return tt.args.capacity[node] })
 			if got != tt.want {
 				t.Errorf("greedyMatchRequirements() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_greedyMatchRequirementsSelectionTrace(t *testing.T) {
+	tests := []struct {
+		name         string
+		capacities   []float64
+		requirements []float64
+		want         bool
+		wantTrace    []int
+	}{
+		{
+			name:         "holder order preserves first fit",
+			capacities:   []float64{6, 4},
+			requirements: []float64{3, 3, 2, 2},
+			want:         true,
+			wantTrace:    []int{0, 0, 1, 1},
+		},
+		{
+			name:         "known greedy packing false negative remains false",
+			capacities:   []float64{10, 10},
+			requirements: []float64{6, 5, 3, 2, 2, 2},
+			want:         false,
+			wantTrace:    []int{0, 1, 0, 1, 1},
+		},
+		{
+			name:         "fractional requirements use multiple holders",
+			capacities:   []float64{2, 1.5, 1},
+			requirements: []float64{1.5, 1.25, 0.75, 0.5},
+			want:         true,
+			wantTrace:    []int{0, 1, 2, 0},
+		},
+		{
+			name:         "zero tail stops matching",
+			capacities:   []float64{1},
+			requirements: []float64{1, 0, 0},
+			want:         true,
+			wantTrace:    []int{0},
+		},
+		{
+			name:         "equal capacities select leftmost holder",
+			capacities:   []float64{2, 2, 2},
+			requirements: []float64{2, 2, 2},
+			want:         true,
+			wantTrace:    []int{0, 1, 2},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, gotTrace := greedyMatchRequirementsWithTrace(tt.requirements, tt.capacities)
+			if got != tt.want || !reflect.DeepEqual(gotTrace, tt.wantTrace) {
+				t.Fatalf("greedy match = (%t, %v), want (%t, %v)", got, gotTrace, tt.want, tt.wantTrace)
+			}
+		})
+	}
+}
+
+func greedyMatchRequirementsLinear(requirements, capacities []float64) bool {
+	allocated := make([]float64, len(capacities))
+	for _, required := range requirements {
+		if required == 0 {
+			return true
+		}
+		matched := false
+		for index, total := range capacities {
+			if total < required {
+				break
+			}
+			if total-allocated[index] >= required {
+				allocated[index] += required
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	}
+	return true
+}
+
+func greedyMatchRequirementsWithTrace(requirements, capacities []float64) (bool, []int) {
+	totals := append([]float64(nil), capacities...)
+	allocated := make([]float64, len(totals))
+	tree := newMaxSegmentTree(totals)
+	trace := make([]int, 0, len(requirements))
+	for _, required := range requirements {
+		if required == 0 {
+			return true, trace
+		}
+		index, found := tree.firstAtLeast(required)
+		if !found {
+			return false, trace
+		}
+		allocated[index] += required
+		tree.update(index, totals[index]-allocated[index])
+		trace = append(trace, index)
+	}
+	return true, trace
+}
+
+func BenchmarkGreedyMatchRequirements(b *testing.B) {
+	for _, size := range []int{32, 256, 2000} {
+		capacities := make([]float64, size)
+		requirements := make([]float64, size)
+		for i := range capacities {
+			capacities[i] = 1
+			requirements[i] = 1
+		}
+		holders := make([]int, size)
+		for i := range holders {
+			holders[i] = i
+		}
+
+		b.Run("Linear/Triangular/"+strconv.Itoa(size), func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				greedyMatchResult = greedyMatchRequirementsLinear(requirements, capacities)
+			}
+		})
+		b.Run("SegmentTree/Triangular/"+strconv.Itoa(size), func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				greedyMatchResult = greedyMatchRequirements(requirements, holders, func(holder int) float64 {
+					return capacities[holder]
+				})
 			}
 		})
 	}
@@ -1303,8 +1453,8 @@ func TestAccumulatedIdleGpus_Filter(t *testing.T) {
 						Name:      "pv1",
 						Namespace: "n2",
 						Annotations: map[string]string{
-							commonconstants.GpuMemory:                "20",
-							commonconstants.PodGroupAnnotationForPod: "potential_victims",
+							resources.CalcGpuFractionAnnotationForContainer("main"): "20Mi",
+							commonconstants.PodGroupAnnotationForPod:                "potential_victims",
 						},
 					},
 					Spec: v1.PodSpec{

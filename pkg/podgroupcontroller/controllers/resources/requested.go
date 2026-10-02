@@ -10,6 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	common_resources "github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 )
 
 const (
@@ -19,56 +20,36 @@ const (
 func ExtractGPUSharingRequestedResources(pod *v1.Pod) (v1.ResourceList, error) {
 	resources := v1.ResourceList{}
 
-	fractionsCount := int64(1)
-	gpuFractionsCountStr, hasAnnotation := pod.Annotations[constants.GpuFractionsNumDevices]
-	if hasAnnotation {
-		quantity, err := resource.ParseQuantity(gpuFractionsCountStr)
-		if err != nil {
-			return v1.ResourceList{},
-				fmt.Errorf("failed to parse gpu fraction count annotation value <%s>, error: %s",
-					gpuFractionsCountStr, err.Error())
-		}
-		var successfulIntExtraction bool
-		fractionsCount, successfulIntExtraction = quantity.AsInt64()
-		if !successfulIntExtraction {
-			return v1.ResourceList{},
-				fmt.Errorf("failed to extract int value from gpu fraction count annotation. value <%s>",
-					gpuFractionsCountStr)
-		}
+	req, err := common_resources.ParsePodGPUFractionRequest(pod)
+	if err != nil {
+		return v1.ResourceList{},
+			fmt.Errorf("failed to parse GPU fraction for pod %s/%s: %s", pod.Namespace, pod.Name, err)
+	}
+	if req == nil {
+		return resources, nil
 	}
 
-	gpuFractionStr, hasAnnotation := pod.Annotations[constants.GpuFraction]
-	if hasAnnotation {
-		quantity, err := resource.ParseQuantity(gpuFractionStr)
+	if req.Portion > 0 {
+		fractionStr := fmt.Sprintf("%g", req.Portion)
+		quantity, err := resource.ParseQuantity(fractionStr)
 		if err != nil {
 			return v1.ResourceList{},
-				fmt.Errorf("failed to parse gpu fraction annotation value <%s>, error: %s",
-					gpuFractionStr, err.Error())
+				fmt.Errorf("failed to parse gpu fraction value <%s>: %s", fractionStr, err)
 		}
-		successfulMulti := quantity.Mul(fractionsCount)
-		if !successfulMulti {
+		if ok := quantity.Mul(req.NumDevices); !ok {
 			return v1.ResourceList{},
-				fmt.Errorf("failed to multiple gpu fraction by the fraction count. "+
-					"Please check resource.Quantity restrictions. fraction <%s>, count: %d",
-					gpuFractionStr, fractionsCount)
+				fmt.Errorf("failed to multiply gpu fraction by device count. fraction <%s>, count: %d",
+					fractionStr, req.NumDevices)
 		}
 		resources[v1.ResourceName(constants.NvidiaGpuResource)] = quantity
 	}
 
-	gpuMemoryStr, hasAnnotation := pod.Annotations[constants.GpuMemory]
-	if hasAnnotation {
-		quantity, err := resource.ParseQuantity(gpuMemoryStr)
-		if err != nil {
+	if req.Memory != nil {
+		quantity := req.Memory.DeepCopy()
+		if ok := quantity.Mul(req.NumDevices); !ok {
 			return v1.ResourceList{},
-				fmt.Errorf("failed to parse gpu memory annotation value <%s>, error: %s",
-					gpuMemoryStr, err.Error())
-		}
-		successfulMulti := quantity.Mul(fractionsCount)
-		if !successfulMulti {
-			return v1.ResourceList{},
-				fmt.Errorf("failed to multiple gpu memory by the fraction count. "+
-					"Please check resource.Quantity restrictions. fraction <%s>, count: %d",
-					gpuMemoryStr, fractionsCount)
+				fmt.Errorf("failed to multiply gpu memory by device count. memory <%s>, count: %d",
+					req.Memory.String(), req.NumDevices)
 		}
 		resources[v1.ResourceName(gpuMemoryResourceName)] = quantity
 	}

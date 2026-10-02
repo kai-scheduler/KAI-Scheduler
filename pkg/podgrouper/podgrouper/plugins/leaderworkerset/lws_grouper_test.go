@@ -306,7 +306,8 @@ func TestBuildSubGroups_Segmentation_Divisible_LeaderPod(t *testing.T) {
 
 	seg0 := findSubGroupByName(subGroups, "segment-0")
 	assert.NotNil(t, seg0)
-	assert.Equal(t, int32(3), seg0.MinAvailable) // segmentSize(2) + leader(1)
+	assert.Equal(t, int32(0), seg0.MinAvailable)
+	assert.Equal(t, ptr.To(int32(2)), seg0.MinSubGroup) // leader + workers
 	assert.Empty(t, seg0.PodsReferences)
 
 	seg1 := findSubGroupByName(subGroups, "segment-1")
@@ -340,7 +341,8 @@ func TestBuildSubGroups_Segmentation_Divisible_WorkerInFirstSegment(t *testing.T
 	assert.Len(t, subGroups, 4)
 
 	seg0 := findSubGroupByName(subGroups, "segment-0")
-	assert.Equal(t, int32(3), seg0.MinAvailable) // segmentSize(2) + leader(1)
+	assert.Equal(t, int32(0), seg0.MinAvailable)
+	assert.Equal(t, ptr.To(int32(2)), seg0.MinSubGroup)
 	assert.Empty(t, seg0.PodsReferences)
 
 	seg1 := findSubGroupByName(subGroups, "segment-1")
@@ -372,7 +374,8 @@ func TestBuildSubGroups_Segmentation_Divisible_WorkerInLaterSegment(t *testing.T
 
 	seg0 := findSubGroupByName(subGroups, "segment-0")
 	assert.NotNil(t, seg0)
-	assert.Equal(t, int32(3), seg0.MinAvailable) // segmentSize(2) + leader(1)
+	assert.Equal(t, int32(0), seg0.MinAvailable)
+	assert.Equal(t, ptr.To(int32(2)), seg0.MinSubGroup)
 	assert.Empty(t, seg0.PodsReferences)
 
 	seg1 := findSubGroupByName(subGroups, "segment-1")
@@ -404,7 +407,8 @@ func TestBuildSubGroups_Segmentation_NotDivisible_LeaderPod(t *testing.T) {
 	assert.Len(t, subGroups, 4) // segment-0, segment-1, leader, workers
 
 	seg0 := findSubGroupByName(subGroups, "segment-0")
-	assert.Equal(t, int32(2), seg0.MinAvailable) // not expanded
+	assert.Equal(t, int32(0), seg0.MinAvailable)
+	assert.Equal(t, ptr.To(int32(2)), seg0.MinSubGroup)
 	assert.Empty(t, seg0.PodsReferences)
 
 	seg1 := findSubGroupByName(subGroups, "segment-1")
@@ -493,7 +497,8 @@ func TestBuildSubGroups_Segmentation_TopologyPreferredOnly_LeaderIncluded_NotDiv
 
 	seg0 := findSubGroupByName(subGroups, "segment-0")
 	assert.NotNil(t, seg0)
-	assert.Equal(t, int32(3), seg0.MinAvailable) // not expanded (not divisible)
+	assert.Equal(t, int32(0), seg0.MinAvailable)
+	assert.Equal(t, ptr.To(int32(2)), seg0.MinSubGroup)
 	assert.Equal(t, topology, seg0.TopologyConstraints)
 
 	seg1 := findSubGroupByName(subGroups, "segment-1")
@@ -584,7 +589,8 @@ func TestBuildSubGroups_SegmentSizeFromWorkerTemplateAnnotation(t *testing.T) {
 
 	seg0 := findSubGroupByName(subGroups, "segment-0")
 	assert.NotNil(t, seg0)
-	assert.Equal(t, int32(3), seg0.MinAvailable) // segmentSize(2) + leader(1)
+	assert.Equal(t, int32(0), seg0.MinAvailable)
+	assert.Equal(t, ptr.To(int32(2)), seg0.MinSubGroup)
 	assert.Equal(t, expectedTopology, seg0.TopologyConstraints)
 
 	seg1 := findSubGroupByName(subGroups, "segment-1")

@@ -48,7 +48,8 @@ func NewPodAccumulatedScenarioBuilder(
 
 	var scenario *solverscenario.ByNodeScenario = nil
 	recordedVictimsTasks := make(map[common_info.PodID]*pod_info.PodInfo)
-	tasksToAllocate := podgroup_info.GetTasksToAllocate(pendingJob, session.SubGroupOrderFn, session.TaskOrderFn, false)
+	tasksToAllocate := podgroup_info.GetTasksToAllocate(pendingJob, session.SubGroupOrderFn, session.TaskOrderFn,
+		podgroup_info.PartialTaskAllocation)
 	if len(tasksToAllocate) != 0 {
 		scenario = solverscenario.NewByNodeScenario(session, pendingJob, tasksToAllocate, nil, recordedVictimsJobs)
 		for _, job := range recordedVictimsJobs {
@@ -197,7 +198,9 @@ func (asb *PodAccumulatedScenarioBuilder) nextFromSubEmitter() *solverscenario.B
 func (asb *PodAccumulatedScenarioBuilder) outerScenarioValid() bool {
 	isValid, failedFilterName := asb.isScenarioValid()
 	if !isValid {
-		log.InfraLogger.V(5).Infof("Filtered by %s for scenario: %s", failedFilterName, asb.lastScenario)
+		log.InfraLogger.V(5).Do(func() {
+			log.InfraLogger.Infof("Filtered by %s for scenario: %s", failedFilterName, asb.lastScenario)
+		})
 		metrics.IncScenarioFilteredByAction()
 	}
 	return isValid
@@ -230,7 +233,9 @@ func (asb *PodAccumulatedScenarioBuilder) addNextPotentialVictims() bool {
 		}
 	}
 
-	if jobHasMoreTasks {
+	// A job that yielded no victims will yield none again, so re-pushing it would leave the queue
+	// unable to drain. Semi-preemptible jobs sitting at their core are the case that hits this.
+	if jobHasMoreTasks && len(potentialVictimTasks) > 0 {
 		var remainingTasks []*pod_info.PodInfo
 		for _, task := range nextVictimJob.GetAllPodsMap() {
 			if !slices.Contains(potentialVictimTasks, task) {

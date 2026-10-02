@@ -17,6 +17,7 @@ spec:
     spec:
       schedulerName: kai-scheduler
       restartPolicy: OnFailure
+      automountServiceAccountToken: false
       containers:
         - name: main
           image: ubuntu
@@ -24,3 +25,4 @@ spec:
           resources:
             limits:
               nvidia.com/gpu: "1"
+              memory: 1Gi

@@ -255,6 +255,11 @@ func (in *GlobalConfig) DeepCopyInto(out *GlobalConfig) {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
+	if in.PriorityClassName != nil {
+		in, out := &in.PriorityClassName, &out.PriorityClassName
+		*out = new(string)
+		**out = **in
+	}
 	if in.ReplicaCount != nil {
 		in, out := &in.ReplicaCount, &out.ReplicaCount
 		*out = new(int32)
@@ -292,6 +297,16 @@ func (in *GlobalConfig) DeepCopyInto(out *GlobalConfig) {
 	if in.JSONLog != nil {
 		in, out := &in.JSONLog, &out.JSONLog
 		*out = new(bool)
+		**out = **in
+	}
+	if in.FIPSOnly != nil {
+		in, out := &in.FIPSOnly, &out.FIPSOnly
+		*out = new(bool)
+		**out = **in
+	}
+	if in.GpuSharingMode != nil {
+		in, out := &in.GpuSharingMode, &out.GpuSharingMode
+		*out = new(common.GpuSharingMode)
 		**out = **in
 	}
 }
@@ -495,6 +510,16 @@ func (in *SchedulingShardSpec) DeepCopyInto(out *SchedulingShardSpec) {
 		for key, val := range *in {
 			(*out)[key] = val
 		}
+	}
+	if in.GoMemLimitRatio != nil {
+		in, out := &in.GoMemLimitRatio, &out.GoMemLimitRatio
+		*out = new(float64)
+		**out = **in
+	}
+	if in.GoMemLimit != nil {
+		in, out := &in.GoMemLimit, &out.GoMemLimit
+		x := (*in).DeepCopy()
+		*out = &x
 	}
 	if in.PlacementStrategy != nil {
 		in, out := &in.PlacementStrategy, &out.PlacementStrategy

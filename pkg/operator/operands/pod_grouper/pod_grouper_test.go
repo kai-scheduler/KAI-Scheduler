@@ -13,9 +13,11 @@ import (
 	. "github.com/onsi/gomega"
 
 	enginev1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
 	test_utils "github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common/test_utils"
 
 	appsv1 "k8s.io/api/apps/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -75,6 +77,79 @@ var _ = Describe("PodGrouper", func() {
 				deployment = *deploymentT
 				Expect(deployment.Labels).To(HaveKeyWithValue("foo", "bar"))
 				Expect(deployment.Spec.Template.Labels).To(HaveKeyWithValue("run", "ai"))
+			})
+		})
+
+		Context("PodDisruptionBudget DesiredState", func() {
+			It("includes PDB when HA and enabled", func(ctx context.Context) {
+				engineConfig.Spec.PodGrouper.Replicas = ptr.To(int32(2))
+				engineConfig.Spec.PodGrouper.Service.PodDisruptionBudget = &common.PodDisruptionBudget{
+					Enabled:        ptr.To(true),
+					MaxUnavailable: ptr.To(int32(1)),
+				}
+
+				objects, err := pg.DesiredState(ctx, fakeKubeClient, engineConfig)
+				Expect(err).To(BeNil())
+
+				pdbs := test_utils.FindTypesInObjects[*policyv1.PodDisruptionBudget](objects)
+				Expect(pdbs).To(HaveLen(1))
+				Expect(pdbs[0].Name).To(Equal(defaultResourceName))
+				Expect(pdbs[0].Spec.Selector.MatchLabels["app"]).To(Equal(defaultResourceName))
+			})
+
+			It("omits PDB when HA but disabled", func(ctx context.Context) {
+				engineConfig.Spec.PodGrouper.Replicas = ptr.To(int32(2))
+				engineConfig.Spec.PodGrouper.Service.PodDisruptionBudget = &common.PodDisruptionBudget{
+					Enabled: ptr.To(false),
+				}
+
+				objects, err := pg.DesiredState(ctx, fakeKubeClient, engineConfig)
+				Expect(err).To(BeNil())
+
+				for _, obj := range objects {
+					Expect(obj).NotTo(BeAssignableToTypeOf(&policyv1.PodDisruptionBudget{}))
+				}
+			})
+
+			It("omits PDB when single replica even if enabled", func(ctx context.Context) {
+				engineConfig.Spec.PodGrouper.Replicas = ptr.To(int32(1))
+				engineConfig.Spec.PodGrouper.Service.PodDisruptionBudget = &common.PodDisruptionBudget{
+					Enabled: ptr.To(true),
+				}
+
+				objects, err := pg.DesiredState(ctx, fakeKubeClient, engineConfig)
+				Expect(err).To(BeNil())
+
+				for _, obj := range objects {
+					Expect(obj).NotTo(BeAssignableToTypeOf(&policyv1.PodDisruptionBudget{}))
+				}
+			})
+
+			It("omits PDB when PDB config is missing and defaults apply", func(ctx context.Context) {
+				engineConfig.Spec.PodGrouper.Replicas = ptr.To(int32(2))
+				engineConfig.Spec.PodGrouper.Service.PodDisruptionBudget = nil
+				engineConfig.Spec.PodGrouper.Service.SetDefaultsWhereNeeded("")
+
+				objects, err := pg.DesiredState(ctx, fakeKubeClient, engineConfig)
+				Expect(err).To(BeNil())
+				Expect(engineConfig.Spec.PodGrouper.Service.PodDisruptionBudget).NotTo(BeNil())
+				Expect(*engineConfig.Spec.PodGrouper.Service.PodDisruptionBudget.Enabled).To(BeFalse())
+
+				for _, obj := range objects {
+					Expect(obj).NotTo(BeAssignableToTypeOf(&policyv1.PodDisruptionBudget{}))
+				}
+			})
+
+			It("returns empty desired state when pod grouper is disabled", func(ctx context.Context) {
+				engineConfig.Spec.PodGrouper.Service.Enabled = ptr.To(false)
+				engineConfig.Spec.PodGrouper.Replicas = ptr.To(int32(2))
+				engineConfig.Spec.PodGrouper.Service.PodDisruptionBudget = &common.PodDisruptionBudget{
+					Enabled: ptr.To(true),
+				}
+
+				objects, err := pg.DesiredState(ctx, fakeKubeClient, engineConfig)
+				Expect(err).To(BeNil())
+				Expect(objects).To(BeEmpty())
 			})
 		})
 	})

@@ -6,7 +6,6 @@ package job
 import (
 	"context"
 	"fmt"
-	"strconv"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -20,6 +19,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/minmember"
 )
 
 type K8sJobGrouper struct {
@@ -59,7 +59,7 @@ func (g *K8sJobGrouper) GetPodGroupMetadata(topOwner *unstructured.Unstructured,
 		return nil, err
 	}
 
-	minMember, err := calcMinMember(topOwner, pod, legacy)
+	minMember, err := calcMinMember(topOwner, legacy)
 	if err != nil {
 		return nil, err
 	}
@@ -102,20 +102,10 @@ func (g *K8sJobGrouper) calcPodGroupName(topOwner *unstructured.Unstructured, po
 	return newName, false, nil
 }
 
-func calcMinMember(topOwner *unstructured.Unstructured, pod *v1.Pod, legacy bool) (int32, error) {
+func calcMinMember(topOwner *unstructured.Unstructured, legacy bool) (int32, error) {
 	if legacy {
 		return 1, nil
 	}
 
-	override, found := topOwner.GetAnnotations()[constants.MinMemberOverrideKey]
-	if !found {
-		return 1, nil
-	}
-
-	minMember, err := strconv.ParseInt(override, 10, 32)
-	if err != nil {
-		return 0, fmt.Errorf("invalid min-member annotation value: %w", err)
-	}
-
-	return int32(minMember), nil
+	return minmember.FromAnnotations(topOwner, "Job", 1)
 }

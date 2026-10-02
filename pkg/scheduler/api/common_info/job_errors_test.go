@@ -445,7 +445,7 @@ func TestNewTopologyInsufficientResourcesError(t *testing.T) {
 					subGroupName:     "subgroup1",
 					reason:           UnschedulableWorkloadReason,
 					messages:         []string{"node-group(s) didn't have enough resources: custom.io/res"},
-					detailedMessages: []string{"domain1 didn't have enough resource: custom.io/res, requested: 5000, available: 3000"},
+					detailedMessages: []string{"domain1 didn't have enough resource: custom.io/res, requested: 5, available: 3"},
 				},
 				nodesGroupName: "domain1",
 			},

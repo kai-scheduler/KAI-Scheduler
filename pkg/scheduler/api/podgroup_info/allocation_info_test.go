@@ -9,7 +9,9 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/ptr"
 
+	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
@@ -43,18 +45,18 @@ func subGroupOrderFn(l, r interface{}) bool {
 
 func Test_HasTasksToAllocate(t *testing.T) {
 	pg := NewPodGroupInfo("pg1")
-	if HasTasksToAllocate(pg, true) {
+	if HasTasksToAllocate(pg, RealTaskAllocation) {
 		t.Error("expected false with zero tasks")
 	}
 	// Add one pending that ShouldAllocate
 	task := simpleTask("p1", "", pod_status.Pending)
 	pg.AddTaskInfo(task)
-	if !HasTasksToAllocate(pg, true) {
+	if !HasTasksToAllocate(pg, RealTaskAllocation) {
 		t.Error("expected true with allocatable task")
 	}
 	// Now set the status so ShouldAllocate returns false
 	task.Status = pod_status.Succeeded
-	if HasTasksToAllocate(pg, true) {
+	if HasTasksToAllocate(pg, RealTaskAllocation) {
 		t.Error("expected false with non-allocatable status")
 	}
 }
@@ -90,6 +92,57 @@ func Test_GetTasksToAllocate(t *testing.T) {
 			minAvailMap:  map[string]int32{"subGroup2": 2},
 			wantTasks:    []string{"task1", "task2"},
 			wantNumTasks: 2,
+		},
+		{
+			name: "pending tasks below minAvailable",
+			subGroupTasks: map[string][]*pod_info.PodInfo{
+				"subGroup2": {
+					simpleTask("task1", "subGroup2", pod_status.Pending),
+				},
+			},
+			minAvailMap:  map[string]int32{"subGroup2": 2},
+			wantTasks:    []string{},
+			wantNumTasks: 0,
+		},
+		{
+			name: "three pending tasks below minAvailable four",
+			subGroupTasks: map[string][]*pod_info.PodInfo{
+				"subGroup4": {
+					simpleTask("task1", "subGroup4", pod_status.Pending),
+					simpleTask("task2", "subGroup4", pod_status.Pending),
+					simpleTask("task3", "subGroup4", pod_status.Pending),
+				},
+			},
+			minAvailMap:  map[string]int32{"subGroup4": 4},
+			wantTasks:    []string{},
+			wantNumTasks: 0,
+		},
+		{
+			name: "pending tasks below remaining minAvailable",
+			subGroupTasks: map[string][]*pod_info.PodInfo{
+				"subGroup4": {
+					simpleTask("task1", "subGroup4", pod_status.Allocated),
+					simpleTask("task2", "subGroup4", pod_status.Allocated),
+					simpleTask("task3", "subGroup4", pod_status.Pending),
+				},
+			},
+			minAvailMap:  map[string]int32{"subGroup4": 4},
+			wantTasks:    []string{},
+			wantNumTasks: 0,
+		},
+		{
+			name: "one pending task completes minAvailable",
+			subGroupTasks: map[string][]*pod_info.PodInfo{
+				"subGroup4": {
+					simpleTask("task1", "subGroup4", pod_status.Running),
+					simpleTask("task2", "subGroup4", pod_status.Running),
+					simpleTask("task3", "subGroup4", pod_status.Running),
+					simpleTask("task4", "subGroup4", pod_status.Pending),
+				},
+			},
+			minAvailMap:  map[string]int32{"subGroup4": 4},
+			wantTasks:    []string{"task4"},
+			wantNumTasks: 1,
 		},
 		{
 			name: "one allocated and one pending",
@@ -207,7 +260,7 @@ func Test_GetTasksToAllocate(t *testing.T) {
 					pg.AddTaskInfo(pod)
 				}
 			}
-			gotTasks := GetTasksToAllocate(pg, subGroupOrderFn, tasksOrderFn, true)
+			gotTasks := GetTasksToAllocate(pg, subGroupOrderFn, tasksOrderFn, RealTaskAllocation)
 			if len(gotTasks) != tt.wantNumTasks {
 				t.Errorf("expected %d tasks to allocate, got %d", tt.wantNumTasks, len(gotTasks))
 			}
@@ -217,6 +270,211 @@ func Test_GetTasksToAllocate(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func Test_GetTasksToAllocate_SkipsUnreadyChildInGangPhase(t *testing.T) {
+	pg := NewPodGroupInfo("pg")
+	root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+	minSubGroup := int32(1)
+	root.SetMinSubGroup(&minSubGroup)
+	pg.RootSubGroupSet = root
+	pg.PodSets = make(map[string]*subgroup_info.PodSet)
+
+	unreadyPodSet := subgroup_info.NewPodSet("a", 2, nil)
+	readyPodSet := subgroup_info.NewPodSet("b", 1, nil)
+	root.AddPodSet(unreadyPodSet)
+	root.AddPodSet(readyPodSet)
+	pg.PodSets[unreadyPodSet.GetName()] = unreadyPodSet
+	pg.PodSets[readyPodSet.GetName()] = readyPodSet
+	pg.AddTaskInfo(simpleTask("task-a", "a", pod_status.Pending))
+	pg.AddTaskInfo(simpleTask("task-b", "b", pod_status.Pending))
+
+	tasks := GetTasksToAllocate(pg, subGroupOrderFn, tasksOrderFn, RealTaskAllocation)
+	if len(tasks) != 1 || tasks[0].Pod.Name != "task-b" {
+		t.Fatalf("GetTasksToAllocate() = %v, want task-b", tasks)
+	}
+}
+
+// Semi-preemptible jobs grow an elastic subgroup exactly like every other mode: a subgroup below its
+// own minMember is completed in one batch or not at all, and only above that floor does it grow one
+// pod at a time. Dribbling into a partial gang would hold resources for work that cannot run.
+func Test_GetTasksToAllocate_SemiPreemptibleElasticSubGroup(t *testing.T) {
+	// Root minSubGroup 1 over leaves "a" and "b", both minMember 3. "a" is always satisfied with no
+	// spare pods, so the elastic phase falls through to "b".
+	newJob := func(bAllocated, bPending int) *PodGroupInfo {
+		pg := NewPodGroupInfo("pg")
+		pg.Preemptibility = enginev2alpha2.SemiPreemptible
+		root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+		root.SetMinSubGroup(ptr.To(int32(1)))
+		pg.RootSubGroupSet = root
+		pg.PodSets = make(map[string]*subgroup_info.PodSet)
+		for _, name := range []string{"a", "b"} {
+			podSet := subgroup_info.NewPodSet(name, 3, nil)
+			root.AddPodSet(podSet)
+			pg.PodSets[name] = podSet
+		}
+		for i := 0; i < 3; i++ {
+			pg.AddTaskInfo(simpleTask(fmt.Sprintf("a-%d", i), "a", pod_status.Running))
+		}
+		for i := 0; i < bAllocated; i++ {
+			pg.AddTaskInfo(simpleTask(fmt.Sprintf("b-%d", i), "b", pod_status.Running))
+		}
+		for i := 0; i < bPending; i++ {
+			pg.AddTaskInfo(simpleTask(fmt.Sprintf("b-pending-%d", i), "b", pod_status.Pending))
+		}
+		return pg
+	}
+
+	tests := []struct {
+		name       string
+		bAllocated int
+		bPending   int
+		wantTasks  int
+	}{
+		{name: "empty subgroup takes its whole gang at once", bAllocated: 0, bPending: 3, wantTasks: 3},
+		{name: "empty subgroup that cannot complete takes nothing", bAllocated: 0, bPending: 2, wantTasks: 0},
+		{name: "satisfied subgroup grows one pod at a time", bAllocated: 3, bPending: 2, wantTasks: 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tasks := GetTasksToAllocate(newJob(tt.bAllocated, tt.bPending), subGroupOrderFn, tasksOrderFn,
+				RealTaskAllocation)
+			if len(tasks) != tt.wantTasks {
+				t.Fatalf("GetTasksToAllocate() returned %d tasks, want %d", len(tasks), tt.wantTasks)
+			}
+			for _, task := range tasks {
+				if task.SubGroupName != "b" {
+					t.Fatalf("GetTasksToAllocate() returned task %q from subgroup %q, want b",
+						task.Pod.Name, task.SubGroupName)
+				}
+			}
+		})
+	}
+}
+
+func Test_GetTasksToAllocate_VictimReallocationBelowMinAvailable(t *testing.T) {
+	pg := NewPodGroupInfo("pg")
+	pg.GetAllPodSets()[DefaultSubGroup].SetMinAvailable(4)
+	for i := 1; i <= 3; i++ {
+		task := simpleTask(fmt.Sprintf("task-%d", i), "", pod_status.Releasing)
+		task.IsVirtualStatus = true
+		pg.AddTaskInfo(task)
+	}
+
+	tasks := GetTasksToAllocate(pg, subGroupOrderFn, tasksOrderFn, VictimReallocation)
+	if len(tasks) != 3 {
+		t.Fatalf("GetTasksToAllocate() returned %d tasks, want 3", len(tasks))
+	}
+}
+
+func Test_GetTasksToAllocate_PartialModeBelowMinAvailable(t *testing.T) {
+	pg := NewPodGroupInfo("pg")
+	pg.GetAllPodSets()[DefaultSubGroup].SetMinAvailable(2)
+	pg.AddTaskInfo(simpleTask("task-1", "", pod_status.Pending))
+
+	tasks := GetTasksToAllocate(pg, subGroupOrderFn, tasksOrderFn, PartialTaskAllocation)
+	if len(tasks) != 1 {
+		t.Fatalf("GetTasksToAllocate() returned %d probe tasks, want 1", len(tasks))
+	}
+}
+
+func Test_GetTasksToAllocate_SimulatedPendingAdmissionRespectsMinAvailable(t *testing.T) {
+	pg := NewPodGroupInfo("pg")
+	pg.GetAllPodSets()[DefaultSubGroup].SetMinAvailable(2)
+	pg.AddTaskInfo(simpleTask("task-1", "", pod_status.Pending))
+
+	tasks := GetTasksToAllocate(pg, subGroupOrderFn, tasksOrderFn, SimulatedTaskAllocation)
+	if len(tasks) != 0 {
+		t.Fatalf("GetTasksToAllocate() returned %d pending tasks, want 0", len(tasks))
+	}
+}
+
+func Test_GetTasksToAllocate_SimulatedAdmissionSkipsUnreadyChild(t *testing.T) {
+	pg := NewPodGroupInfo("pg")
+	root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+	root.SetMinSubGroup(ptr.To(int32(1)))
+	pg.RootSubGroupSet = root
+	pg.PodSets = make(map[string]*subgroup_info.PodSet)
+
+	unreadyPodSet := subgroup_info.NewPodSet("a", 2, nil)
+	readyPodSet := subgroup_info.NewPodSet("b", 1, nil)
+	root.AddPodSet(unreadyPodSet)
+	root.AddPodSet(readyPodSet)
+	pg.PodSets = root.GetDescendantPodSets()
+	pg.AddTaskInfo(simpleTask("task-a", "a", pod_status.Pending))
+	pg.AddTaskInfo(simpleTask("task-b", "b", pod_status.Pending))
+
+	tasks := GetTasksToAllocate(pg, subGroupOrderFn, tasksOrderFn, SimulatedTaskAllocation)
+	if len(tasks) != 1 || tasks[0].Name != "task-b" {
+		t.Fatalf("GetTasksToAllocate() = %v, want task-b", tasks)
+	}
+}
+
+func Test_GetTasksToAllocate_CachesByAdmissionSemantics(t *testing.T) {
+	pg := NewPodGroupInfo("pg")
+	pg.GetAllPodSets()[DefaultSubGroup].SetMinAvailable(4)
+	for i := 1; i <= 3; i++ {
+		pg.AddTaskInfo(simpleTask(fmt.Sprintf("task-%d", i), "", pod_status.Pending))
+	}
+
+	partialTasks := GetTasksToAllocate(pg, subGroupOrderFn, tasksOrderFn, PartialTaskAllocation)
+	if len(partialTasks) != 3 {
+		t.Fatalf("partial GetTasksToAllocate() returned %d tasks, want 3", len(partialTasks))
+	}
+
+	realTasks := GetTasksToAllocate(pg, subGroupOrderFn, tasksOrderFn, RealTaskAllocation)
+	if len(realTasks) != 0 {
+		t.Fatalf("real GetTasksToAllocate() returned %d tasks after partial lookup, want 0", len(realTasks))
+	}
+
+	simulatedTasks := GetTasksToAllocate(pg, subGroupOrderFn, tasksOrderFn, SimulatedTaskAllocation)
+	if len(simulatedTasks) != 0 {
+		t.Fatalf("simulated GetTasksToAllocate() returned %d tasks after partial lookup, want 0", len(simulatedTasks))
+	}
+
+	pg = NewPodGroupInfo("pg-reverse")
+	pg.GetAllPodSets()[DefaultSubGroup].SetMinAvailable(1)
+	releasingTask := simpleTask("a-releasing", "", pod_status.Releasing)
+	releasingTask.IsVirtualStatus = true
+	pg.AddTaskInfo(releasingTask)
+	pg.AddTaskInfo(simpleTask("b-pending", "", pod_status.Pending))
+
+	realTasks = GetTasksToAllocate(pg, subGroupOrderFn, tasksOrderFn, RealTaskAllocation)
+	if len(realTasks) != 1 || realTasks[0].Name != "b-pending" {
+		t.Fatalf("real GetTasksToAllocate() = %v, want b-pending", realTasks)
+	}
+
+	victimTasks := GetTasksToAllocate(pg, subGroupOrderFn, tasksOrderFn, VictimReallocation)
+	if len(victimTasks) != 1 || victimTasks[0].Name != "a-releasing" {
+		t.Fatalf("victim GetTasksToAllocate() after real lookup = %v, want a-releasing", victimTasks)
+	}
+}
+
+func Test_GetTasksToAllocateInitResourceVector_CachesByAdmissionSemantics(t *testing.T) {
+	vectorMap := resource_info.NewResourceVectorMap()
+	pg := NewPodGroupInfoWithVectorMap("pg", vectorMap)
+	pg.GetAllPodSets()[DefaultSubGroup].SetMinAvailable(2)
+
+	task := simpleTask("task-1", "", pod_status.Pending)
+	task.ResReqVector = resource_info.NewResourceRequirements(0, 1000, 0).ToVector(vectorMap)
+	task.VectorMap = vectorMap
+	pg.AddTaskInfo(task)
+
+	partialVector := GetTasksToAllocateInitResourceVector(pg, subGroupOrderFn, tasksOrderFn, PartialTaskAllocation, nil)
+	if got := partialVector.Get(resource_info.CPUIndex); got != 1000 {
+		t.Fatalf("partial resource vector CPU = %v, want 1000", got)
+	}
+
+	realVector := GetTasksToAllocateInitResourceVector(pg, subGroupOrderFn, tasksOrderFn, RealTaskAllocation, nil)
+	if got := realVector.Get(resource_info.CPUIndex); got != 0 {
+		t.Fatalf("real resource vector CPU after partial lookup = %v, want 0", got)
+	}
+
+	simulatedVector := GetTasksToAllocateInitResourceVector(pg, subGroupOrderFn, tasksOrderFn, SimulatedTaskAllocation, nil)
+	if got := simulatedVector.Get(resource_info.CPUIndex); got != 0 {
+		t.Fatalf("simulated resource vector CPU after partial lookup = %v, want 0", got)
 	}
 }
 
@@ -285,7 +543,7 @@ func Test_GetTasksToAllocate_MinSubGroupZero(t *testing.T) {
 					pg.AddTaskInfo(pod)
 				}
 			}
-			gotTasks := GetTasksToAllocate(pg, subGroupOrderFn, tasksOrderFn, true)
+			gotTasks := GetTasksToAllocate(pg, subGroupOrderFn, tasksOrderFn, RealTaskAllocation)
 			if len(gotTasks) != tt.wantNumTasks {
 				t.Errorf("GetTasksToAllocate len = %d, want %d", len(gotTasks), tt.wantNumTasks)
 			}
@@ -300,7 +558,7 @@ func Test_GetTasksToAllocateRequestedGPUs(t *testing.T) {
 	// manually set up a fake GpuRequirement that returns 2 for GPUs
 	task.GpuRequirement = *resource_info.NewGpuResourceRequirementWithGpus(2, 0)
 	pg.AddTaskInfo(task)
-	gpus, _ := GetTasksToAllocateRequestedGPUs(pg, subGroupOrderFn, tasksOrderFn, true)
+	gpus, _ := GetTasksToAllocateRequestedGPUs(pg, subGroupOrderFn, tasksOrderFn, RealTaskAllocation)
 	if gpus != 2 {
 		t.Errorf("expected gpus=2, got %v", gpus)
 	}
@@ -308,7 +566,7 @@ func Test_GetTasksToAllocateRequestedGPUs(t *testing.T) {
 
 func Test_GetTasksToAllocateInitResourceVector(t *testing.T) {
 	// Nil case
-	res := GetTasksToAllocateInitResourceVector(nil, subGroupOrderFn, tasksOrderFn, true, nil)
+	res := GetTasksToAllocateInitResourceVector(nil, subGroupOrderFn, tasksOrderFn, RealTaskAllocation, nil)
 	if res != nil {
 		t.Error("nil expected for nil pg")
 	}
@@ -331,7 +589,7 @@ func Test_GetTasksToAllocateInitResourceVector(t *testing.T) {
 	task2.VectorMap = vectorMap
 	pg.AddTaskInfo(task2)
 
-	vec := GetTasksToAllocateInitResourceVector(pg, subGroupOrderFn, tasksOrderFn, true, nil)
+	vec := GetTasksToAllocateInitResourceVector(pg, subGroupOrderFn, tasksOrderFn, RealTaskAllocation, nil)
 	cpuIdx := resource_info.CPUIndex
 	memIdx := resource_info.MemoryIndex
 	gpuIdx := resource_info.GPUIndex
@@ -347,7 +605,7 @@ func Test_GetTasksToAllocateInitResourceVector(t *testing.T) {
 	}
 
 	// Caching: second call should return same slice
-	vec2 := GetTasksToAllocateInitResourceVector(pg, subGroupOrderFn, tasksOrderFn, true, nil)
+	vec2 := GetTasksToAllocateInitResourceVector(pg, subGroupOrderFn, tasksOrderFn, RealTaskAllocation, nil)
 	if len(vec) != len(vec2) {
 		t.Fatal("cached vector length mismatch")
 	}

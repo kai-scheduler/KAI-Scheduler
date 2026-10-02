@@ -11,18 +11,6 @@ metadata:
   name: queuecontroller
 rules:
 - apiGroups:
-  - ""
-  resources:
-  - configmaps
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
   - coordination.k8s.io
   resources:
   - leases

@@ -15,6 +15,7 @@ import (
 
 	"github.com/kai-scheduler/KAI-scheduler/cmd/scheduler/app/options"
 	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	kaiv1common "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
 	kaiprometheus "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/prometheus"
 	kaiv1qc "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/queue_controller"
 	kaiv1scheduler "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/scheduler"
@@ -27,6 +28,8 @@ import (
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -156,6 +159,36 @@ func TestDeploymentForShard(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDeploymentForShardGoMemLimit(t *testing.T) {
+	ctx := context.Background()
+	client := fake.NewClientBuilder().Build()
+	config := &kaiv1.Config{Spec: kaiv1.ConfigSpec{
+		Global:    &kaiv1.GlobalConfig{},
+		Namespace: "default",
+		Scheduler: &kaiv1scheduler.Scheduler{},
+	}}
+	config.Spec.SetDefaultsWhereNeeded()
+	shard := &kaiv1.SchedulingShard{Spec: kaiv1.SchedulingShardSpec{
+		GoMemLimitRatio: ptr.To(0.85),
+		GoMemLimit:      ptr.To(resource.MustParse("6Gi")),
+	}}
+
+	deployment, err := NewSchedulerForShard(shard).deploymentForShard(ctx, client, config, shard)
+	require.NoError(t, err)
+	container := deployment.(*appsv1.Deployment).Spec.Template.Spec.Containers[0]
+	assert.Equal(t, []corev1.EnvVar{
+		{Name: "GOGC", Value: "400"},
+		{Name: goMemLimitRatioEnv, Value: "0.85"},
+		{
+			Name: "NAMESPACE",
+			ValueFrom: &corev1.EnvVarSource{FieldRef: &corev1.ObjectFieldSelector{
+				FieldPath: "metadata.namespace",
+			}},
+		},
+		{Name: "GOMEMLIMIT", Value: "6442450944"},
+	}, container.Env)
 }
 
 func TestValidateJobDepthMap(t *testing.T) {
@@ -401,6 +434,30 @@ func TestBuildArgsList(t *testing.T) {
 				"log-json":       "true",
 			},
 		},
+		{
+			name: "with gpu sharing mode from global config",
+			config: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Global: &kaiv1.GlobalConfig{
+						SchedulerName:  ptr.To("test-scheduler"),
+						GpuSharingMode: ptr.To(kaiv1common.GpuSharingModeNvFractions),
+					},
+					Namespace: "kai-system",
+					Scheduler: &kaiv1scheduler.Scheduler{
+						Replicas: ptr.To(int32(1)),
+					},
+				},
+			},
+			shard: &kaiv1.SchedulingShard{
+				Spec: kaiv1.SchedulingShardSpec{},
+			},
+			expected: map[string]string{
+				"scheduler-conf":   "config.yaml",
+				"scheduler-name":   "test-scheduler",
+				"namespace":        "kai-system",
+				"gpu-sharing-mode": "NvFractions",
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -491,7 +548,8 @@ tiers:
     arguments:
       cpu: binpack
       gpu: binpack
-  - name: gpusharingorder`,
+  - name: gpusharingorder
+  - name: backgroundpods`,
 			},
 		},
 		{
@@ -544,7 +602,8 @@ tiers:
   - name: nodeplacement
     arguments:
       cpu: binpack
-      gpu: spread`,
+      gpu: spread
+  - name: backgroundpods`,
 			},
 		},
 		{
@@ -629,7 +688,8 @@ tiers:
     arguments:
       cpu: binpack
       gpu: binpack
-  - name: gpusharingorder`,
+  - name: gpusharingorder
+  - name: backgroundpods`,
 			},
 		},
 		{
@@ -678,7 +738,8 @@ tiers:
     arguments:
       cpu: binpack
       gpu: binpack
-  - name: gpusharingorder`,
+  - name: gpusharingorder
+  - name: backgroundpods`,
 			},
 		},
 		{
@@ -728,7 +789,8 @@ tiers:
     arguments:
       cpu: binpack
       gpu: binpack
-  - name: gpusharingorder`,
+  - name: gpusharingorder
+  - name: backgroundpods`,
 			},
 		},
 		{
@@ -781,7 +843,8 @@ tiers:
     arguments:
       cpu: binpack
       gpu: binpack
-  - name: gpusharingorder`,
+  - name: gpusharingorder
+  - name: backgroundpods`,
 			},
 		},
 		{
@@ -834,7 +897,8 @@ tiers:
     arguments:
       cpu: binpack
       gpu: binpack
-  - name: gpusharingorder`,
+  - name: gpusharingorder
+  - name: backgroundpods`,
 			},
 		},
 		{
@@ -884,7 +948,8 @@ tiers:
   - name: nodeplacement
     arguments:
       cpu: binpack
-      gpu: spread`,
+      gpu: spread
+  - name: backgroundpods`,
 			},
 		},
 		{
@@ -933,6 +998,7 @@ tiers:
       cpu: binpack
       gpu: binpack
   - name: gpusharingorder
+  - name: backgroundpods
 usageDBConfig:
   clientType: prometheus
   connectionString: http://prometheus-operated.kai-scheduler.svc.cluster.local:9090
@@ -1180,6 +1246,7 @@ tiers:
       cpu: binpack
       gpu: binpack
   - name: gpusharingorder
+  - name: backgroundpods
 usageDBConfig:
   clientType: prometheus
   connectionString: http://prometheus-operated.kai-scheduler.svc.cluster.local:9090
@@ -1410,6 +1477,84 @@ func TestGetUsageDBConfig(t *testing.T) {
 					tt.validate(t, result)
 				}
 			}
+		})
+	}
+}
+
+func TestPodDisruptionBudgetForShard(t *testing.T) {
+	ctx := context.Background()
+	client := fake.NewClientBuilder().Build()
+
+	shard := &kaiv1.SchedulingShard{
+		ObjectMeta: metav1.ObjectMeta{Name: "default"},
+	}
+	shard.Spec.SetDefaultsWhereNeeded()
+
+	tests := []struct {
+		name              string
+		replicas          int32
+		pdbEnabled        bool
+		maxUnavailable    int32
+		expectPDBCreation bool
+	}{
+		{
+			name:              "skip PDB when replicas is one",
+			replicas:          1,
+			pdbEnabled:        true,
+			maxUnavailable:    1,
+			expectPDBCreation: false,
+		},
+		{
+			name:              "create PDB when replicas greater than one and enabled",
+			replicas:          2,
+			pdbEnabled:        true,
+			maxUnavailable:    1,
+			expectPDBCreation: true,
+		},
+		{
+			name:              "skip PDB when disabled",
+			replicas:          3,
+			pdbEnabled:        false,
+			maxUnavailable:    1,
+			expectPDBCreation: false,
+		},
+		{
+			name:              "custom maxUnavailable",
+			replicas:          2,
+			pdbEnabled:        true,
+			maxUnavailable:    2,
+			expectPDBCreation: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &kaiv1.Config{}
+			config.Spec.SetDefaultsWhereNeeded()
+			config.Spec.Scheduler.Replicas = ptr.To(tt.replicas)
+			config.Spec.Scheduler.Service.PodDisruptionBudget = &kaiv1common.PodDisruptionBudget{
+				Enabled:        ptr.To(tt.pdbEnabled),
+				MaxUnavailable: ptr.To(tt.maxUnavailable),
+			}
+
+			s := NewSchedulerForShard(shard)
+			obj, err := s.podDisruptionBudgetForShard(ctx, client, config, shard)
+			require.NoError(t, err)
+
+			if !tt.expectPDBCreation {
+				assert.Nil(t, obj)
+				return
+			}
+
+			require.NotNil(t, obj)
+			pdb, ok := obj.(*policyv1.PodDisruptionBudget)
+			require.True(t, ok, "object should be PodDisruptionBudget")
+			assert.Equal(t, "kai-scheduler-default", pdb.Name)
+			assert.Equal(t, constants.DefaultKAINamespace, pdb.Namespace)
+			require.NotNil(t, pdb.Spec.MaxUnavailable)
+			assert.Equal(t, tt.maxUnavailable, pdb.Spec.MaxUnavailable.IntVal)
+			require.NotNil(t, pdb.Spec.Selector)
+			assert.Equal(t, "kai-scheduler-default", pdb.Spec.Selector.MatchLabels["app"])
 		})
 	}
 }

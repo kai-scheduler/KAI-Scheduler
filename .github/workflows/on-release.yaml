@@ -63,6 +63,7 @@ jobs:
       - name: Build helm chart
         run: |
           sed -i 's#registry/local/kai-scheduler#${{ env.DOCKER_REGISTRY }}#' deployments/kai-scheduler/values.yaml
+          helm dependency build ./deployments/kai-scheduler
           helm package ./deployments/kai-scheduler -d ./charts --app-version $PACKAGE_VERSION --version $PACKAGE_VERSION
           cp charts/kai-scheduler-$PACKAGE_VERSION.tgz /mnt/images/
 
@@ -131,7 +132,7 @@ jobs:
 
       - name: Run e2e tests
         run: |
-          ginkgo -r --keep-going --randomize-all --randomize-suites --trace -vv --label-filter '!autoscale && !scale && !upgrade && !gitops' --output-dir=. --json-report=e2e-report.json ./test/e2e/suites
+          go tool ginkgo -r --keep-going --randomize-all --randomize-suites --trace -vv --label-filter '!autoscale && !scale && !upgrade && !gitops' --output-dir=. --json-report=e2e-report.json ./test/e2e/suites
 
       - name: Print test summary
         if: always()

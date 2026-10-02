@@ -29,6 +29,7 @@ import (
 	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/types"
 	clientcache "k8s.io/client-go/tools/cache"
+	resourcehelpers "k8s.io/component-helpers/resource"
 
 	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
@@ -65,6 +66,11 @@ const (
 	ReceivedTypeNone        ResourceReceivedType = ""
 )
 
+type ExtendedResourceClaim struct {
+	UID        types.UID
+	Allocation *schedulingv1alpha2.ExtendedResourceClaimAllocation
+}
+
 type PodsMap map[common_info.PodID]*PodInfo
 
 type PodInfo struct {
@@ -90,7 +96,7 @@ type PodInfo struct {
 
 	schedulingConstraintsSignature common_info.SchedulingConstraintsSignature
 
-	GPUGroups []string
+	FractionalGpuGroups []schedulingv1alpha2.FractionalGpuGroup
 
 	NUMAPlacement NUMAPlacement
 
@@ -102,6 +108,8 @@ type PodInfo struct {
 	BindRequest *bindrequest_info.BindRequestInfo
 
 	ResourceClaimInfo bindrequest_info.ResourceClaimInfo
+
+	ExtendedResourceClaim *ExtendedResourceClaim
 
 	// OwnedStorageClaims are StorageClaims that are owned exclusively by the pod, and we can count on them being deleted
 	// if the pod is evicted
@@ -208,7 +216,6 @@ func NewTaskInfo(pod *v1.Pod, vectorMap *resource_info.ResourceVectorMap, opts .
 		ResReqVector:                   initResreq.ToVector(vectorMap),
 		AcceptedResourceVector:         resource_info.NewResourceVector(vectorMap),
 		VectorMap:                      vectorMap,
-		GPUGroups:                      []string{},
 		ResourceRequestType:            RequestTypeRegular,
 		ResourceReceivedType:           ReceivedTypeNone,
 		BindRequest:                    options.BindRequest,
@@ -295,9 +302,10 @@ func (pi *PodInfo) Clone() *PodInfo {
 		ResReqVector:           resReqVectorClone,
 		AcceptedResourceVector: acceptedResourceVectorClone,
 		VectorMap:              pi.VectorMap,
-		GPUGroups:              pi.GPUGroups,
 		NUMAPlacement:          pi.NUMAPlacement.Clone(),
+		FractionalGpuGroups:    pi.FractionalGpuGroups,
 		ResourceClaimInfo:      pi.ResourceClaimInfo.Clone(),
+		ExtendedResourceClaim:  pi.ExtendedResourceClaim,
 		ResourceRequestType:    pi.ResourceRequestType,
 		ResourceReceivedType:   pi.ResourceReceivedType,
 		IsVirtualStatus:        pi.IsVirtualStatus,
@@ -305,6 +313,52 @@ func (pi *PodInfo) Clone() *PodInfo {
 		storageClaims:          pi.storageClaims,
 		ownedStorageClaims:     pi.ownedStorageClaims,
 	}
+}
+
+func (pi *PodInfo) SetFractionalGpuGroups(fractionalGpuGroups []schedulingv1alpha2.FractionalGpuGroup) {
+	if len(fractionalGpuGroups) == 0 {
+		pi.FractionalGpuGroups = nil
+		return
+	}
+	pi.FractionalGpuGroups = fractionalGpuGroups
+}
+
+func (pi *PodInfo) SetGPUGroupIDs(gpuGroups []string) {
+	pi.SetFractionalGpuGroups(schedulingv1alpha2.NewFractionalGpuGroups(
+		gpuGroups,
+		pi.RequestedGPUComputeSharingMode(),
+	))
+}
+
+func (pi *PodInfo) GPUGroupIDs() []string {
+	fractionalGpuGroups := pi.FractionalGpuGroupsOrDefault()
+	if len(fractionalGpuGroups) == 0 {
+		return nil
+	}
+	gpuGroups := make([]string, 0, len(fractionalGpuGroups))
+	for _, fractionalGpuGroup := range fractionalGpuGroups {
+		gpuGroups = append(gpuGroups, fractionalGpuGroup.ID)
+	}
+	return gpuGroups
+}
+
+func (pi *PodInfo) RequestedGPUComputeSharingMode() schedulingv1alpha2.GPUComputeSharingMode {
+	if pi.Pod == nil {
+		return schedulingv1alpha2.GPUComputeSharingModeTimeSlicing
+	}
+	_, rawMode, _ := resources.ExtractGpuComputeSharingModeAnnotation(pi.Pod)
+	return schedulingv1alpha2.DefaultGPUComputeSharingMode(schedulingv1alpha2.GPUComputeSharingMode(rawMode))
+}
+
+func (pi *PodInfo) FractionalGpuGroupsOrDefault() []schedulingv1alpha2.FractionalGpuGroup {
+	if len(pi.FractionalGpuGroups) > 0 {
+		fractionalGpuGroups := make([]schedulingv1alpha2.FractionalGpuGroup, 0, len(pi.FractionalGpuGroups))
+		for _, fractionalGpuGroup := range pi.FractionalGpuGroups {
+			fractionalGpuGroups = append(fractionalGpuGroups, fractionalGpuGroup.WithDefaults())
+		}
+		return fractionalGpuGroups
+	}
+	return nil
 }
 
 func (pi PodInfo) String() string {
@@ -361,6 +415,13 @@ func (pi *PodInfo) IsRequireAnyKindOfGPU() bool {
 		pi.IsGpuMemoryRequest() || pi.IsMigProfileRequest()
 }
 
+func (pi *PodInfo) ExtendedResourceClaimAllocation() *schedulingv1alpha2.ExtendedResourceClaimAllocation {
+	if pi.ExtendedResourceClaim == nil {
+		return nil
+	}
+	return pi.ExtendedResourceClaim.Allocation
+}
+
 func (pi *PodInfo) GetSchedulingConstraintsSignature() common_info.SchedulingConstraintsSignature {
 	if pi.schedulingConstraintsSignature == "" {
 		pi.schedulingConstraintsSignature = schedulingConstraintsSignature(pi.Pod, pi.storageClaims)
@@ -386,11 +447,10 @@ func getPodGroupID(pod *v1.Pod) common_info.PodGroupID {
 }
 
 func getPodResourceRequest(pod *v1.Pod) *resource_info.ResourceRequirements {
-	result := getPodResourceWithoutInitContainers(pod)
-
-	sidecarSum, initPhasePeak := initContainerEffects(pod)
-	logIfErr(pod, result.Add(sidecarSum))
-	logIfErr(pod, result.SetMaxResource(initPhasePeak))
+	reqs := resourcehelpers.AggregateContainerRequests(pod, resourcehelpers.PodResourcesOptions{
+		UseStatusResources: true,
+	})
+	result := resource_info.RequirementsFromResourceList(reqs)
 
 	if pod.Spec.Overhead != nil {
 		overheadReq := resource_info.RequirementsFromResourceList(pod.Spec.Overhead)
@@ -400,51 +460,6 @@ func getPodResourceRequest(pod *v1.Pod) *resource_info.ResourceRequirements {
 	result.ScalarResources()[resource_info.PodsResourceName] = 1
 
 	return result
-}
-
-// initContainerEffects returns the contributions of `pod`'s init containers to
-// pod resource accounting, mirroring kubelet's `AggregateContainerRequests`:
-//   - sidecarSum: total request of native sidecars (initContainers with
-//     `restartPolicy: Always`, KEP-753), which run concurrently with regular
-//     containers and add to the steady-state sum.
-//   - initPhasePeak: max over each non-restartable init of `init.Requests +
-//     sum(native sidecars declared before it)`, since those sidecars are
-//     already running when the init runs.
-func initContainerEffects(pod *v1.Pod) (sidecarSum, initPhasePeak *resource_info.ResourceRequirements) {
-	sidecarSum = resource_info.EmptyResourceRequirements()
-	initPhasePeak = resource_info.EmptyResourceRequirements()
-	for _, container := range pod.Spec.InitContainers {
-		containerReq := resource_info.RequirementsFromResourceList(container.Resources.Requests)
-		if container.RestartPolicy != nil && *container.RestartPolicy == v1.ContainerRestartPolicyAlways {
-			logIfErr(pod, sidecarSum.Add(containerReq))
-			continue
-		}
-		logIfErr(pod, containerReq.Add(sidecarSum))
-		logIfErr(pod, initPhasePeak.SetMaxResource(containerReq))
-	}
-	return sidecarSum, initPhasePeak
-}
-
-func logIfErr(pod *v1.Pod, err error) {
-	if err != nil {
-		log.InfraLogger.Errorf("Failed to calculate pod required resources for pod %s/%s. Error: %s",
-			pod.Namespace, pod.Name, err.Error())
-	}
-}
-
-// getPodResourceWithoutInitContainers returns Pod's resource request, it does not contain
-// init containers' resource request.
-func getPodResourceWithoutInitContainers(pod *v1.Pod) *resource_info.ResourceRequirements {
-	podResourcesList := v1.ResourceList{}
-	for _, container := range pod.Spec.Containers {
-		for key := range container.Resources.Requests {
-			resourceSum := podResourcesList[key]
-			resourceSum.Add(container.Resources.Requests[key])
-			podResourcesList[key] = resourceSum
-		}
-	}
-
-	return resource_info.RequirementsFromResourceList(podResourcesList)
 }
 
 func getTaskStatus(pod *v1.Pod, bindRequest *bindrequest_info.BindRequestInfo, stuckInReleasingThreshold time.Duration) pod_status.PodStatus {
@@ -488,10 +503,13 @@ func getTaskStatus(pod *v1.Pod, bindRequest *bindrequest_info.BindRequestInfo, s
 }
 
 func (pi *PodInfo) updatePodAdditionalFields(bindRequest *bindrequest_info.BindRequestInfo, draPodClaims ...*resourceapi.ResourceClaim) {
-	if bindRequest != nil && len(bindRequest.BindRequest.Spec.SelectedGPUGroups) > 0 {
-		pi.GPUGroups = bindRequest.BindRequest.Spec.SelectedGPUGroups
+	if bindRequest != nil && len(bindRequest.BindRequest.Spec.SelectedFractionalGpuGroupsOrDefault()) > 0 {
+		pi.SetFractionalGpuGroups(bindRequest.BindRequest.Spec.SelectedFractionalGpuGroupsOrDefault())
 	} else {
-		pi.GPUGroups = resources.GetGpuGroups(pi.Pod)
+		pi.SetFractionalGpuGroups(schedulingv1alpha2.NewFractionalGpuGroups(
+			resources.GetGpuGroups(pi.Pod),
+			pi.RequestedGPUComputeSharingMode(),
+		))
 	}
 
 	if bindRequest != nil && len(bindRequest.BindRequest.Spec.ReceivedResourceType) > 0 {
@@ -503,27 +521,26 @@ func (pi *PodInfo) updatePodAdditionalFields(bindRequest *bindrequest_info.BindR
 		}
 	}
 
-	gpuMemory, err := strconv.ParseInt(pi.Pod.Annotations[commonconstants.GpuMemory], 10, 64)
-	if err == nil && gpuMemory > 0 {
-		pi.GpuRequirement = *resource_info.NewGpuResourceRequirementWithGpus(0, gpuMemory)
-		pi.ResourceRequestType = RequestTypeGpuMemory
+	gpuFractionReq, err := resources.ParsePodGPUFractionRequest(pi.Pod)
+	if err != nil {
+		log.InfraLogger.Errorf("Failed to parse GPU fraction request for pod %s/%s: %s", pi.Pod.Namespace, pi.Pod.Name, err)
 	}
-
-	gpuFractionString := pi.Pod.Annotations[commonconstants.GpuFraction]
-	gpuFraction, GPUFractionErr := strconv.ParseFloat(gpuFractionString, 64)
-	if !(gpuFraction <= 0 || gpuFraction > 1 || GPUFractionErr != nil) {
-		pi.GpuRequirement = *resource_info.NewGpuResourceRequirementWithGpus(gpuFraction, 0)
-		pi.ResourceRequestType = RequestTypeFraction
-	}
-
-	if pi.ResourceRequestType == RequestTypeFraction || pi.ResourceRequestType == RequestTypeGpuMemory {
-		numFractionDevicesStr, found := pi.Pod.Annotations[commonconstants.GpuFractionsNumDevices]
-		if found && numFractionDevicesStr != "" {
-			numFractionDevices, numFractionDevicesErr := strconv.ParseInt(numFractionDevicesStr, 10, 64)
-			if numFractionDevicesErr == nil {
-				pi.GpuRequirement = *resource_info.NewGpuResourceRequirementWithMultiFraction(
-					numFractionDevices, gpuFraction, gpuMemory)
+	if gpuFractionReq != nil {
+		if gpuFractionReq.Memory != nil {
+			pi.GpuRequirement = *resource_info.NewGpuResourceRequirementWithGpus(
+				0, gpuFractionReq.Memory.Value()/resources.BytesInMiB)
+			pi.ResourceRequestType = RequestTypeGpuMemory
+		} else if gpuFractionReq.Portion > 0 {
+			pi.GpuRequirement = *resource_info.NewGpuResourceRequirementWithGpus(gpuFractionReq.Portion, 0)
+			pi.ResourceRequestType = RequestTypeFraction
+		}
+		if gpuFractionReq.NumDevices > 1 {
+			memMiB := int64(0)
+			if gpuFractionReq.Memory != nil {
+				memMiB = gpuFractionReq.Memory.Value() / resources.BytesInMiB
 			}
+			pi.GpuRequirement = *resource_info.NewGpuResourceRequirementWithMultiFraction(
+				gpuFractionReq.NumDevices, gpuFractionReq.Portion, memMiB)
 		}
 	}
 

@@ -10,20 +10,42 @@ global:
   registry: registry/local/kai-scheduler
   tag: ""
   # Use FIPS-enabled images: appends "-fips" to every resolved image tag
-  # (whether it comes from a per-service tag, global.tag or the chart version)
-  fips: false
+  # (whether it comes from a per-service tag, global.tag or the chart version).
+  # "only" does everything "on" does, plus sets GODEBUG=fips140=only on every KAI
+  # container, which can panic at runtime if non-approved crypto is used - see
+  # docs/fips/README.md. Setting "only" is the user's responsibility.
+  # Valid values: "on" | "only" | "off"
+  fipsMode: "off"
   imagePullPolicy: IfNotPresent
   securityContext: {}
   podSecurityContext: {}
   imagePullSecrets: [] # format: [{name: secret1}, {name: secret2}]
   leaderElection: false
-  gpuSharing: false
+  # gpuSharingMode selects the GPU sharing preset applied across admission and binder.
+  # One of: NonMemoryEnforced, HamiCore, NvFractions, Disabled. Leave empty to use the
+  # default (NonMemoryEnforced), or to preserve a legacy gpuSharing value on upgrade.
+  gpuSharingMode: ""
+  # Deprecated: gpuSharing is honored only for upgrades when gpuSharingMode is empty
+  # (true -> NonMemoryEnforced, false -> Disabled). Prefer gpuSharingMode.
+  # gpuSharing: false
+  # nvFractions.set installs gpu-fractioning
+  # (oci://ghcr.io/kai-scheduler/gpu-fractioning) as a subchart and selects the NvFractions
+  # GPU sharing mode. Setting it together with a global.gpuSharingMode other than
+  # NvFractions is rejected at render time.
+  # KAI's global.imagePullSecrets/nodeSelector/affinity/tolerations are NOT propagated to
+  # the subchart; override them under the top-level `gpu-fractioning:` key.
+  nvFractions:
+    set: false
   blockNvidiaVisibleDevices: false
   clusterAutoscaling: false
   nodeSelector: {}
   affinity: {}
   requireDefaultPodAntiAffinityTerm: false
   tolerations: []
+  # Additional tolerations for cluster DaemonSets (e.g. NUMA placement exporter).
+  # Merged ahead of each DaemonSet's own tolerations by the operator.
+  daemonsetsTolerations: []
+  priorityClassName: ""
   namespaceLabelSelector: {}
   podLabelSelector: {}
   nodePoolLabelKey: ""
@@ -63,6 +85,12 @@ operator:
   # Log level for the operator (currently mapped to controller-runtime --zap-log-level). Leave empty to use binary defaults.
   # When set: debug, info, error, panic. Example: "info"
   logLevel: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
 
 podgrouper:
   enabled: true
@@ -71,7 +99,15 @@ podgrouper:
     pullPolicy: IfNotPresent
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
   queueLabelKey: "kai.scheduler/queue"
+  # Flat podgrouper.genericKartaFallback overrides this map.
+  args:
+    genericKartaFallback: true
   affinity: {}
+  # PDB is created only when pod-grouper replicas > 1 (operator.replicaCount / podGrouper.replicas).
+  # For HA: set operator.replicaCount: 2 (or override podGrouper.replicas in Config).
+  podDisruptionBudget:
+    enabled: true
+    maxUnavailable: 1
 
 podgroupcontroller:
   enabled: true
@@ -105,6 +141,11 @@ binder:
   ports:
     metricsPort: 8080
   affinity: {}
+  # PDB is created only when binder replicas > 1 (operator.replicaCount / binder.replicas).
+  # For HA: set operator.replicaCount: 2 (or override binder.replicas in Config).
+  podDisruptionBudget:
+    enabled: true
+    maxUnavailable: 1
   # plugins allows overriding binder plugin configuration.
   # Built-in plugins can be disabled, reordered, or have their arguments changed.
   # Default plugins and priorities: volumebinding=300, dynamicresources=200, gpusharing=100.
@@ -131,6 +172,12 @@ scheduler:
   # args:
   #   v: "0"
   args: {}
+  # goMemLimitRatio reserves container-memory headroom from Go's memory limit.
+  # The scheduler defaults to 0.9 when this value is omitted.
+  goMemLimitRatio: 0.9
+  # goMemLimit overrides automatic cgroup-derived GOMEMLIMIT for the default shard.
+  # Example: 6Gi
+  # goMemLimit: ""
   # plugins allows overriding or adding custom scheduler plugins
   # Built-in plugins can be disabled, reordered, or have their arguments changed.
   # New plugins can be added by specifying a name not in the default set.
@@ -162,6 +209,11 @@ scheduler:
   actions: {}
   # Alpha/experimental scenario search time budgets. Values are Go duration strings.
   scenarioSearchBudgets: {}
+  # PDB is created only when scheduler replicas > 1 (global.replicaCount / scheduler.replicas).
+  # For HA: set operator.replicaCount: 2 (or override scheduler.replicas in Config).
+  podDisruptionBudget:
+    enabled: true
+    maxUnavailable: 1
 
 # defaultShard controls the chart-managed "default" SchedulingShard CR,
 # whose spec is populated from the scheduler.* values above.
@@ -198,6 +250,11 @@ queuecontroller:
     pullPolicy: IfNotPresent
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
   affinity: {}
+  # PDB is created only when queue-controller replicas > 1 (operator.replicaCount / queueController.replicas).
+  # For HA: set operator.replicaCount: 2 (or override queueController.replicas in Config).
+  podDisruptionBudget:
+    enabled: true
+    maxUnavailable: 1
 
 admission:
   enabled: true
@@ -211,6 +268,7 @@ admission:
     metricsPort: 8080
     probePort: 8081
   cdi: false
+  # Ignored when the GPU Operator ClusterPolicy enables the NRI plugin.
   gpuFractionRuntimeClassName: nvidia
   affinity: {}
   podDisruptionBudget:
@@ -232,11 +290,16 @@ nodescaleadjuster:
 
 crdupgrader:
   image:
-    name: crd-upgrader
+    name: helm-hooks
     pullPolicy: IfNotPresent
     # registry: ""  # Optional: Override global.registry (e.g. to mirror only the hook image)
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
-  resources: {}
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
 
 kaiConfig:
   # Render the kai-config Config CR inline as a regular chart resource so it is
@@ -252,11 +315,16 @@ kaiConfigDeployer:
   # (see docs/gitops/README.md).
   enabled: true
   image:
-    name: crd-upgrader
+    name: helm-hooks
     pullPolicy: IfNotPresent
     # registry: ""  # Optional: Override global.registry (e.g. to mirror only the hook image)
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
-  resources: {}
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
 
 topologyMigration:
   # Enable migration of Kueue Topology CRs to KAI Topology CRs
@@ -266,20 +334,30 @@ topologyMigration:
   # The migrated topologies will have an annotation indicating they were migrated
   enabled: true
   image:
-    name: crd-upgrader
+    name: helm-hooks
     pullPolicy: IfNotPresent
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
-  resources: {}
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
 
 postCleanup:
   enabled: true
   image:
-    # using crd-upgrader image for kubectl availability
-    name: crd-upgrader
+    name: helm-hooks
     pullPolicy: IfNotPresent
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
+  # Name of the ServiceAccount used by the post-delete hook Job.
   serviceAccountName: post-delete-cleanup
-  resources: {}
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
 
 # defaultPriorityClasses controls the chart-managed build, train, inference, and
 # build-preemptible PriorityClasses. Disable when these cluster-scoped resources

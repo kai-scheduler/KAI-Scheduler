@@ -23,6 +23,7 @@ const (
 // SchedulerLogger is used to wrap other loggers with verbosity level logging similar to glog
 type SchedulerLogger interface {
 	V(int) VerboseLogger
+	Infof(string, ...interface{})
 	Warningf(string, ...interface{})
 	Errorf(string, ...interface{})
 	Fatalf(string, ...interface{})
@@ -70,6 +71,10 @@ func (sl *schedulerLogger) V(lvl int) VerboseLogger {
 		return VerboseLogger{SugaredLogger: sl.getLogger(), enabled: true}
 	}
 	return VerboseLogger{SugaredLogger: emptyLogger}
+}
+
+func (sl *schedulerLogger) Infof(t string, vars ...interface{}) {
+	sl.getLogger().Desugar().WithOptions(zap.AddCallerSkip(1)).Sugar().Infof(t, vars...)
 }
 
 func (sl *schedulerLogger) Warningf(t string, vars ...interface{}) {

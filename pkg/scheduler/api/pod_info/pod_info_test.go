@@ -33,12 +33,52 @@ import (
 
 	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/storageclaim_info"
 )
+
+func TestRequestedGPUComputeSharingMode(t *testing.T) {
+	tests := []struct {
+		name        string
+		annotations map[string]string
+		want        schedulingv1alpha2.GPUComputeSharingMode
+	}{
+		{
+			name:        "no annotations defaults to time-slicing",
+			annotations: map[string]string{},
+			want:        schedulingv1alpha2.GPUComputeSharingModeTimeSlicing,
+		},
+		{
+			name: "NvFractions pod honors the compute-mode annotation",
+			annotations: map[string]string{
+				resources.CalcGpuFractionAnnotationForContainer("main"):           "1Gi",
+				resources.CalcGpuComputeSharingModeAnnotationForContainer("main"): string(schedulingv1alpha2.GPUComputeSharingModeSMSharing),
+			},
+			want: schedulingv1alpha2.GPUComputeSharingModeSMSharing,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pi := &PodInfo{
+				Pod: &v1.Pod{
+					ObjectMeta: metav1.ObjectMeta{Annotations: tt.annotations},
+					Spec:       v1.PodSpec{Containers: []v1.Container{{Name: "main"}}},
+				},
+			}
+
+			got := pi.RequestedGPUComputeSharingMode()
+
+			if got != tt.want {
+				t.Errorf("RequestedGPUComputeSharingMode() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
 
 func TestGetPodResourceRequest(t *testing.T) {
 	tests := []struct {
@@ -265,75 +305,6 @@ func TestGetPodResourceRequest(t *testing.T) {
 	}
 }
 
-func TestGetPodResourceWithoutInitContainers(t *testing.T) {
-	tests := []struct {
-		name             string
-		pod              *v1.Pod
-		expectedResource *resource_info.ResourceRequirements
-	}{
-		{
-			name: "get resource for pod without init containers",
-			pod: &v1.Pod{
-				Spec: v1.PodSpec{
-					Containers: []v1.Container{
-						{
-							Resources: v1.ResourceRequirements{
-								Requests: common_info.BuildResourceList("1000m", "1G"),
-							},
-						},
-						{
-							Resources: v1.ResourceRequirements{
-								Requests: common_info.BuildResourceList("2000m", "1G"),
-							},
-						},
-					},
-				},
-			},
-			expectedResource: resource_info.RequirementsFromResourceList(common_info.BuildResourceList("3000m", "2G")),
-		},
-		{
-			name: "get resource for pod with init containers",
-			pod: &v1.Pod{
-				Spec: v1.PodSpec{
-					InitContainers: []v1.Container{
-						{
-							Resources: v1.ResourceRequirements{
-								Requests: common_info.BuildResourceList("2000m", "5G"),
-							},
-						},
-						{
-							Resources: v1.ResourceRequirements{
-								Requests: common_info.BuildResourceList("2000m", "1G"),
-							},
-						},
-					},
-					Containers: []v1.Container{
-						{
-							Resources: v1.ResourceRequirements{
-								Requests: common_info.BuildResourceList("1000m", "1G"),
-							},
-						},
-						{
-							Resources: v1.ResourceRequirements{
-								Requests: common_info.BuildResourceList("2000m", "1G"),
-							},
-						},
-					},
-				},
-			},
-			expectedResource: resource_info.RequirementsFromResourceList(common_info.BuildResourceList("3000m", "2G")),
-		},
-	}
-
-	for i, test := range tests {
-		req := getPodResourceWithoutInitContainers(test.pod)
-		if !reflect.DeepEqual(req, test.expectedResource) {
-			t.Errorf("case %d(%s) failed: \n expected %v, \n got: %v \n",
-				i, test.name, test.expectedResource, req)
-		}
-	}
-}
-
 func TestPodInfo_updatePodAdditionalFields(t *testing.T) {
 	type podFields struct {
 		Job            common_info.PodGroupID
@@ -414,7 +385,7 @@ func TestPodInfo_updatePodAdditionalFields(t *testing.T) {
 					nil,
 					map[string]string{},
 					map[string]string{
-						commonconstants.GpuMemory: "1024",
+						resources.CalcGpuFractionAnnotationForContainer("main"): "1Gi",
 					}),
 			},
 			expected{
@@ -438,8 +409,8 @@ func TestPodInfo_updatePodAdditionalFields(t *testing.T) {
 					nil,
 					map[string]string{},
 					map[string]string{
-						commonconstants.GpuMemory:              "1024",
-						commonconstants.GpuFractionsNumDevices: "2",
+						resources.CalcGpuFractionAnnotationForContainer("main"): "1Gi",
+						commonconstants.GpuFractionsNumDevices:                  "2",
 					}),
 			},
 			expected{
@@ -556,6 +527,30 @@ func TestPodInfo_updatePodAdditionalFields(t *testing.T) {
 				GPUGroups:            nil,
 			},
 		},
+		{
+			"Legacy gpu-memory annotation fallback (pod predates NvFractions webhook)",
+			podFields{
+				Job:       common_info.FakePogGroupId,
+				Name:      "p1",
+				Namespace: "ns1",
+				Status:    pod_status.Pending,
+				Pod: common_info.BuildPod("ns1", "p1", "node1", v1.PodPending,
+					common_info.BuildResourceList("2000m", "2G"),
+					nil,
+					map[string]string{},
+					map[string]string{
+						commonconstants.GpuMemory: "2048",
+					}),
+			},
+			expected{
+				GpuRequirement:      *resource_info.NewGpuResourceRequirementWithGpus(0, 2048),
+				ResourceRequestType: "GpuMemory",
+				GPUGroups:           nil,
+				SelectedMigProfile:  "",
+				IsBound:             false,
+				IsChiefPod:          true,
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -571,7 +566,6 @@ func TestPodInfo_updatePodAdditionalFields(t *testing.T) {
 				Status:         tt.fields.Status,
 				Pod:            tt.fields.Pod,
 				GpuRequirement: *resource_info.NewGpuResourceRequirement(),
-				GPUGroups:      make([]string, 0),
 				VectorMap:      vectorMap,
 			}
 			pi.updatePodAdditionalFields(tt.fields.bindingRequest)
@@ -585,9 +579,9 @@ func TestPodInfo_updatePodAdditionalFields(t *testing.T) {
 					tt.name, tt.expected.AcceptedGpuRequirement, pi.AcceptedGpuRequirement)
 			}
 			assert.Equal(t, string(pi.ResourceRequestType), tt.expected.ResourceRequestType)
-			if !reflect.DeepEqual(pi.GPUGroups, tt.expected.GPUGroups) {
+			if !reflect.DeepEqual(pi.GPUGroupIDs(), tt.expected.GPUGroups) {
 				t.Errorf("case (%s) failed: GPUGroups \n expected %v, \n got: %v \n",
-					tt.name, tt.expected.GPUGroups, pi.GPUGroups)
+					tt.name, tt.expected.GPUGroups, pi.GPUGroupIDs())
 			}
 		})
 	}

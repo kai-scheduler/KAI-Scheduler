@@ -52,6 +52,84 @@ var _ = Describe("DeploymentForKAIConfig", func() {
 		Expect(deployment.Labels).To(HaveKeyWithValue(OperatorManagedByLabelKey, OperatorManagedByLabelValue))
 		Expect(deployment.Labels).To(HaveKeyWithValue("existing-label", "preserved"))
 	})
+
+	It("leaves the priority class empty by default", func() {
+		config := &kaiv1.Config{Spec: kaiv1.ConfigSpec{Namespace: "kai-scheduler"}}
+		config.Spec.SetDefaultsWhereNeeded()
+
+		deployment, err := DeploymentForKAIConfig(
+			context.Background(), fake.NewClientBuilder().Build(), config, config.Spec.Binder.Service, "binder",
+		)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(deployment.Spec.Template.Spec.PriorityClassName).To(BeEmpty())
+	})
+
+	It("applies the global priority class", func() {
+		config := &kaiv1.Config{Spec: kaiv1.ConfigSpec{Namespace: "kai-scheduler"}}
+		config.Spec.SetDefaultsWhereNeeded()
+		config.Spec.Global.PriorityClassName = ptr.To("system-cluster-critical")
+
+		deployment, err := DeploymentForKAIConfig(
+			context.Background(), fake.NewClientBuilder().Build(), config, config.Spec.Binder.Service, "binder",
+		)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(deployment.Spec.Template.Spec.PriorityClassName).To(Equal("system-cluster-critical"))
+	})
+
+	It("does not set GODEBUG by default", func() {
+		config := &kaiv1.Config{Spec: kaiv1.ConfigSpec{Namespace: "kai-scheduler"}}
+		config.Spec.SetDefaultsWhereNeeded()
+
+		deployment, err := DeploymentForKAIConfig(
+			context.Background(), fake.NewClientBuilder().Build(), config, config.Spec.Binder.Service, "binder",
+		)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(deployment.Spec.Template.Spec.Containers[0].Env).To(BeEmpty())
+	})
+
+	It("sets GODEBUG=fips140=only when global.fipsOnly is enabled", func() {
+		config := &kaiv1.Config{Spec: kaiv1.ConfigSpec{Namespace: "kai-scheduler"}}
+		config.Spec.SetDefaultsWhereNeeded()
+		config.Spec.Global.FIPSOnly = ptr.To(true)
+
+		deployment, err := DeploymentForKAIConfig(
+			context.Background(), fake.NewClientBuilder().Build(), config, config.Spec.Binder.Service, "binder",
+		)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(deployment.Spec.Template.Spec.Containers[0].Env).To(ContainElement(
+			v1.EnvVar{Name: "GODEBUG", Value: "fips140=only,tlsmlkem=0"},
+		))
+	})
+})
+
+var _ = Describe("DaemonSetForKAIConfig", func() {
+	It("applies the global priority class", func() {
+		config := &kaiv1.Config{Spec: kaiv1.ConfigSpec{Namespace: "kai-scheduler"}}
+		config.Spec.SetDefaultsWhereNeeded()
+		config.Spec.Global.PriorityClassName = ptr.To("system-node-critical")
+
+		ds, err := DaemonSetForKAIConfig(
+			context.Background(), fake.NewClientBuilder().Build(), config,
+			config.Spec.NumaPlacementExporter.Service, nil, nil, "numa-placement-exporter",
+		)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(ds.Spec.Template.Spec.PriorityClassName).To(Equal("system-node-critical"))
+	})
+
+	It("sets GODEBUG=fips140=only when global.fipsOnly is enabled", func() {
+		config := &kaiv1.Config{Spec: kaiv1.ConfigSpec{Namespace: "kai-scheduler"}}
+		config.Spec.SetDefaultsWhereNeeded()
+		config.Spec.Global.FIPSOnly = ptr.To(true)
+
+		ds, err := DaemonSetForKAIConfig(
+			context.Background(), fake.NewClientBuilder().Build(), config,
+			config.Spec.NumaPlacementExporter.Service, nil, nil, "numa-placement-exporter",
+		)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(ds.Spec.Template.Spec.Containers[0].Env).To(ContainElement(
+			v1.EnvVar{Name: "GODEBUG", Value: "fips140=only,tlsmlkem=0"},
+		))
+	})
 })
 
 var _ = Describe("AllControllersAvailable", func() {
@@ -538,9 +616,12 @@ var _ = Describe("PodDisruptionBudgetForKAIConfig", func() {
 
 var _ = Describe("PodDisruptionBudgetImplementedServices", func() {
 	It("only lists operands with operator-side PDB creation", func() {
-		Expect(PodDisruptionBudgetImplementedServices).To(HaveLen(1))
+		Expect(PodDisruptionBudgetImplementedServices).To(HaveLen(5))
 		Expect(PodDisruptionBudgetImplemented("admission")).To(BeTrue())
-		Expect(PodDisruptionBudgetImplemented("binder")).To(BeFalse())
-		Expect(PodDisruptionBudgetImplemented("scheduler")).To(BeFalse())
+		Expect(PodDisruptionBudgetImplemented("scheduler")).To(BeTrue())
+		Expect(PodDisruptionBudgetImplemented("pod-grouper")).To(BeTrue())
+		Expect(PodDisruptionBudgetImplemented("binder")).To(BeTrue())
+		Expect(PodDisruptionBudgetImplemented("queue-controller")).To(BeTrue())
+		Expect(PodDisruptionBudgetImplemented("podgroup-controller")).To(BeFalse())
 	})
 })

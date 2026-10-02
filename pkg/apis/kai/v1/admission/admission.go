@@ -20,6 +20,14 @@ const (
 type Admission struct {
 	Service *common.Service `json:"service,omitempty"`
 
+	// ServiceName overrides the webhook Service name and certificate DNS identity.
+	// Defaults to the admission operand's resource name when omitted.
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:Pattern=`^[a-z]([-a-z0-9]*[a-z0-9])?$`
+	ServiceName *string `json:"serviceName,omitempty"`
+
 	// Webhook defines configuration for the admission service
 	// +kubebuilder:validation:Optional
 	Webhook *Webhook `json:"webhook,omitempty"`
@@ -66,9 +74,32 @@ type Admission struct {
 	// VPA specifies Vertical Pod Autoscaler configuration for the admission service
 	// +kubebuilder:validation:Optional
 	VPA *common.VPASpec `json:"vpa,omitempty"`
+
+	// InPlacePodResize configures in-place pod resize (KEP-1287) behaviour.
+	// +kubebuilder:validation:Optional
+	InPlacePodResize *InPlacePodResize `json:"inPlacePodResize,omitempty"`
 }
 
-func (b *Admission) SetDefaultsWhereNeeded(replicaCount *int32, globalVPA *common.VPASpec) {
+// InPlacePodResize configures KEP-1287 in-place pod resize admission behaviour.
+type InPlacePodResize struct {
+	// ValidateQuota enables best-effort hierarchical queue quota checks on
+	// pods/resize requests. When false, the webhook admits all resizes without
+	// checking queue limits or quota, and BlockUpsizeOnBoundedQueues is ignored.
+	// Defaults to true.
+	// +kubebuilder:validation:Optional
+	ValidateQuota *bool `json:"validateQuota,omitempty"`
+
+	// BlockUpsizeOnBoundedQueues rejects any upsize on a queue (or ancestor)
+	// that has a finite CPU or memory limit, regardless of current allocation.
+	// This prevents concurrent-resize races from exceeding hard limits.
+	// Disabled by default; enable only when strict race-free enforcement is
+	// required and best-effort checks are insufficient.
+	// Has no effect when ValidateQuota is false.
+	// +kubebuilder:validation:Optional
+	BlockUpsizeOnBoundedQueues *bool `json:"blockUpsizeOnBoundedQueues,omitempty"`
+}
+
+func (b *Admission) SetDefaultsWhereNeeded(replicaCount *int32, globalVPA *common.VPASpec, gpuSharingMode common.GpuSharingMode) {
 	b.Service = common.SetDefault(b.Service, &common.Service{})
 	b.Service.SetDefaultsWhereNeeded(imageName)
 
@@ -79,9 +110,13 @@ func (b *Admission) SetDefaultsWhereNeeded(replicaCount *int32, globalVPA *commo
 	b.Webhook.SetDefaultsWhereNeeded()
 
 	b.Replicas = common.SetDefault(b.Replicas, ptr.To(ptr.Deref(replicaCount, 1)))
-	b.GPUSharing = common.SetDefault(b.GPUSharing, ptr.To(false))
+	b.GPUSharing = common.SetDefault(b.GPUSharing, ptr.To(gpuSharingEnabledForMode(gpuSharingMode)))
 	b.QueueLabelSelector = common.SetDefault(b.QueueLabelSelector, ptr.To(false))
 	b.BlockNvidiaVisibleDevices = common.SetDefault(b.BlockNvidiaVisibleDevices, ptr.To(false))
+
+	b.InPlacePodResize = common.SetDefault(b.InPlacePodResize, &InPlacePodResize{})
+	b.InPlacePodResize.ValidateQuota = common.SetDefault(b.InPlacePodResize.ValidateQuota, ptr.To(true))
+	b.InPlacePodResize.BlockUpsizeOnBoundedQueues = common.SetDefault(b.InPlacePodResize.BlockUpsizeOnBoundedQueues, ptr.To(false))
 
 	b.ValidatingWebhookConfigurationName = common.SetDefault(b.ValidatingWebhookConfigurationName, ptr.To(defaultValidatingWebhookName))
 	b.MutatingWebhookConfigurationName = common.SetDefault(b.MutatingWebhookConfigurationName, ptr.To(defaultMutatingWebhookName))
@@ -96,6 +131,13 @@ func (b *Admission) SetDefaultsWhereNeeded(replicaCount *int32, globalVPA *commo
 	if b.VPA == nil {
 		b.VPA = globalVPA
 	}
+}
+
+// gpuSharingEnabledForMode reports whether the admission gpusharing plugin
+// should accept GPU fraction pods for the given mode. NvFractions is handled by
+// the dedicated nvfractions plugin, and Disabled rejects fraction pods.
+func gpuSharingEnabledForMode(mode common.GpuSharingMode) bool {
+	return mode == common.GpuSharingModeNonMemoryEnforced || mode == common.GpuSharingModeHamiCore
 }
 
 // Webhook defines configuration for the admission webhook

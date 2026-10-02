@@ -7,12 +7,15 @@ import (
 	"context"
 	"testing"
 
+	nvidiav1 "github.com/kai-scheduler/KAI-scheduler/third_party/nvidia/gpu-operator/api/nvidia/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	admissionv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -28,6 +31,7 @@ func TestDeploymentForKAIConfig(t *testing.T) {
 	tests := []struct {
 		name            string
 		config          *kaiv1.Config
+		clusterPolicy   *nvidiav1.ClusterPolicy
 		expectedArgs    []string
 		notExpectedArgs []string
 	}{
@@ -55,6 +59,8 @@ func TestDeploymentForKAIConfig(t *testing.T) {
 				"--webhook-addr", "9443",
 				"--health-probe-bind-address", ":8081",
 				"--metrics-bind-address", ":8080",
+				"--qps", "20",
+				"--burst", "100",
 			},
 			notExpectedArgs: []string{
 				"--gpu-sharing-enabled=true",
@@ -85,6 +91,42 @@ func TestDeploymentForKAIConfig(t *testing.T) {
 				"--health-probe-bind-address", ":8081",
 				"--metrics-bind-address", ":8080",
 				"--gpu-sharing-enabled=true",
+			},
+		},
+		{
+			name: "nri plugin enabled from gpu-operator cluster-policy",
+			config: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Namespace: constants.DefaultKAINamespace,
+					Global: &kaiv1.GlobalConfig{
+						SchedulerName: ptr.To(constants.DefaultSchedulerName),
+					},
+					Admission: &admission.Admission{
+						Replicas:                    ptr.To(int32(1)),
+						GPUSharing:                  ptr.To(true),
+						GPUFractionRuntimeClassName: ptr.To("custom-runtime-class"),
+						Webhook: &admission.Webhook{
+							TargetPort:  ptr.To(9443),
+							ProbePort:   ptr.To(8081),
+							MetricsPort: ptr.To(8080),
+						},
+					},
+				},
+			},
+			clusterPolicy: &nvidiav1.ClusterPolicy{
+				ObjectMeta: metav1.ObjectMeta{Name: "cluster-policy"},
+				Spec: nvidiav1.ClusterPolicySpec{
+					CDI: nvidiav1.CDIConfigSpec{NRIPluginEnabled: ptr.To(true)},
+				},
+			},
+			expectedArgs: []string{
+				"--gpu-sharing-enabled=true",
+				"--nri-plugin-enabled=true",
+				"--gpu-fraction-runtime-class-name",
+				"",
+			},
+			notExpectedArgs: []string{
+				"custom-runtime-class",
 			},
 		},
 		{
@@ -288,6 +330,36 @@ func TestDeploymentForKAIConfig(t *testing.T) {
 			notExpectedArgs: []string{
 				"--hami-core-enabled=true",
 				"--block-nvidia-visible-devices=true",
+				"--nv-fractions-enabled=true",
+			},
+		},
+		{
+			name: "nv-fractions enabled emits flag",
+			config: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Namespace: constants.DefaultKAINamespace,
+					Global: &kaiv1.GlobalConfig{
+						SchedulerName:  ptr.To(constants.DefaultSchedulerName),
+						GpuSharingMode: ptr.To(common.GpuSharingModeNvFractions),
+					},
+					Admission: &admission.Admission{
+						Replicas: ptr.To(int32(1)),
+						Webhook: &admission.Webhook{
+							TargetPort:  ptr.To(9443),
+							ProbePort:   ptr.To(8081),
+							MetricsPort: ptr.To(8080),
+						},
+					},
+				},
+			},
+			expectedArgs: []string{
+				"--nv-fractions-enabled=true",
+				"--binder-service-account-username",
+				"system:serviceaccount:kai-scheduler:binder",
+			},
+			notExpectedArgs: []string{
+				"--gpu-sharing-enabled=true",
+				"--hami-core-enabled=true",
 			},
 		},
 		{
@@ -342,7 +414,13 @@ func TestDeploymentForKAIConfig(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			client := fake.NewClientBuilder().Build()
+			testScheme := scheme.Scheme
+			utilruntime.Must(nvidiav1.AddToScheme(testScheme))
+			clientBuilder := fake.NewClientBuilder().WithScheme(testScheme)
+			if tt.clusterPolicy != nil {
+				clientBuilder.WithObjects(tt.clusterPolicy)
+			}
+			client := clientBuilder.Build()
 
 			tt.config.Spec.SetDefaultsWhereNeeded()
 			a := &Admission{BaseResourceName: defaultResourceName}
@@ -604,6 +682,13 @@ func TestValidatingWCForKAIConfig(t *testing.T) {
 
 			webhook := objects[0].(*admissionv1.ValidatingWebhookConfiguration)
 			require.NotNil(t, webhook, "should have validating webhook configuration")
+			require.Len(t, webhook.Webhooks, 3, "expected pods, pods/resize, and topology webhooks")
+
+			// pods/resize webhook is second; verify it uses failurePolicy=Ignore.
+			resizeWebhook := webhook.Webhooks[1]
+			require.NotNil(t, resizeWebhook.FailurePolicy)
+			assert.Equal(t, admissionv1.Ignore, *resizeWebhook.FailurePolicy)
+			assert.Equal(t, []string{"pods/resize"}, resizeWebhook.Rules[0].Resources)
 
 			// Check namespace selector
 			namespaceSelector := webhook.Webhooks[0].NamespaceSelector

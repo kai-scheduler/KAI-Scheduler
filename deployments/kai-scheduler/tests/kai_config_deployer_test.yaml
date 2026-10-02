@@ -69,3 +69,14 @@ tests:
       - hasDocuments:
           count: 0
         template: hooks/post/kai-config-deployer/rbac.yaml
+
+  - it: should apply the mounted kai-config manifest with the apply-config subcommand
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].args
+          value: ["apply-config", "--file=/manifest/kai-config.yaml"]
+        template: hooks/post/kai-config-deployer/job.yaml
+      - equal:
+          path: spec.template.spec.containers[0].volumeMounts[0].mountPath
+          value: /manifest
+        template: hooks/post/kai-config-deployer/job.yaml

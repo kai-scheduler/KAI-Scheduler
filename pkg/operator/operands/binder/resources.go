@@ -9,18 +9,11 @@ import (
 	"fmt"
 	"strconv"
 
-	"golang.org/x/mod/semver"
-
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
-	kerrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log"
-
-	nvidiav1 "github.com/kai-scheduler/KAI-scheduler/third_party/nvidia/gpu-operator/api/nvidia/v1"
 
 	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
 	kaiv1binder "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/binder"
@@ -30,9 +23,8 @@ import (
 )
 
 const (
-	defaultResourceName                    = "binder"
-	gpuOperatorVersionDefaultCDIDeprecated = "v25.10.0"
-	versionLabelName                       = "app.kubernetes.io/version"
+	defaultResourceName = "binder"
+	versionLabelName    = "app.kubernetes.io/version"
 )
 
 func (b *Binder) deploymentForKAIConfig(
@@ -51,6 +43,9 @@ func (b *Binder) deploymentForKAIConfig(
 	}
 
 	if err := resolveCDIEnabled(ctx, runtimeClient, config); err != nil {
+		return nil, err
+	}
+	if err := resolveNRIPluginEnabled(ctx, runtimeClient, config); err != nil {
 		return nil, err
 	}
 
@@ -79,6 +74,28 @@ func (b *Binder) serviceAccountForKAIConfig(
 		APIVersion: "v1",
 	}
 	return []client.Object{sa}, err
+}
+
+func (b *Binder) podDisruptionBudgetForKAIConfig(
+	ctx context.Context, runtimeClient client.Reader, kaiConfig *kaiv1.Config,
+) ([]client.Object, error) {
+	config := kaiConfig.Spec.Binder
+	pdbObj, err := common.PodDisruptionBudgetForKAIConfig(
+		ctx,
+		runtimeClient,
+		kaiConfig.Spec.Namespace,
+		b.BaseResourceName,
+		config.Replicas,
+		config.Service,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if pdbObj == nil {
+		return nil, nil
+	}
+
+	return []client.Object{pdbObj}, nil
 }
 
 func (b *Binder) serviceForKAIConfig(
@@ -170,41 +187,6 @@ func resourceReservationServiceAccount(
 	return []client.Object{sa}, nil
 }
 
-func isCdiEnabled(ctx context.Context, readerClient client.Reader) (bool, error) {
-	nvidiaClusterPolicies := &nvidiav1.ClusterPolicyList{}
-	err := readerClient.List(ctx, nvidiaClusterPolicies)
-	if err != nil {
-		if meta.IsNoMatchError(err) || kerrors.IsNotFound(err) {
-			return false, nil
-		}
-		logger := log.FromContext(ctx)
-		logger.Error(err, "cannot list nvidia cluster policy")
-		return false, err
-	}
-
-	if len(nvidiaClusterPolicies.Items) == 0 {
-		return false, nil
-	}
-	if len(nvidiaClusterPolicies.Items) > 1 {
-		logger := log.FromContext(ctx)
-		logger.Info(fmt.Sprintf("Cluster has %d clusterpolicies.nvidia.com/v1 objects."+
-			" First one is queried for the cdi configuration", len(nvidiaClusterPolicies.Items)))
-	}
-
-	nvidiaClusterPolicy := nvidiaClusterPolicies.Items[0]
-	if nvidiaClusterPolicy.Spec.CDI.Enabled != nil && *nvidiaClusterPolicy.Spec.CDI.Enabled {
-		gpuOperatorVersion, found := nvidiaClusterPolicy.Labels[versionLabelName]
-		if found && semver.Compare(gpuOperatorVersion, gpuOperatorVersionDefaultCDIDeprecated) >= 0 {
-			return true, nil
-		}
-		if nvidiaClusterPolicy.Spec.CDI.Default != nil && *nvidiaClusterPolicy.Spec.CDI.Default {
-			return true, nil
-		}
-	}
-
-	return false, nil
-}
-
 func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1binder.Binder, fakeGPU bool) ([]string, error) {
 	args := []string{
 		"--scheduler-name",
@@ -243,6 +225,10 @@ func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1binder.Binder, fakeGPU 
 
 	if fakeGPU {
 		args = append(args, "--fake-gpu-nodes")
+	}
+
+	if common.IsFIPSOnly(kaiConfig.Spec.Global) {
+		args = append(args, "--fips-only")
 	}
 
 	if config.Replicas != nil && *config.Replicas > 1 {
@@ -297,32 +283,84 @@ func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1binder.Binder, fakeGPU 
 	return args, nil
 }
 
-// resolveCDIEnabled fills the gpusharing cdiEnabled plugin argument when it
-// has not been explicitly supplied. Resolution order (highest priority first):
-// explicit gpusharing plugin arg, explicit Binder.CDIEnabled, ClusterPolicy auto-detect.
+// resolveCDIEnabled fills the cdiEnabled plugin argument on the CDI-aware plugins
+// (gpusharing, nvfractions) when it has not been explicitly supplied. Resolution
+// order (highest priority first): explicit plugin arg, explicit Binder.CDIEnabled,
+// ClusterPolicy auto-detect. The auto-detected value is resolved at most once and
+// shared by both plugins so they agree.
 func resolveCDIEnabled(ctx context.Context, runtimeClient client.Reader, config *kaiv1binder.Binder) error {
+	cdiAwarePlugins := []string{kaiv1binder.GPUSharingPluginName, kaiv1binder.NvFractionsPluginName}
+
+	// Nothing to do unless at least one CDI-aware plugin is present without an
+	// explicit cdiEnabled argument; avoid the ClusterPolicy lookup otherwise.
+	if !needsCDIEnabledResolution(config, cdiAwarePlugins) {
+		return nil
+	}
+
+	cdiEnabled, err := detectCDIEnabled(ctx, runtimeClient, config)
+	if err != nil {
+		return err
+	}
+
+	for _, name := range cdiAwarePlugins {
+		pluginConfig, ok := config.Plugins[name]
+		if !ok {
+			continue
+		}
+		if _, set := pluginConfig.Arguments[kaiv1binder.CDIEnabledArgument]; set {
+			continue
+		}
+		if pluginConfig.Arguments == nil {
+			pluginConfig.Arguments = map[string]string{}
+		}
+		pluginConfig.Arguments[kaiv1binder.CDIEnabledArgument] = strconv.FormatBool(cdiEnabled)
+		config.Plugins[name] = pluginConfig
+	}
+	return nil
+}
+
+func resolveNRIPluginEnabled(ctx context.Context, runtimeClient client.Reader, config *kaiv1binder.Binder) error {
 	pluginConfig, ok := config.Plugins[kaiv1binder.GPUSharingPluginName]
 	if !ok {
 		return nil
 	}
-	if _, set := pluginConfig.Arguments[kaiv1binder.CDIEnabledArgument]; set {
+	if _, set := pluginConfig.Arguments[kaiv1binder.NRIPluginEnabledArgument]; set {
 		return nil
 	}
 
-	cdiEnabled := false
-	if config.CDIEnabled != nil {
-		cdiEnabled = *config.CDIEnabled
-	} else {
-		detected, err := isCdiEnabled(ctx, runtimeClient)
-		if err != nil {
-			return err
-		}
-		cdiEnabled = detected
+	nriPluginEnabled, err := common.IsGPUOperatorNRIPluginEnabled(ctx, runtimeClient)
+	if err != nil {
+		return err
 	}
+
 	if pluginConfig.Arguments == nil {
 		pluginConfig.Arguments = map[string]string{}
 	}
-	pluginConfig.Arguments[kaiv1binder.CDIEnabledArgument] = strconv.FormatBool(cdiEnabled)
+	pluginConfig.Arguments[kaiv1binder.NRIPluginEnabledArgument] = strconv.FormatBool(nriPluginEnabled)
 	config.Plugins[kaiv1binder.GPUSharingPluginName] = pluginConfig
 	return nil
+}
+
+// needsCDIEnabledResolution reports whether any of the given plugins is
+// configured but missing an explicit cdiEnabled argument.
+func needsCDIEnabledResolution(config *kaiv1binder.Binder, pluginNames []string) bool {
+	for _, name := range pluginNames {
+		pluginConfig, ok := config.Plugins[name]
+		if !ok {
+			continue
+		}
+		if _, set := pluginConfig.Arguments[kaiv1binder.CDIEnabledArgument]; !set {
+			return true
+		}
+	}
+	return false
+}
+
+// detectCDIEnabled returns the effective cdiEnabled value: the explicit
+// Binder.CDIEnabled when set, otherwise the ClusterPolicy auto-detected value.
+func detectCDIEnabled(ctx context.Context, runtimeClient client.Reader, config *kaiv1binder.Binder) (bool, error) {
+	if config.CDIEnabled != nil {
+		return *config.CDIEnabled, nil
+	}
+	return common.IsGPUOperatorCDIEnabled(ctx, runtimeClient)
 }

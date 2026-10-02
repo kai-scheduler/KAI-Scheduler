@@ -121,7 +121,7 @@ func TestTopologyPlugin_initializeTopologyTree(t *testing.T) {
 		PartitionParams: &conf.SchedulingNodePoolParams{},
 	}
 
-	schedulerCache := cache.New(&cache.SchedulerCacheParams{
+	schedulerCache, cacheErr := cache.New(&cache.SchedulerCacheParams{
 		KubeClient:                  fakeKubeClient,
 		KAISchedulerClient:          fakeKubeAISchedulerClient,
 		SchedulerName:               schedulerParams.SchedulerName,
@@ -133,6 +133,7 @@ func TestTopologyPlugin_initializeTopologyTree(t *testing.T) {
 		NumOfStatusRecordingWorkers: 1,
 		DiscoveryClient:             fakeKubeClient.Discovery(),
 	})
+	assert.NoError(t, cacheErr)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

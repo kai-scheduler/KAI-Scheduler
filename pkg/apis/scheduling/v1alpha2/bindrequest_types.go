@@ -4,7 +4,8 @@
 package v1alpha2
 
 import (
-	v1 "k8s.io/api/resource/v1"
+	corev1 "k8s.io/api/core/v1"
+	resourceapi "k8s.io/api/resource/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -24,10 +25,19 @@ type BindRequestSpec struct {
 
 	// SelectedGPUGroups is the name of the selected GPU groups for fractional GPU resources.
 	// Only if the RecievedResourceType is "Fraction"
+	// Deprecated: Use SelectedFractionalGpuGroups instead
 	SelectedGPUGroups []string `json:"selectedGPUGroups,omitempty"`
+
+	// SelectedFractionalGpuGroups is the selected GPU groups for fractional GPU resources.
+	// Only if the RecievedResourceType is "Fraction"
+	SelectedFractionalGpuGroups []FractionalGpuGroup `json:"selectedFractionalGpuGroups,omitempty"`
 
 	// ResourceClaims is the list of resource claims that need to be bound for this pod
 	ResourceClaimAllocations []ResourceClaimAllocation `json:"resourceClaimAllocations,omitempty"`
+
+	// ExtendedResourceClaimAllocation holds the allocation for the synthetic DRA claim
+	// created to satisfy extended resource requests backed by a DeviceClass.
+	ExtendedResourceClaimAllocation *ExtendedResourceClaimAllocation `json:"extendedResourceClaimAllocation,omitempty"`
 
 	// PredictedNUMAZones is the scheduler's predicted NUMA placement of the pod's resources on the
 	// selected node.
@@ -35,6 +45,73 @@ type BindRequestSpec struct {
 
 	// BackoffLimit is the number of retries before giving up
 	BackoffLimit *int32 `json:"backoffLimit,omitempty"`
+}
+
+// GPUComputeSharingMode selects how compute is shared between the pods that are
+// assigned to the same fractional GPU group.
+// +kubebuilder:validation:Enum=time-slicing;sm-sharing
+type GPUComputeSharingMode string
+
+const (
+	GPUComputeSharingModeTimeSlicing GPUComputeSharingMode = "time-slicing"
+	GPUComputeSharingModeSMSharing   GPUComputeSharingMode = "sm-sharing"
+)
+
+type FractionalGpuGroup struct {
+	ID                 string                `json:"id,omitempty"`
+	ComputeSharingMode GPUComputeSharingMode `json:"computeSharingMode,omitempty"`
+}
+
+func (group FractionalGpuGroup) WithDefaults() FractionalGpuGroup {
+	if group.ComputeSharingMode == "" {
+		group.ComputeSharingMode = GPUComputeSharingModeTimeSlicing
+	}
+	return group
+}
+
+func NewFractionalGpuGroups(gpuGroups []string, mode GPUComputeSharingMode) []FractionalGpuGroup {
+	if len(gpuGroups) == 0 {
+		return nil
+	}
+	mode = DefaultGPUComputeSharingMode(mode)
+	fractionalGpuGroups := make([]FractionalGpuGroup, 0, len(gpuGroups))
+	for _, gpuGroup := range gpuGroups {
+		fractionalGpuGroups = append(fractionalGpuGroups, FractionalGpuGroup{
+			ID:                 gpuGroup,
+			ComputeSharingMode: mode,
+		})
+	}
+	return fractionalGpuGroups
+}
+
+func DefaultGPUComputeSharingMode(mode GPUComputeSharingMode) GPUComputeSharingMode {
+	if mode == "" {
+		return GPUComputeSharingModeTimeSlicing
+	}
+	return mode
+}
+
+func (spec *BindRequestSpec) SelectedFractionalGpuGroupsOrDefault() []FractionalGpuGroup {
+	if len(spec.SelectedFractionalGpuGroups) > 0 {
+		fractionalGpuGroups := make([]FractionalGpuGroup, 0, len(spec.SelectedFractionalGpuGroups))
+		for _, fractionalGpuGroup := range spec.SelectedFractionalGpuGroups {
+			fractionalGpuGroups = append(fractionalGpuGroups, fractionalGpuGroup.WithDefaults())
+		}
+		return fractionalGpuGroups
+	}
+	return NewFractionalGpuGroups(spec.SelectedGPUGroups, GPUComputeSharingModeTimeSlicing)
+}
+
+func (spec *BindRequestSpec) SelectedFractionalGpuGroupIDs() []string {
+	fractionalGpuGroups := spec.SelectedFractionalGpuGroupsOrDefault()
+	if len(fractionalGpuGroups) == 0 {
+		return nil
+	}
+	gpuGroups := make([]string, 0, len(fractionalGpuGroups))
+	for _, fractionalGpuGroup := range fractionalGpuGroups {
+		gpuGroups = append(gpuGroups, fractionalGpuGroup.ID)
+	}
+	return gpuGroups
 }
 
 type ReceivedGPU struct {
@@ -51,7 +128,20 @@ type ResourceClaimAllocation struct {
 	Name string `json:"name,omitempty"`
 
 	// Allocation is the desired allocation of the resource claim
-	Allocation *v1.AllocationResult `json:"allocation,omitempty"`
+	Allocation *resourceapi.AllocationResult `json:"allocation,omitempty"`
+}
+
+// ExtendedResourceClaimAllocation carries the scheduler's allocation decision for
+// the synthetic ResourceClaim created to back DRA-extended-resource requests.
+type ExtendedResourceClaimAllocation struct {
+	// Allocation is the allocation result from the DRA allocator.
+	Allocation *resourceapi.AllocationResult `json:"allocation,omitempty"`
+
+	// DeviceRequests are the per-container device requests placed in the claim Spec.
+	DeviceRequests []resourceapi.DeviceRequest `json:"deviceRequests,omitempty"`
+
+	// ContainerMappings maps each container's extended resource request to a DeviceRequest name.
+	ContainerMappings []corev1.ContainerExtendedResourceRequest `json:"containerMappings,omitempty"`
 }
 
 const (

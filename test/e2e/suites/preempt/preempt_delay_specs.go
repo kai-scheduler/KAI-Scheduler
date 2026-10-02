@@ -24,7 +24,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
 )
 
-const preemptionDelayLabelKey = "kai.scheduler/preemption-delay"
+const preemptionDelayAnnotationKey = "kai.scheduler/preemption-delay"
 
 func DescribePreemptDelaySpecs() bool {
 	return Describe("Preemption Delay", Ordered, func() {
@@ -89,7 +89,7 @@ func DescribePreemptDelaySpecs() bool {
 				},
 			})
 			highPod.Spec.PriorityClassName = highPriorityClass
-			highPod.Labels[preemptionDelayLabelKey] = preemptionDelay.String()
+			highPod.Annotations[preemptionDelayAnnotationKey] = preemptionDelay.String()
 			_, err = rd.CreatePod(ctx, testCtx.KubeClientset, highPod)
 			Expect(err).To(Succeed())
 

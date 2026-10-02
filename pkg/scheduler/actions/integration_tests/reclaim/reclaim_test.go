@@ -12,6 +12,8 @@ import (
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/integration_tests_utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf_util"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
@@ -4565,5 +4567,171 @@ func getReclaimTestsMetadata() []integration_tests_utils.TestTopologyMetadata {
 				},
 			},
 		},
+		{
+			TestTopologyBasic: test_utils.TestTopologyBasic{
+				Name: "queuePriorityInQuotaReclaim enabled: higher priority queue reclaims a fully in-quota job from a lower priority queue",
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:                "low_priority_in_quota_job",
+						RequiredGPUsPerTask: 2,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "low-priority-queue",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								NodeName: "node0",
+								State:    pod_status.Running,
+							},
+						},
+					}, {
+						Name:                "high_priority_pending_job",
+						RequiredGPUsPerTask: 2,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "high-priority-queue",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								State: pod_status.Pending,
+							},
+						},
+					},
+				},
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node0": {GPUs: 2},
+				},
+				Queues: []test_utils.TestQueueBasic{
+					{
+						Name:               "low-priority-queue",
+						DeservedGPUs:       2,
+						GPUOverQuotaWeight: 1,
+					},
+					{
+						Name:               "high-priority-queue",
+						DeservedGPUs:       2,
+						GPUOverQuotaWeight: 1,
+						Priority:           pointer.Int(commonconstants.DefaultQueuePriority + 1),
+					},
+				},
+				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"low_priority_in_quota_job": {
+						GPUsRequired: 2,
+						Status:       pod_status.Pending,
+					},
+					"high_priority_pending_job": {
+						NodeName:     "node0",
+						GPUsRequired: 2,
+						Status:       pod_status.Running,
+					},
+				},
+				Mocks: &test_utils.TestMock{
+					CacheRequirements: &test_utils.CacheMocking{
+						NumberOfCacheBinds:      1,
+						NumberOfCacheEvictions:  1,
+						NumberOfPipelineActions: 1,
+					},
+					SchedulerConf: schedulerConfigWithQueuePriorityInQuotaReclaim(),
+				},
+			},
+		},
+		{
+			TestTopologyBasic: test_utils.TestTopologyBasic{
+				Name: "queuePriorityInQuotaReclaim enabled: reclaim prefers a same-priority over-quota queue over an in-quota lower priority queue",
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:                "high_priority_pending_job",
+						RequiredGPUsPerTask: 1,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "high-priority-queue-a",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								State: pod_status.Pending,
+							},
+						},
+					}, {
+						Name:                "high_priority_over_quota_job",
+						RequiredGPUsPerTask: 2,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "high-priority-queue-b",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								NodeName: "node0",
+								State:    pod_status.Running,
+							},
+						},
+					}, {
+						Name:                "low_priority_in_quota_job",
+						RequiredGPUsPerTask: 1,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "low-priority-queue",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								NodeName: "node0",
+								State:    pod_status.Running,
+							},
+						},
+					},
+				},
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node0": {GPUs: 3},
+				},
+				Queues: []test_utils.TestQueueBasic{
+					{
+						Name:               "high-priority-queue-a",
+						DeservedGPUs:       1,
+						GPUOverQuotaWeight: 1,
+						Priority:           pointer.Int(commonconstants.DefaultQueuePriority + 1),
+					},
+					{
+						Name:               "high-priority-queue-b",
+						DeservedGPUs:       1,
+						GPUOverQuotaWeight: 1,
+						Priority:           pointer.Int(commonconstants.DefaultQueuePriority + 1),
+					},
+					{
+						Name:               "low-priority-queue",
+						DeservedGPUs:       1,
+						GPUOverQuotaWeight: 1,
+					},
+				},
+				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"high_priority_pending_job": {
+						NodeName:     "node0",
+						GPUsRequired: 1,
+						Status:       pod_status.Running,
+					},
+					"high_priority_over_quota_job": {
+						GPUsRequired: 2,
+						Status:       pod_status.Pending,
+					},
+					"low_priority_in_quota_job": {
+						NodeName:     "node0",
+						GPUsRequired: 1,
+						Status:       pod_status.Running,
+					},
+				},
+				Mocks: &test_utils.TestMock{
+					CacheRequirements: &test_utils.CacheMocking{
+						NumberOfCacheBinds:      1,
+						NumberOfCacheEvictions:  1,
+						NumberOfPipelineActions: 1,
+					},
+					SchedulerConf: schedulerConfigWithQueuePriorityInQuotaReclaim(),
+				},
+			},
+		},
 	}
+}
+
+// schedulerConfigWithQueuePriorityInQuotaReclaim returns the default scheduler configuration with
+// the proportion plugin's queuePriorityInQuotaReclaim argument enabled.
+func schedulerConfigWithQueuePriorityInQuotaReclaim() *conf.SchedulerConfiguration {
+	config, err := conf_util.GetDefaultSchedulerConf()
+	if err != nil {
+		panic(err)
+	}
+	config.ScenarioSearchBudgets = nil
+	for i, plugin := range config.Tiers[0].Plugins {
+		if plugin.Name == "proportion" {
+			config.Tiers[0].Plugins[i].Arguments = map[string]string{"queuePriorityInQuotaReclaim": "true"}
+		}
+	}
+	return config
 }

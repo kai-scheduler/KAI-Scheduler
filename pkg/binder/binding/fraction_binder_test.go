@@ -73,6 +73,9 @@ var happyFlowObjectsBc = []runtime.Object{
 	&v1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "my-node",
+			Labels: map[string]string{
+				constants.NvidiaGpuMemory: "1000",
+			},
 		},
 	},
 }
@@ -117,6 +120,9 @@ var happyFlowObjects = []runtime.Object{
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "my-node",
+			Labels: map[string]string{
+				constants.NvidiaGpuMemory: "1000",
+			},
 		},
 	},
 }
@@ -176,7 +182,7 @@ var _ = Describe("FractionBinder", func() {
 					testData.kubeObjects...).WithInterceptorFuncs(testData.clientInterceptFuncs).Build()
 
 				binderPlugins := plugins.New()
-				bindingGpuSharingPlugin := bindinggpusharing.New(fakeClient, false)
+				bindingGpuSharingPlugin := bindinggpusharing.New(fakeClient, false, false)
 				binderPlugins.RegisterPlugin(bindingGpuSharingPlugin)
 
 				testedBinder := NewBinder(fakeClient, rrs, binderPlugins)
@@ -198,6 +204,9 @@ var _ = Describe("FractionBinder", func() {
 				result := testedBinder.Bind(
 					context.TODO(), pod, &v1.Node{ObjectMeta: metav1.ObjectMeta{
 						Name: "my-node",
+						Labels: map[string]string{
+							constants.NvidiaGpuMemory: "1000",
+						},
 					}}, bindRequest)
 				if testData.expectedErrorContains != "" {
 					Expect(result).NotTo(BeNil())
@@ -238,7 +247,7 @@ var _ = Describe("FractionBinder", func() {
 			happyFlowObjects...).WithInterceptorFuncs(clientInterceptFuncs).Build()
 
 		binderPlugins := plugins.New()
-		bindingGpuSharingPlugin := bindinggpusharing.New(fakeClient, false)
+		bindingGpuSharingPlugin := bindinggpusharing.New(fakeClient, false, false)
 		binderPlugins.RegisterPlugin(bindingGpuSharingPlugin)
 
 		testedBinder := NewBinder(fakeClient, rrs, binderPlugins)
@@ -260,6 +269,9 @@ var _ = Describe("FractionBinder", func() {
 		result := testedBinder.Bind(
 			context.TODO(), pod, &v1.Node{ObjectMeta: metav1.ObjectMeta{
 				Name: "my-node",
+				Labels: map[string]string{
+					constants.NvidiaGpuMemory: "1000",
+				},
 			}}, bindRequest)
 
 		Expect(result).NotTo(BeNil())

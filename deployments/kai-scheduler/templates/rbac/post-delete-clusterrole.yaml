@@ -24,4 +24,5 @@ rules:
   - configs
   verbs:
   - delete
+  - get
 {{- end }}

@@ -17,9 +17,11 @@ const (
 	DynamicResourcesPluginName = kaiv1binder.DynamicResourcesPluginName
 	GPUSharingPluginName       = kaiv1binder.GPUSharingPluginName
 	HamiCorePluginName         = kaiv1binder.HamiCorePluginName
+	NvFractionsPluginName      = kaiv1binder.NvFractionsPluginName
 
 	BindTimeoutSecondsArgument = kaiv1binder.BindTimeoutSecondsArgument
 	CDIEnabledArgument         = kaiv1binder.CDIEnabledArgument
+	NRIPluginEnabledArgument   = kaiv1binder.NRIPluginEnabledArgument
 
 	DefaultBindTimeoutSeconds = kaiv1binder.DefaultBindTimeoutSeconds
 	DefaultCDIEnabled         = kaiv1binder.DefaultCDIEnabled
@@ -32,8 +34,13 @@ type PluginOption struct {
 	Arguments map[string]string
 }
 
+// DefaultConfig is the binder's standalone fallback plugin configuration, used
+// when no --plugins override is supplied. The operator always sends an explicit
+// configuration derived from the GpuSharingMode, so the fixed defaults here
+// (gpusharing enabled, hamicore and nvfractions disabled) preserve the historic
+// standalone behavior.
 func DefaultConfig(volumeBindingTimeoutSeconds int, cdiEnabled bool) Config {
-	return FromAPIConfig(kaiv1binder.DefaultPluginsConfig(volumeBindingTimeoutSeconds, cdiEnabled))
+	return FromAPIConfig(kaiv1binder.DefaultPluginsConfig(volumeBindingTimeoutSeconds, cdiEnabled, true, false, false))
 }
 
 func FromAPIConfig(config map[string]kaiv1binder.PluginConfig) Config {

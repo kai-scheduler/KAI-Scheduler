@@ -23,9 +23,11 @@ const (
 	DynamicResourcesPluginName = "dynamicresources"
 	GPUSharingPluginName       = "gpusharing"
 	HamiCorePluginName         = "hamicore"
+	NvFractionsPluginName      = "nvfractions"
 
 	BindTimeoutSecondsArgument = "bindTimeoutSeconds"
 	CDIEnabledArgument         = "cdiEnabled"
+	NRIPluginEnabledArgument   = "nriPluginEnabled"
 
 	DefaultBindTimeoutSeconds = 120
 	DefaultCDIEnabled         = false
@@ -35,6 +37,7 @@ var defaultPluginPriorities = map[string]int{
 	VolumeBindingPluginName:    300,
 	DynamicResourcesPluginName: 200,
 	GPUSharingPluginName:       100,
+	NvFractionsPluginName:      90,
 	HamiCorePluginName:         50,
 }
 
@@ -95,7 +98,7 @@ type Binder struct {
 	VPA *common.VPASpec `json:"vpa,omitempty"`
 }
 
-func (b *Binder) SetDefaultsWhereNeeded(replicaCount *int32, globalVPA *common.VPASpec) {
+func (b *Binder) SetDefaultsWhereNeeded(replicaCount *int32, globalVPA *common.VPASpec, gpuSharingMode common.GpuSharingMode) {
 	b.Service = common.SetDefault(b.Service, &common.Service{})
 	b.Service.Resources = common.SetDefault(b.Service.Resources, &common.Resources{})
 	if b.Service.Resources.Requests == nil {
@@ -128,24 +131,35 @@ func (b *Binder) SetDefaultsWhereNeeded(replicaCount *int32, globalVPA *common.V
 	b.ProbePort = common.SetDefault(b.ProbePort, ptr.To(8081))
 	b.MetricsPort = common.SetDefault(b.MetricsPort, ptr.To(8080))
 
-	b.setDefaultPlugins()
+	b.setDefaultPlugins(gpuSharingMode)
 
 	if b.VPA == nil {
 		b.VPA = globalVPA
 	}
 }
 
-func (b *Binder) setDefaultPlugins() {
-	binderPluginConfig := DefaultPluginsConfig(ptr.Deref(b.VolumeBindingTimeoutSeconds, DefaultBindTimeoutSeconds),
-		ptr.Deref(b.CDIEnabled, DefaultCDIEnabled))
+func (b *Binder) setDefaultPlugins(gpuSharingMode common.GpuSharingMode) {
+	gpuSharingEnabled := gpuSharingMode == common.GpuSharingModeNonMemoryEnforced || gpuSharingMode == common.GpuSharingModeHamiCore
+	hamiCoreEnabled := gpuSharingMode == common.GpuSharingModeHamiCore
+	nvFractionsEnabled := gpuSharingMode == common.GpuSharingModeNvFractions
 
-	// When CDIEnabled is unset at the API level, leave the gpusharing cdiEnabled
-	// argument unbaked so the operator can resolve it (auto-detect) without
-	// having to distinguish a defaulted value from a user-supplied one.
+	binderPluginConfig := DefaultPluginsConfig(ptr.Deref(b.VolumeBindingTimeoutSeconds, DefaultBindTimeoutSeconds),
+		ptr.Deref(b.CDIEnabled, DefaultCDIEnabled), gpuSharingEnabled, hamiCoreEnabled, nvFractionsEnabled)
+
+	gpuSharingDefault := binderPluginConfig[GPUSharingPluginName]
+	delete(gpuSharingDefault.Arguments, NRIPluginEnabledArgument)
+	binderPluginConfig[GPUSharingPluginName] = gpuSharingDefault
+
+	// When CDIEnabled is unset at the API level, leave the cdiEnabled argument
+	// unbaked on the CDI-aware plugins (gpusharing, nvfractions) so the operator
+	// can resolve it (auto-detect) without having to distinguish a defaulted value
+	// from a user-supplied one.
 	if b.CDIEnabled == nil {
-		gpuSharingDefault := binderPluginConfig[GPUSharingPluginName]
-		delete(gpuSharingDefault.Arguments, CDIEnabledArgument)
-		binderPluginConfig[GPUSharingPluginName] = gpuSharingDefault
+		for _, name := range []string{GPUSharingPluginName, NvFractionsPluginName} {
+			pluginDefault := binderPluginConfig[name]
+			delete(pluginDefault.Arguments, CDIEnabledArgument)
+			binderPluginConfig[name] = pluginDefault
+		}
 	}
 
 	for name, userBinderConfig := range b.Plugins {
@@ -175,7 +189,8 @@ func (b *Binder) setDefaultPlugins() {
 	b.Plugins = binderPluginConfig
 }
 
-func DefaultPluginsConfig(bindTimeoutSeconds int, cdiEnabled bool) map[string]PluginConfig {
+func DefaultPluginsConfig(bindTimeoutSeconds int, cdiEnabled bool,
+	gpuSharingEnabled, hamiCoreEnabled, nvFractionsEnabled bool) map[string]PluginConfig {
 	return map[string]PluginConfig{
 		VolumeBindingPluginName: {
 			Enabled:  ptr.To(true),
@@ -192,14 +207,22 @@ func DefaultPluginsConfig(bindTimeoutSeconds int, cdiEnabled bool) map[string]Pl
 			},
 		},
 		GPUSharingPluginName: {
-			Enabled:  ptr.To(true),
+			Enabled:  ptr.To(gpuSharingEnabled),
 			Priority: ptr.To(defaultPluginPriorities[GPUSharingPluginName]),
+			Arguments: map[string]string{
+				CDIEnabledArgument:       strconv.FormatBool(cdiEnabled),
+				NRIPluginEnabledArgument: strconv.FormatBool(false),
+			},
+		},
+		NvFractionsPluginName: {
+			Enabled:  ptr.To(nvFractionsEnabled),
+			Priority: ptr.To(defaultPluginPriorities[NvFractionsPluginName]),
 			Arguments: map[string]string{
 				CDIEnabledArgument: strconv.FormatBool(cdiEnabled),
 			},
 		},
 		HamiCorePluginName: {
-			Enabled:  ptr.To(false),
+			Enabled:  ptr.To(hamiCoreEnabled),
 			Priority: ptr.To(defaultPluginPriorities[HamiCorePluginName]),
 		},
 	}

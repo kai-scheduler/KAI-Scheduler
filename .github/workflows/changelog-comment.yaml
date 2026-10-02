@@ -1,0 +1,55 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# After a PR that added changelog fragment(s) is merged, KAIBOT comments on the PR with a
+# link to each fragment. Pending fragments are folded into CHANGELOG.md at release time
+# (`make changelog-release`), so this confirms to the contributor that their entry was
+# recorded even though CHANGELOG.md did not change in the PR.
+
+name: Changelog Comment
+
+on:
+  pull_request_target:
+    types: [closed]
+    branches:
+      - main
+      - 'v*.*'
+    paths:
+      - '.changes/unreleased/**'
+
+permissions:
+  pull-requests: write
+
+jobs:
+  comment:
+    name: Comment changelog fragment link
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Comment with fragment link(s)
+        env:
+          GH_TOKEN: ${{ secrets.KAIBOT_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          set -euo pipefail
+          files=$(gh api "repos/$REPO/pulls/$PR/files" --paginate \
+            --jq '.[] | select(.status=="added") | .filename' \
+            | grep -E '^\.changes/unreleased/[^/]+\.ya?ml$' || true)
+          if [ -z "$files" ]; then
+            echo "No changelog fragment added by this PR; skipping comment."
+            exit 0
+          fi
+          {
+            echo "### 📝 Changelog fragment recorded"
+            echo ""
+            echo "Thanks! This PR added the changelog fragment(s) below. Pending fragments are folded into \`CHANGELOG.md\` at **release time**, so it was intentionally not modified by this PR — your entry will appear in the next release:"
+            echo ""
+            while IFS= read -r f; do
+              [ -z "$f" ] && continue
+              echo "- [\`$f\`](https://github.com/$REPO/blob/$SHA/$f)"
+            done <<< "$files"
+          } > comment.md
+          gh pr comment "$PR" --repo "$REPO" --body-file comment.md
+          echo "Posted changelog fragment comment."

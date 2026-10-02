@@ -35,7 +35,9 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_affinity"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -656,7 +658,7 @@ func TestAddRemovePods(t *testing.T) {
 			for _, podInfoMetaData := range test.podsInfoMetadata {
 				pi := pod_info.NewTaskInfo(podInfoMetaData.pod, vectorMap)
 				pi.Status = podInfoMetaData.status
-				pi.GPUGroups = podInfoMetaData.gpuGroups
+				pi.SetGPUGroupIDs(podInfoMetaData.gpuGroups)
 				podsInfo = append(podsInfo, pi)
 			}
 
@@ -924,7 +926,7 @@ func TestGpuOperatorHasMemoryError_MibInput(t *testing.T) {
 	testNode.Labels[GpuMemoryLabel] = "4096"
 	gpuMemoryInMb, ok := getNodeGpuMemory(testNode)
 	assert.Equal(t, true, ok)
-	assert.Equal(t, int64(4000), gpuMemoryInMb)
+	assert.Equal(t, int64(4096), gpuMemoryInMb)
 }
 
 func TestGpuOperatorHasMemoryError_Bytes(t *testing.T) {
@@ -932,7 +934,7 @@ func TestGpuOperatorHasMemoryError_Bytes(t *testing.T) {
 	testNode.Labels[GpuMemoryLabel] = "4295000001"
 	gpuMemoryInMb, ok := getNodeGpuMemory(testNode)
 	assert.Equal(t, true, ok)
-	assert.Equal(t, int64(4000), gpuMemoryInMb)
+	assert.Equal(t, int64(4096), gpuMemoryInMb)
 }
 
 func addJobAnnotation(pod *v1.Pod) {
@@ -992,8 +994,8 @@ func TestNodeInfo_isTaskAllocatableOnNonAllocatedResources(t *testing.T) {
 							Name:      "p1",
 							Namespace: "n1",
 							Annotations: map[string]string{
-								commonconstants.PodGroupAnnotationForPod: "pg1",
-								commonconstants.GpuMemory:                "1500",
+								commonconstants.PodGroupAnnotationForPod:              "pg1",
+								resources.CalcGpuFractionAnnotationForContainer("c1"): "1500Mi",
 							},
 						},
 						Spec: v1.PodSpec{
@@ -1038,8 +1040,8 @@ func TestNodeInfo_isTaskAllocatableOnNonAllocatedResources(t *testing.T) {
 							Name:      "p1",
 							Namespace: "n1",
 							Annotations: map[string]string{
-								commonconstants.PodGroupAnnotationForPod: "pg1",
-								commonconstants.GpuMemory:                "1000",
+								commonconstants.PodGroupAnnotationForPod:              "pg1",
+								resources.CalcGpuFractionAnnotationForContainer("c1"): "1000Mi",
 							},
 						},
 						Spec: v1.PodSpec{
@@ -1092,6 +1094,80 @@ func TestNodeInfo_isTaskAllocatableOnNonAllocatedResources(t *testing.T) {
 				"isTaskAllocatableOnNonAllocatedResources(%v, %v)", tt.args.task, tt.args.nodeNonAllocatedResources)
 		})
 	}
+}
+
+func TestNodeInfo_PortionFractionFitsRuntimeMemoryExactHalf(t *testing.T) {
+	const (
+		gpuMemoryMiB = int64(23028)
+		gpuGroup     = "gpu-group-0"
+	)
+	vectorMap := resource_info.NewResourceVectorMap()
+	controller := NewController(t)
+	nodePodAffinityInfo := pod_affinity.NewMockNodePodAffinityInfo(controller)
+	nodeResources := resource_info.NewResource(0, 0, 1)
+	nodeResources.ScalarResources()[resource_info.PodsResourceName] = 10
+	node := &NodeInfo{
+		Name:                   "node1",
+		Node:                   common_info.BuildNode("node1", common_info.BuildResourceListWithGPU("8000m", "10G", "1")),
+		VectorMap:              vectorMap,
+		PodInfos:               map[common_info.PodID]*pod_info.PodInfo{},
+		MemoryOfEveryGpuOnNode: gpuMemoryMiB,
+		GpuMemorySynced:        true,
+		GpuSharingNodeInfo:     *newGpuSharingNodeInfo(),
+		AllocatableVector:      nodeResources.ToVector(vectorMap),
+		IdleVector:             nodeResources.ToVector(vectorMap),
+		UsedVector:             resource_info.NewResourceVector(vectorMap),
+		ReleasingVector:        resource_info.NewResourceVector(vectorMap),
+		PodAffinityInfo:        nodePodAffinityInfo,
+	}
+
+	runningPod := pod_info.NewTaskInfo(&v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "running-half",
+			Namespace: "default",
+			UID:       "running-half",
+			Labels: map[string]string{
+				commonconstants.GPUGroup: gpuGroup,
+			},
+			Annotations: map[string]string{
+				commonconstants.PodGroupAnnotationForPod:              "pg1",
+				commonconstants.GpuFraction:                           "0.5",
+				pod_info.ReceivedResourceTypeAnnotationName:           string(pod_info.ReceivedTypeFraction),
+				resources.CalcGpuFractionAnnotationForContainer("c1"): "11514Mi",
+			},
+		},
+		Spec: v1.PodSpec{
+			NodeName: "node1",
+			Containers: []v1.Container{
+				{Name: "c1"},
+			},
+		},
+		Status: v1.PodStatus{Phase: v1.PodRunning},
+	}, vectorMap)
+	nodePodAffinityInfo.EXPECT().AddPod(runningPod.Pod).Times(1)
+	assert.NoError(t, node.AddTask(runningPod))
+	assert.Equal(t, gpuMemoryMiB/2, node.UsedSharedGPUsMemory[gpuGroup])
+
+	pendingPod := pod_info.NewTaskInfo(&v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pending-half",
+			Namespace: "default",
+			UID:       "pending-half",
+			Annotations: map[string]string{
+				commonconstants.PodGroupAnnotationForPod: "pg2",
+				commonconstants.GpuFraction:              "0.5",
+			},
+		},
+		Spec: v1.PodSpec{
+			Containers: []v1.Container{
+				{Name: "c1"},
+			},
+		},
+		Status: v1.PodStatus{Phase: v1.PodPending},
+	}, vectorMap)
+
+	assert.True(t, node.IsTaskAllocatable(pendingPod))
+	assert.True(t, node.IsTaskFitOnGpuGroup(pendingPod, gpuGroup))
 }
 
 func TestNodeInfo_GetSumOfIdleGPUs(t *testing.T) {
@@ -1284,6 +1360,126 @@ func TestNodeInfo_GetSumOfReleasingGPUs(t *testing.T) {
 	}
 }
 
+func TestIsGpuGroupComputeSharingModeCompatible_CurrentTaskNewGroup(t *testing.T) {
+	gpuGroup := "new-sm-sharing-group"
+	node := &NodeInfo{
+		PodInfos: map[common_info.PodID]*pod_info.PodInfo{},
+		GpuSharingNodeInfo: GpuSharingNodeInfo{
+			UsedSharedGPUsMemory: map[string]int64{
+				gpuGroup: 0,
+			},
+		},
+	}
+	task := &pod_info.PodInfo{
+		Pod: &v1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{
+					resources.CalcGpuComputeSharingModeAnnotationForContainer("main"): string(schedulingv1alpha2.GPUComputeSharingModeSMSharing),
+				},
+			},
+		},
+		FractionalGpuGroups: []schedulingv1alpha2.FractionalGpuGroup{
+			{
+				ID:                 gpuGroup,
+				ComputeSharingMode: schedulingv1alpha2.GPUComputeSharingModeSMSharing,
+			},
+		},
+	}
+	task.SetGPUGroupIDs([]string{gpuGroup})
+
+	assert.True(t, node.IsGpuGroupComputeSharingModeCompatible(gpuGroup, task))
+}
+
+func TestIsGpuGroupComputeSharingModeCompatible_ReservationPodIsSourceOfTruth(t *testing.T) {
+	gpuGroup := "reserved-group"
+	node := &NodeInfo{
+		PodInfos: map[common_info.PodID]*pod_info.PodInfo{
+			"reservation": {
+				Pod: &v1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: commonconstants.GPUReservationPodPrefix + "-node-a-abcde",
+						Labels: map[string]string{
+							commonconstants.GPUGroup: gpuGroup,
+						},
+						Annotations: map[string]string{
+							resources.CalcGpuComputeSharingModeAnnotationForContainer("main"): string(schedulingv1alpha2.GPUComputeSharingModeTimeSlicing),
+						},
+					},
+				},
+			},
+			"workload": {
+				Pod: &v1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Annotations: map[string]string{
+							resources.CalcGpuComputeSharingModeAnnotationForContainer("main"): string(schedulingv1alpha2.GPUComputeSharingModeSMSharing),
+						},
+					},
+				},
+				FractionalGpuGroups: []schedulingv1alpha2.FractionalGpuGroup{
+					{
+						ID:                 gpuGroup,
+						ComputeSharingMode: schedulingv1alpha2.GPUComputeSharingModeSMSharing,
+					},
+				},
+			},
+		},
+	}
+	task := &pod_info.PodInfo{
+		Pod: &v1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{
+					resources.CalcGpuComputeSharingModeAnnotationForContainer("main"): string(schedulingv1alpha2.GPUComputeSharingModeSMSharing),
+				},
+			},
+		},
+		FractionalGpuGroups: []schedulingv1alpha2.FractionalGpuGroup{
+			{
+				ID:                 gpuGroup,
+				ComputeSharingMode: schedulingv1alpha2.GPUComputeSharingModeSMSharing,
+			},
+		},
+	}
+
+	assert.False(t, node.IsGpuGroupComputeSharingModeCompatible(gpuGroup, task))
+}
+
+func TestIsTaskFitOnGpuGroupRequiresCompatibleComputeSharingMode(t *testing.T) {
+	gpuGroup := "sm-sharing-group"
+	node := &NodeInfo{
+		MemoryOfEveryGpuOnNode: 100,
+		PodInfos: map[common_info.PodID]*pod_info.PodInfo{
+			"sm-sharing-workload": {
+				FractionalGpuGroups: []schedulingv1alpha2.FractionalGpuGroup{
+					{
+						ID:                 gpuGroup,
+						ComputeSharingMode: schedulingv1alpha2.GPUComputeSharingModeSMSharing,
+					},
+				},
+			},
+		},
+		GpuSharingNodeInfo: GpuSharingNodeInfo{
+			UsedSharedGPUsMemory: map[string]int64{
+				gpuGroup: 50,
+			},
+			AllocatedSharedGPUsMemory: map[string]int64{
+				gpuGroup: 50,
+			},
+			ReleasingSharedGPUsMemory: map[string]int64{},
+		},
+	}
+	task := &pod_info.PodInfo{
+		Pod:            &v1.Pod{},
+		GpuRequirement: *resource_info.NewGpuResourceRequirementWithGpus(0.5, 0),
+	}
+
+	assert.False(t, node.IsTaskFitOnGpuGroup(task, gpuGroup))
+
+	task.Pod.Annotations = map[string]string{
+		resources.CalcGpuComputeSharingModeAnnotationForContainer("main"): string(schedulingv1alpha2.GPUComputeSharingModeSMSharing),
+	}
+	assert.True(t, node.IsTaskFitOnGpuGroup(task, gpuGroup))
+}
+
 func createPod(namespace, name string, options podCreationOptions) *pod_info.PodInfo {
 	pod := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -1322,7 +1518,7 @@ func createPod(namespace, name string, options podCreationOptions) *pod_info.Pod
 	}
 
 	task := pod_info.NewTaskInfo(pod, resource_info.NewResourceVectorMap())
-	task.GPUGroups = []string{options.gpuGroup}
+	task.SetGPUGroupIDs([]string{options.gpuGroup})
 	return task
 }
 
@@ -1360,7 +1556,7 @@ func TestPredicateByNodeResourcesType_DRA(t *testing.T) {
 		expectError bool
 		errorMsg    string
 	}{
-		"Device-plugin GPU request on DRA-only node": {
+		"Extended resource request on DRA-only node is allowed by PredicateByNodeResourcesType": {
 			nodeInfo: &NodeInfo{
 				Name:       "dra-node",
 				HasDRAGPUs: true,
@@ -1370,8 +1566,7 @@ func TestPredicateByNodeResourcesType_DRA(t *testing.T) {
 			},
 			allocatable: common_info.BuildResourceWithGpu("1000m", "1G", "4", "110"),
 			task:        createPod("default", "gpu-pod", podCreationOptions{GPUs: 1}),
-			expectError: true,
-			errorMsg:    "device-plugin GPU requests cannot be scheduled on DRA-only nodes",
+			expectError: false,
 		},
 		"CPU-only request on DRA-only node": {
 			nodeInfo: &NodeInfo{
@@ -1586,6 +1781,90 @@ func TestResourceReservationPodConsumesMaxPods(t *testing.T) {
 			if !reflect.DeepEqual(ni.ReleasingVector, expectedReleasingVector) {
 				t.Errorf("ReleasingVector mismatch:\nexpected: %v\ngot: %v",
 					expectedReleasingVector, ni.ReleasingVector)
+			}
+		})
+	}
+}
+
+// TestPredicateByNodeResourcesType_SharedGPU_DRANode verifies that fractional / GPU-memory
+// pods are rejected on DRA-only nodes and accepted on device-plugin nodes.
+func TestPredicateByNodeResourcesType_SharedGPU_DRANode(t *testing.T) {
+	// DRA-only node: no nvidia.com/gpu in Status.Allocatable; GPUs come from ResourceSlices.
+	draNode := common_info.BuildNode("dra-node", common_info.BuildResourceList("16000m", "32G"))
+
+	// Device-plugin node: nvidia.com/gpu is present in Status.Allocatable.
+	dpNode := common_info.BuildNode("dp-node", common_info.BuildResourceListWithGPUAndPods("16000m", "32G", "4", "110"))
+
+	tests := []struct {
+		name          string
+		node          *v1.Node
+		draGPUs       float64
+		podResources  v1.ResourceList
+		podAnnotation map[string]string
+		wantErr       bool
+	}{
+		{
+			name:         "fraction pod rejected on DRA-only node",
+			node:         draNode,
+			draGPUs:      4,
+			podResources: common_info.BuildResourceListWithGPU("1000m", "1G", "500m"),
+			wantErr:      true,
+		},
+		{
+			name:    "gpu-memory pod rejected on DRA-only node",
+			node:    draNode,
+			draGPUs: 4,
+			// gpu-memory pods use an annotation; set it directly with CPU-only resources.
+			podResources:  common_info.BuildResourceList("1000m", "1G"),
+			podAnnotation: map[string]string{commonconstants.GpuMemory: "2000"},
+			wantErr:       true,
+		},
+		{
+			name:         "cpu-only pod accepted on DRA-only node",
+			node:         draNode,
+			draGPUs:      4,
+			podResources: common_info.BuildResourceList("1000m", "1G"),
+			wantErr:      false,
+		},
+		{
+			name:         "fraction pod accepted on device-plugin node",
+			node:         dpNode,
+			draGPUs:      0,
+			podResources: common_info.BuildResourceListWithGPU("1000m", "1G", "500m"),
+			wantErr:      false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := NewController(t)
+			nodePodAffinity := pod_affinity.NewMockNodePodAffinityInfo(ctrl)
+			nodePodAffinity.EXPECT().AddPod(Any()).AnyTimes()
+
+			vectorMap := testVectorMapFromNode(tt.node)
+			for resourceName := range tt.podResources {
+				vectorMap.AddResource(resourceName)
+			}
+
+			ni := NewNodeInfo(tt.node, nodePodAffinity, vectorMap)
+			if tt.draGPUs > 0 {
+				ni.AddDRAGPUs(tt.draGPUs)
+				ni.HasDRAGPUs = true
+			}
+
+			annotations := map[string]string{}
+			for k, v := range tt.podAnnotation {
+				annotations[k] = v
+			}
+			pod := common_info.BuildPod(
+				"test-pod", "ns", tt.node.Name, v1.PodRunning,
+				tt.podResources, []metav1.OwnerReference{}, map[string]string{}, annotations)
+			addJobAnnotation(pod)
+			task := pod_info.NewTaskInfo(pod, vectorMap)
+
+			err := ni.PredicateByNodeResourcesType(task)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("PredicateByNodeResourcesType error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}

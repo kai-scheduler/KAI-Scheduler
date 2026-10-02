@@ -1,0 +1,29 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kai-karta-e2e-podgrouper-access
+rules:
+  - apiGroups:
+      - e2e.example.com
+    resources:
+      - customjobs
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kai-karta-e2e-podgrouper-access
+subjects:
+  - kind: ServiceAccount
+    name: pod-grouper
+    namespace: ${KAI_NAMESPACE}
+roleRef:
+  kind: ClusterRole
+  name: kai-karta-e2e-podgrouper-access
+  apiGroup: rbac.authorization.k8s.io

@@ -424,6 +424,11 @@ func handleLeaderInFirstSegment(
 	var segmentSubGroups []*podgroup.SubGroupMetadata
 	segmentSubGroups, setPodSubgroupReference = addLeaderAndWorkersSubgroupsForSegment(firstSegmentSubGroup.Name,
 		firstSegmentSubGroup.MinAvailable, pod, podSegment)
+
+	// Parent SubGroups must use MinSubGroup (webhook rejects minMember on non-leaf).
+	firstSegmentSubGroup.MinSubGroup = ptr.To(int32(len(segmentSubGroups)))
+	firstSegmentSubGroup.MinAvailable = 0
+
 	subGroups = append(subGroups, segmentSubGroups...)
 	return subGroups, setPodSubgroupReference
 }

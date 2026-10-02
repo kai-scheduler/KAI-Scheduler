@@ -23,6 +23,7 @@ import (
 
 	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
 	kaiv1common "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/fips"
 	kaiConfigUtils "github.com/kai-scheduler/KAI-scheduler/pkg/operator/config"
 )
 
@@ -35,7 +36,11 @@ const (
 
 // PodDisruptionBudgetImplementedServices lists operand resource names with operator-side PDB creation.
 var PodDisruptionBudgetImplementedServices = map[string]struct{}{
-	"admission": {},
+	"admission":        {},
+	"scheduler":        {},
+	"pod-grouper":      {},
+	"binder":           {},
+	"queue-controller": {},
 }
 
 func PodDisruptionBudgetImplemented(serviceName string) bool {
@@ -164,6 +169,7 @@ func DeploymentForKAIConfig(
 	deployment.Spec.Template.Spec.ServiceAccountName = deploymentName
 	deployment.Spec.Template.Spec.NodeSelector = kaiConfig.Spec.Global.NodeSelector
 	deployment.Spec.Template.Spec.Tolerations = kaiConfig.Spec.Global.Tolerations
+	deployment.Spec.Template.Spec.PriorityClassName = ptr.Deref(kaiConfig.Spec.Global.PriorityClassName, "")
 
 	deployment.Spec.Template.Spec.Affinity = MergeAffinities(service.Affinity,
 		kaiConfig.Spec.Global.Affinity,
@@ -177,6 +183,7 @@ func DeploymentForKAIConfig(
 			ImagePullPolicy: *service.Image.PullPolicy,
 			Resources:       v1.ResourceRequirements(*service.Resources),
 			SecurityContext: kaiConfig.Spec.Global.GetSecurityContext(),
+			Env:             FIPSOnlyEnv(kaiConfig.Spec.Global),
 		},
 	}
 
@@ -220,6 +227,7 @@ func DaemonSetForKAIConfig(
 	ds.Spec.Template.Spec.Affinity = service.Affinity
 	ds.Spec.Template.Spec.Tolerations = append(
 		append([]v1.Toleration{}, kaiConfig.Spec.Global.DaemonsetsTolerations...), tolerations...)
+	ds.Spec.Template.Spec.PriorityClassName = ptr.Deref(kaiConfig.Spec.Global.PriorityClassName, "")
 
 	ds.Spec.Template.Spec.Containers = []v1.Container{
 		{
@@ -228,12 +236,28 @@ func DaemonSetForKAIConfig(
 			ImagePullPolicy: *service.Image.PullPolicy,
 			Resources:       v1.ResourceRequirements(*service.Resources),
 			SecurityContext: kaiConfig.Spec.Global.GetSecurityContext(),
+			Env:             FIPSOnlyEnv(kaiConfig.Spec.Global),
 		},
 	}
 
 	ds.Spec.Template.Spec.ImagePullSecrets = kaiConfigUtils.GetGlobalImagePullSecrets(kaiConfig.Spec.Global)
 
 	return ds, nil
+}
+
+// FIPSOnlyEnv returns the GODEBUG env var that forces FIPS 140-3 mode at runtime when
+// global.FIPSOnly is set, or nil otherwise. See GlobalConfig.FIPSOnly for the runtime panic
+// risk this carries. tlsmlkem=0 works around a crypto/tls gap where its default,
+// FIPS-allowed X25519MLKEM768 curve preference internally calls the plain X25519
+// primitive, which unconditionally errors under fips140=only - breaking every
+// outbound TLS handshake (e.g. to the API server via client-go) unless the hybrid
+// curve is disabled. See https://github.com/kubernetes/kubernetes/issues/133743.
+func FIPSOnlyEnv(global *kaiv1.GlobalConfig) []v1.EnvVar {
+	return fips.OnlyEnv(IsFIPSOnly(global))
+}
+
+func IsFIPSOnly(global *kaiv1.GlobalConfig) bool {
+	return global != nil && ptr.Deref(global.FIPSOnly, false)
 }
 
 func ShouldCreatePodDisruptionBudget(replicas *int32, service *kaiv1common.Service) bool {
@@ -323,7 +347,7 @@ func isControllerAvailable(obj client.Object, objKind string) (bool, error) {
 	return false, nil
 }
 
-func AddK8sClientConfigToArgs(k8sClientConfig *kaiv1common.K8sClientConfig, args []string) {
+func AddK8sClientConfigToArgs(k8sClientConfig *kaiv1common.K8sClientConfig, args []string) []string {
 	if k8sClientConfig != nil {
 		if k8sClientConfig.QPS != nil {
 			args = append(args, "--qps", strconv.Itoa(*k8sClientConfig.QPS))
@@ -332,6 +356,8 @@ func AddK8sClientConfigToArgs(k8sClientConfig *kaiv1common.K8sClientConfig, args
 			args = append(args, "--burst", strconv.Itoa(*k8sClientConfig.Burst))
 		}
 	}
+
+	return args
 }
 
 func AddControllerRuntimeJSONLogArg(jsonLog *bool, args []string) []string {

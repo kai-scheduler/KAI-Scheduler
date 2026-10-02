@@ -29,6 +29,9 @@ const (
 	// allocation in cores and bytes; these convert spec values into the status units for comparison.
 	milliCPUToCPU    = 1000
 	megabytesToBytes = 1000000
+
+	// quotaTolerance absorbs floating point drift when summing fractional GPU quotas.
+	quotaTolerance = 1e-6
 )
 
 // EnforcementMode selects how strictly the queue validator treats quota and limit violations.
@@ -274,13 +277,29 @@ func (v *queueValidator) validateParentChildQuota(ctx context.Context, childQueu
 
 	childCPU := childQueue.Spec.Resources.CPU.Quota
 	parentCPU := parentQueue.Spec.Resources.CPU.Quota
+	childGPU := childQueue.Spec.Resources.GPU.Quota
+	parentGPU := parentQueue.Spec.Resources.GPU.Quota
+	childMemory := childQueue.Spec.Resources.Memory.Quota
+	parentMemory := parentQueue.Spec.Resources.Memory.Quota
 
-	if childCPU > parentCPU {
-		warnings = append(warnings, fmt.Sprintf("child queue CPU quota (%.0f) exceeds parent queue %s CPU quota (%.0f)",
-			childCPU, parentQueue.Name, parentCPU))
+	if quotaExceeds(childCPU, parentCPU) {
+		warnings = append(warnings, fmt.Sprintf("child queue CPU quota (%s) exceeds parent queue %s CPU quota (%s)",
+			formatQuota(childCPU, 0), parentQueue.Name, formatQuota(parentCPU, 0)))
 	}
 
-	totalChildrenCPU := childCPU
+	if quotaExceeds(childGPU, parentGPU) {
+		warnings = append(warnings, fmt.Sprintf("child queue GPU quota (%s) exceeds parent queue %s GPU quota (%s)",
+			formatQuota(childGPU, 2), parentQueue.Name, formatQuota(parentGPU, 2)))
+	}
+
+	if quotaExceeds(childMemory, parentMemory) {
+		warnings = append(warnings, fmt.Sprintf("child queue Memory quota (%s) exceeds parent queue %s Memory quota (%s)",
+			formatQuota(childMemory, 0), parentQueue.Name, formatQuota(parentMemory, 0)))
+	}
+
+	totalChildrenCPU := addQuota(0, childCPU)
+	totalChildrenGPU := addQuota(0, childGPU)
+	totalChildrenMemory := addQuota(0, childMemory)
 	for _, childName := range parentQueue.Status.ChildQueues {
 		if childName == childQueue.Name {
 			continue
@@ -293,23 +312,25 @@ func (v *queueValidator) validateParentChildQuota(ctx context.Context, childQueu
 		}
 
 		if existingChild.Spec.Resources != nil {
-			totalChildrenCPU += existingChild.Spec.Resources.CPU.Quota
+			totalChildrenCPU = addQuota(totalChildrenCPU, existingChild.Spec.Resources.CPU.Quota)
+			totalChildrenGPU = addQuota(totalChildrenGPU, existingChild.Spec.Resources.GPU.Quota)
+			totalChildrenMemory = addQuota(totalChildrenMemory, existingChild.Spec.Resources.Memory.Quota)
 		}
 	}
 
-	if totalChildrenCPU > parentCPU {
-		warnings = append(warnings, fmt.Sprintf("total children CPU quota (%.0f) exceeds parent queue %s CPU quota (%.0f)",
-			totalChildrenCPU, parentQueue.Name, parentCPU))
+	if quotaExceeds(totalChildrenCPU, parentCPU) {
+		warnings = append(warnings, fmt.Sprintf("total children CPU quota (%s) exceeds parent queue %s CPU quota (%s)",
+			formatQuota(totalChildrenCPU, 0), parentQueue.Name, formatQuota(parentCPU, 0)))
 	}
 
-	if childQueue.Spec.Resources.GPU.Quota > parentQueue.Spec.Resources.GPU.Quota {
-		warnings = append(warnings, fmt.Sprintf("child queue GPU quota (%.2f) exceeds parent queue %s GPU quota (%.2f)",
-			childQueue.Spec.Resources.GPU.Quota, parentQueue.Name, parentQueue.Spec.Resources.GPU.Quota))
+	if quotaExceeds(totalChildrenGPU, parentGPU) {
+		warnings = append(warnings, fmt.Sprintf("total children GPU quota (%s) exceeds parent queue %s GPU quota (%s)",
+			formatQuota(totalChildrenGPU, 2), parentQueue.Name, formatQuota(parentGPU, 2)))
 	}
 
-	if childQueue.Spec.Resources.Memory.Quota > parentQueue.Spec.Resources.Memory.Quota {
-		warnings = append(warnings, fmt.Sprintf("child queue Memory quota (%.0f) exceeds parent queue %s Memory quota (%.0f)",
-			childQueue.Spec.Resources.Memory.Quota, parentQueue.Name, parentQueue.Spec.Resources.Memory.Quota))
+	if quotaExceeds(totalChildrenMemory, parentMemory) {
+		warnings = append(warnings, fmt.Sprintf("total children Memory quota (%s) exceeds parent queue %s Memory quota (%s)",
+			formatQuota(totalChildrenMemory, 0), parentQueue.Name, formatQuota(parentMemory, 0)))
 	}
 
 	return warnings, nil
@@ -323,6 +344,10 @@ func (v *queueValidator) validateChildrenQuotaSum(ctx context.Context, parentQue
 	var warnings []string
 	var totalChildrenCPU, totalChildrenGPU, totalChildrenMemory float64
 
+	parentCPU := parentQueue.Spec.Resources.CPU.Quota
+	parentGPU := parentQueue.Spec.Resources.GPU.Quota
+	parentMemory := parentQueue.Spec.Resources.Memory.Quota
+
 	for _, childName := range parentQueue.Status.ChildQueues {
 		child := &v2.Queue{}
 		if err := v.kubeClient.Get(ctx, client.ObjectKey{Name: childName}, child); err != nil {
@@ -334,30 +359,67 @@ func (v *queueValidator) validateChildrenQuotaSum(ctx context.Context, parentQue
 			continue
 		}
 
-		totalChildrenCPU += child.Spec.Resources.CPU.Quota
-		totalChildrenGPU += child.Spec.Resources.GPU.Quota
-		totalChildrenMemory += child.Spec.Resources.Memory.Quota
+		totalChildrenCPU = addQuota(totalChildrenCPU, child.Spec.Resources.CPU.Quota)
+		totalChildrenGPU = addQuota(totalChildrenGPU, child.Spec.Resources.GPU.Quota)
+		totalChildrenMemory = addQuota(totalChildrenMemory, child.Spec.Resources.Memory.Quota)
 
-		if child.Spec.Resources.CPU.Quota > parentQueue.Spec.Resources.CPU.Quota {
-			warnings = append(warnings, fmt.Sprintf("child queue %s CPU quota (%.0f) exceeds parent CPU quota (%.0f)",
-				childName, child.Spec.Resources.CPU.Quota, parentQueue.Spec.Resources.CPU.Quota))
+		if quotaExceeds(child.Spec.Resources.CPU.Quota, parentCPU) {
+			warnings = append(warnings, fmt.Sprintf("child queue %s CPU quota (%s) exceeds parent CPU quota (%s)",
+				childName, formatQuota(child.Spec.Resources.CPU.Quota, 0), formatQuota(parentCPU, 0)))
+		}
+
+		if quotaExceeds(child.Spec.Resources.GPU.Quota, parentGPU) {
+			warnings = append(warnings, fmt.Sprintf("child queue %s GPU quota (%s) exceeds parent GPU quota (%s)",
+				childName, formatQuota(child.Spec.Resources.GPU.Quota, 2), formatQuota(parentGPU, 2)))
+		}
+
+		if quotaExceeds(child.Spec.Resources.Memory.Quota, parentMemory) {
+			warnings = append(warnings, fmt.Sprintf("child queue %s Memory quota (%s) exceeds parent Memory quota (%s)",
+				childName, formatQuota(child.Spec.Resources.Memory.Quota, 0), formatQuota(parentMemory, 0)))
 		}
 	}
 
-	if totalChildrenCPU > parentQueue.Spec.Resources.CPU.Quota {
-		warnings = append(warnings, fmt.Sprintf("total children CPU quota (%.0f) exceeds parent CPU quota (%.0f)",
-			totalChildrenCPU, parentQueue.Spec.Resources.CPU.Quota))
+	if quotaExceeds(totalChildrenCPU, parentCPU) {
+		warnings = append(warnings, fmt.Sprintf("total children CPU quota (%s) exceeds parent CPU quota (%s)",
+			formatQuota(totalChildrenCPU, 0), formatQuota(parentCPU, 0)))
 	}
 
-	if totalChildrenGPU > parentQueue.Spec.Resources.GPU.Quota {
-		warnings = append(warnings, fmt.Sprintf("total children GPU quota (%.2f) exceeds parent GPU quota (%.2f)",
-			totalChildrenGPU, parentQueue.Spec.Resources.GPU.Quota))
+	if quotaExceeds(totalChildrenGPU, parentGPU) {
+		warnings = append(warnings, fmt.Sprintf("total children GPU quota (%s) exceeds parent GPU quota (%s)",
+			formatQuota(totalChildrenGPU, 2), formatQuota(parentGPU, 2)))
 	}
 
-	if totalChildrenMemory > parentQueue.Spec.Resources.Memory.Quota {
-		warnings = append(warnings, fmt.Sprintf("total children Memory quota (%.0f) exceeds parent Memory quota (%.0f)",
-			totalChildrenMemory, parentQueue.Spec.Resources.Memory.Quota))
+	if quotaExceeds(totalChildrenMemory, parentMemory) {
+		warnings = append(warnings, fmt.Sprintf("total children Memory quota (%s) exceeds parent Memory quota (%s)",
+			formatQuota(totalChildrenMemory, 0), formatQuota(parentMemory, 0)))
 	}
 
 	return warnings, nil
+}
+
+// quotaExceeds treats -1 as unlimited: nothing exceeds an unlimited parent,
+// and an unlimited quota always exceeds a finite parent.
+func quotaExceeds(quota, parentQuota float64) bool {
+	if parentQuota == constants.UnlimitedResourceQuantity {
+		return false
+	}
+	if quota == constants.UnlimitedResourceQuantity {
+		return true
+	}
+	return quota-parentQuota > quotaTolerance
+}
+
+// addQuota is absorbing for -1: any unlimited term makes the total unlimited.
+func addQuota(total, quota float64) float64 {
+	if total == constants.UnlimitedResourceQuantity || quota == constants.UnlimitedResourceQuantity {
+		return constants.UnlimitedResourceQuantity
+	}
+	return total + quota
+}
+
+func formatQuota(quota float64, precision int) string {
+	if quota == constants.UnlimitedResourceQuantity {
+		return "unlimited"
+	}
+	return strconv.FormatFloat(quota, 'f', precision, 64)
 }

@@ -11,11 +11,13 @@ import (
 	"google.golang.org/grpc/status"
 
 	corev1 "k8s.io/api/core/v1"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	resourceapi "k8s.io/api/resource/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/retry"
 	ksf "k8s.io/kube-scheduler/framework"
 	k8splfeature "k8s.io/kubernetes/pkg/scheduler/framework/plugins/feature"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
@@ -44,8 +46,11 @@ func (drp *dynamicResourcesPlugin) Name() string {
 }
 
 // IsRelevant checks if the pod is relevant to the K8sPlugin
-func (drp *dynamicResourcesPlugin) IsRelevant(pod *corev1.Pod) bool {
-	return len(pod.Spec.ResourceClaims) > 0
+func (drp *dynamicResourcesPlugin) IsRelevant(pod *corev1.Pod, request *v1alpha2.BindRequest) bool {
+	hasExtendedResourceAlloc := request != nil &&
+		request.Spec.ExtendedResourceClaimAllocation != nil &&
+		request.Spec.ExtendedResourceClaimAllocation.Allocation != nil
+	return len(pod.Spec.ResourceClaims) > 0 || hasExtendedResourceAlloc
 }
 
 // PreFilter fetches pod Resource Claims and writes them to state, checking if the pod can be scheduled
@@ -66,11 +71,25 @@ func (drp *dynamicResourcesPlugin) Allocate(
 	return nil
 }
 
-// UnAllocate cleans up Resource Claim allocation
-func (drp *dynamicResourcesPlugin) UnAllocate(
-	_ context.Context, _ *corev1.Pod, _ string, _ ksf.CycleState,
-) {
-	return
+func (drp *dynamicResourcesPlugin) UnAllocate(ctx context.Context, pod *corev1.Pod, _ string, _ ksf.CycleState) {
+	claim, err := drp.findExtendedResourceClaim(ctx, pod)
+	if err != nil || claim == nil {
+		return
+	}
+	_ = drp.client.ResourceV1().ResourceClaims(pod.Namespace).Delete(ctx, claim.Name, metav1.DeleteOptions{})
+	_ = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		current, err := drp.client.CoreV1().Pods(pod.Namespace).Get(ctx, pod.Name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		if current.Status.ExtendedResourceClaimStatus == nil {
+			return nil
+		}
+		updated := current.DeepCopy()
+		updated.Status.ExtendedResourceClaimStatus = nil
+		_, err = drp.client.CoreV1().Pods(pod.Namespace).UpdateStatus(ctx, updated, metav1.UpdateOptions{})
+		return err
+	})
 }
 
 // Bind binds Resource Claims to the task according to the allocation status from the bind request
@@ -83,6 +102,12 @@ func (drp *dynamicResourcesPlugin) Bind(
 	for _, claimStatus := range request.Spec.ResourceClaimAllocations {
 		err := drp.bindResourceClaim(ctx, &claimStatus, pod)
 		if err != nil {
+			return err
+		}
+	}
+
+	if alloc := request.Spec.ExtendedResourceClaimAllocation; alloc != nil {
+		if err := drp.bindExtendedResourceClaim(ctx, alloc, pod); err != nil {
 			return err
 		}
 	}
@@ -103,7 +128,7 @@ func (drp *dynamicResourcesPlugin) bindResourceClaim(ctx context.Context, desire
 	}
 
 	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		originalClaim, err := drp.client.ResourceV1().ResourceClaims(pod.Namespace).Get(ctx, claimName, v1.GetOptions{})
+		originalClaim, err := drp.client.ResourceV1().ResourceClaims(pod.Namespace).Get(ctx, claimName, metav1.GetOptions{})
 		if err != nil {
 			return err
 		}
@@ -114,7 +139,7 @@ func (drp *dynamicResourcesPlugin) bindResourceClaim(ctx context.Context, desire
 			claim.Status.Allocation = desiredStatus.Allocation
 		}
 
-		_, err = drp.client.ResourceV1().ResourceClaims(pod.Namespace).UpdateStatus(ctx, claim, v1.UpdateOptions{})
+		_, err = drp.client.ResourceV1().ResourceClaims(pod.Namespace).UpdateStatus(ctx, claim, metav1.UpdateOptions{})
 
 		return err
 	})
@@ -124,6 +149,118 @@ func (drp *dynamicResourcesPlugin) bindResourceClaim(ctx context.Context, desire
 			claimName, pod.Namespace, pod.Name, err))
 	}
 	return nil
+}
+
+func (drp *dynamicResourcesPlugin) bindExtendedResourceClaim(
+	ctx context.Context,
+	alloc *v1alpha2.ExtendedResourceClaimAllocation,
+	pod *corev1.Pod,
+) error {
+	if alloc.Allocation == nil {
+		return fmt.Errorf("empty allocation in extended resource bind request for pod %s/%s",
+			pod.Namespace, pod.Name)
+	}
+	// Idempotency: if claim already exists (e.g., from a prior partial bind), skip creation.
+	existing, err := drp.findExtendedResourceClaim(ctx, pod)
+	if err != nil {
+		return fmt.Errorf("failed to check for existing extended resource claim for pod %s/%s: %w",
+			pod.Namespace, pod.Name, err)
+	}
+
+	var claimName string
+	if existing != nil {
+		claimName = existing.Name
+	} else {
+		claim := &resourceapi.ResourceClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				GenerateName: pod.Name + "-extended-resources-",
+				Namespace:    pod.Namespace,
+				Finalizers:   []string{resourceapi.Finalizer},
+				Annotations: map[string]string{
+					resourceapi.ExtendedResourceClaimAnnotation: "true",
+				},
+				OwnerReferences: []metav1.OwnerReference{
+					{
+						APIVersion:         "v1",
+						Kind:               "Pod",
+						Name:               pod.Name,
+						UID:                pod.UID,
+						Controller:         ptr.To(true),
+						BlockOwnerDeletion: ptr.To(true),
+					},
+				},
+			},
+			Spec: resourceapi.ResourceClaimSpec{
+				Devices: resourceapi.DeviceClaim{
+					Requests: alloc.DeviceRequests,
+				},
+			},
+		}
+		created, err := drp.client.ResourceV1().ResourceClaims(pod.Namespace).Create(ctx, claim, metav1.CreateOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to create extended resource claim for pod %s/%s: %w",
+				pod.Namespace, pod.Name, err)
+		}
+		claimName = created.Name
+	}
+
+	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		current, err := drp.client.ResourceV1().ResourceClaims(pod.Namespace).Get(ctx, claimName, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		updated := current.DeepCopy()
+		if updated.Status.Allocation == nil {
+			updated.Status.Allocation = alloc.Allocation
+		}
+		resources.UpsertReservedFor(updated, pod)
+		_, err = drp.client.ResourceV1().ResourceClaims(pod.Namespace).UpdateStatus(ctx, updated, metav1.UpdateOptions{})
+		return err
+	})
+	if err != nil {
+		return fmt.Errorf("failed to update status of extended resource claim %s for pod %s/%s: %w",
+			claimName, pod.Namespace, pod.Name, err)
+	}
+
+	// Record the claim name in pod status so the kubelet can inject devices.
+	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		current, err := drp.client.CoreV1().Pods(pod.Namespace).Get(ctx, pod.Name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		updated := current.DeepCopy()
+		updated.Status.ExtendedResourceClaimStatus = &corev1.PodExtendedResourceClaimStatus{
+			ResourceClaimName: claimName,
+			RequestMappings:   alloc.ContainerMappings,
+		}
+		_, err = drp.client.CoreV1().Pods(pod.Namespace).UpdateStatus(ctx, updated, metav1.UpdateOptions{})
+		return err
+	})
+	if err != nil {
+		return fmt.Errorf("failed to update pod status for extended resource claim for pod %s/%s: %w",
+			pod.Namespace, pod.Name, err)
+	}
+
+	return nil
+}
+
+func (drp *dynamicResourcesPlugin) findExtendedResourceClaim(ctx context.Context, pod *corev1.Pod) (*resourceapi.ResourceClaim, error) {
+	claims, err := drp.client.ResourceV1().ResourceClaims(pod.Namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	for i := range claims.Items {
+		claim := &claims.Items[i]
+		if claim.Annotations[resourceapi.ExtendedResourceClaimAnnotation] != "true" {
+			continue
+		}
+		for _, or_ := range claim.OwnerReferences {
+			if or_.Name == pod.Name && or_.UID == pod.UID && or_.Controller != nil && *or_.Controller {
+				return claim, nil
+			}
+		}
+	}
+	return nil, nil
 }
 
 func getClaimName(pod *corev1.Pod, podClaimName string) (string, error) {

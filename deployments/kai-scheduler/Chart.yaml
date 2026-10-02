@@ -7,3 +7,9 @@ description: KAI Scheduler by NVIDIA
 type: application
 version: 0.0.0
 appVersion: 0.0.0
+
+dependencies:
+  - name: gpu-fractioning
+    version: v0.1.6
+    repository: oci://ghcr.io/kai-scheduler
+    condition: global.nvFractions.set

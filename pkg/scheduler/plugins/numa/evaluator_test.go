@@ -13,12 +13,35 @@ import (
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 )
 
 const gpu = "nvidia.com/gpu"
 
-// noIgnoreList is the empty ignoreList passed to evaluate in tests that do not exercise it.
+// noIgnoreList is the empty ignoreList passed in tests that do not exercise it.
 var noIgnoreList = sets.New[v1.ResourceName]()
+
+// evalPlacement runs the solver on requests (as the concurrent set) against topo and returns the
+// resulting placement and admit decision — the form the worked-example assertions read.
+func evalPlacement(topo *node_info.NumaTopology, ignore sets.Set[v1.ResourceName], requests []v1.ResourceList) (pod_info.NUMAPlacement, bool) {
+	aware := topo.AwareIndices
+	if ignore.Len() > 0 {
+		ig := sets.New[int]()
+		for name := range ignore {
+			if idx := topo.VectorMap.GetIndex(name); idx >= 0 {
+				ig.Insert(idx)
+			}
+		}
+		aware = filterAware(topo.AwareIndices, ig)
+	}
+	reqs := make([]resource_info.ResourceVector, len(requests))
+	for i, r := range requests {
+		reqs[i] = resource_info.NewResourceVectorFromResourceList(r, topo.VectorMap)
+	}
+	alloc := zoneAllocation{}
+	ok := solve(topo, aware, reqs, nil, alloc)
+	return placementFromAllocation(alloc, topo), ok
+}
 
 // amountAt returns the amounts placed on a given zone index, or nil if the zone is not in the placement.
 func amountAt(p pod_info.NUMAPlacement, zoneIndex int) v1.ResourceList {
@@ -30,7 +53,7 @@ func amountAt(p pod_info.NUMAPlacement, zoneIndex int) v1.ResourceList {
 	return nil
 }
 
-// req builds a request unit from resource-name/quantity-string pairs.
+// req builds a request from resource-name/quantity-string pairs.
 func req(pairs ...string) v1.ResourceList {
 	out := v1.ResourceList{}
 	for i := 0; i < len(pairs); i += 2 {
@@ -42,16 +65,16 @@ func req(pairs ...string) v1.ResourceList {
 // partialZone builds a NumaZone whose Allocatable differs from Available, modelling a zone
 // that has pre-existing allocations. allocatable is the static per-zone capacity; available is
 // what remains after current pod allocations are subtracted.
-func partialZone(id string, allocatable, available map[string]string) *node_info.NumaZone {
-	alloc := map[v1.ResourceName]resource.Quantity{}
+func partialZone(id string, allocatable, available map[string]string) node_info.NumaZoneSpec {
+	alloc := v1.ResourceList{}
 	for name, qty := range allocatable {
 		alloc[v1.ResourceName(name)] = resource.MustParse(qty)
 	}
-	avail := map[v1.ResourceName]resource.Quantity{}
+	avail := v1.ResourceList{}
 	for name, qty := range available {
 		avail[v1.ResourceName(name)] = resource.MustParse(qty)
 	}
-	return &node_info.NumaZone{ID: id, Allocatable: alloc, Available: avail}
+	return node_info.NumaZoneSpec{ID: id, Allocatable: alloc, Available: avail}
 }
 
 // twoZoneNode builds a restricted/single-numa node with two identical NUMA zones.
@@ -66,20 +89,19 @@ func twoZoneNode(policy node_info.TopologyManagerPolicy, perZone v1.ResourceList
 	)
 }
 
-func TestSingleNUMAEvaluator(t *testing.T) {
+func TestSingleNUMASolve(t *testing.T) {
 	node := twoZoneNode(node_info.TopologyPolicySingleNUMANode, req(gpu, "4", "cpu", "16"))
-	eval := singleNUMAEvaluator{}
 
 	t.Run("fits the lowest zone", func(t *testing.T) {
-		allocation, admit := eval.evaluate(node, noIgnoreList, []v1.ResourceList{req(gpu, "2", "cpu", "4")})
+		allocation, admit := evalPlacement(node, noIgnoreList, []v1.ResourceList{req(gpu, "2", "cpu", "4")})
 		assert.True(t, admit)
 		assert.Equal(t, []int{0}, allocation.ZoneIndices(), "prefers the lowest zone")
 		gpuAllocated := amountAt(allocation, 0)[gpu]
 		assert.Equal(t, int64(2), gpuAllocated.Value())
 	})
 
-	t.Run("rejects a unit larger than any single zone", func(t *testing.T) {
-		_, admit := eval.evaluate(node, noIgnoreList, []v1.ResourceList{req(gpu, "6")})
+	t.Run("rejects a request larger than any single zone", func(t *testing.T) {
+		_, admit := evalPlacement(node, noIgnoreList, []v1.ResourceList{req(gpu, "6")})
 		assert.False(t, admit, "6 GPUs cannot fit one 4-GPU zone")
 	})
 
@@ -89,7 +111,7 @@ func TestSingleNUMAEvaluator(t *testing.T) {
 			numaZone("node-0", map[string]string{gpu: "4"}),
 			numaZone("node-1", map[string]string{"cpu": "16"}),
 		)
-		_, admit := singleNUMAEvaluator{}.evaluate(split, noIgnoreList, []v1.ResourceList{req(gpu, "1", "cpu", "1")})
+		_, admit := evalPlacement(split, noIgnoreList, []v1.ResourceList{req(gpu, "1", "cpu", "1")})
 		assert.False(t, admit)
 	})
 
@@ -98,7 +120,7 @@ func TestSingleNUMAEvaluator(t *testing.T) {
 		// combined capacity (4 GPU, 8 CPU), but exceeds what any single zone holds (2 GPU, 4 CPU).
 		// single-numa requires one zone to satisfy everything, so it rejects despite the aggregate fit.
 		node := twoZoneNode(node_info.TopologyPolicySingleNUMANode, req(gpu, "2", "cpu", "4"))
-		_, admit := singleNUMAEvaluator{}.evaluate(node, noIgnoreList, []v1.ResourceList{req(gpu, "3", "cpu", "6")})
+		_, admit := evalPlacement(node, noIgnoreList, []v1.ResourceList{req(gpu, "3", "cpu", "6")})
 		assert.False(t, admit, "fits across both zones combined, but neither zone alone fits")
 	})
 
@@ -109,7 +131,7 @@ func TestSingleNUMAEvaluator(t *testing.T) {
 			numaZone("node-1", map[string]string{"cpu": "4", "memory": "16Gi"}),
 		)
 		ignoreList := sets.New[v1.ResourceName]("memory")
-		_, admit := singleNUMAEvaluator{}.evaluate(split, ignoreList, []v1.ResourceList{req("cpu", "2", "memory", "8Gi")})
+		_, admit := evalPlacement(split, ignoreList, []v1.ResourceList{req("cpu", "2", "memory", "8Gi")})
 		assert.True(t, admit, "ignored memory drops out, cpu fits a single zone")
 	})
 }
@@ -120,24 +142,24 @@ func TestSingleNUMAContainerScopeSharesHeadroom(t *testing.T) {
 	node := twoZoneNode(node_info.TopologyPolicySingleNUMANode, req("cpu", "4"))
 	requests := []v1.ResourceList{req("cpu", "3"), req("cpu", "3"), req("cpu", "2")}
 
-	_, admit := singleNUMAEvaluator{}.evaluate(node, noIgnoreList, requests)
+	_, admit := evalPlacement(node, noIgnoreList, requests)
 	assert.False(t, admit)
 
 	// The first two fit (one per zone).
-	_, admit = singleNUMAEvaluator{}.evaluate(node, noIgnoreList, requests[:2])
+	_, admit = evalPlacement(node, noIgnoreList, requests[:2])
 	assert.True(t, admit)
 }
 
 func TestRestrictedAllocatableVsAvailable(t *testing.T) {
 	t.Run("reject: per-resource minimal widths disagree (6 GPU + 10 CPU)", func(t *testing.T) {
 		node := twoZoneNode(node_info.TopologyPolicyRestricted, req(gpu, "4", "cpu", "16"))
-		_, admit := restrictedEvaluator{}.evaluate(node, noIgnoreList, []v1.ResourceList{req(gpu, "6", "cpu", "10")})
+		_, admit := evalPlacement(node, noIgnoreList, []v1.ResourceList{req(gpu, "6", "cpu", "10")})
 		assert.False(t, admit, "GPU needs 2 nodes, CPU needs 1 — no common preferred mask")
 	})
 
 	t.Run("admit on the common width-2 mask (6 GPU + 24 CPU)", func(t *testing.T) {
 		node := twoZoneNode(node_info.TopologyPolicyRestricted, req(gpu, "4", "cpu", "16"))
-		allocation, admit := restrictedEvaluator{}.evaluate(node, noIgnoreList, []v1.ResourceList{req(gpu, "6", "cpu", "24")})
+		allocation, admit := evalPlacement(node, noIgnoreList, []v1.ResourceList{req(gpu, "6", "cpu", "24")})
 		assert.True(t, admit)
 		assert.Equal(t, []int{0, 1}, allocation.ZoneIndices(), "spans both NUMA zones")
 
@@ -148,13 +170,13 @@ func TestRestrictedAllocatableVsAvailable(t *testing.T) {
 
 	t.Run("reject: 4-GPU + 1-CPU footgun", func(t *testing.T) {
 		node := twoZoneNode(node_info.TopologyPolicyRestricted, req(gpu, "2", "cpu", "100"))
-		_, admit := restrictedEvaluator{}.evaluate(node, noIgnoreList, []v1.ResourceList{req(gpu, "4", "cpu", "1")})
+		_, admit := evalPlacement(node, noIgnoreList, []v1.ResourceList{req(gpu, "4", "cpu", "1")})
 		assert.False(t, admit, "GPU needs 2 nodes, CPU needs 1")
 	})
 
 	t.Run("admit on a single zone when width is 1", func(t *testing.T) {
 		node := twoZoneNode(node_info.TopologyPolicyRestricted, req(gpu, "4", "cpu", "16"))
-		allocation, admit := restrictedEvaluator{}.evaluate(node, noIgnoreList, []v1.ResourceList{req(gpu, "2", "cpu", "8")})
+		allocation, admit := evalPlacement(node, noIgnoreList, []v1.ResourceList{req(gpu, "2", "cpu", "8")})
 		assert.True(t, admit)
 		assert.Equal(t, []int{0}, allocation.ZoneIndices(), "width 1 stays on one zone")
 	})
@@ -178,7 +200,7 @@ func TestRestrictedAllocatableVsAvailable(t *testing.T) {
 				map[string]string{gpu: "3", "cpu": "46"},
 			),
 		)
-		_, admit := restrictedEvaluator{}.evaluate(node, noIgnoreList, []v1.ResourceList{req(gpu, "4", "cpu", "50")})
+		_, admit := evalPlacement(node, noIgnoreList, []v1.ResourceList{req(gpu, "4", "cpu", "50")})
 		assert.False(t, admit, "single-zone preferred by allocatable but infeasible by available → non-preferred width-2 hint → reject")
 	})
 
@@ -196,7 +218,7 @@ func TestRestrictedAllocatableVsAvailable(t *testing.T) {
 				map[string]string{gpu: "3", "cpu": "46"},
 			),
 		)
-		_, admit := restrictedEvaluator{}.evaluate(node, noIgnoreList, []v1.ResourceList{req(gpu, "1", "cpu", "50")})
+		_, admit := evalPlacement(node, noIgnoreList, []v1.ResourceList{req(gpu, "1", "cpu", "50")})
 		assert.False(t, admit, "CPU fits by allocatable (minWidth=1) but no zone has 50 CPU available → non-preferred → reject")
 	})
 }
@@ -208,14 +230,7 @@ func TestRestrictedSelectsLowestMask(t *testing.T) {
 		numaZone("node-1", map[string]string{gpu: "2"}),
 		numaZone("node-2", map[string]string{gpu: "2"}),
 	)
-	allocation, admit := restrictedEvaluator{}.evaluate(node, noIgnoreList, []v1.ResourceList{req(gpu, "4")})
+	allocation, admit := evalPlacement(node, noIgnoreList, []v1.ResourceList{req(gpu, "4")})
 	assert.True(t, admit)
 	assert.Equal(t, []int{0, 1}, allocation.ZoneIndices(), "selects the lowest satisfying mask, not node-2")
-}
-
-func TestEvaluatorFor(t *testing.T) {
-	assert.IsType(t, singleNUMAEvaluator{}, evaluatorFor(node_info.TopologyPolicySingleNUMANode))
-	assert.IsType(t, restrictedEvaluator{}, evaluatorFor(node_info.TopologyPolicyRestricted))
-	assert.Nil(t, evaluatorFor(node_info.TopologyPolicyBestEffort))
-	assert.Nil(t, evaluatorFor(node_info.TopologyPolicyNone))
 }

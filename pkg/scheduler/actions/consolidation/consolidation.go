@@ -10,6 +10,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
@@ -70,7 +71,8 @@ func (alloc *consolidationAction) Execute(ssn *framework.Session) {
 				continue
 			}
 		}
-		tasks := podgroup_info.GetTasksToAllocate(job, ssn.SubGroupOrderFn, ssn.TaskOrderFn, false)
+		tasks := podgroup_info.GetTasksToAllocate(job, ssn.SubGroupOrderFn, ssn.TaskOrderFn,
+			podgroup_info.SimulatedTaskAllocation)
 		if task, failure := common.VictimInvariantPrePredicateFailureForTasks(ssn, tasks); failure != nil {
 			common.RecordVictimInvariantPrePredicateFailure(job, task, failure)
 			continue
@@ -95,11 +97,11 @@ func attemptToConsolidateForPreemptor(
 	ssn *framework.Session, job *podgroup_info.PodGroupInfo, actionBudget *solvers.ActionSearchBudget,
 ) (bool, *framework.Statement, *solvers.SearchResult) {
 	resReq := podgroup_info.GetTasksToAllocateInitResourceVector(job, ssn.SubGroupOrderFn, ssn.TaskOrderFn,
-		false, ssn.ClusterInfo.MinNodeGPUMemoryMiB)
+		podgroup_info.SimulatedTaskAllocation, ssn.ClusterInfo.MinNodeGPUMemoryMiB)
 	log.InfraLogger.V(3).Infof(
 		"Attempting to consolidate running jobs in order to make room for job: <%s/%s>, resources: <%v>",
 		job.Namespace, job.Name, resReq)
-	if !utils.IsEnoughGPUsAllocatableForJob(job, ssn, false) {
+	if !utils.IsEnoughGPUsAllocatableForJob(job, ssn, podgroup_info.SimulatedTaskAllocation) {
 		log.InfraLogger.V(3).Infof(
 			"Can't consolidate for job: <%v/%v>, not enough allocatable GPUs in the cluster",
 			job.Namespace, job.Name)
@@ -116,7 +118,7 @@ func attemptToConsolidatePreemptor(
 	solver := solvers.NewJobsSolver(
 		feasibleNodes,
 		allPodsReallocated,
-		func() *utils.JobsOrderByQueues { return buildConsolidationVictimsQueue(ssn, preemptor) },
+		getOrderedVictimsQueue(ssn, preemptor),
 		framework.Consolidation,
 		actionBudget)
 
@@ -160,6 +162,27 @@ func allPodsReallocated(scenario api.ScenarioInfo) bool {
 func buildConsolidationVictimsQueue(ssn *framework.Session, preemptor *podgroup_info.PodGroupInfo) *utils.JobsOrderByQueues {
 	filter := buildPreemptibleFilterFunc(preemptor, ssn.GetMaxNumberConsolidationPreemptees())
 	return utils.GetVictimsQueue(ssn, filter)
+}
+
+func getOrderedVictimsQueue(ssn *framework.Session, preemptor *podgroup_info.PodGroupInfo) solvers.GenerateVictimsQueue {
+	maxPreempteesToTest := ssn.GetMaxNumberConsolidationPreemptees()
+	if maxPreempteesToTest != noConsolidationPreempteesRestrcition {
+		return func() *utils.JobsOrderByQueues {
+			return buildConsolidationVictimsQueue(ssn, preemptor)
+		}
+	}
+
+	return utils.NewCachedVictimsQueueGenerator(
+		ssn,
+		func() map[common_info.PodGroupID]*podgroup_info.PodGroupInfo {
+			filter := buildPreemptibleFilterFunc(preemptor, maxPreempteesToTest)
+			return utils.GetVictimCandidates(ssn, filter)
+		},
+		utils.JobsOrderInitOptions{
+			FilterNonPreemptible:     true,
+			FilterNonActiveAllocated: true,
+		},
+	)
 }
 
 func buildPreemptibleFilterFunc(preemptor *podgroup_info.PodGroupInfo, maxPreempteesToTest int) func(*podgroup_info.PodGroupInfo) bool {

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -23,6 +24,7 @@ import (
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal"
@@ -54,6 +56,8 @@ type inflightUpdate struct {
 	patchData    []byte
 	updateStatus bool
 	subResources []string
+
+	writtenResourceVersions []string
 }
 
 type defaultStatusUpdater struct {
@@ -169,7 +173,9 @@ func (su *defaultStatusUpdater) Pipelined(pod *v1.Pod, message string) {
 }
 
 func (su *defaultStatusUpdater) PatchPodLabels(pod *v1.Pod, labels map[string]any) {
-	log.InfraLogger.V(6).Infof("Patching pod labels for %s/%s", pod.Namespace, pod.Name)
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("Patching pod labels for %s/%s", pod.Namespace, pod.Name)
+	})
 
 	patchBytes, err := json.Marshal(map[string]any{
 		"metadata": map[string]any{
@@ -195,50 +201,85 @@ func (su *defaultStatusUpdater) PatchPodLabels(pod *v1.Pod, labels map[string]an
 	)
 }
 
-func (su *defaultStatusUpdater) RecordJobStatusEvent(job *podgroup_info.PodGroupInfo) error {
+func (su *defaultStatusUpdater) RecordJobStatusEvent(
+	job *podgroup_info.PodGroupInfo,
+	resolveDetailedFitErrors func(
+		*podgroup_info.PodGroupInfo,
+		*pod_info.PodInfo,
+	) ([]*common_info.TasksFitError, error),
+) error {
 	var err error
 	var patchData []byte
 	if patchData, err = su.updatePodGroupAnnotations(job); err != nil {
-		log.InfraLogger.V(7).Warnf("Failed to update podgroup annotations, error: %s", err)
+		log.InfraLogger.V(7).Do(func() {
+			log.InfraLogger.Warningf("Failed to update podgroup annotations, error: %s", err)
+		})
 	}
 	if job.StalenessInfo.Stale {
 		su.recordStaleJobEvent(job)
 	}
-	if err := su.recordInvalidSubGroupPodsEvents(job); err != nil {
+	if err := su.recordInvalidSubGroupPodsEvents(job, resolveDetailedFitErrors); err != nil {
 		return err
 	}
 
-	updatePodgroupStatus := false
+	updatePodgroupStatus := updateCorePods(job)
 	if job.GetNumPendingTasks() > 0 || job.GetNumGatedTasks() > 0 {
 		if !job.IsReadyForScheduling() {
 			su.recordJobNotReadyEvent(job)
+			su.pushPodGroupUpdate(job, patchData, updatePodgroupStatus)
 			return nil
 		}
-		if err := su.recordUnschedulablePodsEvents(job); err != nil {
+		if err := su.recordUnschedulablePodsEvents(job, resolveDetailedFitErrors); err != nil {
 			return err
 		}
-		updatePodgroupStatus = su.recordUnschedulablePodGroup(job)
+		updatePodgroupStatus = su.recordUnschedulablePodGroup(job) || updatePodgroupStatus
+	} else {
+		updatePodgroupStatus = su.clearPodGroupSchedulingCondition(job) || updatePodgroupStatus
 	}
 
-	if len(patchData) > 0 || updatePodgroupStatus {
-		su.pushToUpdateQueue(
-			&updatePayload{
-				key:        su.keyForPodGroupPayload(job.PodGroup.Name, job.PodGroup.Namespace, job.PodGroup.UID),
-				objectType: podGroupType,
-			},
-			&inflightUpdate{
-				object:       job.PodGroup,
-				patchData:    patchData,
-				updateStatus: updatePodgroupStatus,
-			},
-		)
-	}
+	su.pushPodGroupUpdate(job, patchData, updatePodgroupStatus)
 
 	return nil
 }
 
+// updateCorePods writes the scheduler-owned core pod set onto the pod group status for
+// semi-preemptible jobs, and reports whether it changed. The status write is a full UpdateStatus of
+// the snapshot object, so it must only fire when core membership actually changed.
+func updateCorePods(job *podgroup_info.PodGroupInfo) bool {
+	if !job.IsSemiPreemptibleJob() {
+		return false
+	}
+	if job.PodGroup.Status.SchedulingState != nil &&
+		slices.Equal(job.PodGroup.Status.SchedulingState.CorePods, job.CorePodNames) {
+		return false
+	}
+	job.PodGroup.Status.SchedulingState = &enginev2alpha2.PodGroupSchedulingState{CorePods: job.CorePodNames}
+	return true
+}
+
+func (su *defaultStatusUpdater) pushPodGroupUpdate(
+	job *podgroup_info.PodGroupInfo, patchData []byte, updateStatus bool,
+) {
+	if len(patchData) == 0 && !updateStatus {
+		return
+	}
+	su.pushToUpdateQueue(
+		&updatePayload{
+			key:        su.keyForPodGroupPayload(job.PodGroup.Name, job.PodGroup.Namespace, job.PodGroup.UID),
+			objectType: podGroupType,
+		},
+		&inflightUpdate{
+			object:       job.PodGroup,
+			patchData:    patchData,
+			updateStatus: updateStatus,
+		},
+	)
+}
+
 func (su *defaultStatusUpdater) markTaskUnschedulable(pod *v1.Pod, message string, updatePodCondition bool) error {
-	log.InfraLogger.V(6).Infof("setting message for task: %v", pod.Name)
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("setting message for task: %v", pod.Name)
+	})
 	su.recorder.Eventf(pod, v1.EventTypeWarning, v1.PodReasonUnschedulable, message)
 
 	if updatePodCondition {
@@ -272,7 +313,15 @@ func (su *defaultStatusUpdater) recordStaleJobEvent(job *podgroup_info.PodGroupI
 		}
 	}
 
-	message := fmt.Sprintf("Job is stale. %d pods are active, minMember is %d", totalActivePods, totalMinAvailable) + subGroupMessages
+	// A minSubGroup job never had to reach the sum of every leaf's minMember, so reporting that sum
+	// names a requirement it does not have. Report the requirement it does.
+	header := fmt.Sprintf("Job is stale. %d pods are active, minMember is %d", totalActivePods, totalMinAvailable)
+	if root := job.RootSubGroupSet; root != nil && root.GetMinSubGroup() != nil {
+		header = fmt.Sprintf("Job is stale. %d pods are active, %d of %d required subGroups are satisfied",
+			totalActivePods, root.GetNumGangSatisfiedMembers(), root.GetMinMembersToSatisfy())
+	}
+
+	message := header + subGroupMessages
 
 	su.recorder.Eventf(job.PodGroup, v1.EventTypeNormal, "StaleJob", message)
 }
@@ -318,9 +367,11 @@ func (su *defaultStatusUpdater) markPodGroupUnschedulable(job *podgroup_info.Pod
 }
 
 func (su *defaultStatusUpdater) updatePodCondition(pod *v1.Pod, condition *v1.PodCondition) error {
-	log.InfraLogger.V(6).Infof(
-		"Updating pod condition for %s/%s to (%s==%s)",
-		pod.Namespace, pod.Name, condition.Type, condition.Status)
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof(
+			"Updating pod condition for %s/%s to (%s==%s)",
+			pod.Namespace, pod.Name, condition.Type, condition.Status)
+	})
 	if k8s_internal.UpdatePodCondition(&pod.Status, condition) {
 		statusPatchBaseObject := v1.PodStatus{}
 		statusPatchBaseObject.Conditions = []v1.PodCondition{*condition}
@@ -346,7 +397,13 @@ func (su *defaultStatusUpdater) updatePodCondition(pod *v1.Pod, condition *v1.Po
 	return nil
 }
 
-func (su *defaultStatusUpdater) recordUnschedulablePodsEvents(job *podgroup_info.PodGroupInfo) error {
+func (su *defaultStatusUpdater) recordUnschedulablePodsEvents(
+	job *podgroup_info.PodGroupInfo,
+	resolveDetailedFitErrors func(
+		*podgroup_info.PodGroupInfo,
+		*pod_info.PodInfo,
+	) ([]*common_info.TasksFitError, error),
+) error {
 	// Update podCondition for tasks Allocated and Pending before job discarded
 	var errs []error
 	for _, taskInfo := range job.PodStatusIndex[pod_status.Pending] {
@@ -357,19 +414,15 @@ func (su *defaultStatusUpdater) recordUnschedulablePodsEvents(job *podgroup_info
 		msg := common_info.DefaultPodError
 		fitError := job.TasksFitErrors[taskInfo.UID]
 		if fitError != nil {
-			msg = fitError.Error()
-
-			if su.detailedFitErrors {
-				msg = fitError.DetailedError()
-			} else {
-				log.InfraLogger.V(6).Infof("Full fit error: %s", fitError.DetailedError())
-			}
+			msg = su.taskFitErrorMessage(job, taskInfo, fitError, resolveDetailedFitErrors)
 		} else if len(job.JobFitErrors) > 0 {
 			msg = fmt.Sprintf("%s", common_info.JobFitErrorsToMessage(job.JobFitErrors))
 		}
 
 		msg = su.addNodePoolPrefixIfNeeded(job, msg)
-		log.InfraLogger.V(6).Infof("setting message for task: %v, %v", taskInfo.Name, msg)
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof("setting message for task: %v, %v", taskInfo.Name, msg)
+		})
 		updatePodCondition := utils.GetMarkUnschedulableValue(job.PodGroup.Spec.MarkUnschedulable)
 		if err := su.markTaskUnschedulable(taskInfo.Pod, msg, updatePodCondition); err != nil {
 			errs = append(errs, fmt.Errorf("failed to update unschedulable task status <%s/%s>: %v",
@@ -380,16 +433,60 @@ func (su *defaultStatusUpdater) recordUnschedulablePodsEvents(job *podgroup_info
 	return errors.Join(errs...)
 }
 
-func (su *defaultStatusUpdater) recordInvalidSubGroupPodsEvents(job *podgroup_info.PodGroupInfo) error {
+func (su *defaultStatusUpdater) taskFitErrorMessage(
+	job *podgroup_info.PodGroupInfo,
+	task *pod_info.PodInfo,
+	fitError *common_info.TasksFitErrors,
+	resolveDetailedFitErrors func(
+		*podgroup_info.PodGroupInfo,
+		*pod_info.PodInfo,
+	) ([]*common_info.TasksFitError, error),
+) string {
+	compactMessage := fitError.Error()
+	if !fitError.HasNodeErrors() {
+		if su.detailedFitErrors {
+			return fitError.DetailedError(nil)
+		}
+		return compactMessage
+	}
+
+	if su.detailedFitErrors {
+		if resolveDetailedFitErrors == nil {
+			return compactMessage
+		}
+		nodeErrors, err := resolveDetailedFitErrors(job, task)
+		if err != nil || len(nodeErrors) == 0 {
+			return compactMessage
+		}
+		return fitError.DetailedError(nodeErrors)
+	}
+
+	log.InfraLogger.V(6).Do(func() {
+		if resolveDetailedFitErrors == nil {
+			return
+		}
+		nodeErrors, err := resolveDetailedFitErrors(job, task)
+		if err != nil || len(nodeErrors) == 0 {
+			return
+		}
+		log.InfraLogger.Infof("Full fit error: %s", fitError.DetailedError(nodeErrors))
+	})
+	return compactMessage
+}
+
+func (su *defaultStatusUpdater) recordInvalidSubGroupPodsEvents(
+	job *podgroup_info.PodGroupInfo,
+	resolveDetailedFitErrors func(
+		*podgroup_info.PodGroupInfo,
+		*pod_info.PodInfo,
+	) ([]*common_info.TasksFitError, error),
+) error {
 	var errs []error
 
 	for _, taskInfo := range job.GetInvalidSubGroupTasks() {
 		msg := common_info.DefaultPodError
 		if fitError := job.TasksFitErrors[taskInfo.UID]; fitError != nil {
-			msg = fitError.Error()
-			if su.detailedFitErrors {
-				msg = fitError.DetailedError()
-			}
+			msg = su.taskFitErrorMessage(job, taskInfo, fitError, resolveDetailedFitErrors)
 		}
 
 		msg = su.addNodePoolPrefixIfNeeded(job, msg)
@@ -428,7 +525,9 @@ func (su *defaultStatusUpdater) recordUnschedulablePodGroup(job *podgroup_info.P
 	if su.detailedFitErrors {
 		msg = common_info.JobFitErrorsToDetailedMessage(job.JobFitErrors)
 	} else {
-		log.InfraLogger.V(6).Infof("Full job fit error: %s", common_info.JobFitErrorsToDetailedMessage(job.JobFitErrors))
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof("Full job fit error: %s", common_info.JobFitErrorsToDetailedMessage(job.JobFitErrors))
+		})
 	}
 
 	if len(msg) == 0 {
@@ -442,10 +541,22 @@ func (su *defaultStatusUpdater) recordUnschedulablePodGroup(job *podgroup_info.P
 func (su *defaultStatusUpdater) updatePodGroupSchedulingCondition(
 	podGroup *enginev2alpha2.PodGroup, schedulingCondition *enginev2alpha2.SchedulingCondition,
 ) bool {
-	log.InfraLogger.V(6).Infof(
-		"Updating pod group scheduling condition for %s/%s to (%s,nodepool=%s)",
-		podGroup.Namespace, podGroup.Name, schedulingCondition.Type, schedulingCondition.NodePool)
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof(
+			"Updating pod group scheduling condition for %s/%s to (%s,nodepool=%s)",
+			podGroup.Namespace, podGroup.Name, schedulingCondition.Type, schedulingCondition.NodePool)
+	})
 	return setPodGroupSchedulingCondition(podGroup, schedulingCondition)
+}
+
+func (su *defaultStatusUpdater) clearPodGroupSchedulingCondition(job *podgroup_info.PodGroupInfo) bool {
+	// Keep the condition until binding is confirmed, so a failed bind still leaves
+	// an explanation for why the pods were pending. An allocated/pipelined/binding
+	// task has a node assigned by the scheduler but is not yet bound.
+	if hasTasksAwaitingBind(job) {
+		return false
+	}
+	return removePodGroupSchedulingCondition(job.PodGroup)
 }
 
 func (su *defaultStatusUpdater) addNodePoolPrefixIfNeeded(job *podgroup_info.PodGroupInfo, msg string) string {
@@ -595,6 +706,31 @@ func equalSchedulingConditions(a, b *enginev2alpha2.SchedulingCondition) bool {
 		a.Reason == b.Reason &&
 		a.Message == b.Message &&
 		a.Status == b.Status
+}
+
+// bindInFlightStatuses are the states a task is in after the scheduler assigns it
+// a node but before binding is confirmed.
+var bindInFlightStatuses = []pod_status.PodStatus{
+	pod_status.Allocated,
+	pod_status.Pipelined,
+	pod_status.Binding,
+}
+
+func hasTasksAwaitingBind(job *podgroup_info.PodGroupInfo) bool {
+	for _, status := range bindInFlightStatuses {
+		if len(job.PodStatusIndex[status]) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func removePodGroupSchedulingCondition(podGroup *enginev2alpha2.PodGroup) bool {
+	if len(podGroup.Status.SchedulingConditions) == 0 {
+		return false
+	}
+	podGroup.Status.SchedulingConditions = nil
+	return true
 }
 
 func squashAndAppendConditionsForNodepool(podGroup *enginev2alpha2.PodGroup, schedulingCondition *enginev2alpha2.SchedulingCondition) {

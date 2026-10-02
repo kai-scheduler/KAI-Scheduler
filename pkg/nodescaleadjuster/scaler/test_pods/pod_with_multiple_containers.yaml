@@ -6,6 +6,7 @@ kind: Pod
 metadata:
   name: pod-with-multiple-containers
 spec:
+  automountServiceAccountToken: false
   containers:
     - name: container-1
       image: k8s.gcr.io/pause:2.0
@@ -13,9 +14,13 @@ spec:
         requests:
           memory: "64Mi"
           cpu: "250m"
+        limits:
+          memory: "64Mi"
     - name: container-2
       image: k8s.gcr.io/pause:2.0
       resources:
         requests:
           memory: "64Mi"
           cpu: "250m"
+        limits:
+          memory: "64Mi"

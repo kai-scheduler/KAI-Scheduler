@@ -40,17 +40,21 @@ func predicateNotRequired(_ *v1.Pod) bool {
 
 func emptyPredicatePreFilter(predicateName string) k8s_internal.FitPredicatePreFilter {
 	return func(pod *v1.Pod) (sets.Set[string], *ksf.Status) {
-		log.InfraLogger.V(6).Infof(
-			"Checking pod %s/%s failed predicate: %s", pod.Namespace, pod.Name, predicateName)
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof(
+				"Checking pod %s/%s failed predicate: %s", pod.Namespace, pod.Name, predicateName)
+		})
 		return nil, nil
 	}
 }
 
 func emptyPredicateFilter(predicateName string) k8s_internal.FitPredicateFilter {
 	return func(pod *v1.Pod, nodeInfo *k8sframework.NodeInfo) (bool, []string, error) {
-		log.InfraLogger.V(6).Infof(
-			"Checking pod %s/%s on node %s with failed predicate: %s",
-			pod.Namespace, pod.Name, nodeInfo.Node().Name, predicateName)
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof(
+				"Checking pod %s/%s on node %s with failed predicate: %s",
+				pod.Namespace, pod.Name, nodeInfo.Node().Name, predicateName)
+		})
 		return true, nil, nil
 	}
 }
@@ -153,9 +157,11 @@ func NewSessionPredicates(ssn *framework.Session) k8s_internal.SessionPredicates
 
 func emptyScoreFn(pluginName string) k8s_internal.ScorePredicate {
 	return func(pod *v1.Pod, nodeInfo *k8sframework.NodeInfo) (int64, []string, error) {
-		log.InfraLogger.V(6).Infof(
-			"Scoring pod %s/%s on node %s with failed plugin: %s",
-			pod.Namespace, pod.Name, nodeInfo.Node().Name, pluginName)
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof(
+				"Scoring pod %s/%s on node %s with failed plugin: %s",
+				pod.Namespace, pod.Name, nodeInfo.Node().Name, pluginName)
+		})
 		return 0, nil, nil
 	}
 }

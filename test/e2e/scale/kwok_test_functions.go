@@ -5,6 +5,7 @@ package scale
 
 import (
 	"context"
+	"errors"
 	"math"
 	"sync"
 	"time"
@@ -12,7 +13,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/multierr"
+	batchv1 "k8s.io/api/batch/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -26,7 +27,8 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/queue"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/testconfig"
-	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/utils"
+	waitutils "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
 )
 
 const (
@@ -34,6 +36,7 @@ const (
 	KWOKOperatorNodePoolName = "managed-nodepool"
 	podsPollIntervalSeconds  = 10
 	testLabelKey             = "scale-test"
+	distributedJobBatchLabel = "scale-test-batch"
 
 	defaultNumberOfNodes         = 500
 	gpusPerNode                  = 8
@@ -101,17 +104,25 @@ func fillClusterWithJobs(
 	totalNumberOfJobs = (numberOfNodes * gpusPerNode) / gpusPerJob
 
 	var wg sync.WaitGroup
+	var creationError error
+	var lock sync.Mutex
 	for range totalNumberOfJobs {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			createJobObjectForKwok(ctx, testCtx, testQueue, resourceRequirements, map[string]string{})
+			_, err := createJobObjectForKwok(ctx, testCtx, testQueue, resourceRequirements, map[string]string{})
+			if err != nil {
+				lock.Lock()
+				creationError = errors.Join(creationError, err)
+				lock.Unlock()
+			}
 		}()
 	}
 	wg.Wait()
+	Expect(creationError).NotTo(HaveOccurred(), "Failed to create some jobs")
 
 	GinkgoLogr.Info("Waiting for pods creation")
-	wait.ForAtLeastNPodCreation(ctx, testCtx.ControllerClient, metav1.LabelSelector{
+	waitutils.ForAtLeastNPodCreation(ctx, testCtx.ControllerClient, metav1.LabelSelector{
 		MatchLabels: map[string]string{
 			testconfig.GetConfig().QueueLabelKey: testQueue.Name,
 		},
@@ -150,29 +161,35 @@ func distributedJobsScaleTestInternal(
 	var wg sync.WaitGroup
 	var creationError error
 	var lock sync.Mutex
+	var jobs []*batchv1.Job
+	batchID := utils.GenerateRandomK8sName(10)
+	batchLabels := map[string]string{distributedJobBatchLabel: batchID}
 
 	for range numberOfDistributedJobs {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, _, err := createDistributedJobForKwok(
+			job, err := submitDistributedJobForKwok(
 				ctx, testCtx, testQueue,
 				v1.ResourceRequirements{
 					Limits: map[v1.ResourceName]resource.Quantity{
 						constants.NvidiaGpuResource: *resource.NewQuantity(int64(gpuPerPod), resource.DecimalSI),
 					},
 				}, podsPerDistributedJob,
-				map[string]string{}, topologyConstraint,
+				batchLabels, batchLabels, topologyConstraint,
 			)
+			lock.Lock()
+			defer lock.Unlock()
 			if err != nil {
-				lock.Lock()
-				creationError = multierr.Append(creationError, err)
-				lock.Unlock()
+				creationError = errors.Join(creationError, err)
+				return
 			}
+			jobs = append(jobs, job)
 		}()
 	}
 	wg.Wait()
 	Expect(creationError).NotTo(HaveOccurred(), "Failed to create some distributed jobs")
+	waitForDistributedJobsForKwok(ctx, testCtx, jobs)
 
 	startTime := time.Now()
 	schedulerconfig.EnableScheduler(ctx, testCtx)
@@ -191,6 +208,49 @@ func distributedJobsScaleTestInternal(
 			"distributed jobs": numberOfDistributedJobs,
 			"time":             endTime.Sub(startTime).String(),
 		})).To(Succeed())
+}
+
+func waitForDistributedJobsForKwok(
+	ctx context.Context, testCtx *testcontext.TestContext, jobs []*batchv1.Job,
+) []*v1.Pod {
+	if len(jobs) == 0 {
+		return nil
+	}
+
+	expectedPods := 0
+	for _, job := range jobs {
+		if job.Spec.Parallelism == nil {
+			expectedPods++
+		} else {
+			expectedPods += int(*job.Spec.Parallelism)
+		}
+	}
+
+	batchID := jobs[0].Labels[distributedJobBatchLabel]
+	selector := metav1.LabelSelector{MatchLabels: map[string]string{distributedJobBatchLabel: batchID}}
+	waitutils.ForAtLeastNPodCreation(ctx, testCtx.ControllerClient, selector, expectedPods)
+
+	Eventually(func(g Gomega) {
+		podGroups := &v2alpha2.PodGroupList{}
+		err := testCtx.ControllerClient.List(ctx, podGroups,
+			runtimeClient.InNamespace(jobs[0].Namespace),
+			runtimeClient.MatchingLabels{distributedJobBatchLabel: batchID},
+		)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(len(podGroups.Items)).To(Equal(len(jobs)))
+	}, maxFlowTimeoutMinutes*time.Minute, podsPollIntervalSeconds*time.Second).Should(Succeed())
+
+	pods := &v1.PodList{}
+	Expect(testCtx.ControllerClient.List(ctx, pods,
+		runtimeClient.InNamespace(jobs[0].Namespace),
+		runtimeClient.MatchingLabels{distributedJobBatchLabel: batchID},
+	)).To(Succeed())
+
+	result := make([]*v1.Pod, 0, len(pods.Items))
+	for i := range pods.Items {
+		result = append(result, &pods.Items[i])
+	}
+	return result
 }
 
 func consolidateScaleTest(
@@ -219,10 +279,11 @@ func measureReclaimSingleGPUJob(
 	totalTime := time.Duration(0)
 	for i := 0; i < statusMeasuringSamples; i++ {
 		startTime := time.Now()
-		createJobObjectForKwok(
+		_, err := createJobObjectForKwok(
 			ctx, testCtx, testQueue, SingleGPURequirement,
 			map[string]string{},
 		)
+		Expect(err).NotTo(HaveOccurred())
 		scheduledTime := waitForAllJobsToSchedule(ctx, testCtx, testQueue, i+1)
 		totalTime += scheduledTime.Sub(startTime)
 	}
@@ -237,12 +298,13 @@ func measureReclaimSingleGPUJob(
 
 func measureUnschedulableDelayInSeconds(
 	ctx context.Context, testCtx *testcontext.TestContext, testQueue *v2.Queue,
-	createJob func(context.Context, *testcontext.TestContext, *v2.Queue) (*v2alpha2.PodGroup, []*v1.Pod, error),
+	createJob func(context.Context, *testcontext.TestContext, *v2.Queue) (*rd.JobResult, error),
 ) float64 {
 	totalTime := time.Duration(0)
 	for i := 0; i < statusMeasuringSamples; i++ {
-		pg, pods, err := createJob(ctx, testCtx, testQueue)
+		result, err := createJob(ctx, testCtx, testQueue)
 		Expect(err).NotTo(HaveOccurred())
+		pg := result.PodGroup
 		Eventually(func(g Gomega) bool {
 			updatedPodGroup := &v2alpha2.PodGroup{}
 			err := testCtx.ControllerClient.Get(ctx, runtimeClient.ObjectKeyFromObject(pg), updatedPodGroup)
@@ -257,10 +319,7 @@ func measureUnschedulableDelayInSeconds(
 			return false
 		}, maxFlowTimeoutMinutes*time.Minute, podsPollIntervalSeconds*time.Second).Should(BeTrue())
 
-		for _, pod := range pods {
-			Expect(deleteObjectWithRetries(ctx, testCtx.ControllerClient, pod)).To(Succeed())
-		}
-		Expect(deleteObjectWithRetries(ctx, testCtx.ControllerClient, pg)).To(Succeed())
+		Expect(deleteObjectWithRetries(ctx, testCtx.ControllerClient, result.Job)).To(Succeed())
 	}
 
 	return totalTime.Seconds() / float64(statusMeasuringSamples)
@@ -268,7 +327,7 @@ func measureUnschedulableDelayInSeconds(
 
 // reclaimForOneLargeJob creates a distributed job with the specified number of pods, each requesting gpusPerNode GPUs
 func reclaimForOneLargeJob(ctx context.Context, testCtx *testcontext.TestContext, reclaimSingleGPUJobsQueue *v2.Queue, numberOfPods int) {
-	podGroup, _, err := createDistributedJobForKwok(
+	result, err := createDistributedJobForKwok(
 		ctx, testCtx, reclaimSingleGPUJobsQueue,
 		v1.ResourceRequirements{
 			Limits: map[v1.ResourceName]resource.Quantity{
@@ -279,6 +338,7 @@ func reclaimForOneLargeJob(ctx context.Context, testCtx *testcontext.TestContext
 		nil,
 	)
 	Expect(err).NotTo(HaveOccurred())
+	podGroup := result.PodGroup
 
 	podsList := &v1.PodList{}
 	Eventually(func(g Gomega) bool {
@@ -323,23 +383,32 @@ func runNCCLSimulation(
 ) (testSucceeded bool, totalPods int, completedPods int, pendingPods int, startTime time.Time) {
 	jobSizes := []int{1, 2, 4, 8, 16, 32, 64, 128, 256, 512}
 	startTime = time.Now()
-	var testPods []*v1.Pod
+	batchID := utils.GenerateRandomK8sName(10)
+	podLabels := map[string]string{
+		"burst-test":             "true",
+		distributedJobBatchLabel: batchID,
+	}
+	jobLabels := map[string]string{distributedJobBatchLabel: batchID}
+	var jobs []*batchv1.Job
+	var creationError error
 	for _, jobSize := range jobSizes {
 		if jobSize > numberOfNodes {
 			break
 		}
 		for range numberOfNCCLJobsPerSize {
-			_, createdPods, err := createDistributedJobForKwok(
+			job, err := submitDistributedJobForKwok(
 				ctx, testCtx, testQueue, FullNodeGPURequirement, jobSize,
-				map[string]string{
-					"burst-test": "true",
-				},
-				nil,
+				podLabels, jobLabels, nil,
 			)
-			testPods = append(testPods, createdPods...)
-			Expect(err).NotTo(HaveOccurred())
+			if err != nil {
+				creationError = errors.Join(creationError, err)
+				continue
+			}
+			jobs = append(jobs, job)
 		}
 	}
+	Expect(creationError).NotTo(HaveOccurred(), "Failed to create some NCCL jobs")
+	testPods := waitForDistributedJobsForKwok(ctx, testCtx, jobs)
 
 	totalPods = len(testPods)
 	completedPods = 0

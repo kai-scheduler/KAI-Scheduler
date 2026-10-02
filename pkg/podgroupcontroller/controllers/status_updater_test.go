@@ -720,7 +720,7 @@ func Test_handlePodGroupStatus(t *testing.T) {
 					Requested: map[v1.ResourceName]resource.Quantity{
 						v1.ResourceCPU:      resource.MustParse("500m"),
 						v1.ResourceMemory:   resource.MustParse("1G"),
-						"run.ai/gpu.memory": resource.MustParse("1k"),
+						"run.ai/gpu.memory": resource.MustParse("1000Mi"),
 					},
 				},
 			},

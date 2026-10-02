@@ -30,7 +30,6 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/scheduler_util"
 )
 
 type reclaimAction struct {
@@ -87,7 +86,8 @@ func (ra *reclaimAction) Execute(ssn *framework.Session) {
 				continue
 			}
 		}
-		tasks := podgroup_info.GetTasksToAllocate(job, ssn.SubGroupOrderFn, ssn.TaskOrderFn, false)
+		tasks := podgroup_info.GetTasksToAllocate(job, ssn.SubGroupOrderFn, ssn.TaskOrderFn,
+			podgroup_info.SimulatedTaskAllocation)
 		if task, failure := common.VictimInvariantPrePredicateFailureForTasks(ssn, tasks); failure != nil {
 			common.RecordVictimInvariantPrePredicateFailure(job, task, failure)
 			continue
@@ -118,7 +118,7 @@ func (ra *reclaimAction) attemptToReclaimForSpecificJob(
 ) (bool, *framework.Statement, []string, *solvers.SearchResult) {
 	queue := ssn.ClusterInfo.Queues[reclaimer.Queue]
 	resReq := podgroup_info.GetTasksToAllocateInitResourceVector(reclaimer, ssn.SubGroupOrderFn, ssn.TaskOrderFn,
-		false, ssn.ClusterInfo.MinNodeGPUMemoryMiB)
+		podgroup_info.SimulatedTaskAllocation, ssn.ClusterInfo.MinNodeGPUMemoryMiB)
 	log.InfraLogger.V(3).Infof("Attempting to reclaim for job: <%v/%v> of queue <%v>, resources: <%v>",
 		reclaimer.Namespace, reclaimer.Name, queue.Name, resReq)
 
@@ -144,25 +144,31 @@ func shouldStopActionForSearchResult(result *solvers.SearchResult) bool {
 }
 
 func getOrderedVictimsQueue(ssn *framework.Session, reclaimer *podgroup_info.PodGroupInfo) solvers.GenerateVictimsQueue {
-	return func() *utils.JobsOrderByQueues {
-		jobsOrderedByQueue := utils.NewJobsOrderByQueues(ssn, utils.JobsOrderInitOptions{
+	return utils.NewCachedVictimsQueueGenerator(
+		ssn,
+		func() map[common_info.PodGroupID]*podgroup_info.PodGroupInfo {
+			return getReclaimVictimCandidates(ssn, reclaimer)
+		},
+		utils.JobsOrderInitOptions{
 			FilterNonPreemptible:     true,
 			FilterNonActiveAllocated: true,
-			VictimQueue:              true,
-			MaxJobsQueueDepth:        scheduler_util.QueueCapacityInfinite,
-		})
-		jobs := map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{}
-		for _, job := range ssn.ClusterInfo.PodGroupInfos {
-			if job.Queue == reclaimer.Queue {
-				continue
-			}
-			if !ssn.ReclaimVictimFilter(reclaimer, job) {
-				continue
-			}
-			jobs[job.UID] = job
-		}
+		},
+	)
+}
 
-		jobsOrderedByQueue.InitializeWithJobs(jobs)
-		return &jobsOrderedByQueue
+func getReclaimVictimCandidates(
+	ssn *framework.Session,
+	reclaimer *podgroup_info.PodGroupInfo,
+) map[common_info.PodGroupID]*podgroup_info.PodGroupInfo {
+	jobs := make(map[common_info.PodGroupID]*podgroup_info.PodGroupInfo)
+	for _, job := range ssn.ClusterInfo.PodGroupInfos {
+		if job.Queue == reclaimer.Queue {
+			continue
+		}
+		if !ssn.ReclaimVictimFilter(reclaimer, job) {
+			continue
+		}
+		jobs[job.UID] = job
 	}
+	return jobs
 }

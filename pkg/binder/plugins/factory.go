@@ -16,6 +16,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/gpusharing"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/hamicore"
 	k8splugins "github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/k8s-plugins"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/nvfractions"
 )
 
 type PluginBuildContext struct {
@@ -51,6 +52,7 @@ func InitDefaultPlugins() {
 	RegisterPluginBuilder(DynamicResourcesPluginName, newDynamicResourcesPlugin)
 	RegisterPluginBuilder(GPUSharingPluginName, newGPUSharingPlugin)
 	RegisterPluginBuilder(HamiCorePluginName, newHamiCorePlugin)
+	RegisterPluginBuilder(NvFractionsPluginName, newNvFractionsPlugin)
 }
 
 func BuildConfiguredPlugins(buildContext PluginBuildContext, config Config) (*BinderPlugins, error) {
@@ -105,11 +107,23 @@ func newGPUSharingPlugin(buildContext PluginBuildContext, arguments map[string]s
 	if err != nil {
 		return nil, err
 	}
-	return gpusharing.New(buildContext.KubeClient, cdiEnabled), nil
+	nriPluginEnabled, err := boolArgumentOrDefault(arguments, NRIPluginEnabledArgument, false)
+	if err != nil {
+		return nil, err
+	}
+	return gpusharing.New(buildContext.KubeClient, cdiEnabled, nriPluginEnabled), nil
 }
 
 func newHamiCorePlugin(buildContext PluginBuildContext, _ map[string]string) (Plugin, error) {
 	return hamicore.New(buildContext.KubeClient), nil
+}
+
+func newNvFractionsPlugin(_ PluginBuildContext, arguments map[string]string) (Plugin, error) {
+	cdiEnabled, err := boolArgument(arguments, CDIEnabledArgument)
+	if err != nil {
+		return nil, err
+	}
+	return nvfractions.New(cdiEnabled), nil
 }
 
 func validateDependentPlugins(config Config) error {
@@ -152,6 +166,18 @@ func boolArgument(arguments map[string]string, name string) (bool, error) {
 	value, found := arguments[name]
 	if !found {
 		return false, fmt.Errorf("missing argument %q", name)
+	}
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return false, fmt.Errorf("invalid argument %q=%q: %w", name, value, err)
+	}
+	return parsed, nil
+}
+
+func boolArgumentOrDefault(arguments map[string]string, name string, defaultValue bool) (bool, error) {
+	value, found := arguments[name]
+	if !found {
+		return defaultValue, nil
 	}
 	parsed, err := strconv.ParseBool(value)
 	if err != nil {

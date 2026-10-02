@@ -105,7 +105,10 @@ func New(options *Options, config *rest.Config) (*App, error) {
 	kubeClient := draversionawareclient.NewDRAAwareClient(kubernetes.NewForConfigOrDie(config))
 	informerFactory := informers.NewSharedInformerFactory(kubeClient, 0)
 
-	featuregates.SetDRAFeatureGate(kubeClient.Discovery())
+	if err := featuregates.SetDRAFeatureGate(kubeClient.Discovery()); err != nil {
+		setupLog.Error(err, "unable to determine dynamic resource allocation availability")
+		return nil, err
+	}
 
 	rrs := resourcereservation.NewService(options.FakeGPUNodes, clientWithWatch, options.ResourceReservationPodImage,
 		time.Duration(options.ResourceReservationAllocationTimeout)*time.Second,
@@ -113,7 +116,8 @@ func New(options *Options, config *rest.Config) (*App, error) {
 		options.ResourceReservationAppLabel, options.ScalingPodNamespace, options.RuntimeClassName,
 		options.ResourceReservationPodResources.Value,
 		options.ResourceReservationPodSecurityContext.Value,
-		options.ResourceReservationContainerSecurityContext.Value)
+		options.ResourceReservationContainerSecurityContext.Value,
+		options.FIPSOnly)
 
 	reconcilerParams := &controllers.ReconcilerParams{
 		MaxConcurrentReconciles:     options.MaxConcurrentReconciles,
@@ -143,10 +147,11 @@ func (app *App) RegisterPlugins(plugins *plugins.BinderPlugins) {
 func (app *App) Run(ctx context.Context) error {
 	var err error
 	go func() {
-		app.manager.GetCache().WaitForCacheSync(context.Background())
+		if !app.manager.GetCache().WaitForCacheSync(ctx) {
+			return
+		}
 		setupLog.Info("syncing resource reservation")
-		err := app.rrs.Sync(context.Background())
-		if err != nil {
+		if err := app.rrs.Sync(ctx); err != nil && ctx.Err() == nil {
 			setupLog.Error(err, "unable to sync resource reservation")
 			panic(err)
 		}

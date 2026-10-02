@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/signal"
 	"syscall"
 	"time"
 
@@ -46,6 +47,7 @@ import (
 
 	"github.com/kai-scheduler/KAI-scheduler/cmd/scheduler/app/options"
 	"github.com/kai-scheduler/KAI-scheduler/cmd/scheduler/profiling"
+	kaiv1common "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
@@ -95,7 +97,7 @@ func BuildSchedulerParams(opt *options.ServerOption) *conf.SchedulerParams {
 		NodePoolLabelValue: opt.NodePoolLabelValue,
 	}
 
-	return &conf.SchedulerParams{
+	params := &conf.SchedulerParams{
 		SchedulerName:                     opt.SchedulerName,
 		RestrictSchedulingNodes:           opt.RestrictSchedulingNodes,
 		PartitionParams:                   schedulingPartitionParams,
@@ -112,6 +114,11 @@ func BuildSchedulerParams(opt *options.ServerOption) *conf.SchedulerParams {
 		UpdatePodEvictionCondition:        opt.UpdatePodEvictionCondition,
 		QueueLabelKey:                     opt.QueueLabelKey,
 	}
+	if opt.GpuSharingMode != "" {
+		gpuSharingMode := kaiv1common.GpuSharingMode(opt.GpuSharingMode)
+		params.GpuSharingMode = &gpuSharingMode
+	}
+	return params
 }
 
 func RunApp() error {
@@ -133,6 +140,11 @@ func RunApp() error {
 	} else {
 		defer flushLogs()
 	}
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	if err := startMemoryLimitManager(ctx); err != nil {
+		return fmt.Errorf("configure Go memory limit: %w", err)
+	}
 	setConfig(so)
 
 	config := clientconfig.GetConfigOrDie()
@@ -140,7 +152,7 @@ func RunApp() error {
 	config.Burst = so.Burst
 	config.Wrap(wrapExitOnUnauthorized)
 
-	return Run(so, config, mux)
+	return Run(ctx, so, config, mux)
 }
 
 func setupProfiling(so *options.ServerOption) {
@@ -174,10 +186,9 @@ func setConfig(so *options.ServerOption) {
 	config.MIGWorkerNodeLabelKey = so.MIGWorkerNodeLabelKey
 }
 
-// +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
 
-func Run(opt *options.ServerOption, config *restclient.Config, mux *http.ServeMux) error {
+func Run(ctx context.Context, opt *options.ServerOption, config *restclient.Config, mux *http.ServeMux) error {
 	if opt.PrintVersion {
 		version.PrintVersion()
 	}
@@ -212,7 +223,7 @@ func Run(opt *options.ServerOption, config *restclient.Config, mux *http.ServeMu
 	}
 
 	if !opt.EnableLeaderElection {
-		run(context.TODO())
+		run(ctx)
 		return fmt.Errorf("finished without leader elect")
 	}
 
@@ -250,7 +261,7 @@ func Run(opt *options.ServerOption, config *restclient.Config, mux *http.ServeMu
 		return fmt.Errorf("couldn't create resource lock: %v", err)
 	}
 
-	leaderelection.RunOrDie(context.TODO(), leaderelection.LeaderElectionConfig{
+	leaderelection.RunOrDie(ctx, leaderelection.LeaderElectionConfig{
 		Lock:          rl,
 		LeaseDuration: leaseDuration,
 		RenewDeadline: renewDeadline,

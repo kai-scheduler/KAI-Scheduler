@@ -206,7 +206,8 @@ func TestSolveWithResultRecordsUnsolvedScenarioDurationAfterSimulation(t *testin
 	ssn.ClusterInfo.Nodes = map[string]*node_info.NodeInfo{"node-1": {}}
 	scenarioToSolve := scenario.NewByNodeScenario(
 		ssn, pendingJob,
-		podgroup_info.GetTasksToAllocate(pendingJob, ssn.SubGroupOrderFn, ssn.TaskOrderFn, false),
+		podgroup_info.GetTasksToAllocate(pendingJob, ssn.SubGroupOrderFn, ssn.TaskOrderFn,
+			podgroup_info.SimulatedTaskAllocation),
 		nil, nil,
 	)
 	ssn.AddScenarioGenerator(generatorName, portfolioTestFactory(&portfolioTestGenerator{
@@ -249,7 +250,8 @@ func TestSolveWithResultRunsCompletePartialSearchForOneGeneratorBeforeNext(t *te
 		solveCtx := ctx.(*SolveContext)
 		factoryCalls = append(factoryCalls, fmt.Sprintf("second:%d", solveCtx.ProbeK))
 		pendingTasks := podgroup_info.GetTasksToAllocate(
-			solveCtx.PartialPendingJob, ssn.SubGroupOrderFn, ssn.TaskOrderFn, false,
+			solveCtx.PartialPendingJob, ssn.SubGroupOrderFn, ssn.TaskOrderFn,
+			podgroup_info.SimulatedTaskAllocation,
 		)
 		sn := scenario.NewByNodeScenario(
 			ssn, solveCtx.PartialPendingJob, pendingTasks,
@@ -291,7 +293,8 @@ func TestSolveWithResultStillSolvesWhenGeneratorRepeatsScenarios(t *testing.T) {
 	ssn.AddScenarioGenerator(generatorName, func(ctx framework.ScenarioGeneratorContext) framework.ScenarioGenerator {
 		solveCtx := ctx.(*SolveContext)
 		pendingTasks := podgroup_info.GetTasksToAllocate(
-			solveCtx.PartialPendingJob, ssn.SubGroupOrderFn, ssn.TaskOrderFn, false,
+			solveCtx.PartialPendingJob, ssn.SubGroupOrderFn, ssn.TaskOrderFn,
+			podgroup_info.SimulatedTaskAllocation,
 		)
 		failing := scenario.NewByNodeScenario(
 			ssn, solveCtx.PartialPendingJob, pendingTasks, nil, solveCtx.RecordedVictimsJobs,

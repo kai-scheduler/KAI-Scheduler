@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"time"
 
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
@@ -95,6 +96,18 @@ type SchedulingShardSpec struct {
 	// +kubebuilder:validation:Optional
 	Args map[string]string `json:"args,omitempty"`
 
+	// GoMemLimitRatio is the fraction of the scheduler container memory limit
+	// applied as GOMEMLIMIT. Defaults to 0.9.
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:ExclusiveMinimum=true
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=1
+	GoMemLimitRatio *float64 `json:"goMemLimitRatio,omitempty"`
+
+	// GoMemLimit overrides automatic cgroup-derived GOMEMLIMIT for this shard.
+	// +kubebuilder:validation:Optional
+	GoMemLimit *resource.Quantity `json:"goMemLimit,omitempty"`
+
 	// PlacementStrategy is the placement scheduler strategy
 	// +kubebuilder:validation:Optional
 	PlacementStrategy *PlacementStrategy `json:"placementStrategy,omitempty"`
@@ -132,7 +145,7 @@ type SchedulingShardSpec struct {
 	// ray=1100, subgrouporder=1000, taskorder=900, nominatednode=800,
 	// dynamicresources=700, minruntime=600, topology=500, snapshot=400,
 	// sg-nodelocalgreedy=360, sg-multinodegang=350, gpupack/gpuspread=300,
-	// nodeplacement=200, gpusharingorder=100.
+	// nodeplacement=200, gpusharingorder=100, backgroundpods=50.
 	// +kubebuilder:validation:Optional
 	Plugins map[string]PluginConfig `json:"plugins,omitempty"`
 
@@ -146,6 +159,8 @@ type SchedulingShardSpec struct {
 }
 
 func (s *SchedulingShardSpec) SetDefaultsWhereNeeded() {
+	s.GoMemLimitRatio = common.SetDefault(s.GoMemLimitRatio, ptr.To(0.9))
+
 	s.PlacementStrategy = common.SetDefault(s.PlacementStrategy, &PlacementStrategy{})
 	s.PlacementStrategy.SetDefaultWhereNeeded()
 
@@ -218,6 +233,9 @@ var defaultPluginPriorities = map[string]int{
 	"gpuspread":          300,
 	"nodeplacement":      200,
 	"gpusharingorder":    100,
+	// Opens last so that every other plugin's handlers observe its evictions, and closes first so
+	// that the handlers its restores fire still belong to live plugins.
+	"backgroundpods": 50,
 }
 
 var defaultActionPriorities = map[string]int{

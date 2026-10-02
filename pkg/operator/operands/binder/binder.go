@@ -36,6 +36,7 @@ func (b *Binder) DesiredState(
 	objects := []client.Object{}
 	for _, resourceFunc := range []resourceForKAIConfig{
 		b.deploymentForKAIConfig,
+		b.podDisruptionBudgetForKAIConfig,
 		b.serviceAccountForKAIConfig,
 		b.serviceForKAIConfig,
 		resourceReservationServiceAccount,

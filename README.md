@@ -36,13 +36,14 @@ It can run alongside other schedulers installed on the cluster.
 - Bin Packing & Spread Scheduling: Optimize node usage either by minimizing fragmentation (bin-packing) or increasing resiliency and load balancing (spread scheduling).
 - [Workload Priority](docs/priority/README.md): Prioritize workloads effectively within queues.
 - [Separation of workload priority and preemptibility](https://github.com/kai-scheduler/KAI-scheduler/tree/main/docs/developer/designs/priority-preemptibility-separation): supports separation of workload priority and workloads preemptibility as two independent policies
-- [Hierarchical Queues](docs/queues/README.md): Manage workloads with two-level queue hierarchies for flexible organizational control.
+- [Hierarchical Queues](docs/queues/README.md): Apply quotas, limits, priorities, and fairness policies across multi-level queue hierarchies for flexible organizational control.
 - [Resource distribution](docs/fairness/README.md#resource-division-algorithm): Customize quotas, over-quota weights, limits, and priorities per queue.
 - [Fairness Policies](docs/fairness/README.md#reclaim-strategies): Ensure equitable resource distribution using Dominant Resource Fairness (DRF) and resource reclamation across queues.
 - [Time-based Fairshare](https://github.com/kai-scheduler/KAI-scheduler/tree/main/docs/time-based-fairshare): Over-time fair usage of resources, considering historical usage, time decay, and other parameters for fine-tuning.
 - [Min-guaranteed-runtime](https://github.com/kai-scheduler/KAI-scheduler/tree/main/docs/developer/designs/min-runtime): ensures a time period in which the scheduler must not preempt or reclaim a running workload, even if preemptible.
 - Workload Consolidation: Reallocate running workloads intelligently to reduce fragmentation and increase cluster utilization.
 - [Elastic Workloads](docs/elastic/README.md): Dynamically scale workloads within defined minimum and maximum pod or SubGroup thresholds.
+- [Background Pods](docs/background-pods/README.md): Run maintenance workloads that the scheduler plans around and evicts on demand, so they never hold capacity from users.
 - Dynamic Resource Allocation (DRA): Support vendor-specific hardware resources through Kubernetes ResourceClaims (e.g., GPUs from NVIDIA or AMD).
 - [Topology-Aware Scheduling (TAS)](https://github.com/kai-scheduler/KAI-scheduler/tree/main/docs/topology): supports optimized placement with [topology aware scheduling](https://github.com/kai-scheduler/KAI-scheduler/tree/main/docs/developer/designs/topology-awareness) and hierarchical topology aware scheduling for [Hierarchical PodGroups](https://github.com/kai-scheduler/KAI-scheduler/tree/main/docs/developer/designs/hierarchical-podgroup).
 - [Hierarchical PodGroups](https://github.com/kai-scheduler/KAI-scheduler/tree/main/docs/developer/designs/hierarchical-podgroup): supports gang scheduling with optimized topology aware scheduling of multi-level workloads, such as distributed and disaggregated workloads such as Dynamo/Grove.
@@ -98,8 +99,10 @@ Follow the instructions [here](docs/developer/building-from-source.md)
 When `gpu-operator` <v25.10.0 is installed, the following flag should be added to the installation command:
 
 ```
---set admission.gpuFractionRuntimeClassName=null
+--set-string admission.gpuFractionRuntimeClassName=""
 ```
+
+Do not set this value to `null`; an unset value is defaulted by the operator to `nvidia`.
 If CDI is enabled, add `--set binder.cdiEnabled=true` to the installation command.
 
 ## Support & Breaking changes

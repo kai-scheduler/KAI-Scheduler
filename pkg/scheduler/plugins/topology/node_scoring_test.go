@@ -438,7 +438,7 @@ func TestSortTree(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			root := tt.setupTree()
-			sortTree(tt.tasksResources, root, tt.maxDepthLevel, vectorMap)
+			sortTree(tt.tasksResources, root, tt.maxDepthLevel, vectorMap, nil)
 
 			if tt.expectedOrder == nil {
 				return
@@ -491,7 +491,7 @@ func TestSortTree_NestedSorting(t *testing.T) {
 		},
 	}
 
-	sortTree(tasksResources, root, "rack", vectorMap)
+	sortTree(tasksResources, root, "rack", vectorMap, nil)
 
 	// Check regions are sorted
 	require.Equal(t, 2, len(root.Children))

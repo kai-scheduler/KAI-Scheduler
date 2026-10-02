@@ -26,6 +26,7 @@ import (
 
 const (
 	defaultResourceName           = "admission"
+	defaultBinderServiceAccount   = "binder"
 	kaiAdmissionWebhookSecretName = "kai-admission-webhook-tls-secret"
 	certKey                       = "tls.crt"
 	keyKey                        = "tls.key"
@@ -44,7 +45,11 @@ func (a *Admission) deploymentForKAIConfig(
 	deployment.Spec.Strategy.Type = appsv1.RecreateDeploymentStrategyType
 	deployment.Spec.Strategy.RollingUpdate = nil
 	deployment.Spec.Replicas = config.Replicas
-	deployment.Spec.Template.Spec.Containers[0].Args = buildArgsList(kaiConfig, config)
+	nriPluginEnabled, err := common.IsGPUOperatorNRIPluginEnabled(ctx, runtimeClient)
+	if err != nil {
+		return nil, err
+	}
+	deployment.Spec.Template.Spec.Containers[0].Args = buildArgsList(kaiConfig, config, nriPluginEnabled)
 	deployment.Spec.Template.Spec.Containers[0].VolumeMounts = []v1.VolumeMount{
 		{
 			Name:      "cert",
@@ -103,7 +108,7 @@ func (a *Admission) serviceAccountForKAIConfig(
 func (a *Admission) serviceForKAIConfig(
 	ctx context.Context, runtimeClient client.Reader, kaiConfig *kaiv1.Config,
 ) ([]client.Object, error) {
-	serviceObj, err := common.ObjectForKAIConfig(ctx, runtimeClient, &v1.Service{}, a.BaseResourceName,
+	serviceObj, err := common.ObjectForKAIConfig(ctx, runtimeClient, &v1.Service{}, a.serviceName(kaiConfig),
 		kaiConfig.Spec.Namespace)
 	if err != nil {
 		return nil, err
@@ -218,7 +223,7 @@ func (a *Admission) buildWebhookClientConfig(kaiConfig *kaiv1.Config, secret *v1
 	return admissionv1.WebhookClientConfig{
 		Service: &admissionv1.ServiceReference{
 			Namespace: kaiConfig.Spec.Namespace,
-			Name:      a.BaseResourceName,
+			Name:      a.serviceName(kaiConfig),
 			Path:      ptr.To(webhookPath),
 		},
 		CABundle: secret.Data[certKey],
@@ -319,6 +324,27 @@ func (a *Admission) validatingWCForKAIConfig(
 			},
 		},
 		{
+			Name:                    fmt.Sprintf("podresize.%s", webhookName),
+			AdmissionReviewVersions: []string{"v1"},
+			SideEffects:             common.PtrFrom(admissionv1.SideEffectClassNone),
+			NamespaceSelector:       namespaceSelector,
+			ObjectSelector:          objectSelector,
+			FailurePolicy:           common.PtrFrom(admissionv1.Ignore),
+			ClientConfig:            a.buildWebhookClientConfig(kaiConfig, secret, "/validate--v1-pod-resize"),
+			MatchConditions:         matchConditions,
+			Rules: []admissionv1.RuleWithOperations{
+				{
+					Operations: []admissionv1.OperationType{admissionv1.Update},
+					Rule: admissionv1.Rule{
+						APIGroups:   []string{""},
+						APIVersions: []string{"v1"},
+						Resources:   []string{"pods/resize"},
+						Scope:       common.PtrFrom(admissionv1.NamespacedScope),
+					},
+				},
+			},
+		},
+		{
 			// Topology is cluster-scoped and unrelated to pods, so it uses neither the pod
 			// namespace/object selectors nor the scheduler-name match conditions.
 			Name:                    fmt.Sprintf("topology.%s", webhookName),
@@ -356,7 +382,7 @@ func (a *Admission) upsertKAIAdmissionCertSecret(ctx context.Context, runtimeCli
 		Kind:       "Secret",
 		APIVersion: "v1",
 	}
-	webhookName := calculateServiceUrl(a.BaseResourceName, kaiConfig.Spec.Namespace)
+	webhookName := calculateServiceUrl(a.serviceName(kaiConfig), kaiConfig.Spec.Namespace)
 	if err = updateSelfSigned(secret, webhookName); err != nil {
 		return err, nil, ""
 	}
@@ -378,11 +404,15 @@ func updateSelfSigned(secret *v1.Secret, serviceUrl string) error {
 	return nil
 }
 
+func (a *Admission) serviceName(kaiConfig *kaiv1.Config) string {
+	return ptr.Deref(kaiConfig.Spec.Admission.ServiceName, a.BaseResourceName)
+}
+
 func calculateServiceUrl(serviceName, namespace string) string {
 	return fmt.Sprintf("%s.%s.svc", serviceName, namespace)
 }
 
-func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1admission.Admission) []string {
+func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1admission.Admission, nriPluginEnabled bool) []string {
 	args := []string{
 		"--scheduler-name",
 		*kaiConfig.Spec.Global.SchedulerName,
@@ -397,9 +427,20 @@ func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1admission.Admission) []
 	if config.GPUSharing != nil && *config.GPUSharing {
 		args = append(args, "--gpu-sharing-enabled=true")
 	}
+	if nriPluginEnabled {
+		args = append(args, "--nri-plugin-enabled=true")
+	}
 
 	if isHamiCoreEnabled(kaiConfig) {
 		args = append(args, "--hami-core-enabled=true")
+	}
+
+	if isNvFractionsEnabled(kaiConfig) {
+		args = append(args,
+			"--nv-fractions-enabled=true",
+			"--binder-service-account-username",
+			binderServiceAccountUsername(kaiConfig.Spec.Namespace),
+		)
 	}
 
 	if config.BlockNvidiaVisibleDevices != nil && *config.BlockNvidiaVisibleDevices {
@@ -410,15 +451,30 @@ func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1admission.Admission) []
 		args = append(args, "--leader-elect")
 	}
 
-	if config.GPUFractionRuntimeClassName != nil {
+	if nriPluginEnabled {
+		args = append(args, "--gpu-fraction-runtime-class-name", "")
+	} else if config.GPUFractionRuntimeClassName != nil {
 		args = append(args, "--gpu-fraction-runtime-class-name", *config.GPUFractionRuntimeClassName)
 	}
 	if config.GPUPodRuntimeClassName != nil {
 		args = append(args, "--gpu-pod-runtime-class-name", *config.GPUPodRuntimeClassName)
 	}
 
-	common.AddK8sClientConfigToArgs(config.Service.K8sClientConfig, args)
+	if ippr := config.InPlacePodResize; ippr != nil {
+		if ippr.ValidateQuota != nil && !*ippr.ValidateQuota {
+			args = append(args, "--validate-pod-resize-quota=false")
+		}
+		if ippr.BlockUpsizeOnBoundedQueues != nil && *ippr.BlockUpsizeOnBoundedQueues {
+			args = append(args, "--block-upsize-on-bounded-queues=true")
+		}
+	}
+
+	args = common.AddK8sClientConfigToArgs(config.Service.K8sClientConfig, args)
 	return common.AddControllerRuntimeJSONLogArg(kaiConfig.Spec.Global.JSONLog, args)
+}
+
+func binderServiceAccountUsername(namespace string) string {
+	return fmt.Sprintf("system:serviceaccount:%s:%s", namespace, defaultBinderServiceAccount)
 }
 
 func isHamiCoreEnabled(kaiConfig *kaiv1.Config) bool {
@@ -426,6 +482,17 @@ func isHamiCoreEnabled(kaiConfig *kaiv1.Config) bool {
 		return false
 	}
 	pluginCfg, found := kaiConfig.Spec.Binder.Plugins[kaiv1binder.HamiCorePluginName]
+	if !found {
+		return false
+	}
+	return ptr.Deref(pluginCfg.Enabled, false)
+}
+
+func isNvFractionsEnabled(kaiConfig *kaiv1.Config) bool {
+	if kaiConfig.Spec.Binder == nil {
+		return false
+	}
+	pluginCfg, found := kaiConfig.Spec.Binder.Plugins[kaiv1binder.NvFractionsPluginName]
 	if !found {
 		return false
 	}

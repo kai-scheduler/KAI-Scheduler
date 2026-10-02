@@ -4,6 +4,7 @@ CONTROLLER_TOOLS_VERSION ?= v0.20.1
 MOCKGEN_VERSION ?= v0.6.0
 ADDLICENSE_VERSION ?= v1.2.0
 KUSTOMIZE_VERSION ?= v5.0.0
+CHANGIE_VERSION ?= v1.25.0
 
 LOCALBIN ?= $(shell pwd)/bin
 $(LOCALBIN):
@@ -13,10 +14,11 @@ CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 MOCKGEN ?= $(LOCALBIN)/mockgen
 ADDLICENSE ?= $(LOCALBIN)/addlicense
 KUSTOMIZE ?= $(LOCALBIN)/kustomize
+CHANGIE ?= $(LOCALBIN)/changie
 
 # Space seperated list of services to build by default
 # SERVICE_NAMES := service1 service2 service3
-SERVICE_NAMES := podgrouper scheduler binder resourcereservation snapshot-tool scalingpod nodescaleadjuster podgroupcontroller queuecontroller fairshare-simulator admission operator time-based-fairshare-simulator numa-placement-exporter
+SERVICE_NAMES := podgrouper scheduler binder resourcereservation snapshot-tool scalingpod nodescaleadjuster podgroupcontroller queuecontroller fairshare-simulator admission operator time-based-fairshare-simulator numa-placement-exporter helm-hooks
 
 # Kubernetes manifest files that require Kubernetes copyright header (space-separated)
 K8S_COPYRIGHTED_MANIFEST_FILES := deployments/kai-scheduler/crds/kai.scheduler_topologies.yaml
@@ -25,8 +27,13 @@ K8S_COPYRIGHTED_MANIFEST_FILES := deployments/kai-scheduler/crds/kai.scheduler_t
 lint: fmt-go vet-go lint-go
 .PHONY: lint
 
+.PHONY: chart-deps
+chart-deps:
+	@echo "Fetching Helm chart dependencies: kai-scheduler"
+	helm dependency build ./deployments/kai-scheduler
+
 .PHONY: test-chart
-test-chart:
+test-chart: chart-deps
 	@echo "Running tests for Helm chart: kai-scheduler"
 	docker run -t --rm -v ./deployments/kai-scheduler:/apps helmunittest/helm-unittest:3.17.2-0.8.1 . -f 'tests/**/*_test.yaml'
 
@@ -35,7 +42,6 @@ test: test-chart envtest-docker-go
 
 .PHONY: build
 build: $(SERVICE_NAMES)
-	$(MAKE) docker-build-crd-upgrader
 
 $(SERVICE_NAMES):
 	$(MAKE) build-go SERVICE_NAME=$@
@@ -43,7 +49,6 @@ $(SERVICE_NAMES):
 
 .PHONY: push
 push: $(SERVICE_NAMES)
-	docker push $(DOCKER_REPO_BASE)/crd-upgrader:$(VERSION)
 
 .PHONY: validate
 validate: generate manifests clients gen-license generate-mocks lint
@@ -66,7 +71,7 @@ generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and
 
 .PHONY: gen-license
 gen-license: addlicense
-	$(ADDLICENSE) -c "NVIDIA CORPORATION" -s=only -l apache -v .
+	$(ADDLICENSE) -c "NVIDIA CORPORATION" -s=only -l apache -v -ignore '.changes/**' -ignore '.changie.yaml' .
 
 .PHONY: manifests
 manifests: controller-gen kustomize ## Generate ClusterRole and CustomResourceDefinition objects.
@@ -108,6 +113,44 @@ addlicense: $(ADDLICENSE) ## Download google-addlicense locally if necessary.
 $(ADDLICENSE): $(LOCALBIN)
 	test -s $(LOCALBIN)/addlicense || GOBIN=$(LOCALBIN) go install github.com/google/addlicense@$(ADDLICENSE_VERSION)
 
+.PHONY: changie
+changie: $(CHANGIE) ## Download changie locally if necessary.
+$(CHANGIE): $(LOCALBIN)
+	test -s $(LOCALBIN)/changie || GOBIN=$(LOCALBIN) go install github.com/miniscruff/changie@$(CHANGIE_VERSION)
+
+.PHONY: changelog
+changelog: changie ## Add a changelog entry. Agents: make changelog KIND=Fixed BODY="..." AUTHOR="<github-user>" ISSUE="<pr-or-issue-number>". Humans: make changelog (interactive).
+	@if [ -n "$(KIND)" ] && [ -n "$(BODY)" ]; then \
+		kind_lower=$$(echo "$(KIND)" | tr '[:upper:]' '[:lower:]'); \
+		ts=$$(date '+%Y%m%d-%H%M%S'); \
+		out=".changes/unreleased/$${kind_lower}-$${ts}.yaml"; \
+		printf 'kind: %s\nbody: |-\n  %s\n' "$(KIND)" "$(BODY)" > "$${out}"; \
+		if [ -n "$(AUTHOR)" ] || [ -n "$(ISSUE)" ]; then \
+			printf 'custom:\n  Author: "%s"\n  Issue: "%s"\n' "$(AUTHOR)" "$(ISSUE)" >> "$${out}"; \
+		fi; \
+		echo "Created $${out}"; \
+	elif [ -n "$(KIND)" ] || [ -n "$(BODY)" ]; then \
+		echo "Both KIND and BODY must be set for non-interactive mode"; exit 1; \
+	else \
+		$(CHANGIE) new; \
+	fi
+
+.PHONY: changelog-release
+changelog-release: changie ## Fold unreleased fragments into CHANGELOG.md as VERSION and clear them. Usage: make changelog-release VERSION=v0.17.0
+	@test -n "$(VERSION)" || { echo "VERSION is required, e.g. make changelog-release VERSION=v0.17.0"; exit 1; }
+	CHANGIE=$(CHANGIE) bash hack/changelog-fold.sh $(VERSION)
+
+.PHONY: changelog-preview
+changelog-preview: changie ## Preview the next release section without writing anything. Usage: make changelog-preview VERSION=v0.17.0
+	@test -n "$(VERSION)" || { echo "VERSION is required, e.g. make changelog-preview VERSION=v0.17.0"; exit 1; }
+	$(CHANGIE) batch $(VERSION) --dry-run
+
+.PHONY: images-manifest
+images-manifest: ## Generate images.yaml for a release. Usage: make images-manifest VERSION=v0.17.0 DOCKER_REPO_BASE=ghcr.io/kai-scheduler/kai-scheduler
+	@test -n "$(VERSION)" || { echo "VERSION is required, e.g. make images-manifest VERSION=v0.17.0"; exit 1; }
+	bash hack/generate-images-manifest.sh "$(VERSION)" "$(DOCKER_REPO_BASE)" "$(SERVICE_NAMES)" > images.yaml
+
+
 
 KUSTOMIZE_INSTALL_SCRIPT ?= "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"
 .PHONY: kustomize
@@ -116,18 +159,13 @@ $(KUSTOMIZE): $(LOCALBIN)
 	test -s $(LOCALBIN)/kustomize || { curl -Ss $(KUSTOMIZE_INSTALL_SCRIPT) --output install_kustomize.sh && bash install_kustomize.sh $(subst v,,$(KUSTOMIZE_VERSION)) $(LOCALBIN); rm install_kustomize.sh; }
 
 # Benchmark targets
-BENCHSTAT ?= $(LOCALBIN)/benchstat
+BENCHSTAT ?= go tool benchstat
 BENCH_OUTPUT ?= benchmark-results.txt
 # pkg/scheduler/actions/reclaim is excluded from the default benchmark sweep
 # because some reclaim benchmarks require -benchtime=1x and only a curated subset
 # should run in CI.
 BENCH_SPECIAL_PACKAGES := ./pkg/scheduler/actions/reclaim
-BENCH_SPECIAL_REGEX := '^BenchmarkReclaim(WithMissingPVCJobs|UnschedulableDistributedJob_(10|50|100)Node)$$'
-
-.PHONY: benchstat
-benchstat: $(BENCHSTAT)
-$(BENCHSTAT): $(LOCALBIN)
-	test -s $(LOCALBIN)/benchstat || GOBIN=$(LOCALBIN) go install golang.org/x/perf/cmd/benchstat@latest
+BENCH_SPECIAL_REGEX := '^BenchmarkReclaim(WithMissingPVCJobs|UnschedulableDistributedJob_((10|50|100)Node|AntiAffinity100Node))$$'
 
 .PHONY: benchmark
 benchmark: envtest ## Run benchmarks and output results (use BENCH_OUTPUT=file.txt to customize output)
@@ -144,6 +182,6 @@ benchmark-docker: builder gocache ## Run benchmarks in Docker
 	${DOCKER_GO_COMMAND} make benchmark
 
 .PHONY: benchmark-compare
-benchmark-compare: benchstat ## Compare benchmark results (requires baseline.txt and benchmark-results.txt)
+benchmark-compare: ## Compare benchmark results (requires baseline.txt and benchmark-results.txt)
 	@echo "Comparing benchmarks..."
 	$(BENCHSTAT) baseline.txt benchmark-results.txt

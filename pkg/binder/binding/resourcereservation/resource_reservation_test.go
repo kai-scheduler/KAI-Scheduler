@@ -26,6 +26,8 @@ import (
 
 	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/fips"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 )
 
 const (
@@ -57,7 +59,7 @@ func initializeTestService(
 ) *service {
 	service := NewService(false, client, "", 40*time.Millisecond,
 		resourceReservationNameSpace, resourceReservationServiceAccount, resourceReservationAppLabelValue, scalingPodsNamespace, "",
-		nil, nil, nil)
+		nil, nil, nil, false)
 
 	return service
 }
@@ -337,7 +339,12 @@ var _ = Describe("ResourceReservationService", func() {
 				fakeClient := interceptor.NewClient(clientWithObjs, testData.clientInterceptFuncs)
 				rsc := initializeTestService(fakeClient)
 
-				gpuIndex, err := rsc.ReserveGpuDevice(context.TODO(), fractionPod, nodeName, existingGroup)
+				gpuIndex, err := rsc.ReserveGpuDevice(
+					context.TODO(), fractionPod, nodeName,
+					schedulingv1alpha2.FractionalGpuGroup{
+						ID:                 existingGroup,
+						ComputeSharingMode: schedulingv1alpha2.GPUComputeSharingModeTimeSlicing,
+					})
 				Expect(gpuIndex).To(Equal(testData.expectedGPUIndex))
 				if testData.expectedErrorContains == "" {
 					Expect(err).To(BeNil())
@@ -900,7 +907,7 @@ var _ = Describe("ResourceReservationService", func() {
 				kubeClient:          fake.NewClientBuilder().WithScheme(testScheme).Build(),
 			}
 
-			resources := v1.ResourceRequirements{
+			containerResources := v1.ResourceRequirements{
 				Limits: v1.ResourceList{
 					"nvidia.com/gpu": resource.MustParse("1"),
 				},
@@ -910,7 +917,10 @@ var _ = Describe("ResourceReservationService", func() {
 			gpuGroup := "test-group"
 			nodeName := "node-test"
 
-			pod, err := rsc.createResourceReservationPod(nodeName, gpuGroup, podName, resources)
+			pod, err := rsc.createResourceReservationPod(nil, nodeName, schedulingv1alpha2.FractionalGpuGroup{
+				ID:                 gpuGroup,
+				ComputeSharingMode: schedulingv1alpha2.GPUComputeSharingModeTimeSlicing,
+			}, podName, containerResources)
 			Expect(err).To(BeNil())
 			Expect(pod).NotTo(BeNil())
 
@@ -919,6 +929,8 @@ var _ = Describe("ResourceReservationService", func() {
 			Expect(pod.Namespace).To(Equal("kai-resource-reservation"))
 			Expect(pod.Labels[constants.AppLabelName]).To(Equal("kai-reservation"))
 			Expect(pod.Labels[constants.GPUGroup]).To(Equal(gpuGroup))
+			Expect(pod.Annotations[resources.CalcGpuComputeSharingModeAnnotationForContainer("resource-reservation")]).To(Equal(
+				string(schedulingv1alpha2.GPUComputeSharingModeTimeSlicing)))
 
 			// PodSpec checks
 			Expect(pod.Spec.NodeName).To(Equal(nodeName))
@@ -931,7 +943,7 @@ var _ = Describe("ResourceReservationService", func() {
 			Expect(container.Name).To(Equal("resource-reservation"))
 			Expect(container.Image).To(Equal("nvidia/kai-reservation:latest"))
 			Expect(container.ImagePullPolicy).To(Equal(v1.PullIfNotPresent))
-			Expect(container.Resources).To(Equal(resources))
+			Expect(container.Resources).To(Equal(containerResources))
 
 			// Check env vars
 			podNameEnv := v1.EnvVar{
@@ -952,6 +964,63 @@ var _ = Describe("ResourceReservationService", func() {
 			}
 			Expect(container.Env).To(ContainElement(Equal(podNameEnv)))
 			Expect(container.Env).To(ContainElement(Equal(podNamespaceEnv)))
+		})
+
+		It("should write the fractional GPU group compute mode annotation", func() {
+			rsc := &service{
+				namespace:           "kai-resource-reservation",
+				appLabelValue:       "kai-reservation",
+				serviceAccountName:  "kai-sa",
+				reservationPodImage: "nvidia/kai-reservation:latest",
+				kubeClient:          fake.NewClientBuilder().WithScheme(testScheme).Build(),
+			}
+
+			pod, err := rsc.createResourceReservationPod(
+				nil,
+				"node-test",
+				schedulingv1alpha2.FractionalGpuGroup{
+					ID:                 "test-group",
+					ComputeSharingMode: schedulingv1alpha2.GPUComputeSharingModeSMSharing,
+				},
+				"reservation-test",
+				v1.ResourceRequirements{},
+			)
+			Expect(err).To(BeNil())
+			Expect(pod.Annotations[resources.CalcGpuComputeSharingModeAnnotationForContainer("resource-reservation")]).To(Equal(
+				string(schedulingv1alpha2.GPUComputeSharingModeSMSharing)))
+		})
+
+		It("should copy tolerations from the source pod", func() {
+			rsc := &service{
+				namespace:           "kai-resource-reservation",
+				appLabelValue:       "kai-reservation",
+				serviceAccountName:  "kai-sa",
+				reservationPodImage: "nvidia/kai-reservation:latest",
+				kubeClient:          fake.NewClientBuilder().WithScheme(testScheme).Build(),
+			}
+			sourcePod := &v1.Pod{
+				Spec: v1.PodSpec{
+					Tolerations: []v1.Toleration{{
+						Key:      "hpc",
+						Operator: v1.TolerationOpEqual,
+						Value:    "true",
+						Effect:   v1.TaintEffectNoExecute,
+					}},
+				},
+			}
+
+			pod, err := rsc.createResourceReservationPod(
+				sourcePod,
+				"node-test",
+				schedulingv1alpha2.FractionalGpuGroup{ID: "test-group"},
+				"reservation-test",
+				v1.ResourceRequirements{},
+			)
+			Expect(err).To(Succeed())
+			Expect(pod.Spec.Tolerations).To(Equal(sourcePod.Spec.Tolerations))
+
+			sourcePod.Spec.Tolerations[0].Value = "changed"
+			Expect(pod.Spec.Tolerations[0].Value).To(Equal("true"))
 		})
 	})
 
@@ -1116,7 +1185,10 @@ var _ = Describe("ResourceReservationService", func() {
 				scalingPodNamespace: scalingPodsNamespace,
 			}
 
-			pod, err := rsc.createGPUReservationPod(context.TODO(), "test-node", "test-gpu-group")
+			pod, err := rsc.createGPUReservationPod(context.TODO(), nil, "test-node", schedulingv1alpha2.FractionalGpuGroup{
+				ID:                 "test-gpu-group",
+				ComputeSharingMode: schedulingv1alpha2.GPUComputeSharingModeTimeSlicing,
+			})
 			Expect(err).To(BeNil())
 			Expect(pod).NotTo(BeNil())
 
@@ -1146,7 +1218,10 @@ var _ = Describe("ResourceReservationService", func() {
 				scalingPodNamespace: scalingPodsNamespace,
 			}
 
-			pod, err := rsc.createGPUReservationPod(context.TODO(), "test-node", "test-gpu-group")
+			pod, err := rsc.createGPUReservationPod(context.TODO(), nil, "test-node", schedulingv1alpha2.FractionalGpuGroup{
+				ID:                 "test-gpu-group",
+				ComputeSharingMode: schedulingv1alpha2.GPUComputeSharingModeTimeSlicing,
+			})
 			Expect(err).To(BeNil())
 			Expect(pod).NotTo(BeNil())
 
@@ -1188,7 +1263,10 @@ var _ = Describe("ResourceReservationService", func() {
 				scalingPodNamespace: scalingPodsNamespace,
 			}
 
-			pod, err := rsc.createGPUReservationPod(context.TODO(), "test-node", "test-gpu-group")
+			pod, err := rsc.createGPUReservationPod(context.TODO(), nil, "test-node", schedulingv1alpha2.FractionalGpuGroup{
+				ID:                 "test-gpu-group",
+				ComputeSharingMode: schedulingv1alpha2.GPUComputeSharingModeTimeSlicing,
+			})
 			Expect(err).To(BeNil())
 			Expect(pod).NotTo(BeNil())
 
@@ -1227,7 +1305,10 @@ var _ = Describe("ResourceReservationService", func() {
 				scalingPodNamespace: scalingPodsNamespace,
 			}
 
-			pod, err := rsc.createGPUReservationPod(context.TODO(), "test-node", "test-gpu-group")
+			pod, err := rsc.createGPUReservationPod(context.TODO(), nil, "test-node", schedulingv1alpha2.FractionalGpuGroup{
+				ID:                 "test-gpu-group",
+				ComputeSharingMode: schedulingv1alpha2.GPUComputeSharingModeTimeSlicing,
+			})
 			Expect(err).To(BeNil())
 			Expect(pod).NotTo(BeNil())
 
@@ -1408,6 +1489,47 @@ var _ = Describe("Race condition: reservation pod deleted during concurrent bind
 				"Reservation pod should be deleted when only terminal BindRequests exist")
 		})
 
+		It("should preserve reservation pod when succeeded BindRequest still has a live pod", func() {
+			livePod := &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "fraction-pod-1",
+					Namespace: "team-a",
+				},
+				Status: v1.PodStatus{
+					Phase: v1.PodPending,
+				},
+			}
+			succeededBindRequest := &schedulingv1alpha2.BindRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "bind-request-done",
+					Namespace: "team-a",
+				},
+				Spec: schedulingv1alpha2.BindRequestSpec{
+					PodName:           livePod.Name,
+					SelectedNode:      nodeName,
+					SelectedGPUGroups: []string{gpuGroup},
+				},
+				Status: schedulingv1alpha2.BindRequestStatus{
+					Phase: schedulingv1alpha2.BindRequestPhaseSucceeded,
+				},
+			}
+
+			clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).
+				WithRuntimeObjects(reservationPod.DeepCopy(), livePod, succeededBindRequest).
+				WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
+			rsc := initializeTestService(clientWithObjs)
+
+			err := rsc.SyncForGpuGroup(context.TODO(), gpuGroup)
+			Expect(err).To(Succeed())
+
+			pods := &v1.PodList{}
+			err = clientWithObjs.List(context.Background(), pods,
+				runtimeClient.InNamespace(resourceReservationNameSpace))
+			Expect(err).To(Succeed())
+			Expect(len(pods.Items)).To(Equal(1),
+				"Reservation pod should be preserved while the bound pod may still be missing the gpu-group label")
+		})
+
 		It("should delete reservation pod when only failed BindRequests exist", func() {
 			failedBindRequest := &schedulingv1alpha2.BindRequest{
 				ObjectMeta: metav1.ObjectMeta{
@@ -1502,10 +1624,15 @@ var _ = Describe("Race condition: reservation pod deleted during concurrent bind
 			svc := NewService(false, clientWithObjs, "test-image", 40*time.Millisecond,
 				resourceReservationNameSpace, resourceReservationServiceAccount,
 				resourceReservationAppLabelValue, scalingPodsNamespace, "",
-				nil, podSecCtx, containerSecCtx)
+				nil, podSecCtx, containerSecCtx, false)
 
 			pod, err := svc.createResourceReservationPod(
-				nodeName, gpuGroup, "test-reservation-pod",
+				nil,
+				nodeName, schedulingv1alpha2.FractionalGpuGroup{
+					ID:                 gpuGroup,
+					ComputeSharingMode: schedulingv1alpha2.GPUComputeSharingModeTimeSlicing,
+				},
+				"test-reservation-pod",
 				v1.ResourceRequirements{
 					Limits:   v1.ResourceList{constants.NvidiaGpuResource: *resource.NewQuantity(1, resource.DecimalSI)},
 					Requests: v1.ResourceList{constants.NvidiaGpuResource: *resource.NewQuantity(1, resource.DecimalSI)},
@@ -1522,10 +1649,15 @@ var _ = Describe("Race condition: reservation pod deleted during concurrent bind
 			svc := NewService(false, clientWithObjs, "test-image", 40*time.Millisecond,
 				resourceReservationNameSpace, resourceReservationServiceAccount,
 				resourceReservationAppLabelValue, scalingPodsNamespace, "",
-				nil, nil, nil)
+				nil, nil, nil, false)
 
 			pod, err := svc.createResourceReservationPod(
-				nodeName, gpuGroup, "test-reservation-pod",
+				nil,
+				nodeName, schedulingv1alpha2.FractionalGpuGroup{
+					ID:                 gpuGroup,
+					ComputeSharingMode: schedulingv1alpha2.GPUComputeSharingModeTimeSlicing,
+				},
+				"test-reservation-pod",
 				v1.ResourceRequirements{
 					Limits:   v1.ResourceList{constants.NvidiaGpuResource: *resource.NewQuantity(1, resource.DecimalSI)},
 					Requests: v1.ResourceList{constants.NvidiaGpuResource: *resource.NewQuantity(1, resource.DecimalSI)},
@@ -1534,6 +1666,45 @@ var _ = Describe("Race condition: reservation pod deleted during concurrent bind
 			Expect(err).To(Succeed())
 			Expect(pod.Spec.SecurityContext).To(BeNil())
 			Expect(pod.Spec.Containers[0].SecurityContext).To(BeNil())
+		})
+	})
+
+	Context("FIPS only", func() {
+		createPod := func(fipsOnly bool) *v1.Pod {
+			clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).
+				WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
+			svc := NewService(false, clientWithObjs, "test-image", 40*time.Millisecond,
+				resourceReservationNameSpace, resourceReservationServiceAccount,
+				resourceReservationAppLabelValue, scalingPodsNamespace, "",
+				nil, nil, nil, fipsOnly)
+
+			pod, err := svc.createResourceReservationPod(
+				nil,
+				nodeName, schedulingv1alpha2.FractionalGpuGroup{
+					ID:                 gpuGroup,
+					ComputeSharingMode: schedulingv1alpha2.GPUComputeSharingModeTimeSlicing,
+				},
+				"test-reservation-pod",
+				v1.ResourceRequirements{
+					Limits:   v1.ResourceList{constants.NvidiaGpuResource: *resource.NewQuantity(1, resource.DecimalSI)},
+					Requests: v1.ResourceList{constants.NvidiaGpuResource: *resource.NewQuantity(1, resource.DecimalSI)},
+				},
+			)
+			Expect(err).To(Succeed())
+			return pod
+		}
+
+		It("should set GODEBUG=fips140=only on reservation pods when enabled", func() {
+			pod := createPod(true)
+			Expect(pod.Spec.Containers[0].Env).To(ContainElement(
+				v1.EnvVar{Name: fips.GODEBUGEnvName, Value: fips.OnlyGODEBUGValue}))
+		})
+
+		It("should not set GODEBUG on reservation pods when disabled", func() {
+			pod := createPod(false)
+			for _, env := range pod.Spec.Containers[0].Env {
+				Expect(env.Name).NotTo(Equal(fips.GODEBUGEnvName))
+			}
 		})
 	})
 })
@@ -1594,9 +1765,10 @@ var _ = Describe("Reservation pod duplicate gpu-group race", func() {
 		Expect(base.Create(context.Background(), fractionPodA)).To(Succeed())
 		Expect(base.Create(context.Background(), fractionPodB)).To(Succeed())
 
-		_, err := rsc.ReserveGpuDevice(context.Background(), fractionPodA, raceNodeName, raceGroup)
+		raceFractionalGpuGroup := schedulingv1alpha2.FractionalGpuGroup{ID: raceGroup}
+		_, err := rsc.ReserveGpuDevice(context.Background(), fractionPodA, raceNodeName, raceFractionalGpuGroup)
 		Expect(err).To(Succeed())
-		_, err = rsc.ReserveGpuDevice(context.Background(), fractionPodB, raceNodeName, raceGroup)
+		_, err = rsc.ReserveGpuDevice(context.Background(), fractionPodB, raceNodeName, raceFractionalGpuGroup)
 		Expect(err).To(Succeed())
 
 		reservationPods := &v1.PodList{}

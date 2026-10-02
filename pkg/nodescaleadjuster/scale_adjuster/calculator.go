@@ -46,10 +46,10 @@ func (c *calculator) calculateMaxScalingDevices(scalingPods []*v1.Pod) int64 {
 	return maxScalingDevices
 }
 
-func (c *calculator) calculateNumNeededDevices(unschedulablePods []*v1.Pod) (int64, []*v1.Pod) {
+func (c *calculator) calculateNumNeededDevices(unschedulableFractionalPods []*v1.Pod) (int64, []*v1.Pod) {
 	numNeededDevices := float64(0)
 	podsToScale := make([]*v1.Pod, 0)
-	for _, pod := range unschedulablePods {
+	for _, pod := range unschedulableFractionalPods {
 		gpuFraction, err := c.getGPUFraction(pod)
 		if err != nil {
 			log.Printf("could not get GPU fraction for pod %v/%v. err: %v",
@@ -70,19 +70,18 @@ func (c *calculator) calculateNumNeededDevices(unschedulablePods []*v1.Pod) (int
 }
 
 func (c *calculator) getGPUFraction(pod *v1.Pod) (float64, error) {
-	if pod.Annotations[constants.GpuFraction] != "" {
-		gpuFraction, err := resources.GetGPUFraction(pod)
-		if err != nil {
-			return 0, err
-		}
-		return gpuFraction, nil
+	req, err := resources.ParsePodGPUFractionRequest(pod)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse GPU fraction request for pod %v/%v: %w", pod.Namespace, pod.Name, err)
 	}
-	if pod.Annotations[constants.GpuMemory] != "" {
-		_, err := resources.GetGPUMemory(pod)
-		if err != nil {
-			return 0, err
-		}
+	if req == nil {
+		return 0, nil // not a fractional pod
+	}
+	if req.Portion != 0 {
+		return req.Portion, nil
+	}
+	if req.Memory != nil {
 		return c.gpuMemoryToFractionRatio, nil
 	}
-	return 0, fmt.Errorf("pod %v/%v does not have GPU fraction or memory annotation", pod.Namespace, pod.Name)
+	return 0, fmt.Errorf("failed to parse either portion or memory for fractional pod %v/%v", pod.Namespace, pod.Name)
 }

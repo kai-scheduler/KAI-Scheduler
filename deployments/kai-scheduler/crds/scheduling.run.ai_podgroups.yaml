@@ -54,17 +54,19 @@ spec:
                 description: |-
                   MinMember defines the minimal number of members to run the PodGroup;
                   if there are not enough resources to start all required members, the scheduler will not start anyone.
+                  A value of 0 means no gang requirement: all pods are scheduled elastically (e.g. scale-to-zero workloads).
                   Mutually exclusive with MinSubGroup.
                 format: int32
-                minimum: 1
+                minimum: 0
                 type: integer
               minSubGroup:
                 description: |-
                   MinSubGroup defines the minimal number of direct child SubGroups required for this PodGroup to be schedulable.
+                  A value of 0 means no gang requirement: all SubGroups are scheduled elastically.
                   Only applicable when SubGroups are defined.
                   Mutually exclusive with MinMember.
                 format: int32
-                minimum: 1
+                minimum: 0
                 type: integer
               preemptibility:
                 description: |-
@@ -73,6 +75,7 @@ spec:
                 enum:
                 - preemptible
                 - non-preemptible
+                - semi-preemptible
                 type: string
               preemptionDelay:
                 description: |-
@@ -101,6 +104,12 @@ spec:
                   -1 and 1
                 format: int32
                 type: integer
+              stalenessGracePeriod:
+                description: |-
+                  StalenessGracePeriod is the minimum duration a stale PodGroup it allowed to remain in stale
+                  status before stale workloads may be evicted to make room. Negative values disable stale gang
+                  eviction for this PodGroup. Defaults to the scheduler's global staleness grace period.
+                type: string
               subGroups:
                 description: SubGroups defines finer-grained subsets of pods within
                   the PodGroup with individual scheduling constraints
@@ -402,6 +411,20 @@ spec:
                       type: string
                   type: object
                 type: array
+              schedulingState:
+                description: |-
+                  SchedulingState is the scheduler's authoritative view of this pod group. Read-only for
+                  non-scheduler components.
+                properties:
+                  corePods:
+                    description: |-
+                      CorePods names the allocated pods the scheduler protects from preemption and reclaim (the
+                      "core", i.e. the job's minimal satisfying set). Written only for semi-preemptible pod groups,
+                      where the pods outside this set are elastic surplus.
+                    items:
+                      type: string
+                    type: array
+                type: object
             type: object
         type: object
     served: true

@@ -52,7 +52,7 @@ func TestBuildReclaimerInfoDoesNotAllocate(t *testing.T) {
 	var info rec.ReclaimerInfo
 
 	allocations := testing.AllocsPerRun(100, func() {
-		info = plugin.buildReclaimerInfo(reclaimer, nil)
+		info = plugin.buildReclaimerInfo(reclaimer, nil, podgroup_info.PartialTaskAllocation)
 	})
 
 	if info.Name != reclaimer.Name || info.Namespace != reclaimer.Namespace || info.Queue != reclaimer.Queue {
@@ -1024,6 +1024,18 @@ var _ = Describe("New", func() {
 			plugin := New(args).(*proportionPlugin)
 			Expect(plugin.pluginArguments).To(Equal(args))
 			Expect(plugin.relcaimerSaturationMultiplier).To(Equal(1.0))
+		})
+
+		It("should default queuePriorityInQuotaReclaim to false", func() {
+			plugin := New(args).(*proportionPlugin)
+			Expect(plugin.queuePriorityInQuotaReclaim).To(Equal(false))
+		})
+
+		It("should handle queuePriorityInQuotaReclaim arg", func() {
+			args := framework.PluginArguments{"queuePriorityInQuotaReclaim": "true"}
+			plugin := New(args).(*proportionPlugin)
+			Expect(plugin.pluginArguments).To(Equal(args))
+			Expect(plugin.queuePriorityInQuotaReclaim).To(Equal(true))
 		})
 	})
 })

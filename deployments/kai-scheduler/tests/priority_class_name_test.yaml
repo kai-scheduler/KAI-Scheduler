@@ -1,0 +1,56 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+suite: test global priorityClassName
+
+set:
+  kaiConfigDeployer:
+    enabled: false
+  kaiConfig:
+    render: true
+templates:
+  - kai-config.yaml
+  - services/operator.yaml
+tests:
+  - it: should not render priorityClassName in kai-config by default
+    templates:
+      - kai-config.yaml
+    asserts:
+      - notExists:
+          path: spec.global.priorityClassName
+
+  - it: should not render priorityClassName in kai-config when set to empty string
+    templates:
+      - kai-config.yaml
+    set:
+      global.priorityClassName: ""
+    asserts:
+      - notExists:
+          path: spec.global.priorityClassName
+
+  - it: should render priorityClassName in kai-config when set
+    templates:
+      - kai-config.yaml
+    set:
+      global.priorityClassName: system-cluster-critical
+    asserts:
+      - equal:
+          path: spec.global.priorityClassName
+          value: system-cluster-critical
+
+  - it: should not set priorityClassName on the operator by default
+    templates:
+      - services/operator.yaml
+    asserts:
+      - notExists:
+          path: spec.template.spec.priorityClassName
+
+  - it: should set priorityClassName on the operator when set
+    templates:
+      - services/operator.yaml
+    set:
+      global.priorityClassName: system-cluster-critical
+    asserts:
+      - equal:
+          path: spec.template.spec.priorityClassName
+          value: system-cluster-critical

@@ -25,14 +25,31 @@ argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
 
 {{/*
 Resolves a component image tag: explicit tag, then global.tag, then the chart
-version. When global.fips is set, appends "-fips" to whatever tag resolves so
-the FIPS image variants are used. Usage:
+version. When global.fipsMode is "on" or "only", appends "-fips" to whatever tag
+resolves so the FIPS image variants are used. Usage:
   {{ include "kai-scheduler.imageTag" (dict "root" $ "tag" .Values.<svc>.image.tag) }}
 */}}
 {{- define "kai-scheduler.imageTag" -}}
 {{- $tag := .tag | default .root.Values.global.tag | default .root.Chart.AppVersion -}}
-{{- if .root.Values.global.fips -}}{{- $tag = printf "%s-fips" $tag -}}{{- end -}}
+{{- if ne .root.Values.global.fipsMode "off" -}}{{- $tag = printf "%s-fips" $tag -}}{{- end -}}
 {{- $tag -}}
+{{- end -}}
+
+{{/*
+Renders the GODEBUG env entry that forces FIPS 140-3 mode at runtime. Only set
+when global.fipsMode is "only" - see docs/fips/README.md for the runtime panic
+risk this carries. tlsmlkem=0 works around a crypto/tls gap where its default,
+FIPS-allowed X25519MLKEM768 curve preference internally calls the plain X25519
+primitive, which unconditionally errors under fips140=only - breaking every
+outbound TLS handshake unless the hybrid curve is disabled. See
+https://github.com/kubernetes/kubernetes/issues/133743.
+Usage: {{- include "kai-scheduler.fipsOnlyEnv" . }}
+*/}}
+{{- define "kai-scheduler.fipsOnlyEnv" -}}
+{{- if eq .Values.global.fipsMode "only" }}
+- name: GODEBUG
+  value: fips140=only,tlsmlkem=0
+{{- end -}}
 {{- end -}}
 
 {{/*
@@ -72,6 +89,9 @@ spec:
     {{- if .Values.global.jsonLog }}
     jsonLog: true
     {{- end }}
+    {{- if eq .Values.global.fipsMode "only" }}
+    fipsOnly: true
+    {{- end }}
     {{- if .Values.global.affinity }}
     affinity:
       {{- toYaml .Values.global.affinity | nindent 6 }}
@@ -86,6 +106,13 @@ spec:
     {{- if .Values.global.tolerations }}
     tolerations:
       {{- toYaml .Values.global.tolerations | nindent 6 }}
+    {{- end }}
+    {{- if .Values.global.daemonsetsTolerations }}
+    daemonsetsTolerations:
+      {{- toYaml .Values.global.daemonsetsTolerations | nindent 6 }}
+    {{- end }}
+    {{- if .Values.global.priorityClassName }}
+    priorityClassName: {{ .Values.global.priorityClassName | quote }}
     {{- end }}
     {{- if .Values.global.securityContext }}
     securityContext:
@@ -105,6 +132,18 @@ spec:
     {{- if .Values.podgrouper.queueLabelKey }}
     queueLabelKey: {{ .Values.podgrouper.queueLabelKey | quote }}
     {{- end }}
+    {{- /* GpuSharingMode precedence: nvFractions.set forces NvFractions (validate.yaml has
+           already rejected a conflicting explicit mode, so this only guards against a legacy
+           gpuSharing value downgrading it); then an explicit (non-empty) mode; then a legacy
+           gpuSharing value is passed through (operator derives the mode); when none is set,
+           default to NonMemoryEnforced. */}}
+    {{- if .Values.global.nvFractions.set }}
+    gpuSharingMode: NvFractions
+    {{- else if .Values.global.gpuSharingMode }}
+    gpuSharingMode: {{ .Values.global.gpuSharingMode }}
+    {{- else if not (hasKey .Values.global "gpuSharing") }}
+    gpuSharingMode: NonMemoryEnforced
+    {{- end }}
 
   binder:
     service:
@@ -121,6 +160,15 @@ spec:
       {{- if .Values.binder.affinity }}
       affinity:
         {{- toYaml .Values.binder.affinity | nindent 8 }}
+      {{- end }}
+      {{- if .Values.binder.podDisruptionBudget }}
+      podDisruptionBudget:
+        {{- if hasKey .Values.binder.podDisruptionBudget "enabled" }}
+        enabled: {{ .Values.binder.podDisruptionBudget.enabled }}
+        {{- end }}
+        {{- if hasKey .Values.binder.podDisruptionBudget "maxUnavailable" }}
+        maxUnavailable: {{ .Values.binder.podDisruptionBudget.maxUnavailable }}
+        {{- end }}
       {{- end }}
     metricsPort: {{ .Values.binder.ports.metricsPort }}
     resourceReservation:
@@ -169,6 +217,26 @@ spec:
       affinity:
         {{- toYaml .Values.podgrouper.affinity | nindent 8 }}
       {{- end }}
+      {{- if .Values.podgrouper.podDisruptionBudget }}
+      podDisruptionBudget:
+        {{- if hasKey .Values.podgrouper.podDisruptionBudget "enabled" }}
+        enabled: {{ .Values.podgrouper.podDisruptionBudget.enabled }}
+        {{- end }}
+        {{- if hasKey .Values.podgrouper.podDisruptionBudget "maxUnavailable" }}
+        maxUnavailable: {{ .Values.podgrouper.podDisruptionBudget.maxUnavailable }}
+        {{- end }}
+      {{- end }}
+    {{- $pgArgs := dict }}
+    {{- range $k, $v := (.Values.podgrouper.args | default dict) }}
+    {{- $_ := set $pgArgs $k $v }}
+    {{- end }}
+    {{- if hasKey .Values.podgrouper "genericKartaFallback" }}
+    {{- $_ := set $pgArgs "genericKartaFallback" .Values.podgrouper.genericKartaFallback }}
+    {{- end }}
+    {{- if $pgArgs }}
+    args:
+      {{- toYaml $pgArgs | nindent 6 }}
+    {{- end }}
 
   podGroupController:
     service:
@@ -203,6 +271,15 @@ spec:
       affinity:
         {{- toYaml .Values.queuecontroller.affinity | nindent 8 }}
       {{- end }}
+      {{- if .Values.queuecontroller.podDisruptionBudget }}
+      podDisruptionBudget:
+        {{- if hasKey .Values.queuecontroller.podDisruptionBudget "enabled" }}
+        enabled: {{ .Values.queuecontroller.podDisruptionBudget.enabled }}
+        {{- end }}
+        {{- if hasKey .Values.queuecontroller.podDisruptionBudget "maxUnavailable" }}
+        maxUnavailable: {{ .Values.queuecontroller.podDisruptionBudget.maxUnavailable }}
+        {{- end }}
+      {{- end }}
 
   admission:
     service:
@@ -220,6 +297,7 @@ spec:
       affinity:
         {{- toYaml .Values.admission.affinity | nindent 8 }}
       {{- end }}
+      {{- if .Values.admission.podDisruptionBudget }}
       podDisruptionBudget:
         {{- if hasKey .Values.admission.podDisruptionBudget "enabled" }}
         enabled: {{ .Values.admission.podDisruptionBudget.enabled }}
@@ -227,7 +305,10 @@ spec:
         {{- if hasKey .Values.admission.podDisruptionBudget "maxUnavailable" }}
         maxUnavailable: {{ .Values.admission.podDisruptionBudget.maxUnavailable }}
         {{- end }}
-    gpuSharing: {{ .Values.global.gpuSharing | default false }}
+      {{- end }}
+    {{- if and (not .Values.global.nvFractions.set) (not .Values.global.gpuSharingMode) (hasKey .Values.global "gpuSharing") }}
+    gpuSharing: {{ .Values.global.gpuSharing }}
+    {{- end }}
     blockNvidiaVisibleDevices: {{ .Values.global.blockNvidiaVisibleDevices | default false }}
     queueLabelSelector: false
     webhook:
@@ -280,6 +361,15 @@ spec:
       {{- if .Values.scheduler.affinity }}
       affinity:
         {{- toYaml .Values.scheduler.affinity | nindent 8 }}
+      {{- end }}
+      {{- if .Values.scheduler.podDisruptionBudget }}
+      podDisruptionBudget:
+        {{- if hasKey .Values.scheduler.podDisruptionBudget "enabled" }}
+        enabled: {{ .Values.scheduler.podDisruptionBudget.enabled }}
+        {{- end }}
+        {{- if hasKey .Values.scheduler.podDisruptionBudget "maxUnavailable" }}
+        maxUnavailable: {{ .Values.scheduler.podDisruptionBudget.maxUnavailable }}
+        {{- end }}
       {{- end }}
     {{- if and .Values.scheduler.ports .Values.scheduler.ports.metricsPort }}
     schedulerService:

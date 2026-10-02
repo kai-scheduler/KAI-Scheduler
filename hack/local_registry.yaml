@@ -40,7 +40,14 @@ spec:
       labels:
         app: registry
     spec:
+      automountServiceAccountToken: false
       containers:
         - image: registry:2
           imagePullPolicy: IfNotPresent
           name: registry
+          resources:
+            requests:
+              cpu: 10m
+              memory: 64Mi
+            limits:
+              memory: 512Mi

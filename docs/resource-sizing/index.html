@@ -1,0 +1,277 @@
+<!doctype html>
+<!--
+ Copyright 2026 NVIDIA CORPORATION
+ SPDX-License-Identifier: Apache-2.0
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Estimate initial KAI Scheduler CPU and memory resources from cluster and workload size.">
+  <meta name="theme-color" content="#071d36">
+  <title>KAI Scheduler resource calculator</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="calculator.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="https://github.com/kai-scheduler/KAI-Scheduler" aria-label="KAI Scheduler on GitHub">
+      <picture>
+        <source srcset="kai-logo-dark.png" media="(prefers-color-scheme: dark)">
+        <img src="kai-logo-light.png" width="384" height="66" alt="KAI Scheduler">
+      </picture>
+    </a>
+    <a class="guide-link" href="https://github.com/kai-scheduler/KAI-Scheduler/blob/main/docs/operator/resource-sizing.md">
+      Resource sizing guide
+    </a>
+  </header>
+
+  <main>
+    <section class="intro" aria-labelledby="page-title">
+      <p class="eyebrow">Planning tool</p>
+      <h1 id="page-title">Scheduler resource calculator</h1>
+      <p class="lede">Estimate a conservative starting CPU and memory configuration from cluster size and workload shape. No KAI-internal metrics required.</p>
+      <div class="notice" role="note">
+        <strong>Starting point, not capacity guarantee.</strong>
+        Validate the recommendation with a representative workload lifecycle before production rollout.
+      </div>
+    </section>
+
+    <section class="workspace" aria-label="Resource calculator">
+      <div class="input-panel">
+        <div class="section-heading">
+          <div>
+            <p class="step">Step 1</p>
+            <h2>Describe your cluster</h2>
+          </div>
+          <div class="presets" aria-label="Example configurations">
+            <span>Examples</span>
+            <button type="button" class="preset" data-preset="500">500 nodes</button>
+            <button type="button" class="preset" data-preset="1000">1000 nodes</button>
+          </div>
+        </div>
+
+        <form id="calculator-form" novalidate>
+          <div id="error-summary" class="error-summary" role="alert" tabindex="-1" hidden></div>
+
+          <fieldset>
+            <legend>Cluster</legend>
+            <div class="field-grid">
+              <div class="field">
+                <label for="nodes">Nodes</label>
+                <input id="nodes" name="nodes" type="number" min="1" step="1" inputmode="numeric" required aria-describedby="nodes-help">
+                <small id="nodes-help">Nodes managed by this scheduler shard.</small>
+              </div>
+              <div class="field">
+                <label for="eligibleNodes">Eligible nodes</label>
+                <input id="eligibleNodes" name="eligibleNodes" type="number" min="1" step="1" inputmode="numeric" required aria-describedby="eligible-help">
+                <small id="eligible-help">Nodes where the largest workload can run. Use all nodes when unsure.</small>
+              </div>
+              <div class="field">
+                <label for="totalPods">Peak total Pods</label>
+                <input id="totalPods" name="totalPods" type="number" min="1" step="1" inputmode="numeric" required aria-describedby="pods-help">
+                <small id="pods-help">All cluster Pod objects, including non-KAI Pods.</small>
+              </div>
+              <div class="field">
+                <label for="totalGPUs">Total GPUs</label>
+                <input id="totalGPUs" name="totalGPUs" type="number" min="1" step="1" inputmode="numeric" required aria-describedby="gpus-help">
+                <small id="gpus-help">For CPU-only workloads, enter maximum concurrent worker Pods.</small>
+              </div>
+            </div>
+          </fieldset>
+
+          <fieldset>
+            <legend>Workloads</legend>
+            <div class="field-grid">
+              <div class="field">
+                <label for="workloads">Active workloads</label>
+                <input id="workloads" name="workloads" type="number" min="1" step="1" inputmode="numeric" required aria-describedby="workloads-help">
+                <small id="workloads-help">Peak simultaneously present workloads, not daily total.</small>
+              </div>
+              <div class="field">
+                <label for="averagePodsPerWorkload">Average workload size</label>
+                <div class="input-unit">
+                  <input id="averagePodsPerWorkload" name="averagePodsPerWorkload" type="number" min="0.1" step="0.1" inputmode="decimal" required aria-describedby="average-help">
+                  <span>Pods</span>
+                </div>
+                <small id="average-help">Average schedulable Pods per workload.</small>
+              </div>
+              <div class="field">
+                <label for="largestJobPods">Largest workload</label>
+                <div class="input-unit">
+                  <input id="largestJobPods" name="largestJobPods" type="number" min="1" step="1" inputmode="numeric" required aria-describedby="largest-help">
+                  <span>Pods</span>
+                </div>
+                <small id="largest-help">Schedulable Pods in the largest workload.</small>
+              </div>
+              <div class="field">
+                <label for="gpusPerWorkerPod">GPUs per worker Pod</label>
+                <input id="gpusPerWorkerPod" name="gpusPerWorkerPod" type="number" min="0.1" step="0.1" inputmode="decimal" value="1" required aria-describedby="gpu-pod-help">
+                <small id="gpu-pod-help">Average GPU request. Use 1 when unsure or for CPU-only capacity.</small>
+              </div>
+              <div class="field field-wide">
+                <label for="complexity">Scheduling complexity</label>
+                <select id="complexity" name="complexity" aria-describedby="complexity-help">
+                  <option value="standard">Standard placement</option>
+                  <option value="topology-or-reclaim">Topology-heavy or frequent reclaim/preemption</option>
+                  <option value="heavy">Both, or advanced placement integrations</option>
+                </select>
+                <small id="complexity-help">Choose higher complexity for strong topology constraints, DRA, NUMA, storage-aware placement, or frequent victim simulation.</small>
+              </div>
+            </div>
+          </fieldset>
+
+          <div class="form-actions">
+            <button class="primary" type="submit">Calculate recommendation</button>
+            <button class="secondary" type="button" id="reset-button">Reset to 500-node example</button>
+          </div>
+        </form>
+      </div>
+
+      <aside class="results-panel" aria-labelledby="results-title">
+        <div class="section-heading">
+          <div>
+            <p class="step">Step 2</p>
+            <h2 id="results-title">Initial recommendation</h2>
+          </div>
+          <span class="status" id="result-status">Using 500-node example</span>
+        </div>
+
+        <div id="results" aria-live="polite" aria-atomic="true">
+          <div class="recommendation-grid">
+            <article class="recommendation primary-result">
+              <span>Memory request</span>
+              <strong id="memory-request">—</strong>
+            </article>
+            <article class="recommendation primary-result">
+              <span>Memory limit</span>
+              <strong id="memory-limit">—</strong>
+            </article>
+            <article class="recommendation">
+              <span>CPU request</span>
+              <strong id="cpu-request">—</strong>
+            </article>
+            <article class="recommendation">
+              <span>CPU limit, if required</span>
+              <strong id="cpu-limit">—</strong>
+            </article>
+          </div>
+
+          <p class="cpu-note">The CPU estimate is a coarse profile interpolation. Prefer no CPU limit for latency-sensitive scheduling. If policy requires one, the value above provides initial burst room.</p>
+
+          <p class="profile-note">If the complete scenario fits a tested profile in the guide, use that profile. In particular, the tested 1000-node profile uses a 7 Gi memory request because its sustained usage was higher than the formula estimate.</p>
+
+          <section class="breakdown" aria-labelledby="breakdown-title">
+            <h3 id="breakdown-title">Memory breakdown</h3>
+            <div class="meter" aria-hidden="true">
+              <span id="cache-meter"></span>
+              <span id="reserve-meter"></span>
+              <span id="headroom-meter"></span>
+            </div>
+            <dl class="breakdown-list">
+              <div>
+                <dt><span class="key cache-key"></span>Cached cluster state</dt>
+                <dd id="cache-value">—</dd>
+              </div>
+              <div>
+                <dt><span class="key reserve-key"></span>Scheduling reserve</dt>
+                <dd id="reserve-value">—</dd>
+              </div>
+              <div>
+                <dt><span class="key headroom-key"></span>25% safety headroom</dt>
+                <dd id="headroom-value">—</dd>
+              </div>
+            </dl>
+          </section>
+
+          <section class="inferred" aria-labelledby="inferred-title">
+            <h3 id="inferred-title">Values inferred from your inputs</h3>
+            <dl class="inferred-grid">
+              <div><dt>Workload Pods</dt><dd id="workload-pods">—</dd></div>
+              <div><dt>Worker capacity</dt><dd id="worker-capacity">—</dd></div>
+              <div><dt>Backlog ratio</dt><dd id="backlog-ratio">—</dd></div>
+              <div><dt>Largest Pod-node search</dt><dd id="largest-search">—</dd></div>
+              <div><dt>PodGroups</dt><dd id="pod-groups">—</dd></div>
+              <div><dt>BindRequests upper bound</dt><dd id="bind-requests">—</dd></div>
+            </dl>
+          </section>
+
+          <details class="formula">
+            <summary>How this estimate works</summary>
+            <p><strong>Cached state</strong> estimates cluster objects retained by the scheduler: Pods, workloads, eligible nodes, and inferred BindRequests.</p>
+            <p><strong>Scheduling reserve</strong> covers temporary work for the largest workload, queued demand, and placement complexity. Largest-workload Pods × eligible nodes selects a pressure tier; it is not treated as a retained matrix.</p>
+            <dl>
+              <div><dt>Largest-job search reserve</dt><dd id="search-reserve">—</dd></div>
+              <div><dt>Backlog reserve</dt><dd id="backlog-reserve">—</dd></div>
+              <div><dt>Complexity reserve</dt><dd id="complexity-reserve">—</dd></div>
+            </dl>
+            <code>limit = round up(1.25 × (cache + scheduling reserve))</code>
+            <p><strong>CPU</strong> uses eligible nodes and the three scheduling-reserve tiers as a coarse starting estimate. It is not a measured per-operation cost model.</p>
+            <code>CPU request = round up(0.5 + eligible nodes / 1,000 + 0.25 × (search + backlog + complexity reserves))</code>
+          </details>
+        </div>
+      </aside>
+    </section>
+
+    <section class="apply-panel" aria-labelledby="apply-title">
+      <div class="section-heading">
+        <div>
+          <p class="step">Step 3</p>
+          <h2 id="apply-title">Apply the recommendation</h2>
+        </div>
+        <span class="status" id="service-profile">—</span>
+      </div>
+
+      <p>Binder, pod grouper, PodGroup controller, and queue controller memory use the guide formulas, rounded up to 128 MiB. Tested profile requests are minimums, and their request-to-limit headroom is preserved.</p>
+      <p id="profile-warning" class="profile-warning" role="note" hidden>This scenario exceeds the tested 1000-node profile. Treat the CPU values and limits as conservative starting points and validate them under representative load.</p>
+
+      <div class="resource-table-wrapper" tabindex="0" aria-label="Recommended resources; scroll horizontally to see every column">
+        <table class="resource-table">
+          <thead>
+            <tr>
+              <th scope="col">Service</th>
+              <th scope="col">CPU request</th>
+              <th scope="col">CPU limit</th>
+              <th scope="col">Memory request</th>
+              <th scope="col">Memory limit</th>
+              <th scope="col">Managed by</th>
+            </tr>
+          </thead>
+          <tbody id="service-resources"></tbody>
+        </table>
+      </div>
+
+      <div class="command-card">
+        <div class="field config-name-field">
+          <label for="config-name">KAI Config name</label>
+          <input id="config-name" name="configName" type="text" value="kai-config" autocomplete="off" spellcheck="false" aria-describedby="config-name-help">
+          <small id="config-name-help">The Config resource is cluster-scoped. The Helm chart creates <code>kai-config</code> by default.</small>
+        </div>
+        <label class="command-label" for="patch-command">Patch command</label>
+        <textarea id="patch-command" rows="12" readonly spellcheck="false" aria-describedby="patch-help"></textarea>
+        <div class="command-actions">
+          <button class="primary" id="copy-command" type="button">Copy command</button>
+          <span id="copy-status" class="copy-status" role="status" aria-live="polite"></span>
+        </div>
+        <p id="patch-help" class="managed-note">The command patches Config-managed services. The Operator row is excluded; configure it with Helm under <code>operator.resources</code>. If Helm or GitOps manages the Config, apply these values to that source of truth because reconciliation or an upgrade can replace a direct patch.</p>
+      </div>
+    </section>
+
+    <section class="next-steps" aria-labelledby="next-steps-title">
+      <p class="step">Step 4</p>
+      <h2 id="next-steps-title">Validate before production</h2>
+      <ol>
+        <li>Apply the Config patch or update the system that owns the Config.</li>
+        <li>Run cluster fill, the largest jobs, a submission burst, and cleanup.</li>
+        <li>Monitor complete-cycle memory, CPU throttling, restarts, and scheduling latency.</li>
+        <li>Keep the calculated limit until measured peaks support changing it.</li>
+      </ol>
+    </section>
+  </main>
+
+  <footer>
+    <span>KAI Scheduler resource calculator</span>
+    <a href="https://github.com/kai-scheduler/KAI-Scheduler/issues">Report an issue</a>
+  </footer>
+</body>
+</html>

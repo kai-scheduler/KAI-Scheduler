@@ -95,9 +95,14 @@ For Job resources, the Pod Grouper:
 - Sets the priority class of the PodGroup to "Train", to allow it to go over-quota
 
 ### Deployment Grouping
-Deployments are a special case:
-- A Pod Group is created per pod of the deployment
-- Default priority class for deployments is "Inference", as that's the usual use case for them
+For Deployment resources, the Pod Grouper:
+- Creates a single PodGroup per deployment, named `pg-<deployment-name>-<deployment-uid>`, with MinMember 1
+- Overrides MinMember from the `kai.scheduler/batch-min-member` annotation on the deployment
+- Sets the default priority class to "Inference", as that's the usual use case for them
+
+Setting `--deployment-gang-schedule=false` (`podGrouper.args.gangScheduleDeployment` in the KAI config) restores the
+legacy behavior of a PodGroup per pod. Deployments whose pods already belong to a PodGroup per pod keep that layout even
+when the flag is enabled, so that running pods aren't re-parented during an upgrade.
 
 ### MPI Job Grouping
 For MPI workloads:

@@ -9,6 +9,10 @@ spec:
   nodeSelector:
     region: east
     type: user-node
+  automountServiceAccountToken: false
   containers:
     - name: with-node-selector
       image: k8s.gcr.io/pause:2.0
+      resources:
+        limits:
+          memory: "64Mi"

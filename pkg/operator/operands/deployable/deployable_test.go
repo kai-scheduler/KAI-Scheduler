@@ -19,7 +19,9 @@ import (
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	vpav1 "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -54,6 +56,7 @@ var _ = Describe("Deployable", func() {
 		Expect(kaiv1.AddToScheme(testScheme)).To(Succeed())
 		Expect(apiextensionsv1.AddToScheme(testScheme)).To(Succeed())
 		Expect(monitoringv1.AddToScheme(testScheme)).To(Succeed())
+		Expect(policyv1.AddToScheme(testScheme)).To(Succeed())
 		Expect(vpav1.AddToScheme(testScheme)).To(Succeed())
 
 		fakeClientBuilder = fake.NewClientBuilder().
@@ -213,6 +216,77 @@ var _ = Describe("Deployable", func() {
 				Expect(err).To(HaveOccurred())
 				Expect(createCalls).To(Equal(1))
 				Expect(updateCalls).To(Equal(1))
+			})
+		})
+
+		Context("PodDisruptionBudget lifecycle", func() {
+			var existingPDB *policyv1.PodDisruptionBudget
+
+			BeforeEach(func() {
+				existingPDB = &policyv1.PodDisruptionBudget{
+					TypeMeta: metav1.TypeMeta{
+						Kind:       "PodDisruptionBudget",
+						APIVersion: policyv1.SchemeGroupVersion.String(),
+					},
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "admission",
+						Namespace: "kai-scheduler",
+						OwnerReferences: []metav1.OwnerReference{{
+							APIVersion: kaiv1.GroupVersion.String(),
+							Kind:       "Config",
+							Name:       kaiConfig.Name,
+							UID:        kaiConfig.UID,
+							Controller: ptr.To(true),
+						}},
+					},
+				}
+			})
+
+			It("collects an existing PDB instead of attempting to create it again", func() {
+				pdbCreateCalls := 0
+				builder := fakeClientBuilder.
+					WithObjects(existingPDB).
+					WithInterceptorFuncs(interceptor.Funcs{
+						Create: func(
+							ctx context.Context,
+							runtimeClient client.WithWatch,
+							obj client.Object,
+							opts ...client.CreateOption,
+						) error {
+							if _, ok := obj.(*policyv1.PodDisruptionBudget); ok {
+								pdbCreateCalls++
+							}
+							return runtimeClient.Create(ctx, obj, opts...)
+						},
+					})
+				fakeClient := getFakeClient(builder, known_types.KAIConfigRegisteredCollectible)
+				deployable := New(
+					[]operands.Operand{&fakePDBOperand{enabled: true}},
+					known_types.KAIConfigRegisteredCollectible,
+				)
+
+				Expect(deployable.Deploy(context.Background(), fakeClient, kaiConfig, kaiConfig)).To(Succeed())
+				Expect(pdbCreateCalls).To(BeZero())
+			})
+
+			It("deletes an owned PDB when it is no longer desired", func() {
+				fakeClient := getFakeClient(
+					fakeClientBuilder.WithObjects(existingPDB),
+					known_types.KAIConfigRegisteredCollectible,
+				)
+				deployable := New(
+					[]operands.Operand{&fakePDBOperand{enabled: false}},
+					known_types.KAIConfigRegisteredCollectible,
+				)
+
+				Expect(deployable.Deploy(context.Background(), fakeClient, kaiConfig, kaiConfig)).To(Succeed())
+
+				err := fakeClient.Get(
+					context.Background(),
+					client.ObjectKeyFromObject(existingPDB),
+					&policyv1.PodDisruptionBudget{},
+				)
+				Expect(apierrors.IsNotFound(err)).To(BeTrue())
 			})
 		})
 	})
@@ -440,6 +514,53 @@ var _ = Describe("Deployable", func() {
 type fakeOperand struct {
 	isDeployed, isAvailable bool
 	name                    string
+}
+
+type fakePDBOperand struct {
+	enabled bool
+}
+
+func (f *fakePDBOperand) DesiredState(
+	ctx context.Context,
+	runtimeClient client.Reader,
+	_ *kaiv1.Config,
+) ([]client.Object, error) {
+	if !f.enabled {
+		return nil, nil
+	}
+
+	pdb := &policyv1.PodDisruptionBudget{}
+	err := runtimeClient.Get(ctx, client.ObjectKey{Name: "admission", Namespace: "kai-scheduler"}, pdb)
+	if err != nil && !apierrors.IsNotFound(err) {
+		return nil, err
+	}
+	pdb.TypeMeta = metav1.TypeMeta{
+		Kind:       "PodDisruptionBudget",
+		APIVersion: policyv1.SchemeGroupVersion.String(),
+	}
+	pdb.Name = "admission"
+	pdb.Namespace = "kai-scheduler"
+	return []client.Object{pdb}, nil
+}
+
+func (f *fakePDBOperand) IsDeployed(context.Context, client.Reader) (bool, error) {
+	return true, nil
+}
+
+func (f *fakePDBOperand) IsAvailable(context.Context, client.Reader) (bool, error) {
+	return true, nil
+}
+
+func (f *fakePDBOperand) Monitor(context.Context, client.Reader, *kaiv1.Config) error {
+	return nil
+}
+
+func (f *fakePDBOperand) HasMissingDependencies(context.Context, client.Reader, *kaiv1.Config) (string, error) {
+	return "", nil
+}
+
+func (f *fakePDBOperand) Name() string {
+	return "fakePDBOperand"
 }
 
 func (f *fakeOperand) DesiredState(_ context.Context, _ client.Reader, _ *kaiv1.Config) ([]client.Object, error) {

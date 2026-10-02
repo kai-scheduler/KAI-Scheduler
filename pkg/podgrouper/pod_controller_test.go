@@ -505,6 +505,53 @@ func TestEventFilterFn(t *testing.T) {
 	}
 }
 
+func TestAssignPodToGroupAndSubGroupDoesNotPatchOtherPods(t *testing.T) {
+	ctx := context.TODO()
+	currentPod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "current-pod",
+			Namespace:   "test-ns",
+			Annotations: map[string]string{},
+			Labels:      map[string]string{},
+		},
+	}
+	otherPod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "other-pod",
+			Namespace: "test-ns",
+			Annotations: map[string]string{
+				constants.PodGroupAnnotationForPod: "test-pg",
+			},
+			Labels: map[string]string{
+				constants.SubGroupLabelKey: "existing-subgroup",
+			},
+		},
+	}
+	fakeClient := fake.NewClientBuilder().WithObjects(currentPod, otherPod).Build()
+	reconciler := PodReconciler{
+		Client: fakeClient,
+	}
+	metadata := &podgroup.Metadata{
+		Name:      "test-pg",
+		Namespace: "test-ns",
+		SubGroups: []*podgroup.SubGroupMetadata{
+			{
+				Name:           "current-subgroup",
+				PodsReferences: []string{currentPod.Name},
+			},
+		},
+	}
+
+	err := reconciler.assignPodToGroupAndSubGroup(ctx, currentPod, metadata)
+	assert.NoError(t, err)
+
+	updatedOtherPod := &v1.Pod{}
+	err = fakeClient.Get(ctx, types.NamespacedName{Namespace: otherPod.Namespace, Name: otherPod.Name}, updatedOtherPod)
+	assert.NoError(t, err)
+	assert.Equal(t, "test-pg", updatedOtherPod.Annotations[constants.PodGroupAnnotationForPod])
+	assert.Equal(t, "existing-subgroup", updatedOtherPod.Labels[constants.SubGroupLabelKey])
+}
+
 func TestLabelsMatch(t *testing.T) {
 	tests := []struct {
 		name     string

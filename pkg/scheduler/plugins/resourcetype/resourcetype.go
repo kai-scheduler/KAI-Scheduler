@@ -34,9 +34,11 @@ func (pp *resourceType) nodeOrderFn() api.NodeOrderFn {
 		if isCPUOnlyTask && node.IsCPUOnlyNode() {
 			score = scores.ResourceType
 		}
-		log.InfraLogger.V(7).Infof(
-			"Task %s requests GPU: %t. On node with %f total allocatable GPU. Score: %f",
-			task.Name, !isCPUOnlyTask, node.AllocatableVector.Get(resource_info.GPUIndex), score)
+		log.InfraLogger.V(7).Do(func() {
+			log.InfraLogger.Infof(
+				"Task %s requests GPU: %t. On node with %f total allocatable GPU. Score: %f",
+				task.Name, !isCPUOnlyTask, node.AllocatableVector.Get(resource_info.GPUIndex), score)
+		})
 		return score, nil
 	}
 }

@@ -88,7 +88,7 @@ Now that both concepts have been introduced, here is how they compare — they a
 | Affects guaranteed quota? | No | No |
 | Affects over-quota distribution? | Yes — order between queues | No |
 | Affects preemption? | No | Yes — determines victims |
-| Affects reclaim? | Indirectly (via fair-share) | No |
+| Affects reclaim? | Yes - effects the fair share calculations and required for the reclaim strategy `queuePriorityInQuotaReclaim` (which is disabled by default) | No |
 
 ## Reclaim: Recovering Resources Between Queues
 
@@ -102,21 +102,31 @@ For reclaim to occur:
 1. The reclaimer and victim are in **different queues**
 2. The victim is **preemptible**
 3. The reclaiming queue is **below its fair-share or deserved quota**
-4. The victim's queue is **above its fair-share or deserved quota** (i.e., using over-quota resources)
+4. The victim's queue is **above its fair-share or deserved quota** (i.e., using over-quota resources) — unless the opt-in `queuePriorityInQuotaReclaim` strategy applies (see below)
 
 ### The Quota Protection Guarantee
 
-**In-quota resources are always protected from reclamation.** The scheduler enforces two strategies:
+**In-quota resources are protected from reclamation by default.** The scheduler always enforces two strategies:
 - **MaintainFairShare**: the victim's queue must be above its allocatable fair-share
 - **GuaranteeDeservedQuota**: the reclaimer must be under its deserved quota, AND the victim's queue must be over its deserved quota
 
-This means a queue using only its guaranteed resources will **never** have workloads reclaimed, regardless of what other queues need.
+This means a queue using only its guaranteed resources will **never** have workloads reclaimed, regardless of what other queues need — as long as this default behavior is in effect.
+
+There is an optional reclaim strategy, which relaxes this guarantee: **queuePriorityInQuotaReclaim**.
+
+#### Opt-in: priority-based in-quota reclaim
+
+The `proportion` plugin argument `queuePriorityInQuotaReclaim` (bool, default `false`) adds a third strategy, **InQuotaQueuePriority**, that weakens this guarantee for a scheduling shard that opts in. When enabled, a reclaimer can evict an in-quota victim's workload if:
+- The reclaimer's queue has **strictly higher `Priority`** than the victim's queue (when queues sit in different hierarchy branches, the comparison uses the ancestor queues where the branches diverge from the lowest common ancestor)
+- The reclaimer **stays within its own deserved quota** after taking the resource — this path never lets a reclaimer go over-quota by reclaiming from an in-quota victim
+
+This is opt-in per scheduling shard (`SchedulingShardSpec.Plugins["proportion"].Arguments`) because it weakens quota protection for lower-priority queues: a non-preemptible workload can no longer be reclaimed, so a queue can still shield itself by filling its quota with non-preemptible workloads.
 
 ### What Reclaim Cannot Do
 
 - **Target workloads in the same queue** — use preemption for intra-queue priority enforcement
 - **Evict non-preemptible workloads** — non-preemptible workloads are filtered out entirely from the reclaim victim pool
-- **Touch in-quota resources** — if a queue is at or below its deserved quota, its workloads are protected
+- **Touch in-quota resources of an equal-or-higher priority queue** — a queue's in-quota workloads are only reclaimable by a strictly higher priority queue, and only when `queuePriorityInQuotaReclaim` is enabled
 
 ## Common Scenarios & FAQ
 
@@ -132,7 +142,7 @@ The answer combines concepts from all three sections above:
 
 3. **If Queue-B is at quota, its resources are protected.** The `GuaranteeDeservedQuota` strategy ensures that a queue at or below its deserved quota cannot be reclaimed from.
 
-**Bottom line:** If Queue-B's training is running within quota, it is protected. Queue-A's inference workload will remain pending until resources become available through other means (Queue-B's workloads completing, cluster scaling up, or Queue-B going over-quota with preemptible workloads).
+**Bottom line:** If Queue-B's training is running within quota, it is protected. Queue-A's inference workload will remain pending until resources become available through other means (Queue-B's workloads completing, cluster scaling up, or Queue-B going over-quota with preemptible workloads) — unless the shard has `queuePriorityInQuotaReclaim` enabled and Queue-A has strictly higher `Priority` than Queue-B, in which case Queue-A can reclaim Queue-B's in-quota preemptible workload directly.
 
 ### "My queue has higher priority — why isn't it getting more resources?"
 

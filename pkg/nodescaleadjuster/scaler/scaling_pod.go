@@ -11,6 +11,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/fips"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/nodescaleadjuster/consts"
 )
 
@@ -20,7 +21,7 @@ func scalingPodName(unschedulablePodNamespace string, unschedulablePodName strin
 
 func createScalingPodSpec(
 	scalingPodAppLabel string, scalingPodServiceAccount string,
-	unschedulablePod *corev1.Pod, image, namespace string, numDevices int64,
+	unschedulablePod *corev1.Pod, image, namespace string, numDevices int64, fipsOnly bool,
 ) *corev1.Pod {
 	resources := corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{
@@ -58,6 +59,7 @@ func createScalingPodSpec(
 					Image:           image,
 					ImagePullPolicy: corev1.PullIfNotPresent,
 					Resources:       resources,
+					Env:             fips.OnlyEnv(fipsOnly),
 				},
 			},
 			ServiceAccountName: scalingPodServiceAccount,

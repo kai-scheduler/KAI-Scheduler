@@ -33,9 +33,11 @@ func (nnp *nominatedNodeNamePlugin) nodeOrderFn() api.NodeOrderFn {
 			score = scores.NominatedNode
 		}
 
-		log.InfraLogger.V(7).Infof(
-			"Estimating Task: <%v/%v> Job: <%v> for node: <%s>. Pod nomindated node name: <%s>. Score: %f",
-			task.Namespace, task.Name, task.Job, node.Name, task.Pod.Status.NominatedNodeName, score)
+		log.InfraLogger.V(7).Do(func() {
+			log.InfraLogger.Infof(
+				"Estimating Task: <%v/%v> Job: <%v> for node: <%s>. Pod nomindated node name: <%s>. Score: %f",
+				task.Namespace, task.Name, task.Job, node.Name, task.Pod.Status.NominatedNodeName, score)
+		})
 		return score, nil
 	}
 }

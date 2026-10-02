@@ -4,7 +4,6 @@
 package knative
 
 import (
-	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -113,6 +112,17 @@ func TestGetPodGroupMetadata(t *testing.T) {
 }
 
 func TestGetPodGroupMetadata_MinScale(t *testing.T) {
+	for minScale, expectedMinAvailable := range map[string]int32{
+		"3": 3,
+		"0": 0, // scale-to-zero: no gang requirement
+	} {
+		t.Run("min-scale="+minScale, func(t *testing.T) {
+			testGetPodGroupMetadataMinScale(t, minScale, expectedMinAvailable)
+		})
+	}
+}
+
+func testGetPodGroupMetadataMinScale(t *testing.T, minScale string, expectedMinAvailable int32) {
 	service := &unstructured.Unstructured{
 		Object: map[string]interface{}{
 			"kind":       "Service",
@@ -156,7 +166,7 @@ func TestGetPodGroupMetadata_MinScale(t *testing.T) {
 			Namespace: "test_namespace",
 			UID:       "2",
 			Annotations: map[string]string{
-				"autoscaling.knative.dev/min-scale": "3",
+				"autoscaling.knative.dev/min-scale": minScale,
 			},
 		},
 		Spec:   knative.RevisionSpec{},
@@ -197,7 +207,7 @@ func TestGetPodGroupMetadata_MinScale(t *testing.T) {
 	assert.Equal(t, "pg-revision-2", metadata.Name)
 	assert.Equal(t, constants.InferencePriorityClass, metadata.PriorityClassName)
 	assert.Equal(t, "test_queue", metadata.Queue)
-	assert.Equal(t, "3", strconv.Itoa(int(metadata.MinAvailable)))
+	assert.Equal(t, expectedMinAvailable, metadata.MinAvailable)
 }
 
 func TestGetPodGroupMetadataBackwardsCompatibility(t *testing.T) {

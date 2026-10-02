@@ -13,21 +13,24 @@ import (
 )
 
 type Options struct {
-	SchedulerName               string
-	QPS                         float64
-	Burst                       int
-	RateLimiterBaseDelaySeconds int
-	RateLimiterMaxDelaySeconds  int
-	EnableLeaderElection        bool
-	MetricsAddr                 string
-	ProbeAddr                   string
-	WebhookPort                 int
-	FakeGPUNodes                bool
-	GPUSharingEnabled           bool
-	HamiCoreEnabled             bool
-	BlockNvidiaVisibleDevices   bool
-	GPUPodRuntimeClassName      string
-	GPUFractionRuntimeClassName string
+	SchedulerName                string
+	QPS                          float64
+	Burst                        int
+	EnableLeaderElection         bool
+	MetricsAddr                  string
+	ProbeAddr                    string
+	WebhookPort                  int
+	FakeGPUNodes                 bool
+	GPUSharingEnabled            bool
+	NRIPluginEnabled             bool
+	HamiCoreEnabled              bool
+	NvFractionsEnabled           bool
+	BinderServiceAccountUsername string
+	BlockNvidiaVisibleDevices    bool
+	GPUPodRuntimeClassName       string
+	GPUFractionRuntimeClassName  string
+	ValidatePodResizeQuota       bool
+	BlockUpsizeOnBoundedQueues   bool
 }
 
 // ResolvedGPUFractionRuntimeClassName returns the effective runtime class name
@@ -57,12 +60,6 @@ func InitOptions() *Options {
 	fs.IntVar(&options.Burst,
 		"burst", 300,
 		"Burst to the K8s API server")
-	fs.IntVar(&options.RateLimiterBaseDelaySeconds,
-		"rate-limiter-base-delay", 1,
-		"Base delay in seconds for the ExponentialFailureRateLimiter")
-	fs.IntVar(&options.RateLimiterMaxDelaySeconds,
-		"rate-limiter-max-delay", 60,
-		"Max delay in seconds for the ExponentialFailureRateLimiter")
 	fs.BoolVar(&options.EnableLeaderElection,
 		"leader-elect", false,
 		"Enable leader election for controller manager. "+
@@ -82,9 +79,18 @@ func InitOptions() *Options {
 	fs.BoolVar(&options.GPUSharingEnabled,
 		"gpu-sharing-enabled", false,
 		"Specifies if the GPU sharing is enabled")
+	fs.BoolVar(&options.NRIPluginEnabled,
+		"nri-plugin-enabled", false,
+		"Specifies if the NVIDIA GPU Operator CDI NRI plugin is enabled")
 	fs.BoolVar(&options.HamiCoreEnabled,
 		"hami-core-enabled", false,
 		"Specifies if the HAMI-core GPU memory limit injection is enabled")
+	fs.BoolVar(&options.NvFractionsEnabled,
+		"nv-fractions-enabled", false,
+		"Specifies if the NvFractions GPU-sharing admission plugin is enabled")
+	fs.StringVar(&options.BinderServiceAccountUsername,
+		"binder-service-account-username", "",
+		"The Kubernetes username allowed to write NvFractions device annotations")
 	fs.BoolVar(&options.BlockNvidiaVisibleDevices,
 		"block-nvidia-visible-devices", false,
 		"Reject pods that set the NVIDIA_VISIBLE_DEVICES environment variable to values "+
@@ -99,6 +105,15 @@ func InitOptions() *Options {
 		fmt.Sprintf("Runtime class to be set for GPU fraction pods (defaults to %s). "+
 			"Whole-GPU pods are not affected. Set to empty string to disable.",
 			constants.DefaultRuntimeClassName))
+	fs.BoolVar(&options.ValidatePodResizeQuota,
+		"validate-pod-resize-quota", true,
+		"Enable queue limit/quota checks on pod resize requests. "+
+			"Best-effort: if lookups fail, resize is admitted. "+
+			"Ignored if false, disables --block-upsize-on-bounded-queues.")
+	fs.BoolVar(&options.BlockUpsizeOnBoundedQueues,
+		"block-upsize-on-bounded-queues", false,
+		"Block pod upsize if queue or ancestor has a CPU/memory limit. "+
+			"No effect if --validate-pod-resize-quota is false.")
 
 	utilfeature.DefaultMutableFeatureGate.AddFlag(fs)
 

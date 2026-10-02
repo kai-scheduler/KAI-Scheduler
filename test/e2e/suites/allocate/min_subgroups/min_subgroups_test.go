@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -92,6 +93,35 @@ var _ = Describe("Single-level hierarchy with minSubGroup", Ordered, func() {
 		namespace := queue.GetConnectedNamespaceToQueue(testCtx.Queues[0])
 		wait.ForAtLeastNPodsScheduled(ctx, testCtx.ControllerClient, namespace, h.AllPods, 6)
 		wait.ForAtLeastNPodsUnschedulable(ctx, testCtx.ControllerClient, namespace, h.AllPods, 2)
+	})
+
+	// A leaf holding fewer pods than its own minMember must never be allocated, even
+	// when the PodGroup as a whole is schedulable. "filler" satisfies the root's
+	// minSubGroup=1 on its own, so the PodGroup passes the scheduler's readiness gate
+	// and is never filtered out of the allocate queue. "starved" requires 2 members but
+	// holds a single pod, so its gang can never be formed and it must stay pending
+	// regardless of how much capacity is free.
+	It("should not schedule a leaf holding fewer pods than its own minMember", func(ctx context.Context) {
+		_, h := pod_group.CreateWithHierarchy(ctx, testCtx.KubeClientset, testCtx.KubeAiSchedClientset,
+			utils.GenerateRandomK8sName(10), testCtx.Queues[0], ptr.To[int32](1),
+			[]pod_group.SubGroupNode{
+				{Name: "filler", MinMember: ptr.To[int32](1), PodCount: 1},
+				{Name: "starved", MinMember: ptr.To[int32](2), PodCount: 1},
+			}, nil, "", cpuPerPod)
+
+		namespace := queue.GetConnectedNamespaceToQueue(testCtx.Queues[0])
+		wait.ForAtLeastNPodsScheduled(ctx, testCtx.ControllerClient, namespace, h.Pods["filler"], 1)
+
+		// Asserted with Consistently rather than ForAtLeastNPodsUnschedulable: the
+		// scheduler never attempts allocation for this pod, so it carries no
+		// PodScheduled=False condition to wait on.
+		starvedPod := h.Pods["starved"][0]
+		Consistently(func(g Gomega) {
+			pod, err := testCtx.KubeClientset.CoreV1().Pods(namespace).
+				Get(ctx, starvedPod.Name, metav1.GetOptions{})
+			g.Expect(err).To(Succeed())
+			g.Expect(rd.IsPodScheduled(pod)).To(BeFalse())
+		}).WithTimeout(30 * time.Second).WithPolling(5 * time.Second).Should(Succeed())
 	})
 
 	It("should not schedule when minSubGroup cannot be satisfied", func(ctx context.Context) {

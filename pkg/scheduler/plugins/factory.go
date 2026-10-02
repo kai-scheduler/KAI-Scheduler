@@ -21,8 +21,10 @@ package plugins
 
 import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/backgroundpods"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/dynamicresources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/elastic"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/gpujoborder"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/gpupack"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/gpusharingorder"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/gpuspread"
@@ -51,6 +53,7 @@ func InitDefaultPlugins() {
 	// Plugins for PodGroupInfos
 	framework.RegisterPluginBuilder("predicates", predicates.New)
 	framework.RegisterPluginBuilder("priority", priority.New)
+	framework.RegisterPluginBuilder("gpujoborder", gpujoborder.New)
 	framework.RegisterPluginBuilder("nodeplacement", nodeplacement.New)
 	framework.RegisterPluginBuilder("nominatednode", nominatednode.New)
 	framework.RegisterPluginBuilder("numa", numa.New)
@@ -74,6 +77,7 @@ func InitDefaultPlugins() {
 
 	// Other Plugins
 	framework.RegisterPluginBuilder("snapshot", snapshot.New)
+	framework.RegisterPluginBuilder(backgroundpods.Name, backgroundpods.New)
 	framework.RegisterPluginBuilder(nodelocalgreedy.Name, nodelocalgreedy.New)
 	framework.RegisterPluginBuilder(multinodegang.Name, multinodegang.New)
 

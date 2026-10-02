@@ -4,5 +4,6 @@
 package state
 
 type BindingState struct {
-	ReservedGPUIds []string
+	BindingPodAnnotations map[string]string // Annotations that will be added to the pod after binding.
+	ReservedGPUIds        []string
 }

@@ -97,10 +97,15 @@ func NewScheduler(
 		DiscoveryClient:             discoveryClient,
 	}
 
+	schedulerCache, err := schedcache.New(schedulerCacheParams)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to create scheduler cache: %v", err)
+	}
+
 	scheduler := &Scheduler{
 		config:          schedulerConf,
 		schedulerParams: schedulerParams,
-		cache:           schedcache.New(schedulerCacheParams),
+		cache:           schedulerCache,
 		schedulePeriod:  schedulerParams.SchedulePeriod,
 		mux:             mux,
 	}

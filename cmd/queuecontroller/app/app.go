@@ -43,7 +43,6 @@ func init() {
 	// +kubebuilder:scaffold:scheme
 }
 
-// +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
 
 func Run(opts *Options, clientConfig *rest.Config, ctx context.Context) error {

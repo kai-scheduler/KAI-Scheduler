@@ -33,7 +33,6 @@ func init() {
 	// +kubebuilder:scaffold:scheme
 }
 
-// +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch;update
 
@@ -66,7 +65,7 @@ func Run() error {
 	}
 
 	nodeScaler := scaler.NewScaler(mgr.GetClient(), options.ScalingPodImage, options.ScalingPodNamespace,
-		options.ScalingPodAppLabel, options.ScalingPodServiceAccount)
+		options.ScalingPodAppLabel, options.ScalingPodServiceAccount, options.FIPSOnly)
 
 	scaleAdjuster := scale_adjuster.NewScaleAdjuster(
 		mgr.GetClient(),

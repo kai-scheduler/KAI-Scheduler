@@ -4,6 +4,7 @@
 package deviceaccess
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -158,7 +159,7 @@ func TestValidate(t *testing.T) {
 	plugin := New()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := plugin.Validate(tt.pod)
+			err := plugin.Validate(context.Background(), nil, tt.pod)
 			if tt.expectedErr == "" {
 				assert.NoError(t, err)
 			} else {
@@ -308,6 +309,6 @@ func TestFractionPodWithoutRegularContainers(t *testing.T) {
 		Spec:       v1.PodSpec{InitContainers: []v1.Container{cpuContainer("init-container-0")}},
 	}
 	plugin := New()
-	assert.NoError(t, plugin.Validate(pod))
+	assert.NoError(t, plugin.Validate(context.Background(), nil, pod))
 	assert.NoError(t, plugin.Mutate(pod))
 }

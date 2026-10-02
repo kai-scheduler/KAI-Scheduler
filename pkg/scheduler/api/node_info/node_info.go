@@ -32,6 +32,8 @@ import (
 
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"k8s.io/dynamic-resource-allocation/deviceclass/extendedresourcecache"
+
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_affinity"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
@@ -74,7 +76,8 @@ type NodeInfo struct {
 	ReleasingVector   resource_info.ResourceVector
 
 	// Shared resource vector index map for this node
-	VectorMap *resource_info.ResourceVectorMap
+	VectorMap             *resource_info.ResourceVectorMap
+	DeviceClassByResource *extendedresourcecache.ExtendedResourceCache
 
 	AccessibleStorageCapacities map[common_info.StorageClassID][]*sc_info.StorageCapacityInfo
 
@@ -160,15 +163,19 @@ func (ni *NodeInfo) IsTaskAllocatable(task *pod_info.PodInfo) bool {
 	}
 
 	if allocatable := ni.isTaskAllocatableOnNonAllocatedResources(task, ni.IdleVector); !allocatable {
-		log.InfraLogger.V(7).Infof("Task GPU %s/%s is not allocatable on node %s",
-			task.Namespace, task.Name, ni.Name)
+		log.InfraLogger.V(7).Do(func() {
+			log.InfraLogger.Infof("Task GPU %s/%s is not allocatable on node %s",
+				task.Namespace, task.Name, ni.Name)
+		})
 		return false
 	}
 
 	storageAllocatable, err := ni.isTaskStorageAllocatable(task)
 	if !storageAllocatable {
-		log.InfraLogger.V(7).Infof("Task storage %s/%s is not allocatable on node %s, error: %v",
-			task.Namespace, task.Name, ni.Name, err)
+		log.InfraLogger.V(7).Do(func() {
+			log.InfraLogger.Infof("Task storage %s/%s is not allocatable on node %s, error: %v",
+				task.Namespace, task.Name, ni.Name, err)
+		})
 		return false
 	}
 
@@ -179,14 +186,18 @@ func (ni *NodeInfo) IsTaskAllocatableOnReleasingOrIdle(task *pod_info.PodInfo) b
 	nodeNonAllocatedVector := ni.nonAllocatedVector()
 
 	if allocatable := ni.isTaskAllocatableOnNonAllocatedResources(task, nodeNonAllocatedVector); !allocatable {
-		log.InfraLogger.V(7).Infof("Task GPU %s/%s is not allocatable on node %s",
-			task.Namespace, task.Name, ni.Name)
+		log.InfraLogger.V(7).Do(func() {
+			log.InfraLogger.Infof("Task GPU %s/%s is not allocatable on node %s",
+				task.Namespace, task.Name, ni.Name)
+		})
 		return false
 	}
 
 	if allocatable, err := ni.isTaskStorageAllocatableOnReleasingOrIdle(task); !allocatable {
-		log.InfraLogger.V(7).Infof("Task storage %s/%s is not allocatable on node %s, error: %v",
-			task.Namespace, task.Name, ni.Name, err)
+		log.InfraLogger.V(7).Do(func() {
+			log.InfraLogger.Infof("Task storage %s/%s is not allocatable on node %s, error: %v",
+				task.Namespace, task.Name, ni.Name, err)
+		})
 		return false
 	}
 
@@ -311,13 +322,9 @@ func (ni *NodeInfo) PredicateByNodeResourcesType(task *pod_info.PodInfo) error {
 		return nil
 	}
 
-	// Temporary fix: Reject device-plugin GPU requests on DRA-only nodes.
-	// Remove when device-plugin pods are supported on DRA nodes.
-	if task.GpuRequirement.GPUs() > 0 && ni.HasDRAGPUs {
-		log.InfraLogger.V(4).Infof("Task %s/%s rejected on node %s: device-plugin GPU request on DRA-only node",
-			task.Namespace, task.Name, ni.Name)
+	if ni.HasDRAGPUs && task.IsSharedGPURequest() {
 		return common_info.NewFitError(task.Name, task.Namespace, ni.Name,
-			"device-plugin GPU requests cannot be scheduled on DRA-only nodes")
+			"fractional/shared GPU pods are not yet supported on DRA-only nodes")
 	}
 
 	migNode := ni.IsMIGEnabled()
@@ -370,8 +377,15 @@ func (ni *NodeInfo) isTaskAllocatableOnNonAllocatedResources(
 }
 
 func (ni *NodeInfo) lessEqualVectorsExcludingGPU(a, b resource_info.ResourceVector) bool {
-	for i := 0; i < len(a); i++ {
+	for i := range len(a) {
 		if i == resource_info.GPUIndex {
+			continue
+		}
+
+		// Skip dims backed by DRA: the node has zero allocatable for them
+		// and the DRA plugin handles fit-checking for those resources.
+		if ni.AllocatableVector.Get(i) == 0 &&
+			ni.DeviceClassByResource.GetDeviceClass(ni.VectorMap.ResourceAt(i)) != nil {
 			continue
 		}
 		if a.Get(i) > b.Get(i) {
@@ -410,7 +424,9 @@ func (ni *NodeInfo) addTask(task *pod_info.PodInfo, allowTaskToExistOnDifferentG
 
 	ni.addTaskResources(task)
 	ni.addTaskStorage(task)
-	ni.PodAffinityInfo.AddPod(task.Pod)
+	if !excludedFromPodAffinity(task) {
+		ni.PodAffinityInfo.AddPod(task.Pod)
+	}
 	return nil
 }
 
@@ -422,12 +438,16 @@ func (ni *NodeInfo) AddTasksToNode(podInfos []*pod_info.PodInfo,
 		if pod_status.IsActiveUsedStatus(podInfo.Status) {
 			_ = ni.AddTask(podInfo)
 		} else {
-			log.InfraLogger.V(6).Infof(
-				"Pod %s/%s in status %s, not adding to node %s",
-				podInfo.Namespace, podInfo.Name, podInfo.Status, ni.Name)
+			log.InfraLogger.V(6).Do(func() {
+				log.InfraLogger.Infof(
+					"Pod %s/%s in status %s, not adding to node %s",
+					podInfo.Namespace, podInfo.Name, podInfo.Status, ni.Name)
+			})
 		}
-		log.InfraLogger.V(6).Infof("Adding pod %s/%s/%s to existingpods", podInfo.Namespace, podInfo.Name,
-			podInfo.UID)
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof("Adding pod %s/%s/%s to existingpods", podInfo.Namespace, podInfo.Name,
+				podInfo.UID)
+		})
 		existingPodsMap[podInfo.UID] = podInfo
 		resultPods = append(resultPods, podInfo.Pod)
 	}
@@ -441,9 +461,11 @@ func (ni *NodeInfo) addTaskStorage(task *pod_info.PodInfo) {
 		for _, claim := range storageClassClaims {
 			capacities, found := ni.AccessibleStorageCapacities[storageClass]
 			if !found {
-				log.InfraLogger.V(7).Infof(
-					"Could not find accessible storage capacities for storage class %s on "+
-						"node %s for advanced csi scheduling", storageClass, ni.Name)
+				log.InfraLogger.V(7).Do(func() {
+					log.InfraLogger.Infof(
+						"Could not find accessible storage capacities for storage class %s on "+
+							"node %s for advanced csi scheduling", storageClass, ni.Name)
+				})
 				continue
 			}
 
@@ -455,15 +477,31 @@ func (ni *NodeInfo) addTaskStorage(task *pod_info.PodInfo) {
 }
 
 func (ni *NodeInfo) addTaskResources(task *pod_info.PodInfo) {
-	log.InfraLogger.V(7).Infof("About to add podsInfo: <%v/%v>, status: <%v>, node: <%s>",
-		task.Namespace, task.Name, task.Status, ni.Name)
-	log.InfraLogger.V(7).Infof("Node info: %+v", ni)
+	log.InfraLogger.V(7).Do(func() {
+		log.InfraLogger.Infof("About to add podsInfo: <%v/%v>, status: <%v>, node: <%s>",
+			task.Namespace, task.Name, task.Status, ni.Name)
+	})
+	log.InfraLogger.V(7).Do(func() {
+		log.InfraLogger.Infof("Node info: %+v", ni)
+	})
 
 	resourcesToTrackVector := getAcceptedTaskResourceVectorWithoutSharedGPU(task, ni.VectorMap)
 
 	if pod_info.IsResourceReservationTask(task.Pod) {
 		// Reservation pod: track all resources except GPUs
 		resourcesToTrackVector.Set(resource_info.GPUIndex, 0)
+	}
+
+	// A physical DRA device shared by several pods (one ResourceClaim with
+	// multiple reservedFor entries) must be counted once, not once per pod.
+	ni.dedupSharedDRAGpus(task, resourcesToTrackVector)
+
+	// DRA-backed extended resources are absent from node.Status.Allocatable and must
+	// not be charged against the node's vector — the DRA allocator handles them.
+	for i := range len(resourcesToTrackVector) {
+		if ni.AllocatableVector.Get(i) == 0 {
+			resourcesToTrackVector.Set(i, 0)
+		}
 	}
 
 	ni.UsedVector.Add(resourcesToTrackVector)
@@ -480,8 +518,21 @@ func (ni *NodeInfo) addTaskResources(task *pod_info.PodInfo) {
 
 	ni.addSharedGPUTaskResources(task)
 
-	log.InfraLogger.V(8).Infof("Added podsInfo: <%v/%v>, status: <%v>, node: <%+v>",
-		task.Namespace, task.Name, task.Status, ni)
+	log.InfraLogger.V(8).Do(func() {
+		log.InfraLogger.Infof("Added podsInfo: <%v/%v>, status: <%v>, node: <%+v>",
+			task.Namespace, task.Name, task.Status, ni)
+	})
+}
+
+// excludedFromPodAffinity reports whether a task is left out of the node's inter-pod
+// affinity index: only tasks this scheduling cycle has itself evicted (Releasing with a
+// virtual status, set by Statement.Evict). Their resources are already treated as
+// future-free and any placement onto them is Pipelined, never bound while they are still
+// on the node, so keeping them indexed only makes required (anti-)affinity against the
+// victims fail in every reclaim/preempt scenario. Pods terminating independently in the
+// cluster stay indexed, matching kube-scheduler, which keeps a pod until its delete event.
+func excludedFromPodAffinity(task *pod_info.PodInfo) bool {
+	return task.Status == pod_status.Releasing && task.IsVirtualStatus
 }
 
 func (ni *NodeInfo) RemoveTask(ti *pod_info.PodInfo) error {
@@ -499,21 +550,39 @@ func (ni *NodeInfo) RemoveTask(ti *pod_info.PodInfo) error {
 
 	ni.removeTaskStorage(task)
 	ni.removeTaskResources(task)
-	err := ni.PodAffinityInfo.RemovePod(task.Pod)
-
-	return err
+	// task is the stored clone, so this is the state addTask indexed under: a task that was
+	// never added to the index must not be removed from it (k8s NodeInfo.RemovePod fails).
+	if excludedFromPodAffinity(task) {
+		return nil
+	}
+	return ni.PodAffinityInfo.RemovePod(task.Pod)
 }
 
 func (ni *NodeInfo) removeTaskResources(task *pod_info.PodInfo) {
-	log.InfraLogger.V(7).Infof("About to remove podsInfo: <%v/%v>, status: <%v>, node: <%s>",
-		task.Namespace, task.Name, task.Status, ni.Name)
-	log.InfraLogger.V(7).Infof("NodeInfo: %+v", ni)
+	log.InfraLogger.V(7).Do(func() {
+		log.InfraLogger.Infof("About to remove podsInfo: <%v/%v>, status: <%v>, node: <%s>",
+			task.Namespace, task.Name, task.Status, ni.Name)
+	})
+	log.InfraLogger.V(7).Do(func() {
+		log.InfraLogger.Infof("NodeInfo: %+v", ni)
+	})
 
 	resourcesToTrackVector := getAcceptedTaskResourceVectorWithoutSharedGPU(task, ni.VectorMap)
 
 	if pod_info.IsResourceReservationTask(task.Pod) {
 		// Reservation pod: untrack all resources except GPUs
 		resourcesToTrackVector.Set(resource_info.GPUIndex, 0)
+	}
+
+	// Mirror of dedupSharedDRAGpus: keep a shared physical DRA device in the
+	// used vector as long as another pod on the node still references it.
+	ni.releaseSharedDRAGpus(task, resourcesToTrackVector)
+
+	// Mirror the zeroing done in addTaskResources so vectors stay consistent.
+	for i := range len(resourcesToTrackVector) {
+		if ni.AllocatableVector.Get(i) == 0 {
+			resourcesToTrackVector.Set(i, 0)
+		}
 	}
 
 	ni.UsedVector.Sub(resourcesToTrackVector)
@@ -530,8 +599,10 @@ func (ni *NodeInfo) removeTaskResources(task *pod_info.PodInfo) {
 
 	ni.removeSharedTaskResources(task)
 
-	log.InfraLogger.V(8).Infof("Removed podsInfo: <%v/%v>, status: <%v>, node: <%+v>",
-		task.Namespace, task.Name, task.Status, ni)
+	log.InfraLogger.V(8).Do(func() {
+		log.InfraLogger.Infof("Removed podsInfo: <%v/%v>, status: <%v>, node: <%+v>",
+			task.Namespace, task.Name, task.Status, ni)
+	})
 }
 
 func (ni *NodeInfo) removeTaskStorage(task *pod_info.PodInfo) {
@@ -540,8 +611,10 @@ func (ni *NodeInfo) removeTaskStorage(task *pod_info.PodInfo) {
 		for _, claim := range storageClassClaims {
 			capacities, found := ni.AccessibleStorageCapacities[storageClass]
 			if !found {
-				log.InfraLogger.V(7).Infof("Could not find accessible storage capacities for storage "+
-					"class %s on node %s for advanced csi scheduling", storageClass, ni.Name)
+				log.InfraLogger.V(7).Do(func() {
+					log.InfraLogger.Infof("Could not find accessible storage capacities for storage "+
+						"class %s on node %s for advanced csi scheduling", storageClass, ni.Name)
+				})
 				continue
 			}
 			for _, capacity := range capacities {
@@ -602,7 +675,9 @@ func (ni *NodeInfo) getNodeGpuCountLabelValue() (int, error) {
 func (ni *NodeInfo) GetNumberOfGPUsInNode() int64 {
 	numberOfGPUs, err := ni.getNodeGpuCountLabelValue()
 	if err != nil {
-		log.InfraLogger.V(6).Infof("Node: <%v> had no annotations of nvidia.com/gpu.count", ni.Name)
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof("Node: <%v> had no annotations of nvidia.com/gpu.count", ni.Name)
+		})
 		return int64(ni.AllocatableVector.Get(resource_info.GPUIndex))
 	}
 	return int64(numberOfGPUs)
@@ -631,7 +706,9 @@ func (ni *NodeInfo) isValidGpuPortion(res *resource_info.GpuResourceRequirement)
 func getNodeGpuMemory(node *v1.Node) (int64, bool) {
 	gpuMemoryLabelValue, err := strconv.ParseInt(node.Labels[GpuMemoryLabel], 10, 64)
 	if err != nil {
-		log.InfraLogger.V(6).Infof("Could not find gpu memory label %v on node %v", GpuMemoryLabel, node.Name)
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof("Could not find gpu memory label %v on node %v", GpuMemoryLabel, node.Name)
+		})
 		return DefaultGpuMemory, false
 	}
 
@@ -641,7 +718,7 @@ func getNodeGpuMemory(node *v1.Node) (int64, bool) {
 		gpuMemoryLabelValue = convertBytesToMib(gpuMemoryLabelValue)
 	}
 
-	return gpuMemoryLabelValue - (gpuMemoryLabelValue % 100), true // Floor the memory count to make sure its divided by 100 so there will not be 2 jobs that get same bytes
+	return gpuMemoryLabelValue, true
 }
 
 func checkGpuMemoryIsInMib(gpuMemoryValue int64) bool {
@@ -736,6 +813,13 @@ func (ni *NodeInfo) lessEqualTaskToNodeResources(
 ) bool {
 	if !ni.isValidGpuPortion(&task.GpuRequirement) {
 		return false
+	}
+	// A task sharing an already-counted DRA device does not need additional
+	// GPU capacity for that device.
+	if discount := ni.sharedDRAGpuDiscount(task); discount > 0 {
+		adjusted := nodeResourcesVector.Clone()
+		adjusted.Set(resource_info.GPUIndex, adjusted.Get(resource_info.GPUIndex)+discount)
+		return task.ResReqVector.LessEqual(adjusted)
 	}
 	return task.ResReqVector.LessEqual(nodeResourcesVector)
 }

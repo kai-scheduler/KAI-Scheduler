@@ -29,8 +29,10 @@ func EvictAllPreemptees(ssn *framework.Session, preempteeTasks []*pod_info.PodIn
 		if !found {
 			return fmt.Errorf("failed to find message for task: %s", task.UID)
 		}
-		log.InfraLogger.V(7).Infof("Statement eviction for task <%s/%s>, message: <%v> ",
-			task.Namespace, task.Name, message)
+		log.InfraLogger.V(7).Do(func() {
+			log.InfraLogger.Infof("Statement eviction for task <%s/%s>, message: <%v> ",
+				task.Namespace, task.Name, message)
+		})
 		err := stmt.Evict(task, message, eviction_info.EvictionMetadata{
 			Action:           string(actionType),
 			EvictionGangSize: len(preempteeTasks),
@@ -77,6 +79,7 @@ func TryToVirtuallyAllocatePreemptorAndGetVictims(
 	preemptor *podgroup_info.PodGroupInfo,
 	jobsToAllocate *utils.JobsOrderByQueues,
 	preempteeTasks []*pod_info.PodInfo,
+	preemptorAllocationMode podgroup_info.TaskAllocationMode,
 ) (bool, []*pod_info.PodInfo) {
 	preemptorAllocated := false
 	var newVictims []*pod_info.PodInfo
@@ -89,34 +92,44 @@ func TryToVirtuallyAllocatePreemptorAndGetVictims(
 
 	for !jobsToAllocate.IsEmpty() {
 		jobToAllocate := jobsToAllocate.PopNextJob()
-		if _, exits := potentialVictimsMap[jobToAllocate.UID]; !exits && jobToAllocate.UID != preemptor.UID {
+		if _, exists := potentialVictimsMap[jobToAllocate.UID]; !exists && jobToAllocate.UID != preemptor.UID {
 			continue
 		}
+		allocationMode := taskAllocationModeForPipelining(jobToAllocate, preemptor, preemptorAllocationMode)
 
 		resReq := podgroup_info.GetTasksToAllocateInitResourceVector(
-			jobToAllocate, ssn.SubGroupOrderFn, ssn.TaskOrderFn, false, ssn.ClusterInfo.MinNodeGPUMemoryMiB)
-		log.InfraLogger.V(6).Infof("Trying to pipeline job: <%s/%s>. resources required: %v",
-			jobToAllocate.Namespace, jobToAllocate.Name, resReq)
+			jobToAllocate, ssn.SubGroupOrderFn, ssn.TaskOrderFn, allocationMode, ssn.ClusterInfo.MinNodeGPUMemoryMiB)
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof("Trying to pipeline job: <%s/%s>. resources required: %v",
+				jobToAllocate.Namespace, jobToAllocate.Name, resReq)
+		})
 
 		if jobToAllocate.UID != preemptor.UID {
-			if !AllocateJob(ssn, stmt, nodes, jobToAllocate, true) {
+			if !AllocateJob(ssn, stmt, nodes, jobToAllocate, allocationMode) {
 				tasksToAllocate := podgroup_info.GetTasksToAllocate(jobToAllocate, ssn.SubGroupOrderFn,
-					ssn.TaskOrderFn, false)
+					ssn.TaskOrderFn, allocationMode)
 				newVictims = append(newVictims, tasksToAllocate...)
 			}
 			continue
 		}
 
-		success := AllocateJob(ssn, stmt, nodes, jobToAllocate, true)
-		if !success {
-			return false, []*pod_info.PodInfo{}
+		if !AllocateJob(ssn, stmt, nodes, jobToAllocate, allocationMode) {
+			return false, nil
 		}
 		preemptorAllocated = true
 	}
 
-	if preemptorAllocated {
-		return true, newVictims
+	if !preemptorAllocated {
+		return false, nil
 	}
+	return true, newVictims
+}
 
-	return false, []*pod_info.PodInfo{}
+func taskAllocationModeForPipelining(
+	jobToAllocate, preemptor *podgroup_info.PodGroupInfo, preemptorAllocationMode podgroup_info.TaskAllocationMode,
+) podgroup_info.TaskAllocationMode {
+	if jobToAllocate.UID == preemptor.UID {
+		return preemptorAllocationMode
+	}
+	return podgroup_info.VictimReallocation
 }

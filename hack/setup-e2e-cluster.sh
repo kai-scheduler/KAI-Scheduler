@@ -31,6 +31,7 @@ trap cleanup EXIT
 
 # Parse named parameters
 TEST_THIRD_PARTY_INTEGRATIONS=${TEST_THIRD_PARTY_INTEGRATIONS:-"false"}
+TEST_HAMI=${TEST_HAMI:-"false"}
 LOCAL_IMAGES_BUILD=${LOCAL_IMAGES_BUILD:-"false"}
 INSTALL_VPA=${INSTALL_VPA:-"false"}
 SKIP_KAI_INSTALL=${SKIP_KAI_INSTALL:-"false"}
@@ -39,6 +40,10 @@ while [[ $# -gt 0 ]]; do
   case $1 in
     --test-third-party-integrations)
       TEST_THIRD_PARTY_INTEGRATIONS="true"
+      shift
+      ;;
+    --test-hami)
+      TEST_HAMI="true"
       shift
       ;;
     --local-images-build)
@@ -62,8 +67,9 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     -h|--help)
-      echo "Usage: $0 [--test-third-party-integrations] [--local-images-build] [--install-vpa] [--skip-kai-install] [--feature-config <config>] [--kind-config <path>]"
+      echo "Usage: $0 [--test-third-party-integrations] [--test-hami] [--local-images-build] [--install-vpa] [--skip-kai-install] [--feature-config <config>] [--kind-config <path>]"
       echo "  --test-third-party-integrations: Install third party operators for compatibility testing"
+      echo "  --test-hami: Enable HAMi/hamicore integration (binder hamicore plugin + kai-resource-isolator)"
       echo "  --local-images-build: Build and use local images instead of pulling from registry"
       echo "  --install-vpa: Install Vertical Pod Autoscaler and metrics-server"
       echo "  --skip-kai-install: Prepare the cluster (and images/chart with --local-images-build) without installing KAI (e.g. for gitops e2e tests)"
@@ -78,6 +84,14 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+# Extra helm --set flags for HAMi/hamicore when --test-hami is set.
+HAMI_HELM_SETS=()
+if [ "$TEST_HAMI" = "true" ]; then
+  HAMI_HELM_SETS+=(
+    --set "binder.plugins.hamicore.enabled=true"
+  )
+fi
 
 if [[ -n "$KIND_CONFIG" && "$FEATURE_CONFIG" != "default" ]]; then
   echo "--feature-config cannot be used together with --kind-config"
@@ -118,9 +132,17 @@ echo "Deploying Prometheus Operator..."
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update
 helm repo update prometheus-community
 helm install prometheus prometheus-community/kube-prometheus-stack --namespace monitoring --create-namespace \
+    --version 90.0.0 \
     --set "alertmanager.enabled=false" \
     --set "grafana.enabled=false" \
     --set "prometheus.enabled=false" \
+    --set "kubeApiServer.enabled=false" \
+    --set "kubelet.enabled=false" \
+    --set "kubeControllerManager.enabled=false" \
+    --set "coreDns.enabled=false" \
+    --set "kubeEtcd.enabled=false" \
+    --set "kubeScheduler.enabled=false" \
+    --set "kubeProxy.enabled=false" \
     --wait
 
 # Install VPA and its prerequisites
@@ -198,13 +220,15 @@ if [ "$LOCAL_IMAGES_BUILD" = "true" ]; then
     fi
 
     # Package helm chart
+    helm dependency build ./deployments/kai-scheduler
     helm package ./deployments/kai-scheduler -d ./charts --app-version $PACKAGE_VERSION --version $PACKAGE_VERSION
     if [ "$SKIP_KAI_INSTALL" = "true" ]; then
         echo "Skipping KAI install; packaged chart kept at ./charts/kai-scheduler-$PACKAGE_VERSION.tgz"
     else
         helm upgrade -i kai-scheduler ./charts/kai-scheduler-$PACKAGE_VERSION.tgz -n kai-scheduler --create-namespace \
         --values ${REPO_ROOT}/hack/kai-scheduler-fake-npe-values.yaml \
-        --set "global.gpuSharing=true" --set "global.registry=localhost:30100" --set "prometheus.enabled=true" --debug --wait
+        --set "global.gpuSharing=true" --set "global.registry=localhost:30100" --set "prometheus.enabled=true" \
+        "${HAMI_HELM_SETS[@]}" --debug --wait
         rm -rf ./charts/kai-scheduler-$PACKAGE_VERSION.tgz
     fi
     cd ${REPO_ROOT}/hack
@@ -213,13 +237,21 @@ elif [ "$SKIP_KAI_INSTALL" = "true" ]; then
 else
     helm upgrade -i kai-scheduler oci://ghcr.io/kai-scheduler/kai-scheduler/kai-scheduler -n kai-scheduler --create-namespace \
         --values ${REPO_ROOT}/hack/kai-scheduler-fake-npe-values.yaml \
-        --set "global.gpuSharing=true" --set "prometheus.enabled=true" --wait --version "$PACKAGE_VERSION"
+        --set "global.gpuSharing=true" --set "prometheus.enabled=true" \
+        "${HAMI_HELM_SETS[@]}" --wait --version "$PACKAGE_VERSION"
 fi
 
 if [ "$SKIP_KAI_INSTALL" != "true" ]; then
     # Create RBAC for fake-gpu-operator status updates
     kubectl create clusterrole pods-patcher --verb=patch --resource=pods
     kubectl create rolebinding fake-status-updater --clusterrole=pods-patcher --serviceaccount=gpu-operator:status-updater -n kai-resource-reservation
+fi
+
+# HAMi resource isolation (kai-resource-isolator). Deeper than third-party CRD
+# operators: paired with binder hamicore helm values above. Soft-gated in
+# hamicore e2e when the webhook / monitor are absent.
+if [ "$TEST_HAMI" = "true" ]; then
+    ${REPO_ROOT}/hack/hami/deploy_isolator.sh
 fi
 
 echo "Cluster setup complete. Cluster name: $CLUSTER_NAME"

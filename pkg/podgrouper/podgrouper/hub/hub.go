@@ -15,6 +15,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/grove"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/job"
 	jobsetplugin "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/jobset"
+	kartaplugin "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/karta"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/knative"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/kubeflow"
 	jaxplugin "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/kubeflow/jax"
@@ -41,6 +42,7 @@ const (
 	kindDistributedWorkload          = "DistributedWorkload"
 	kindInferenceWorkload            = "InferenceWorkload"
 	kindDistributedInferenceWorkload = "DistributedInferenceWorkload"
+	kindWorkloadRunner               = "WorkloadRunner"
 )
 
 // +kubebuilder:rbac:groups=apps,resources=replicasets;statefulsets,verbs=get;list;watch
@@ -56,12 +58,16 @@ const (
 // +kubebuilder:rbac:groups=tekton.dev,resources=pipelineruns;taskruns,verbs=get;list;watch
 // +kubebuilder:rbac:groups=tekton.dev,resources=pipelineruns/finalizers;taskruns/finalizers,verbs=patch;update;create
 // +kubebuilder:rbac:groups=run.ai,resources=trainingworkloads;interactiveworkloads;distributedworkloads;inferenceworkloads;distributedinferenceworkloads,verbs=get;list;watch
+// +kubebuilder:rbac:groups=run.ai,resources=workloadrunners,verbs=get;list;watch
+// +kubebuilder:rbac:groups=run.ai,resources=kartas,verbs=get;list;watch
+// +kubebuilder:rbac:groups=nvidia.com,resources=dynamographdeployments,verbs=get;list;watch
 // +kubebuilder:rbac:groups=trainer.kubeflow.org,resources=trainjobs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=trainer.kubeflow.org,resources=trainjobs/finalizers,verbs=patch;update;create
 
 type DefaultPluginsHub struct {
-	defaultPlugin *defaultgrouper.DefaultGrouper
-	customPlugins map[metav1.GroupVersionKind]grouper.Grouper
+	defaultGroupingHandler *defaultgrouper.DefaultGrouper
+	customPlugins          map[metav1.GroupVersionKind]grouper.Grouper
+	kartaFallbackPlugin    PluginsHub
 }
 
 type PluginsHub interface {
@@ -69,37 +75,41 @@ type PluginsHub interface {
 }
 
 func (ph *DefaultPluginsHub) GetPodGrouperPlugin(gvk metav1.GroupVersionKind) grouper.Grouper {
-	if f, found := ph.customPlugins[gvk]; found {
+	if f, found := ph.getRegularPlugin(gvk); found {
 		return f
 	}
-
-	// search using wildcard version
-	gvk.Version = "*"
-	if f, found := ph.customPlugins[gvk]; found {
-		return f
+	if ph.kartaFallbackPlugin != nil {
+		if f := ph.kartaFallbackPlugin.GetPodGrouperPlugin(gvk); f != nil {
+			return f
+		}
 	}
-	return ph.defaultPlugin
+	return ph.defaultGroupingHandler
 }
 
 func (ph *DefaultPluginsHub) GetDefaultPlugin() grouper.Grouper {
-	return ph.defaultPlugin
+	return ph.defaultGroupingHandler
 }
 
 func (ph *DefaultPluginsHub) HasMatchingPlugin(gvk metav1.GroupVersionKind) bool {
-	if _, found := ph.customPlugins[gvk]; found {
-		return true
+	_, found := ph.getRegularPlugin(gvk)
+	return found
+}
+
+func (ph *DefaultPluginsHub) getRegularPlugin(gvk metav1.GroupVersionKind) (grouper.Grouper, bool) {
+	if f, found := ph.customPlugins[gvk]; found {
+		return f, true
 	}
 
 	// search using wildcard version
 	gvk.Version = "*"
-	if _, found := ph.customPlugins[gvk]; found {
-		return true
+	if f, found := ph.customPlugins[gvk]; found {
+		return f, true
 	}
-	return false
+	return nil, false
 }
 
 func NewDefaultPluginsHub(kubeClient client.Client, searchForLegacyPodGroups,
-	gangScheduleKnative bool, queueLabelKey, nodePoolLabelKey string,
+	gangScheduleKnative, gangScheduleDeployment, genericKartaFallback bool, queueLabelKey, nodePoolLabelKey string,
 	defaultConfigPerTypeConfigMapName, defaultConfigPerTypeConfigMapNamespace string) *DefaultPluginsHub {
 	defaultGrouper := defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, kubeClient)
 	defaultGrouper.SetDefaultConfigPerTypeConfigMapParams(defaultConfigPerTypeConfigMapName, defaultConfigPerTypeConfigMapNamespace)
@@ -123,7 +133,7 @@ func NewDefaultPluginsHub(kubeClient client.Client, searchForLegacyPodGroups,
 			Group:   "apps",
 			Version: "v1",
 			Kind:    "Deployment",
-		}: deployment.NewDeploymentGrouper(defaultGrouper),
+		}: deployment.NewDeploymentGrouper(kubeClient, defaultGrouper, gangScheduleDeployment),
 		{
 			Group:   "machinelearning.seldon.io",
 			Version: "v1alpha2",
@@ -291,7 +301,18 @@ func NewDefaultPluginsHub(kubeClient client.Client, searchForLegacyPodGroups,
 		}: groveGrouper,
 	}
 
-	skipTopOwnerGrouper := skiptopowner.NewSkipTopOwnerGrouper(kubeClient, defaultGrouper, table)
+	hub := &DefaultPluginsHub{
+		defaultGroupingHandler: defaultGrouper,
+		customPlugins:          table,
+	}
+
+	// hub is captured by pointer and read only when the closure runs, so the skip
+	// grouper still sees the table entries and Karta fallback assigned below.
+	skipTopOwnerGrouper := skiptopowner.NewSkipTopOwnerGrouper(kubeClient, defaultGrouper,
+		func(gvk metav1.GroupVersionKind) grouper.Grouper {
+			return hub.GetPodGrouperPlugin(gvk)
+		})
+
 	table[metav1.GroupVersionKind{
 		Group:   apiGroupArgo,
 		Version: "v1alpha1",
@@ -330,8 +351,17 @@ func NewDefaultPluginsHub(kubeClient client.Client, searchForLegacyPodGroups,
 		Kind:    "DynamoGraphDeployment",
 	}] = skipTopOwnerGrouper
 
-	return &DefaultPluginsHub{
-		defaultPlugin: defaultGrouper,
-		customPlugins: table,
+	// WorkloadRunner is a kind-agnostic wrapper around an arbitrary workload template.
+	// Skip it so the wrapped kind's plugin decides the grouping.
+	table[metav1.GroupVersionKind{
+		Group:   apiGroupRunai,
+		Version: "*",
+		Kind:    kindWorkloadRunner,
+	}] = skipTopOwnerGrouper
+
+	if genericKartaFallback {
+		hub.kartaFallbackPlugin = kartaplugin.NewKartaHub(kubeClient, defaultGrouper)
 	}
+
+	return hub
 }

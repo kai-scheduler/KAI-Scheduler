@@ -35,16 +35,18 @@ import (
 type PodGroupSpec struct {
 	// MinMember defines the minimal number of members to run the PodGroup;
 	// if there are not enough resources to start all required members, the scheduler will not start anyone.
+	// A value of 0 means no gang requirement: all pods are scheduled elastically (e.g. scale-to-zero workloads).
 	// Mutually exclusive with MinSubGroup.
 	// +kubebuilder:validation:Nullable
-	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Minimum=0
 	MinMember *int32 `json:"minMember,omitempty" protobuf:"varint,1,opt,name=minMember"`
 
 	// MinSubGroup defines the minimal number of direct child SubGroups required for this PodGroup to be schedulable.
+	// A value of 0 means no gang requirement: all SubGroups are scheduled elastically.
 	// Only applicable when SubGroups are defined.
 	// Mutually exclusive with MinMember.
 	// +kubebuilder:validation:Optional
-	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Minimum=0
 	MinSubGroup *int32 `json:"minSubGroup,omitempty"`
 
 	// Queue defines the queue to allocate resource for PodGroup; if queue does not exist,
@@ -82,23 +84,32 @@ type PodGroupSpec struct {
 	// allocation into free capacity, nor the PodGroup's own evictability.
 	// +optional
 	PreemptionDelay *metav1.Duration `json:"preemptionDelay,omitempty" protobuf:"bytes,9,opt,name=preemptionDelay"`
+
+	// StalenessGracePeriod is the minimum duration a stale PodGroup it allowed to remain in stale
+	// status before stale workloads may be evicted to make room. Negative values disable stale gang
+	// eviction for this PodGroup. Defaults to the scheduler's global staleness grace period.
+	// +optional
+	StalenessGracePeriod *metav1.Duration `json:"stalenessGracePeriod,omitempty" protobuf:"bytes,10,opt,name=stalenessGracePeriod"`
 }
 
 // Preemptibility defines whether this PodGroup can be preempted
 //
 // Supported values are:
-// - `preemptible` - PodGroup can be preempted by higher-priority workloads
-// - `non-preemptible` - PodGroup runs to completion once scheduled
+//   - `preemptible` - PodGroup can be preempted by higher-priority workloads
+//   - `non-preemptible` - PodGroup runs to completion once scheduled
+//   - `semi-preemptible` - PodGroup's minimal required shape (minMember pods per leaf, minSubGroup children per node)
+//     is non-preemptible and in-quota; anything beyond that minimum is elastic (over-quota, reclaimed first)
 //
 // Defaults to priority-based preemptibility determination (preemptible if priority < 100)
 //
-// +kubebuilder:validation:Enum=preemptible;non-preemptible
+// +kubebuilder:validation:Enum=preemptible;non-preemptible;semi-preemptible
 // +optional
 type Preemptibility string
 
 const (
-	Preemptible    Preemptibility = "preemptible"
-	NonPreemptible Preemptibility = "non-preemptible"
+	Preemptible     Preemptibility = "preemptible"
+	NonPreemptible  Preemptibility = "non-preemptible"
+	SemiPreemptible Preemptibility = "semi-preemptible"
 )
 
 func ParsePreemptibility(value string) (Preemptibility, error) {
@@ -107,6 +118,8 @@ func ParsePreemptibility(value string) (Preemptibility, error) {
 		return Preemptible, nil
 	case string(NonPreemptible):
 		return NonPreemptible, nil
+	case string(SemiPreemptible):
+		return SemiPreemptible, nil
 	case "":
 		// Empty value is valid and represents the default priority-based preemptibility
 		return "", nil
@@ -126,6 +139,16 @@ func ParsePreemptionDelay(value string) (*metav1.Duration, error) {
 		return nil, fmt.Errorf("preemption delay must be non-negative, got %s", value)
 	}
 	return &metav1.Duration{Duration: delay}, nil
+}
+
+// ParseStalenessGracePeriod parses a staleness grace period string (e.g. "-10s" "30s", "5m").
+// Returns an error for invalid values.
+func ParseStalenessGracePeriod(value string) (*metav1.Duration, error) {
+	stale, err := time.ParseDuration(value)
+	if err != nil {
+		return nil, err
+	}
+	return &metav1.Duration{Duration: stale}, nil
 }
 
 type SubGroup struct {
@@ -172,6 +195,21 @@ type PodGroupStatus struct {
 	// Status of resources related to pods connected to this pod group.
 	// +optional
 	ResourcesStatus PodGroupResourcesStatus `json:"resourcesStatus,omitempty" protobuf:"bytes,8,opt,name=resourcesStatus"`
+
+	// SchedulingState is the scheduler's authoritative view of this pod group. Read-only for
+	// non-scheduler components.
+	// +optional
+	SchedulingState *PodGroupSchedulingState `json:"schedulingState,omitempty" protobuf:"bytes,9,opt,name=schedulingState"`
+}
+
+// PodGroupSchedulingState carries the scheduler's authoritative accounting for this pod group.
+// It is populated exclusively by the scheduler; all other controllers MUST treat it as read-only.
+type PodGroupSchedulingState struct {
+	// CorePods names the allocated pods the scheduler protects from preemption and reclaim (the
+	// "core", i.e. the job's minimal satisfying set). Written only for semi-preemptible pod groups,
+	// where the pods outside this set are elastic surplus.
+	// +optional
+	CorePods []string `json:"corePods,omitempty" protobuf:"bytes,1,rep,name=corePods"`
 }
 
 type PodGroupConditionType string

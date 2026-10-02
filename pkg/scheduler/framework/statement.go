@@ -25,6 +25,7 @@ import (
 
 	"golang.org/x/exp/slices"
 
+	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
@@ -78,7 +79,7 @@ func (s *Statement) Evict(reclaimeeTask *pod_info.PodInfo, message string,
 	}
 
 	previousStatus := reclaimeeTask.Status
-	previousGpuGroup := reclaimeeTask.GPUGroups
+	previousFractionalGpuGroups := cloneFractionalGpuGroups(reclaimeeTask.FractionalGpuGroups)
 	previousNumaPlacement := reclaimeeTask.NUMAPlacement.Clone()
 	previousIsVirtualStatus := reclaimeeTask.IsVirtualStatus
 	var previousResourceClaimInfo bindrequest_info.ResourceClaimInfo
@@ -91,7 +92,11 @@ func (s *Statement) Evict(reclaimeeTask *pod_info.PodInfo, message string,
 			reclaimeeTask.Namespace, reclaimeeTask.Name, pod_status.Releasing, s.sessionID, err)
 		return fmt.Errorf("failed to update task status for <%v/%v>", reclaimeeTask.Namespace, reclaimeeTask.Name)
 	}
+	// Mark the eviction as this session's before re-indexing, so the node leaves the victim
+	// out of its inter-pod affinity index (see node_info.excludedFromPodAffinity).
+	reclaimeeTask.IsVirtualStatus = true
 	if err := node.UpdateTask(reclaimeeTask); err != nil {
+		reclaimeeTask.IsVirtualStatus = previousIsVirtualStatus
 		log.InfraLogger.Errorf("Failed to update task <%v/%v> status to %v in Session <%v>: %v",
 			reclaimeeTask.Namespace, reclaimeeTask.Name, pod_status.Releasing, s.sessionID, err)
 		return fmt.Errorf("failed to update task <%v/%v>", reclaimeeTask.Namespace, reclaimeeTask.Name)
@@ -107,22 +112,24 @@ func (s *Statement) Evict(reclaimeeTask *pod_info.PodInfo, message string,
 
 	s.operations = append(s.operations,
 		evictOperation{
-			taskInfo:              reclaimeeTask,
-			previousStatus:        previousStatus,
-			previousNode:          node,
-			previousGpuGroups:     previousGpuGroup,
-			previousNumaPlacement: previousNumaPlacement,
-			message:               message,
-			evictionMetadata:      evictionMetadata,
+			taskInfo:                    reclaimeeTask,
+			previousStatus:              previousStatus,
+			previousNode:                node,
+			previousFractionalGpuGroups: previousFractionalGpuGroups,
+			previousNumaPlacement:       previousNumaPlacement,
+			message:                     message,
+			evictionMetadata:            evictionMetadata,
 			reverseOperation: func() error {
-				return s.unevict(reclaimeeTask, previousStatus, node, previousGpuGroup, previousNumaPlacement, previousResourceClaimInfo, previousIsVirtualStatus)
+				return s.unevict(
+					reclaimeeTask, previousStatus, node, previousFractionalGpuGroups,
+					previousNumaPlacement, previousResourceClaimInfo, previousIsVirtualStatus)
 			},
 		},
 	)
-	reclaimeeTask.IsVirtualStatus = true
-
-	log.InfraLogger.V(6).Infof("Statement evicted task: <%v/%v> from node: <%v>",
-		reclaimeeTask.Namespace, reclaimeeTask.Name, node.Name)
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("Statement evicted task: <%v/%v> from node: <%v>",
+			reclaimeeTask.Namespace, reclaimeeTask.Name, node.Name)
+	})
 
 	return nil
 }
@@ -135,14 +142,15 @@ func (s *Statement) commitEvict(reclaimee *pod_info.PodInfo, evictOp evictOperat
 	}
 
 	previousStatus := reclaimee.Status
-	previousGpuGroup := reclaimee.GPUGroups
+	previousFractionalGpuGroups := cloneFractionalGpuGroups(reclaimee.FractionalGpuGroups)
 	previousNumaPlacement := reclaimee.NUMAPlacement.Clone()
 	previousResourceClaimInfo := reclaimee.ResourceClaimInfo
 	previousIsVirtualStatus := reclaimee.IsVirtualStatus
 	if err := s.ssn.Cache.Evict(reclaimee.Pod, reclaimeePodGroup, evictOp.evictionMetadata, evictOp.message); err != nil {
 		log.InfraLogger.Errorf("Failed to evict task <%v/%v>: %v.", reclaimee.Namespace, reclaimee.Name, err)
-		if e := s.unevict(reclaimee, previousStatus, evictOp.previousNode, previousGpuGroup, previousNumaPlacement, previousResourceClaimInfo,
-			previousIsVirtualStatus); e != nil {
+		if e := s.unevict(
+			reclaimee, previousStatus, evictOp.previousNode, previousFractionalGpuGroups,
+			previousNumaPlacement, previousResourceClaimInfo, previousIsVirtualStatus); e != nil {
 			log.InfraLogger.Errorf("Failed to un-evict task <%v/%v>: %v.",
 				reclaimee.Namespace, reclaimee.Name, e)
 		}
@@ -158,7 +166,8 @@ func (s *Statement) commitEvict(reclaimee *pod_info.PodInfo, evictOp evictOperat
 
 func (s *Statement) unevict(
 	reclaimee *pod_info.PodInfo, previousStatus pod_status.PodStatus, node *node_info.NodeInfo,
-	previousGpuGroups []string, previousNumaPlacement pod_info.NUMAPlacement,
+	previousFractionalGpuGroups []schedulingv1alpha2.FractionalGpuGroup,
+	previousNumaPlacement pod_info.NUMAPlacement,
 	previousResourceClaimInfo bindrequest_info.ResourceClaimInfo, previousIsVirtualStatus bool) error {
 	// Update status in session
 	job, found := s.ssn.ClusterInfo.PodGroupInfos[reclaimee.Job]
@@ -171,7 +180,7 @@ func (s *Statement) unevict(
 		log.InfraLogger.Errorf("Failed to find Job <%s> in Session <%s> index when binding.",
 			reclaimee.Job, s.sessionID)
 	}
-	reclaimee.GPUGroups = previousGpuGroups
+	reclaimee.FractionalGpuGroups = previousFractionalGpuGroups
 	reclaimee.NUMAPlacement = previousNumaPlacement.Clone()
 	reclaimee.IsVirtualStatus = previousIsVirtualStatus
 	reclaimee.ResourceClaimInfo = previousResourceClaimInfo.Clone()
@@ -217,8 +226,10 @@ func (s *Statement) Pipeline(task *pod_info.PodInfo, hostname string, updateTask
 	gpuPlacementChanged := false
 	numaPlacementChanged := false
 	if foundOnNode {
-		gpuPlacementChanged = len(task.GPUGroups) > 0 && task.IsSharedGPUAllocation() &&
-			!slices.Equal(task.GPUGroups, []string{"-1"}) && !slices.Equal(task.GPUGroups, taskOnNode.GPUGroups)
+		taskGPUGroups := task.GPUGroupIDs()
+		taskOnNodeGPUGroups := taskOnNode.GPUGroupIDs()
+		gpuPlacementChanged = len(taskGPUGroups) > 0 && task.IsSharedGPUAllocation() &&
+			!slices.Equal(taskGPUGroups, []string{"-1"}) && !slices.Equal(taskGPUGroups, taskOnNodeGPUGroups)
 		numaPlacementChanged = len(task.NUMAPlacement) > 0 &&
 			!task.NUMAPlacement.Equal(taskOnNode.NUMAPlacement)
 	}
@@ -227,9 +238,11 @@ func (s *Statement) Pipeline(task *pod_info.PodInfo, hostname string, updateTask
 	// If task already exist on the node, and we didn't ask to update if on the node,
 	// and there is no special reason we should update on the node, then we need to unevict instead of pipelining it.
 	if foundOnNode && !updateTaskIfExistsOnNode && !gpuPlacementChanged && !numaPlacementChanged {
-		task.GPUGroups = taskOnNode.GPUGroups
+		task.FractionalGpuGroups = cloneFractionalGpuGroups(taskOnNode.FractionalGpuGroups)
 		task.NUMAPlacement = taskOnNode.NUMAPlacement.Clone()
-		log.InfraLogger.V(6).Infof("Task: <%v/%v> already exists on node: <%v>, unevicting it", task.Namespace, task.Name, hostname)
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof("Task: <%v/%v> already exists on node: <%v>, unevicting it", task.Namespace, task.Name, hostname)
+		})
 		if err := s.Unevict(task); err != nil {
 			log.InfraLogger.Errorf("Failed to unevict task <%v/%v> to node <%v> in Session <%v>: %v",
 				task.Namespace, task.Name, hostname, s.sessionID, err)
@@ -242,12 +255,12 @@ func (s *Statement) Pipeline(task *pod_info.PodInfo, hostname string, updateTask
 	if err := job.UpdateTaskStatus(task, pod_status.Pipelined); err != nil {
 		log.InfraLogger.Errorf("Failed to update task <%v/%v> status to %v in Session <%v>: %v",
 			task.Namespace, task.Name, pod_status.Pipelined, s.sessionID, err)
+		return err
 	}
 
 	previousNode := task.NodeName
 	task.NodeName = hostname
-	previousGpuGroup := task.GPUGroups
-
+	previousFractionalGpuGroups := cloneFractionalGpuGroups(task.FractionalGpuGroups)
 	previousNumaPlacement := task.NUMAPlacement.Clone()
 	if numaPlacementChanged {
 		previousNumaPlacement = taskOnNode.NUMAPlacement.Clone()
@@ -259,10 +272,12 @@ func (s *Statement) Pipeline(task *pod_info.PodInfo, hostname string, updateTask
 	}
 
 	if gpuPlacementChanged {
-		log.InfraLogger.V(6).Infof(
-			"Task: <%v/%v> already exists on node: <%v> on gpu index of: <%v>, moving it to index: <%v>",
-			task.Namespace, task.Name, hostname, taskOnNode.GPUGroups, task.GPUGroups)
-		previousGpuGroup = taskOnNode.GPUGroups
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof(
+				"Task: <%v/%v> already exists on node: <%v> on gpu index of: <%v>, moving it to index: <%v>",
+				task.Namespace, task.Name, hostname, taskOnNode.GPUGroupIDs(), task.GPUGroupIDs())
+		})
+		previousFractionalGpuGroups = cloneFractionalGpuGroups(taskOnNode.FractionalGpuGroups)
 		if err := node.ConsolidateSharedPodInfoToDifferentGPU(task); err != nil {
 			log.InfraLogger.Errorf("Failed to unevict task <%v/%v> to node <%v> in Session <%v>: %v",
 				task.Namespace, task.Name, hostname, s.sessionID, err)
@@ -279,8 +294,10 @@ func (s *Statement) Pipeline(task *pod_info.PodInfo, hostname string, updateTask
 		return err
 	}
 
-	log.InfraLogger.V(6).Infof("After pipelined Task <%v/%v> to Node <%v>: idle <%v>, used <%v>, releasing <%v>",
-		task.Namespace, task.Name, node.Name, node.IdleVector, node.UsedVector, node.ReleasingVector)
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("After pipelined Task <%v/%v> to Node <%v>: idle <%v>, used <%v>, releasing <%v>",
+			task.Namespace, task.Name, node.Name, node.IdleVector, node.UsedVector, node.ReleasingVector)
+	})
 
 	for _, eh := range s.ssn.eventHandlers {
 		if eh.AllocateFunc != nil {
@@ -291,23 +308,27 @@ func (s *Statement) Pipeline(task *pod_info.PodInfo, hostname string, updateTask
 	}
 
 	s.operations = append(s.operations, pipelineOperation{
-		taskInfo:                  task,
-		previousStatus:            previousStatus,
-		previousNode:              previousNode,
-		previousGpuGroups:         previousGpuGroup,
-		previousNumaPlacement:     previousNumaPlacement,
-		previousResourceClaimInfo: previousResourceClaimInfo,
-		nextNode:                  hostname,
-		message:                   fmt.Sprintf("Pod %s/%s was pipelined to node %s", task.Namespace, task.Name, node.Name),
+		taskInfo:                    task,
+		previousStatus:              previousStatus,
+		previousNode:                previousNode,
+		previousFractionalGpuGroups: previousFractionalGpuGroups,
+		previousNumaPlacement:       previousNumaPlacement,
+		previousResourceClaimInfo:   previousResourceClaimInfo,
+		nextNode:                    hostname,
+		message:                     fmt.Sprintf("Pod %s/%s was pipelined to node %s", task.Namespace, task.Name, node.Name),
 		reverseOperation: func() error {
-			return s.unpipeline(task, previousNode, previousStatus, previousGpuGroup, previousNumaPlacement, previousResourceClaimInfo, previousIsVirtualStatus)
+			return s.unpipeline(
+				task, previousNode, previousStatus, previousFractionalGpuGroups,
+				previousNumaPlacement, previousResourceClaimInfo, previousIsVirtualStatus)
 		},
 	})
 	task.IsVirtualStatus = true
 
-	log.InfraLogger.V(6).Infof(
-		"Statement pipelined task: <%v/%v> to node: <%v>, gpuGroup: <%v>",
-		task.Namespace, task.Name, hostname, task.GPUGroups)
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof(
+			"Statement pipelined task: <%v/%v> to node: <%v>, gpuGroup: <%v>",
+			task.Namespace, task.Name, hostname, task.GPUGroupIDs())
+	})
 
 	return nil
 }
@@ -337,9 +358,11 @@ func (s *Statement) Allocate(task *pod_info.PodInfo, hostname string) error {
 				task.Namespace, task.Name, hostname, s.sessionID, err)
 			return err
 		}
-		log.InfraLogger.V(5).Infof(
-			"After allocated Task <%v/%v> to Node <%v>: idle <%v>, used <%v>, releasing <%v>",
-			task.Namespace, task.Name, node.Name, node.IdleVector, node.UsedVector, node.ReleasingVector)
+		log.InfraLogger.V(5).Do(func() {
+			log.InfraLogger.Infof(
+				"After allocated Task <%v/%v> to Node <%v>: idle <%v>, used <%v>, releasing <%v>",
+				task.Namespace, task.Name, node.Name, node.IdleVector, node.UsedVector, node.ReleasingVector)
+		})
 	} else {
 		log.InfraLogger.Errorf("Failed to find Node <%s> in Session <%s> index when binding.",
 			hostname, s.sessionID)
@@ -372,9 +395,11 @@ func (s *Statement) Allocate(task *pod_info.PodInfo, hostname string) error {
 	)
 	task.IsVirtualStatus = true
 
-	log.InfraLogger.V(6).Infof(
-		"Statement allocated task: <%v/%v> to node: <%v>",
-		task.Namespace, task.Name, hostname)
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof(
+			"Statement allocated task: <%v/%v> to node: <%v>",
+			task.Namespace, task.Name, hostname)
+	})
 
 	return nil
 }
@@ -395,7 +420,7 @@ func (s *Statement) commitAllocate(task *pod_info.PodInfo) error {
 	}()
 
 	if task.IsFractionAllocation() {
-		for _, gpuGroup := range task.GPUGroups {
+		for _, gpuGroup := range task.GPUGroupIDs() {
 			if _, found := node.UsedSharedGPUsMemory[gpuGroup]; !found {
 				node.UsedSharedGPUsMemory[gpuGroup] = 0
 			}
@@ -426,7 +451,9 @@ func (s *Statement) unallocate(task *pod_info.PodInfo, previousNodeName string,
 	}
 
 	if node, found := s.ssn.ClusterInfo.Nodes[task.NodeName]; found {
-		log.InfraLogger.V(6).Infof("Remove Task <%v> from node <%v>", task.Name, task.NodeName)
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof("Remove Task <%v> from node <%v>", task.Name, task.NodeName)
+		})
 		err := node.RemoveTask(task)
 		if err != nil {
 			log.InfraLogger.Errorf("Failed to remove Task <%v> on node <%v>: %s", task.Name, task.NodeName, err.Error())
@@ -456,7 +483,8 @@ func (s *Statement) commitPipeline(task *pod_info.PodInfo, message string) {
 }
 
 func (s *Statement) unpipeline(
-	task *pod_info.PodInfo, previousNode string, previousStatus pod_status.PodStatus, previousGpuGroups []string,
+	task *pod_info.PodInfo, previousNode string, previousStatus pod_status.PodStatus,
+	previousFractionalGpuGroups []schedulingv1alpha2.FractionalGpuGroup,
 	previousNumaPlacement pod_info.NUMAPlacement,
 	previousResourceClaimInfo bindrequest_info.ResourceClaimInfo,
 	previousIsVirtualStatus bool) error {
@@ -474,7 +502,7 @@ func (s *Statement) unpipeline(
 	}
 
 	hostname := task.NodeName
-	task.GPUGroups = previousGpuGroups
+	task.FractionalGpuGroups = previousFractionalGpuGroups
 	task.ResourceClaimInfo = previousResourceClaimInfo.Clone()
 	task.IsVirtualStatus = previousIsVirtualStatus
 
@@ -504,7 +532,9 @@ func (s *Statement) unpipeline(
 }
 
 func (s *Statement) Unevict(taskToUnevict *pod_info.PodInfo) error {
-	log.InfraLogger.V(6).Infof("Unevicting task: %v", taskToUnevict.Name)
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("Unevicting task: %v", taskToUnevict.Name)
+	})
 	return s.undoEarliestValidOperation(taskToUnevict, evict)
 }
 
@@ -555,7 +585,9 @@ func (s *Statement) Discard() {
 		return
 	}
 
-	log.InfraLogger.V(6).Infof("Discarding operations ...")
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("Discarding operations ...")
+	})
 	for i := len(s.operations) - 1; i >= 0; i-- {
 		_ = s.undoOperation(i)
 	}
@@ -691,4 +723,15 @@ func (s *Statement) operationValid(i int) bool {
 		}
 	}
 	return true
+}
+
+func cloneFractionalGpuGroups(
+	fractionalGpuGroups []schedulingv1alpha2.FractionalGpuGroup,
+) []schedulingv1alpha2.FractionalGpuGroup {
+	if len(fractionalGpuGroups) == 0 {
+		return nil
+	}
+	clone := make([]schedulingv1alpha2.FractionalGpuGroup, len(fractionalGpuGroups))
+	copy(clone, fractionalGpuGroups)
+	return clone
 }
