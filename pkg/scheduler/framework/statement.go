@@ -92,8 +92,6 @@ func (s *Statement) Evict(reclaimeeTask *pod_info.PodInfo, message string,
 			reclaimeeTask.Namespace, reclaimeeTask.Name, pod_status.Releasing, s.sessionID, err)
 		return fmt.Errorf("failed to update task status for <%v/%v>", reclaimeeTask.Namespace, reclaimeeTask.Name)
 	}
-	// Mark the eviction as this session's before re-indexing, so the node leaves the victim
-	// out of its inter-pod affinity index (see node_info.excludedFromPodAffinity).
 	reclaimeeTask.IsVirtualStatus = true
 	if err := node.UpdateTask(reclaimeeTask); err != nil {
 		reclaimeeTask.IsVirtualStatus = previousIsVirtualStatus
@@ -331,6 +329,22 @@ func (s *Statement) Pipeline(task *pod_info.PodInfo, hostname string, updateTask
 	})
 
 	return nil
+}
+
+// AllocateOrPipeline defers allocation until all readiness checks pass.
+func (s *Statement) AllocateOrPipeline(task *pod_info.PodInfo, hostname string) error {
+	node, found := s.ssn.ClusterInfo.Nodes[hostname]
+	if !found {
+		return fmt.Errorf("failed to find node %s", hostname)
+	}
+	ready, err := s.ssn.IsTaskReadyForBinding(task, node)
+	if err != nil {
+		return err
+	}
+	if !ready {
+		return s.Pipeline(task, hostname, true)
+	}
+	return s.Allocate(task, hostname)
 }
 
 func (s *Statement) Allocate(task *pod_info.PodInfo, hostname string) error {

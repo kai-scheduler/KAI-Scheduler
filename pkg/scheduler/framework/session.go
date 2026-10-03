@@ -96,6 +96,7 @@ type Session struct {
 	PrePredicateFns                       []api.PrePredicateFn
 	VictimInvariantPrePredicateFns        []api.VictimInvariantPrePredicateFn
 	PredicateFns                          []api.PredicateFn
+	BindReadyFns                          []api.BindReadyFn
 	BindRequestMutateFns                  []api.BindRequestMutateFn
 	NumaPlacementFn                       api.NumaPlacementFn
 	PreJobAllocationFns                   []api.PreJobAllocationFn
@@ -468,6 +469,7 @@ func (ssn *Session) clear() {
 	ssn.PrePredicateFns = nil
 	ssn.VictimInvariantPrePredicateFns = nil
 	ssn.PredicateFns = nil
+	ssn.BindReadyFns = nil
 	ssn.BindRequestMutateFns = nil
 	ssn.NumaPlacementFn = nil
 	ssn.PreJobAllocationFns = nil

@@ -19,10 +19,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 )
 
-// Only a task evicted by this session (Releasing + virtual status) leaves the inter-pod
-// affinity index. A pod that is terminating independently in the cluster stays indexed,
-// and the bookkeeping stays symmetric across evict / unevict / stuck-in-releasing.
-func TestNodeInfoSessionEvictedPodAffinity(t *testing.T) {
+func TestNodeInfoReleasingPodAffinity(t *testing.T) {
 	type step struct {
 		status  pod_status.PodStatus
 		virtual bool
@@ -36,10 +33,12 @@ func TestNodeInfoSessionEvictedPodAffinity(t *testing.T) {
 		expectRemovePod int
 	}{
 		{name: "running task is indexed and un-indexed", add: step{pod_status.Running, false}, remove: true, expectAddPod: 1, expectRemovePod: 1},
-		{name: "independently terminating task (Releasing, not virtual) stays indexed", add: step{pod_status.Releasing, false}, remove: true, expectAddPod: 1, expectRemovePod: 1},
+		{name: "releasing task from an earlier cycle is not indexed", add: step{pod_status.Releasing, false}, remove: true, expectAddPod: 0, expectRemovePod: 0},
 		{name: "session-evicted task (Releasing, virtual) is never indexed", add: step{pod_status.Releasing, true}, remove: true, expectAddPod: 0, expectRemovePod: 0},
 		{name: "evict: running -> releasing+virtual un-indexes without re-indexing", add: step{pod_status.Running, false}, update: &step{pod_status.Releasing, true}, expectAddPod: 1, expectRemovePod: 1},
 		{name: "unevict: releasing+virtual -> running re-indexes without un-indexing", add: step{pod_status.Releasing, true}, update: &step{pod_status.Running, false}, expectAddPod: 1, expectRemovePod: 0},
+		{name: "running -> releasing in a later cycle leaves the index", add: step{pod_status.Running, false}, update: &step{pod_status.Releasing, false}, expectAddPod: 1, expectRemovePod: 1},
+		{name: "releasing -> stuck-in-releasing restores the index", add: step{pod_status.Releasing, false}, update: &step{pod_status.StuckInReleasing, false}, remove: true, expectAddPod: 1, expectRemovePod: 1},
 		{name: "running -> stuck-in-releasing stays indexed", add: step{pod_status.Running, false}, update: &step{pod_status.StuckInReleasing, true}, expectAddPod: 2, expectRemovePod: 1},
 		{name: "evicted victim pipelined elsewhere is indexed again", add: step{pod_status.Releasing, true}, update: &step{pod_status.Pipelined, true}, expectAddPod: 1, expectRemovePod: 0},
 	}
@@ -65,8 +64,6 @@ func TestNodeInfoSessionEvictedPodAffinity(t *testing.T) {
 			task.Status, task.IsVirtualStatus = tt.add.status, tt.add.virtual
 			assert.NoError(t, ni.AddTask(task))
 			if tt.update != nil {
-				// Mirrors Statement.Evict / unevict: the task changes first, then the node re-indexes
-				// it; the node keeps its own clone, so removal is decided by the indexed state.
 				task.Status, task.IsVirtualStatus = tt.update.status, tt.update.virtual
 				assert.NoError(t, ni.UpdateTask(task))
 			}

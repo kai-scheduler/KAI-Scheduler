@@ -51,6 +51,16 @@ const (
 	migEnabledLabelKey = "node-role.kubernetes.io/mig-enabled"
 )
 
+func countAffinityIndexedTasks(tasks []*pod_info.PodInfo) int {
+	count := 0
+	for _, task := range tasks {
+		if task.Status != pod_status.Releasing {
+			count++
+		}
+	}
+	return count
+}
+
 func nodeInfoEqual(t *testing.T, result, expected *NodeInfo) bool {
 	expected.PodAffinityInfo = nil
 	result.PodAffinityInfo = nil
@@ -627,7 +637,6 @@ func TestAddRemovePods(t *testing.T) {
 
 			controller := NewController(t)
 			nodePodAffinityInfoAdded := pod_affinity.NewMockNodePodAffinityInfo(controller)
-			nodePodAffinityInfoAdded.EXPECT().AddPod(Any()).Times(len(test.podsInfoMetadata))
 
 			vectorMap := testVectorMapFromNode(test.node)
 			for _, podInfoMetaData := range test.podsInfoMetadata {
@@ -662,6 +671,9 @@ func TestAddRemovePods(t *testing.T) {
 				podsInfo = append(podsInfo, pi)
 			}
 
+			indexedPods := countAffinityIndexedTasks(podsInfo)
+			nodePodAffinityInfoAdded.EXPECT().AddPod(Any()).Times(indexedPods)
+
 			for _, podInfo := range podsInfo {
 				_ = ni.AddTask(podInfo)
 				podInfoKey := common_info.PodID(fmt.Sprintf("%s/%s", podInfo.Namespace, podInfo.Name))
@@ -672,7 +684,7 @@ func TestAddRemovePods(t *testing.T) {
 			}
 
 			nodePodAffinityInfoRemoved := pod_affinity.NewMockNodePodAffinityInfo(controller)
-			nodePodAffinityInfoRemoved.EXPECT().RemovePod(Any()).Times(len(test.podsInfoMetadata))
+			nodePodAffinityInfoRemoved.EXPECT().RemovePod(Any()).Times(indexedPods)
 			ni.PodAffinityInfo = nodePodAffinityInfoRemoved
 
 			// This is an important line - the remove code might not work if it won't remove in reverse order
@@ -1248,7 +1260,7 @@ func TestNodeInfo_GetSumOfIdleGPUs(t *testing.T) {
 
 			controller := NewController(t)
 			nodePodAffinity := pod_affinity.NewMockNodePodAffinityInfo(controller)
-			nodePodAffinity.EXPECT().AddPod(Any()).Times(len(tt.tasks))
+			nodePodAffinity.EXPECT().AddPod(Any()).Times(countAffinityIndexedTasks(tt.tasks))
 
 			ni := NewNodeInfo(node, nodePodAffinity, testVectorMapFromNode(node))
 			for _, task := range tt.tasks {
@@ -1345,7 +1357,7 @@ func TestNodeInfo_GetSumOfReleasingGPUs(t *testing.T) {
 
 			controller := NewController(t)
 			nodePodAffinity := pod_affinity.NewMockNodePodAffinityInfo(controller)
-			nodePodAffinity.EXPECT().AddPod(Any()).Times(len(tt.tasks))
+			nodePodAffinity.EXPECT().AddPod(Any()).Times(countAffinityIndexedTasks(tt.tasks))
 
 			ni := NewNodeInfo(node, nodePodAffinity, testVectorMapFromNode(node))
 			for _, task := range tt.tasks {
@@ -1749,15 +1761,18 @@ func TestResourceReservationPodConsumesMaxPods(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			controller := NewController(t)
 			nodePodAffinityInfo := pod_affinity.NewMockNodePodAffinityInfo(controller)
-			nodePodAffinityInfo.EXPECT().AddPod(Any()).Times(len(tt.pods))
 
 			vectorMap := resource_info.NewResourceVectorMap()
 			vectorMap.AddResourceList(tt.node.Status.Allocatable)
 			ni := NewNodeInfo(tt.node, nodePodAffinityInfo, vectorMap)
 
+			tasks := make([]*pod_info.PodInfo, 0, len(tt.pods))
 			for _, pod := range tt.pods {
-				pi := pod_info.NewTaskInfo(pod, vectorMap)
-				err := ni.AddTask(pi)
+				tasks = append(tasks, pod_info.NewTaskInfo(pod, vectorMap))
+			}
+			nodePodAffinityInfo.EXPECT().AddPod(Any()).Times(countAffinityIndexedTasks(tasks))
+			for _, task := range tasks {
+				err := ni.AddTask(task)
 				assert.NoError(t, err, "failed to add pod")
 			}
 

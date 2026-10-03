@@ -49,8 +49,6 @@ func podInAffinityIndex(node *node_info.NodeInfo, task *pod_info.PodInfo) bool {
 	return false
 }
 
-// Evict marks the victim as this session's before the node re-indexes it, so the victim
-// leaves the inter-pod affinity index; Discard reverses both.
 func TestStatementEvictMarksVictimBeforeReindex(t *testing.T) {
 	stmt, task, node := buildEvictMarkerSession()
 	require.True(t, podInAffinityIndex(node, task))
@@ -66,12 +64,10 @@ func TestStatementEvictMarksVictimBeforeReindex(t *testing.T) {
 	assert.True(t, podInAffinityIndex(node, task), "unevict must re-index the pod")
 }
 
-// If node.UpdateTask fails after the marker was set, Evict must restore the marker to its
-// previous value and record no operation.
 func TestStatementEvictRestoresMarkerWhenNodeUpdateFails(t *testing.T) {
 	for _, previous := range []bool{false, true} {
 		stmt, task, node := buildEvictMarkerSession()
-		// Detach the task from the node: UpdateTask -> RemoveTask then fails with "not found".
+		// Force node.UpdateTask to fail.
 		require.NoError(t, node.RemoveTask(task))
 		task.IsVirtualStatus = previous
 
