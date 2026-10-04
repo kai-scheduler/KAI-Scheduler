@@ -19,7 +19,6 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
 	"github.com/kai-scheduler/api/constants"
 	kaiv1 "github.com/kai-scheduler/api/kai/v1"
-	"github.com/kai-scheduler/api/kai/v1/common"
 	kaiv1common "github.com/kai-scheduler/api/kai/v1/common"
 	kaiprometheus "github.com/kai-scheduler/api/kai/v1/prometheus"
 	kaiv1qc "github.com/kai-scheduler/api/kai/v1/queue_controller"

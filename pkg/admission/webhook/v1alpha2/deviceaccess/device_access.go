@@ -12,8 +12,6 @@ import (
 
 	"github.com/kai-scheduler/api/constants"
 	"github.com/kai-scheduler/api/utilities/resources"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/common"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/common/gpusharingconfigmap"
 )
 
 var visibleDevicesWhitelist = []string{"void", "none"}

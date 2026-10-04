@@ -16,8 +16,6 @@ import (
 	"github.com/kai-scheduler/api/constants"
 	"github.com/kai-scheduler/api/utilities/resources"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/common"
-	gpurequesthandler "github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/gpusharing/gpu-request"
 )
 
 const (
