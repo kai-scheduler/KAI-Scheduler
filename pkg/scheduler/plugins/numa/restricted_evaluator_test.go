@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
 
+	commonresources "github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -58,11 +59,24 @@ func assertPlacement(t *testing.T, placement pod_info.NUMAPlacement, want map[in
 
 	for z, amounts := range want {
 		got := amountAt(placement, z)
-		assert.Lenf(t, got, len(amounts), "resource count on zone %d", z)
+		zoneResourceCount := 0
 		for name, wantQty := range amounts {
+			if commonresources.IsMemoryResource(name) {
+				var groupAmount v1.ResourceList
+				for _, group := range placement.MemoryGroups {
+					if group.Mask == pod_info.NUMAMask(1)<<z {
+						groupAmount = group.Amount
+					}
+				}
+				gotQty := groupAmount[name]
+				assert.Equalf(t, 0, gotQty.Cmp(wantQty), "memory group on zone %d resource %s", z, name)
+				continue
+			}
+			zoneResourceCount++
 			gotQty := got[name]
 			assert.Equalf(t, 0, gotQty.Cmp(wantQty), "zone %d resource %s", z, name)
 		}
+		assert.Lenf(t, got, zoneResourceCount, "resource count on zone %d", z)
 	}
 }
 
@@ -142,7 +156,7 @@ func TestRestrictedScopeAndInit(t *testing.T) {
 			inits: []initReq{{req: req(gpu, "8")}},
 			apps:  []v1.ResourceList{req(gpu, "2")},
 			admit: true,
-			want:  map[int]v1.ResourceList{0: req(gpu, "4"), 1: req(gpu, "4")}, // max(init 8, app 2) = 8 → width 2
+			want:  map[int]v1.ResourceList{0: req(gpu, "2")},
 		},
 	}
 
@@ -150,11 +164,12 @@ func TestRestrictedScopeAndInit(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			topo := numaTopology(node_info.TopologyPolicyRestricted, tc.scope, base...)
 			pp, _, node := wiredPlugin(topo)
+			topo.MemoryGroups = &node_info.MemoryGroupState{Status: node_info.MemoryGroupsKnown}
 
-			alloc, admit := pp.evaluate(restrictedPod(tc.name, tc.apps, tc.inits...), node)
-			assert.Equal(t, tc.admit, admit)
+			placement, err := pp.evaluate(restrictedPod(tc.name, tc.apps, tc.inits...), node)
+			assert.Equal(t, tc.admit, err == nil)
 			if tc.admit {
-				assertPlacement(t, placementFromAllocation(alloc, node.NumaTopology), tc.want)
+				assertPlacement(t, placement, tc.want)
 			}
 		})
 	}
@@ -217,11 +232,12 @@ func TestRestrictedMaskSelection(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			topo := numaTopology(node_info.TopologyPolicyRestricted, node_info.TopologyScopeContainer, tc.zones...)
 			pp, _, node := wiredPlugin(topo)
+			topo.MemoryGroups = &node_info.MemoryGroupState{Status: node_info.MemoryGroupsKnown}
 
-			alloc, admit := pp.evaluate(restrictedPod(tc.name, []v1.ResourceList{tc.req}), node)
-			assert.Equal(t, tc.admit, admit)
+			placement, err := pp.evaluate(restrictedPod(tc.name, []v1.ResourceList{tc.req}), node)
+			assert.Equal(t, tc.admit, err == nil)
 			if tc.admit {
-				assertPlacement(t, placementFromAllocation(alloc, node.NumaTopology), tc.want)
+				assertPlacement(t, placement, tc.want)
 			}
 		})
 	}

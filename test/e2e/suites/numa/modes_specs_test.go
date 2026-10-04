@@ -5,12 +5,17 @@ package numa
 
 import (
 	"context"
+	"encoding/json"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/configurations/feature_flags"
 	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
 	numautil "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/numa"
@@ -18,9 +23,8 @@ import (
 	v2 "github.com/kai-scheduler/api/scheduling/v2"
 )
 
-// DescribeNUMAModesSpecs covers the per-node Topology Manager modes: single-numa-node and restricted
-// filter Guaranteed pods the kubelet would reject, while best-effort/none/no-NRT pass through. The suite
-// mutates the shard plugin config, so it runs Serial.
+// DescribeNUMAModesSpecs covers Topology Manager policies and Memory Manager group admission.
+// The suite mutates the shard plugin config, so it runs Serial.
 func DescribeNUMAModesSpecs() bool {
 	return Describe("NUMA modes", Ordered, Serial, Label("numa", "nightly"), func() {
 		var testCtx *testcontext.TestContext
@@ -112,6 +116,61 @@ func DescribeNUMAModesSpecs() bool {
 
 			pod := createPod(ctx, testCtx, node.Pin(numautil.GuaranteedGPUPod(childQueue(testCtx), gpus)))
 			wait.ForPodScheduled(ctx, testCtx.ControllerClient, pod)
+		})
+
+		It("best-effort - an active single-zone memory group blocks a two-zone request despite sufficient total capacity", func(ctx context.Context) {
+			node := firstMatch(ctx, testCtx, numautil.Requirement{Policy: numautil.PolicyBestEffort, MinZones: 2})
+			if len(node.Zones) != 2 {
+				Skip("need a best-effort node with exactly two NUMA zones")
+			}
+			zoneMemory := node.MaxZoneMemory()
+			holderMemory := *resource.NewQuantity(zoneMemory.Value()/2, resource.BinarySI)
+			probeMemory := zoneMemory.DeepCopy()
+			probeMemory.Add(*resource.NewQuantity(zoneMemory.Value()/4, resource.BinarySI))
+			combinedMemory := probeMemory.DeepCopy()
+			combinedMemory.Add(holderMemory)
+			totalCPU := node.TotalCPU()
+			if holderMemory.IsZero() || probeMemory.Cmp(zoneMemory) <= 0 ||
+				combinedMemory.Cmp(node.TotalMemory()) > 0 || totalCPU.Cmp(resource.MustParse("200m")) < 0 {
+				Skip("need capacity for a half-zone holder and a 1.25-zone probe within the node's total resources")
+			}
+
+			holder := createPod(ctx, testCtx, node.Pin(numautil.GuaranteedPod(childQueue(testCtx), v1.ResourceList{
+				v1.ResourceCPU:    resource.MustParse("100m"),
+				v1.ResourceMemory: holderMemory,
+			})))
+			expectGuaranteed(ctx, testCtx, holder)
+			wait.ForPodReady(ctx, testCtx.ControllerClient, holder)
+			Eventually(func(g Gomega) {
+				fresh, err := testCtx.KubeClientset.CoreV1().Pods(holder.Namespace).Get(ctx, holder.Name, metav1.GetOptions{})
+				g.Expect(err).To(Succeed())
+				var groups []schedulingv1alpha2.NUMAMemoryGroupPlacement
+				g.Expect(json.Unmarshal([]byte(fresh.Annotations[constants.NumaMemoryGroupsObserved]), &groups)).To(Succeed())
+				g.Expect(groups).To(HaveLen(1))
+				g.Expect(groups[0].MemoryNodes).To(HaveLen(1))
+				amount, exists := groups[0].Amount[v1.ResourceMemory]
+				g.Expect(exists).To(BeTrue())
+				g.Expect(amount.Cmp(holderMemory)).To(BeZero())
+			}, placementTimeout, 2*time.Second).Should(Succeed())
+
+			probe := createPod(ctx, testCtx, node.Pin(numautil.GuaranteedPod(childQueue(testCtx), v1.ResourceList{
+				v1.ResourceCPU:    resource.MustParse("100m"),
+				v1.ResourceMemory: probeMemory,
+			})))
+			expectGuaranteed(ctx, testCtx, probe)
+			expectMemoryConflict := func(g Gomega) {
+				fresh, err := testCtx.KubeClientset.CoreV1().Pods(probe.Namespace).Get(ctx, probe.Name, metav1.GetOptions{})
+				g.Expect(err).To(Succeed())
+				g.Expect(fresh.Spec.NodeName).To(BeEmpty(), "the scheduler must reject the pod before kubelet admission")
+				g.Expect(fresh.Status.Phase).To(Equal(v1.PodPending))
+				g.Expect(fresh.Status.Conditions).To(ContainElement(SatisfyAll(
+					HaveField("Type", Equal(v1.PodScheduled)),
+					HaveField("Status", Equal(v1.ConditionFalse)),
+					HaveField("Reason", Equal(v1.PodReasonUnschedulable)),
+					HaveField("Message", ContainSubstring("NUMA memory placement conflict")),
+				)))
+			}
+			Eventually(expectMemoryConflict, placementTimeout, time.Second).Should(Succeed())
 		})
 
 		It("node without NRT passes through", func(ctx context.Context) {
