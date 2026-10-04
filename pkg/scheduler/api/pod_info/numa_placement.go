@@ -4,6 +4,10 @@
 package pod_info
 
 import (
+	"fmt"
+	"math/bits"
+	"sort"
+
 	v1 "k8s.io/api/core/v1"
 )
 
@@ -17,35 +21,98 @@ type ZonePlacement struct {
 	Amount    v1.ResourceList
 }
 
-// NUMAPlacement is a task's NUMA placement — its zone(s) and per-zone amounts. Could be empty if the placement is unknown.
-type NUMAPlacement []ZonePlacement
+// MaxNUMAZones bounds exponential hint enumeration to kubelet's default topology limit.
+const MaxNUMAZones = 8
 
-func (p NUMAPlacement) Clone() NUMAPlacement {
-	if p == nil {
-		return nil
+type NUMAMask uint64
+
+func NewNUMAMask(indices []int) (NUMAMask, error) {
+	var mask NUMAMask
+	for _, index := range indices {
+		if index < 0 || index >= 64 {
+			return 0, fmt.Errorf("NUMA index %d outside supported range [0, 64)", index)
+		}
+		mask |= 1 << index
 	}
-	out := make(NUMAPlacement, len(p))
-	for i, charge := range p {
-		out[i] = ZonePlacement{ZoneIndex: charge.ZoneIndex, Amount: cloneResourceList(charge.Amount)}
-	}
-	return out
+	return mask, nil
 }
 
-// ZoneIndices returns the placement's zone indices in order.
-func (p NUMAPlacement) ZoneIndices() []int {
-	indices := make([]int, len(p))
-	for i, charge := range p {
-		indices[i] = charge.ZoneIndex
+func (mask NUMAMask) Indices() []int {
+	indices := make([]int, 0, mask.Width())
+	for index := 0; index < 64; index++ {
+		if mask&(1<<index) != 0 {
+			indices = append(indices, index)
+		}
 	}
 	return indices
 }
 
+func (mask NUMAMask) Width() int { return bits.OnesCount64(uint64(mask)) }
+
+func (mask NUMAMask) Intersects(other NUMAMask) bool { return mask&other != 0 }
+
+type MemoryGroupPlacement struct {
+	Mask   NUMAMask
+	Amount v1.ResourceList
+}
+
+// NUMAPlacement carries per-zone charges and Memory Manager ownership separately.
+type NUMAPlacement struct {
+	Zones        []ZonePlacement
+	MemoryGroups []MemoryGroupPlacement
+}
+
+func (p NUMAPlacement) IsEmpty() bool {
+	return len(p.Zones) == 0 && len(p.MemoryGroups) == 0
+}
+
+func (p NUMAPlacement) Clone() NUMAPlacement {
+	out := NUMAPlacement{}
+	if p.Zones != nil {
+		out.Zones = make([]ZonePlacement, len(p.Zones))
+	}
+	for index, charge := range p.Zones {
+		out.Zones[index] = ZonePlacement{ZoneIndex: charge.ZoneIndex, Amount: cloneResourceList(charge.Amount)}
+	}
+	if p.MemoryGroups != nil {
+		out.MemoryGroups = make([]MemoryGroupPlacement, len(p.MemoryGroups))
+	}
+	for index, group := range p.MemoryGroups {
+		out.MemoryGroups[index] = MemoryGroupPlacement{Mask: group.Mask, Amount: cloneResourceList(group.Amount)}
+	}
+	return out
+}
+
+// ZoneIndices includes memory-only zones for placement scoring.
+func (p NUMAPlacement) ZoneIndices() []int {
+	zoneSet := make(map[int]struct{})
+	for _, charge := range p.Zones {
+		zoneSet[charge.ZoneIndex] = struct{}{}
+	}
+	for _, group := range p.MemoryGroups {
+		for _, index := range group.Mask.Indices() {
+			zoneSet[index] = struct{}{}
+		}
+	}
+	indices := make([]int, 0, len(zoneSet))
+	for index := range zoneSet {
+		indices = append(indices, index)
+	}
+	sort.Ints(indices)
+	return indices
+}
+
 func (p NUMAPlacement) Equal(other NUMAPlacement) bool {
-	if len(p) != len(other) {
+	if len(p.Zones) != len(other.Zones) || len(p.MemoryGroups) != len(other.MemoryGroups) {
 		return false
 	}
-	for i := range p {
-		if p[i].ZoneIndex != other[i].ZoneIndex || !equal(p[i].Amount, other[i].Amount) {
+	for index := range p.Zones {
+		if p.Zones[index].ZoneIndex != other.Zones[index].ZoneIndex || !equal(p.Zones[index].Amount, other.Zones[index].Amount) {
+			return false
+		}
+	}
+	for index := range p.MemoryGroups {
+		if p.MemoryGroups[index].Mask != other.MemoryGroups[index].Mask || !equal(p.MemoryGroups[index].Amount, other.MemoryGroups[index].Amount) {
 			return false
 		}
 	}

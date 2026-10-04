@@ -136,9 +136,9 @@ func (ssn *Session) AddNumaPlacementFn(fn api.NumaPlacementFn) {
 	ssn.NumaPlacementFn = fn
 }
 
-func (ssn *Session) GetNumaPlacement(task *pod_info.PodInfo, node *node_info.NodeInfo) pod_info.NUMAPlacement {
+func (ssn *Session) GetNumaPlacement(task *pod_info.PodInfo, node *node_info.NodeInfo) (pod_info.NUMAPlacement, error) {
 	if ssn.NumaPlacementFn == nil {
-		return nil
+		return pod_info.NUMAPlacement{}, nil
 	}
 	return ssn.NumaPlacementFn(task, node)
 }

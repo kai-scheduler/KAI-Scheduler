@@ -66,6 +66,13 @@ func (b *Binder) Bind(ctx context.Context, pod *v1.Pod, node *v1.Node, bindReque
 		}
 		bindingState.BindingPodAnnotations[constants.NumaPlacementPredicted] = string(placement)
 	}
+	if bindRequest.Spec.PredictedNUMAMemoryGroups != nil {
+		groups, err := json.Marshal(bindRequest.Spec.PredictedNUMAMemoryGroups)
+		if err != nil {
+			return err
+		}
+		bindingState.BindingPodAnnotations[constants.NumaMemoryGroupsPredicted] = string(groups)
+	}
 
 	err = b.plugins.PreBind(ctx, pod, node, bindRequest, bindingState)
 	if err != nil {

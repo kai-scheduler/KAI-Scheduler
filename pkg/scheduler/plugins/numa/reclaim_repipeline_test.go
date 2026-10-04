@@ -118,7 +118,11 @@ func TestReclaimRepipelineDoesNotGoNegative(t *testing.T) {
 	// pipeline mirrors allocateTaskToNode: the allocation path stamps the task's NUMA placement for
 	// the chosen node (via the NumaPlacementFn) before the statement op, then pipelines.
 	pipeline := func(task *pod_info.PodInfo) error {
-		task.NUMAPlacement = ssn.GetNumaPlacement(task, node)
+		placement, err := ssn.GetNumaPlacement(task, node)
+		if err != nil {
+			return err
+		}
+		task.NUMAPlacement = placement
 		return stmt.Pipeline(task, "node0", false)
 	}
 

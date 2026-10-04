@@ -213,6 +213,8 @@ github.com/k8stopologyawareschedwg/noderesourcetopology-api v0.1.2 h1:uAwqOtyrFY
 github.com/k8stopologyawareschedwg/noderesourcetopology-api v0.1.2/go.mod h1:LBzS4n6GX1C69tzSd5EibZ9cGOXFuHP7GxEMDYVe1sM=
 github.com/kai-scheduler/api v0.1.4 h1:xfoEE1V6lZY+C4UB8BnaODoA4phuDWQX3dbqWUg3IDI=
 github.com/kai-scheduler/api v0.1.4/go.mod h1:I3AqrOQVknNc3ZfLQkUpfWlQLIDqgg3dVGzsmVJhdTw=
+github.com/kai-scheduler/api v0.1.5-0.20261007143158-daf0fde391aa h1:IfdJz4EPjSXRoOIt3YQX9ycbG+MyhzGbN3gcm2tf6eo=
+github.com/kai-scheduler/api v0.1.5-0.20261007143158-daf0fde391aa/go.mod h1:I3AqrOQVknNc3ZfLQkUpfWlQLIDqgg3dVGzsmVJhdTw=
 github.com/kisielk/errcheck v1.5.0/go.mod h1:pFxgyoBC7bSaBwPgfKdkLd5X25qrDl4LWUI2bnpBCr8=
 github.com/kisielk/gotool v1.0.0/go.mod h1:XhKaO+MFFWcvkIS/tQcRk01m1F5IRFswLeQ+oQHNcck=
 github.com/klauspost/compress v1.18.2 h1:iiPHWW0YrcFgpBYhsA6D1+fqHssJscY/Tm/y2Uqnapk=

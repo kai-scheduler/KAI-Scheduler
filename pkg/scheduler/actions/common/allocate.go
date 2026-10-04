@@ -203,7 +203,14 @@ func allocateTask(ssn *framework.Session, stmt *framework.Statement, nodes []*no
 }
 
 func allocateTaskToNode(ssn *framework.Session, stmt *framework.Statement, task *pod_info.PodInfo, node *node_info.NodeInfo, isPipelineOnly bool) bool {
-	task.NUMAPlacement = ssn.GetNumaPlacement(task, node)
+	placement, err := ssn.GetNumaPlacement(task, node)
+	if err != nil {
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof("Failed to solve NUMA placement for task <%s/%s> on node %s: %v", task.Namespace, task.Name, node.Name, err)
+		})
+		return false
+	}
+	task.NUMAPlacement = placement
 
 	if task.IsFractionRequest() || task.IsGpuMemoryRequest() {
 		return gpu_sharing.AllocateFractionalGPUTaskToNode(ssn, stmt, task, node, isPipelineOnly)

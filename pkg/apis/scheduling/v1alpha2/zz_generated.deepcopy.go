@@ -111,6 +111,13 @@ func (in *BindRequestSpec) DeepCopyInto(out *BindRequestSpec) {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
+	if in.PredictedNUMAMemoryGroups != nil {
+		in, out := &in.PredictedNUMAMemoryGroups, &out.PredictedNUMAMemoryGroups
+		*out = make([]NUMAMemoryGroupPlacement, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
 	if in.BackoffLimit != nil {
 		in, out := &in.BackoffLimit, &out.BackoffLimit
 		*out = new(int32)
