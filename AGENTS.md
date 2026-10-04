@@ -55,7 +55,7 @@ Only what linters and `gofmt` do not enforce:
 | Need | Location |
 |---|---|
 | Architecture, plugin/action framework, concepts | `docs/developer/` |
-| Design docs for major features | `docs/developer/designs/README.md` (index) |
+| Design docs for major features | `docs/developer/designs/` (one directory per feature; `ls` to browse) |
 | Usage examples | `examples/` |
 | Diagnose a Pending pod or PodGroup | `.agents/skills/kai-pending` |
 | Capture and replay scheduler snapshots | `.agents/skills/snapshots` |
