@@ -20,7 +20,7 @@ CHANGIE ?= $(LOCALBIN)/changie
 # SERVICE_NAMES := service1 service2 service3
 SERVICE_NAMES := podgrouper scheduler binder resourcereservation snapshot-tool scalingpod nodescaleadjuster podgroupcontroller queuecontroller fairshare-simulator admission operator time-based-fairshare-simulator numa-placement-exporter helm-hooks
 
-# Directory of CRDs owned by the api module (scheduling.run.ai + kai.scheduler/v1alpha1 Topology).
+# Directory of CRDs owned by the api module.
 # Lazy (=) so `go list` runs only when sync-api-crds is invoked.
 API_CRD_DIR = $(shell go list -m -f '{{.Dir}}' github.com/kai-scheduler/api)/config/crd
 
@@ -52,7 +52,7 @@ $(SERVICE_NAMES):
 push: $(SERVICE_NAMES)
 
 .PHONY: validate
-validate: generate manifests gen-license generate-mocks lint
+validate: manifests gen-license generate-mocks lint
 	git diff --exit-code
 
 .PHONY: generate-mocks
@@ -66,17 +66,13 @@ generate-mocks: mockgen
 	$(MOCKGEN) -source=pkg/scheduler/cache/cluster_info/data_lister/interface.go -destination=pkg/scheduler/cache/cluster_info/data_lister/data_lister_mock.go -package=data_lister
 	$(MOCKGEN) -source=pkg/scheduler/k8s_utils/k8s_utils.go -destination=pkg/scheduler/k8s_utils/k8s_utils_mock.go -package=k8s_utils
 
-.PHONY: generate
-generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
-	$(CONTROLLER_GEN) object:headerFile="./hack/boilerplate.go.txt" paths="./pkg/apis/kai/..."
-
 .PHONY: gen-license
 gen-license: addlicense
 	$(ADDLICENSE) -c "NVIDIA CORPORATION" -s=only -l apache -v -ignore '.changes/**' -ignore '.changie.yaml' .
 
 .PHONY: manifests
 manifests: controller-gen kustomize ## Generate ClusterRole and CustomResourceDefinition objects.
-	$(CONTROLLER_GEN) crd:allowDangerousTypes=true,generateEmbeddedObjectMeta=true,headerFile="./hack/boilerplate.yaml.txt" paths="./pkg/apis/kai/..." output:crd:artifacts:config=deployments/kai-scheduler/crds
+	$(MAKE) sync-api-crds
 	$(CONTROLLER_GEN) rbac:roleName=kai-podgrouper,headerFile="./hack/boilerplate.yaml.txt" paths="./pkg/podgrouper/..." paths="./cmd/podgrouper/..." output:stdout > deployments/kai-scheduler/templates/rbac/podgrouper.yaml
 	$(CONTROLLER_GEN) rbac:roleName=kai-binder,headerFile="./hack/boilerplate.yaml.txt" paths="./pkg/binder/..." paths="./cmd/binder/..." output:stdout > deployments/kai-scheduler/templates/rbac/binder.yaml
 	$(CONTROLLER_GEN) rbac:roleName=kai-resource-reservation,headerFile="./hack/boilerplate.yaml.txt" paths="./pkg/resourcereservation/..." paths="./cmd/resourcereservation/..." output:stdout > deployments/kai-scheduler/templates/rbac/resourcereservation.yaml
@@ -92,7 +88,7 @@ manifests: controller-gen kustomize ## Generate ClusterRole and CustomResourceDe
 
 .PHONY: sync-api-crds
 sync-api-crds: ## Sync CRDs owned by the api module into the chart. Run on every api bump.
-	cp $(API_CRD_DIR)/scheduling.run.ai_*.yaml $(API_CRD_DIR)/kai.scheduler_topologies.yaml deployments/kai-scheduler/crds
+	cp $(API_CRD_DIR)/*.yaml deployments/kai-scheduler/crds
 
 .PHONY: controller-gen
 controller-gen: $(CONTROLLER_GEN) ## Download controller-gen locally if necessary.
