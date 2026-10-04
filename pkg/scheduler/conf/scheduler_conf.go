@@ -25,10 +25,9 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/selection"
 
-	kaiv1 "github.com/kai-scheduler/api/kai/v1"
-	kaiv1common "github.com/kai-scheduler/api/kai/v1/common"
 	usagedbapi "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
 	kaiv1 "github.com/kai-scheduler/api/kai/v1"
+	kaiv1common "github.com/kai-scheduler/api/kai/v1/common"
 )
 
 type SchedulerParams struct {

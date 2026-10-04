@@ -14,10 +14,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	commonpod "github.com/kai-scheduler/KAI-scheduler/pkg/common/pod"
-	commonpodgroup "github.com/kai-scheduler/KAI-scheduler/pkg/common/podgroup"
 	commonconstants "github.com/kai-scheduler/api/constants"
 	v2 "github.com/kai-scheduler/api/scheduling/v2"
 	v2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
+	commonpodgroup "github.com/kai-scheduler/api/utilities/podgroup"
 )
 
 var resizeLog = logf.Log.WithName("pod-resize-validator")
