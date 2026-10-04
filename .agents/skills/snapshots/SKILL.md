@@ -1,7 +1,7 @@
 ---
 name: snapshots
 description: Use when investigating KAI Scheduler behavior with captured cluster state, especially to replay scheduler decisions on specific refs or compare behavior across versions.
-license: Apache-2.0
+license: MIT
 compatibility: Requires bash, git, kubectl for capture, curl for capture, make/docker or a prebuilt snapshot-tool for replay.
 metadata:
   author: KAI Scheduler maintainers
