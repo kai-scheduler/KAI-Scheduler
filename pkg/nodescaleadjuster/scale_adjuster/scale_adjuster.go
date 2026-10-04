@@ -15,7 +15,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/nodescaleadjuster/scaler"
-	"github.com/kai-scheduler/api/constants"
 	"github.com/kai-scheduler/api/utilities/resources"
 )
 
