@@ -1,7 +1,7 @@
 ---
 name: kai-pending
 description: Use when a KAI-Scheduler pod or PodGroup is stuck Pending and you need to know why - GPU jobs that won't start, queue quota/limit, fair-share, gang scheduling, fractional GPU, node-pool affinity, or scheduling gates. Reads the PodGroup's scheduling verdict and the scheduler's own per-node fit errors.
-license: MIT
+license: Apache-2.0
 compatibility: Requires kubectl.
 metadata:
   author: KAI Scheduler maintainers
