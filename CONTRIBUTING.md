@@ -82,21 +82,7 @@ PR titles must follow the [Conventional Commits](https://www.conventionalcommits
 
 #### Scopes (Optional)
 
-Common scopes for KAI Scheduler:
-- 'scheduler'
-- 'binder'
-- 'podgrouper'
-- 'admission'
-- 'operator'
-- 'queue-controller'
-- 'pod-group-controller'
-- 'resource-reservation'
-- 'chart'
-- 'api'
-- 'node-scale-adjuster'
-- 'ci'
-- 'release'
-- 'docs'
+The allowed scopes are listed in [`.github/workflows/validate-pr-title.yaml`](.github/workflows/validate-pr-title.yaml).
 
 #### Breaking Changes
 
