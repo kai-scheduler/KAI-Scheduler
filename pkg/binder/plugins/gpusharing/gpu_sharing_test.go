@@ -19,8 +19,8 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/common/gpusharingconfigmap"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/state"
 	"github.com/kai-scheduler/api/constants"
-	"github.com/kai-scheduler/api/utilities/resources"
 	"github.com/kai-scheduler/api/scheduling/v1alpha2"
+	"github.com/kai-scheduler/api/utilities/resources"
 )
 
 func TestAddNvFractionsAnnotationIfMissing(t *testing.T) {

@@ -16,11 +16,11 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/kai-scheduler/api/constants"
+	commonconsts "github.com/kai-scheduler/api/constants"
 	kaiv1alpha2 "github.com/kai-scheduler/api/scheduling/v1alpha2"
 	schedulingv2 "github.com/kai-scheduler/api/scheduling/v2"
 	schedulingv2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
-	"github.com/kai-scheduler/api/constants"
-	commonconsts "github.com/kai-scheduler/api/constants"
 )
 
 type PodGroupConfig struct {

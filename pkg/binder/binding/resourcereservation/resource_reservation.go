@@ -25,10 +25,10 @@ import (
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding/resourcereservation/group_mutex"
-	"github.com/kai-scheduler/api/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/fips"
-	"github.com/kai-scheduler/api/utilities/resources"
+	"github.com/kai-scheduler/api/constants"
 	schedulingv1alpha2 "github.com/kai-scheduler/api/scheduling/v1alpha2"
+	"github.com/kai-scheduler/api/utilities/resources"
 )
 
 type Interface interface {
