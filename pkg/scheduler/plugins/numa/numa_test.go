@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -125,7 +124,7 @@ func makeBurstableTask(requests v1.ResourceList) *pod_info.PodInfo {
 	}
 }
 
-func TestShouldFilter(t *testing.T) {
+func TestShouldScore(t *testing.T) {
 	plugin := &numaPlugin{}
 	gpuCPUZones := []node_info.NumaZoneSpec{numaZone("node-0", map[string]string{gpu: "4", "cpu": "8"})}
 	singleNUMA := numaTopology(node_info.TopologyPolicySingleNUMANode, node_info.TopologyScopePod, gpuCPUZones...)
@@ -148,8 +147,8 @@ func TestShouldFilter(t *testing.T) {
 		"nil node topology passes through": {
 			task: makeTask(v1.PodQOSGuaranteed, pod_info.RequestTypeRegular, 1), topo: nil, expected: false,
 		},
-		"best-effort policy passes through": {
-			task: makeTask(v1.PodQOSGuaranteed, pod_info.RequestTypeRegular, 1), topo: bestEffort, expected: false,
+		"best-effort policy uses the solver": {
+			task: makeTask(v1.PodQOSGuaranteed, pod_info.RequestTypeRegular, 1), topo: bestEffort, expected: true,
 		},
 		"non-guaranteed GPU pod is handled (device alignment is QoS-independent)": {
 			task: makeTask(v1.PodQOSBurstable, pod_info.RequestTypeRegular, 1), topo: singleNUMA, expected: true,
@@ -176,7 +175,7 @@ func TestShouldFilter(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			assert.Equal(t, test.expected, plugin.shouldFilter(test.task, test.topo))
+			assert.Equal(t, test.expected, plugin.shouldScore(test.task, test.topo))
 		})
 	}
 }
@@ -198,11 +197,11 @@ func TestOnSessionOpenRegistersWithoutState(t *testing.T) {
 	plugin.OnSessionOpen(ssn)
 	plugin.OnSessionClose(ssn)
 
-	assert.True(t, plugin.shouldFilter(
+	assert.True(t, plugin.shouldScore(
 		makeTask(v1.PodQOSGuaranteed, pod_info.RequestTypeRegular, 1),
 		nodes["with-single-numa"].NumaTopology,
 	))
-	assert.False(t, plugin.shouldFilter(
+	assert.False(t, plugin.shouldScore(
 		makeTask(v1.PodQOSGuaranteed, pod_info.RequestTypeRegular, 1),
 		nodes["without-nrt"].NumaTopology,
 	), "node without topology is a pass-through")
@@ -238,10 +237,12 @@ func TestNonGuaranteedIgnoresCPU(t *testing.T) {
 
 	t.Run("guaranteed rejects on gpu/cpu width disagreement", func(t *testing.T) {
 		// 6 GPU -> width 2, 4 cpu -> width 1: no common width.
-		assert.False(t, pp.allocatable(makeGuaranteedTask("g", map[string]string{gpu: "6", "cpu": "4"}), node))
+		_, err := pp.evaluate(makeGuaranteedTask("g", map[string]string{gpu: "6", "cpu": "4"}), node)
+		assert.Error(t, err)
 	})
 	t.Run("burstable admits: cpu is not kubelet-aligned, only gpu constrains", func(t *testing.T) {
-		assert.True(t, pp.allocatable(makeBurstableTask(req(gpu, "6", "cpu", "4")), node),
+		_, err := pp.evaluate(makeBurstableTask(req(gpu, "6", "cpu", "4")), node)
+		assert.NoError(t, err,
 			"cpu must be ignored for a non-Guaranteed pod, leaving only the width-2 GPU request")
 	})
 }
@@ -265,24 +266,23 @@ func TestBuildNumaRequests(t *testing.T) {
 	cores := func(v resource_info.ResourceVector) int64 { return int64(v.Get(resource_info.CPUIndex)) / 1000 }
 
 	t.Run("pod scope aggregates into one request", func(t *testing.T) {
-		concurrent, serial := reqs.forScope(node_info.TopologyScopePod)
-		assert.Len(t, concurrent, 1)
-		assert.Empty(t, serial, "pod scope folds init containers into the effective pod request")
 		// PodRequests = max(init peak 10, sidecar+regulars 1+2+2=5) = 10.
-		assert.Equal(t, int64(10), cores(concurrent[0]))
+		assert.Equal(t, int64(10), cores(reqs.podScope))
 	})
 
-	t.Run("container scope splits concurrent and serial requests", func(t *testing.T) {
-		concurrent, serial := reqs.forScope(node_info.TopologyScopeContainer)
-		assert.Len(t, concurrent, 3, "native sidecar + two regular containers")
+	t.Run("admission units preserve init order and lifetime", func(t *testing.T) {
+		assert.Len(t, reqs.units, 4, "ordinary init + native sidecar + two regular containers")
 		var total int64
-		for _, u := range concurrent {
-			total += cores(u)
+		for _, unit := range reqs.units {
+			if !unit.ordinaryInit {
+				total += cores(unit.request)
+			}
 		}
 		assert.Equal(t, int64(5), total, "1 (sidecar) + 2 + 2")
 
-		assert.Len(t, serial, 1, "the ordinary init container is a serial request")
-		assert.Equal(t, int64(10), cores(serial[0]))
+		assert.True(t, reqs.units[0].ordinaryInit)
+		assert.False(t, reqs.units[1].ordinaryInit)
+		assert.Equal(t, int64(10), cores(reqs.units[0].request))
 	})
 }
 
@@ -316,45 +316,39 @@ func TestBuildNumaRequestsNonIntegralCPU(t *testing.T) {
 	t.Run("fractional sidecar does not inflate the pod-scope cpu request", func(t *testing.T) {
 		reqs := buildNumaRequests(podWith(v1.PodQOSGuaranteed, main, fractionalSidecar),
 			resource_info.NewResourceVectorMap())
-		concurrent, _ := reqs.forScope(node_info.TopologyScopePod)
-		assert.Equal(t, int64(44000), milliCores(concurrent[0]), "only the main container's 44 integral cpus")
-		assert.Equal(t, int64(18)<<30, memory(concurrent[0]),
+		assert.Equal(t, int64(44000), milliCores(reqs.podScope), "only the main container's 44 integral cpus")
+		assert.Equal(t, int64(18)<<30, memory(reqs.podScope),
 			"memory is summed over every container: the memory manager applies no integrality filter")
 	})
 
 	t.Run("integral sidecar is charged in full", func(t *testing.T) {
 		reqs := buildNumaRequests(podWith(v1.PodQOSGuaranteed, main, integralSidecar),
 			resource_info.NewResourceVectorMap())
-		concurrent, _ := reqs.forScope(node_info.TopologyScopePod)
-		assert.Equal(t, int64(49000), milliCores(concurrent[0]))
+		assert.Equal(t, int64(49000), milliCores(reqs.podScope))
 	})
 
 	t.Run("integral sidecar is charged when the main container is fractional", func(t *testing.T) {
 		reqs := buildNumaRequests(podWith(v1.PodQOSGuaranteed, fractionalMain, integralSidecar),
 			resource_info.NewResourceVectorMap())
-		concurrent, _ := reqs.forScope(node_info.TopologyScopePod)
-		assert.Equal(t, int64(5000), milliCores(concurrent[0]))
+		assert.Equal(t, int64(5000), milliCores(reqs.podScope))
 
-		concurrent, _ = reqs.forScope(node_info.TopologyScopeContainer)
-		assert.Zero(t, milliCores(concurrent[0]), "the main container stays in the shared cpu pool")
-		assert.Equal(t, int64(5000), milliCores(concurrent[1]))
+		assert.Zero(t, milliCores(reqs.units[0].request), "the main container stays in the shared cpu pool")
+		assert.Equal(t, int64(5000), milliCores(reqs.units[1].request))
 	})
 
 	t.Run("container scope zeroes only the fractional container's cpu", func(t *testing.T) {
 		reqs := buildNumaRequests(podWith(v1.PodQOSGuaranteed, main, fractionalSidecar),
 			resource_info.NewResourceVectorMap())
-		concurrent, _ := reqs.forScope(node_info.TopologyScopeContainer)
-		assert.Equal(t, int64(44000), milliCores(concurrent[0]))
-		assert.Zero(t, milliCores(concurrent[1]), "the sidecar stays in the shared cpu pool")
-		assert.Equal(t, int64(2)<<30, memory(concurrent[1]),
+		assert.Equal(t, int64(44000), milliCores(reqs.units[0].request))
+		assert.Zero(t, milliCores(reqs.units[1].request), "the sidecar stays in the shared cpu pool")
+		assert.Equal(t, int64(2)<<30, memory(reqs.units[1].request),
 			"the sidecar is still a memory alignment unit of its own")
 	})
 
 	t.Run("non-Guaranteed pod aligns no cpu at all", func(t *testing.T) {
 		reqs := buildNumaRequests(podWith(v1.PodQOSBurstable, main, fractionalSidecar),
 			resource_info.NewResourceVectorMap())
-		concurrent, _ := reqs.forScope(node_info.TopologyScopePod)
-		assert.Zero(t, milliCores(concurrent[0]))
+		assert.Zero(t, milliCores(reqs.podScope))
 	})
 
 	t.Run("fractional init containers are zeroed in both roles", func(t *testing.T) {
@@ -369,12 +363,10 @@ func TestBuildNumaRequestsNonIntegralCPU(t *testing.T) {
 			},
 		}
 		reqs := buildNumaRequests(pod, resource_info.NewResourceVectorMap())
-		concurrent, serial := reqs.forScope(node_info.TopologyScopeContainer)
-		assert.Zero(t, milliCores(serial[0]), "ordinary init")
-		assert.Zero(t, milliCores(concurrent[0]), "native sidecar")
+		assert.Zero(t, milliCores(reqs.units[0].request), "ordinary init")
+		assert.Zero(t, milliCores(reqs.units[1].request), "native sidecar")
 
-		podConcurrent, _ := reqs.forScope(node_info.TopologyScopePod)
-		assert.Equal(t, int64(44000), milliCores(podConcurrent[0]),
+		assert.Equal(t, int64(44000), milliCores(reqs.podScope),
 			"neither init container contributes to the pod-scope peak")
 	})
 }
@@ -396,9 +388,11 @@ func TestFractionalSidecarAdmits(t *testing.T) {
 		return t
 	}
 
-	assert.True(t, pp.allocatable(task("4500m"), node),
+	_, err := pp.evaluate(task("4500m"), node)
+	assert.NoError(t, err,
 		"a fractional sidecar is not pinned, so the pod still needs only 44 cpus in one zone")
-	assert.False(t, pp.allocatable(task("5"), node),
+	_, err = pp.evaluate(task("5"), node)
+	assert.Error(t, err,
 		"an integral sidecar is pinned, pushing the pod to 49 cpus, which no zone has")
 }
 
@@ -431,8 +425,8 @@ func TestPredicateOrdinaryInitContainer(t *testing.T) {
 		))
 		// init wants 4 (fits a 4-CPU zone alone); app wants 2. If init were accumulated with the
 		// app container, the two together (6) would not fit a single zone — admission proves it isn't.
-		_, admit := pp.evaluate(build("4", false), node)
-		assert.True(t, admit)
+		_, err := pp.evaluate(build("4", false), node)
+		assert.NoError(t, err)
 	})
 
 	t.Run("ordinary init larger than any zone is rejected", func(t *testing.T) {
@@ -440,8 +434,8 @@ func TestPredicateOrdinaryInitContainer(t *testing.T) {
 			numaZone("node-0", map[string]string{"cpu": "4"}),
 			numaZone("node-1", map[string]string{"cpu": "4"}),
 		))
-		_, admit := pp.evaluate(build("5", false), node)
-		assert.False(t, admit, "an init container that fits no single zone cannot be NUMA-aligned")
+		_, err := pp.evaluate(build("5", false), node)
+		assert.Error(t, err, "an init container that fits no single zone cannot be NUMA-aligned")
 	})
 }
 
@@ -466,9 +460,9 @@ func TestInCycleReservation(t *testing.T) {
 	avail := func() int64 { return zoneAvail(node.NumaTopology, 0, "cpu") }
 
 	first := makeGuaranteedTask("first", map[string]string{"cpu": "3"})
-	placement, err := pp.placement(first, node)
-	require.NoError(t, err)
-	first.NUMAPlacement = placement
+	var err error
+	first.NUMAPlacement, err = pp.placement(first, node)
+	assert.NoError(t, err)
 	pp.allocate(&framework.Event{Task: first})
 	assert.Equal(t, int64(1), avail(), "zone charged by the first pod")
 	assert.Equal(t, []int{0}, first.NUMAPlacement.ZoneIndices(), "placement recorded on the task (zone 0)")
@@ -635,10 +629,10 @@ func TestSeedObservedPlacements(t *testing.T) {
 
 	assert.Equal(t, []int{1}, withObserved.NUMAPlacement.ZoneIndices(), "observed annotation translated onto the canonical job task")
 	assert.Equal(t, []int{0}, fromBindRequest.NUMAPlacement.ZoneIndices(), "BindRequest zones seeded when no annotation")
-	assert.Empty(t, nodeCopy.NUMAPlacement, "the node's clone is not the seed target (job task is)")
+	assert.True(t, nodeCopy.NUMAPlacement.IsEmpty(), "the node's clone is not the seed target (job task is)")
 	assert.Equal(t, []int{0}, alreadyPlaced.NUMAPlacement.ZoneIndices(), "existing placement not overwritten")
-	assert.Empty(t, noRecord.NUMAPlacement, "no record ⇒ unaccounted")
-	assert.Empty(t, unknownZone.NUMAPlacement, "record naming an unknown zone ⇒ unaccounted")
-	assert.Empty(t, burstable.NUMAPlacement, "non-Guaranteed pod is not seeded")
-	assert.Empty(t, pending.NUMAPlacement, "pending pod (no node assigned) is not seeded")
+	assert.True(t, noRecord.NUMAPlacement.IsEmpty(), "no record ⇒ unaccounted")
+	assert.True(t, unknownZone.NUMAPlacement.IsEmpty(), "record naming an unknown zone ⇒ unaccounted")
+	assert.True(t, burstable.NUMAPlacement.IsEmpty(), "non-Guaranteed pod is not seeded")
+	assert.True(t, pending.NUMAPlacement.IsEmpty(), "pending pod (no node assigned) is not seeded")
 }

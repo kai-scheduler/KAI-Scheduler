@@ -4,22 +4,163 @@
 package numa
 
 import (
-	"math"
+	"fmt"
 	"sort"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/kubernetes/pkg/kubelet/cm/topologymanager"
+	"k8s.io/kubernetes/pkg/kubelet/cm/topologymanager/bitmask"
 
+	commonpod "github.com/kai-scheduler/KAI-scheduler/pkg/common/pod"
+	commonresources "github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 )
 
-// stackZones and stackAware bound the mask/scratch stack buffers; larger nodes fall back to heap.
-const (
-	stackZones = 16
-	stackAware = 16
-)
+type evaluationState struct {
+	topology        *node_info.NumaTopology
+	zoneResources   []int
+	consumed        []float64
+	zoneAllocations zoneAllocation
+	memory          *memorySolver
+}
+
+func (pp *numaPlugin) evaluate(task *pod_info.PodInfo, node *node_info.NodeInfo) (pod_info.NUMAPlacement, error) {
+	state, err := pp.prepareEvaluation(task, node)
+	if err != nil || state == nil {
+		return pod_info.NUMAPlacement{}, err
+	}
+	requests := pp.numaRequestsFor(task, state.topology.VectorMap)
+	podHint, err := state.sharedPodHint(requests.podScope)
+	if err != nil {
+		return pod_info.NUMAPlacement{}, err
+	}
+	for sequence, unit := range requests.units {
+		if err := state.allocateUnit(sequence, unit, podHint); err != nil {
+			return pod_info.NUMAPlacement{}, err
+		}
+	}
+	return state.persistentPlacement(), nil
+}
+
+func (pp *numaPlugin) prepareEvaluation(task *pod_info.PodInfo, node *node_info.NodeInfo) (*evaluationState, error) {
+	if node == nil || node.NumaTopology == nil || len(node.NumaTopology.Zones) == 0 || task.Pod == nil {
+		return nil, nil
+	}
+	topo := node.NumaTopology
+	if topo.Policy == node_info.TopologyPolicyNone {
+		return nil, nil
+	}
+	managed := pp.evaluationMemoryResources(task, node)
+	hasMemory := len(managed) > 0
+	if !hasMemory && !pp.shouldScore(task, topo) {
+		return nil, nil
+	}
+	if err := validateEvaluationTopology(topo, hasMemory); err != nil {
+		return nil, err
+	}
+	state := &evaluationState{
+		topology:        topo,
+		zoneResources:   make([]int, 0, len(topo.AwareIndices)),
+		consumed:        make([]float64, len(topo.Zones)*topo.VectorMap.Len()),
+		zoneAllocations: zoneAllocation{},
+	}
+	if hasMemory {
+		state.memory = newMemorySolver(task, topo, managed)
+	}
+	for _, index := range pp.alignedAware(task, node) {
+		if !commonresources.IsMemoryResource(topo.AwareNames[index]) {
+			state.zoneResources = append(state.zoneResources, index)
+		}
+	}
+	return state, nil
+}
+
+func (pp *numaPlugin) evaluationMemoryResources(task *pod_info.PodInfo, node *node_info.NodeInfo) sets.Set[v1.ResourceName] {
+	if !commonpod.IsGuaranteed(task.Pod) {
+		return nil
+	}
+	managed := pp.managedMemoryResources(node)
+	if !requestsMemory(task.Pod, managed) {
+		return nil
+	}
+	return managed
+}
+
+func validateEvaluationTopology(topo *node_info.NumaTopology, hasMemory bool) error {
+	if hasMemory {
+		state := topo.MemoryGroups
+		if state == nil || state.Status != node_info.MemoryGroupsKnown {
+			return errMemoryStateUnknown
+		}
+	}
+	if len(topo.Zones) > pod_info.MaxNUMAZones {
+		return fmt.Errorf("NUMA placement supports at most %d NUMA zones", pod_info.MaxNUMAZones)
+	}
+	return nil
+}
+
+func (state *evaluationState) sharedPodHint(request resource_info.ResourceVector) (*topologymanager.TopologyHint, error) {
+	if state.topology.Scope != node_info.TopologyScopePod {
+		return nil, nil
+	}
+	hint, err := state.mergedHint(request)
+	if err != nil {
+		return nil, err
+	}
+	return &hint, nil
+}
+
+func (state *evaluationState) allocateUnit(sequence int, unit admissionUnit, podHint *topologymanager.TopologyHint) error {
+	hint, err := state.unitHint(unit.request, podHint)
+	if err != nil {
+		return err
+	}
+	if state.memory != nil {
+		if err := state.memory.allocateUnit(sequence, unit, hint); err != nil {
+			return err
+		}
+	}
+	return state.allocateUnitZones(unit, hint.NUMANodeAffinity)
+}
+
+func (state *evaluationState) unitHint(request resource_info.ResourceVector, podHint *topologymanager.TopologyHint) (topologymanager.TopologyHint, error) {
+	if podHint != nil {
+		return *podHint, nil
+	}
+	return state.mergedHint(request)
+}
+
+func (state *evaluationState) allocateUnitZones(unit admissionUnit, affinity bitmask.BitMask) error {
+	topo := state.topology
+	if affinity == nil {
+		affinity, _ = bitmask.NewBitMask(allZoneIndices(topo)...)
+	}
+	if !maskSatisfiesReq(topo, state.zoneResources, unit.request, state.consumed, topo.VectorMap.Len(), affinity.GetBits()) {
+		if topo.Policy != node_info.TopologyPolicyBestEffort {
+			return fmt.Errorf("aligned resources do not fit")
+		}
+		affinity, _ = bitmask.NewBitMask(allZoneIndices(topo)...)
+		if !maskSatisfiesReq(topo, state.zoneResources, unit.request, state.consumed, topo.VectorMap.Len(), affinity.GetBits()) {
+			return fmt.Errorf("resources do not fit")
+		}
+	}
+	if !unit.ordinaryInit {
+		drawAcrossMask(topo, state.zoneResources, affinity.GetBits(), unit.request, state.consumed, state.zoneAllocations, topo.VectorMap.Len())
+	}
+	return nil
+}
+
+func (state *evaluationState) persistentPlacement() pod_info.NUMAPlacement {
+	result := placementFromAllocation(state.zoneAllocations, state.topology)
+	if state.memory != nil {
+		result.MemoryGroups = state.memory.persistentGroups()
+	}
+	return result
+}
 
 // zoneAllocation accumulates, per zone index, the amounts to place there (as a ResourceVector delta).
 // placementFromAllocation materializes it into a pod_info.NUMAPlacement.
@@ -39,7 +180,7 @@ func (pp *numaPlugin) effectiveAware(node *node_info.NodeInfo) []int {
 // (those align only for Guaranteed pods; devices align for every QoS class).
 func (pp *numaPlugin) alignedAware(task *pod_info.PodInfo, node *node_info.NodeInfo) []int {
 	aware := pp.effectiveAware(node)
-	if isGuaranteed(task) {
+	if commonpod.IsGuaranteed(task.Pod) {
 		return aware
 	}
 	topo := node.NumaTopology
@@ -51,237 +192,6 @@ func (pp *numaPlugin) alignedAware(task *pod_info.PodInfo, node *node_info.NodeI
 		out = append(out, idx)
 	}
 	return out
-}
-
-// allocatable reports whether the kubelet Topology Manager would align the task on the node (the
-// predicate). A task the plugin does not filter passes through as true.
-func (pp *numaPlugin) allocatable(task *pod_info.PodInfo, node *node_info.NodeInfo) bool {
-	if node == nil || !pp.shouldFilter(task, node.NumaTopology) {
-		return true
-	}
-	return pp.solveTask(task, node, nil)
-}
-
-// evaluate returns the task's expected per-zone allocation on the node (nil for a task the plugin
-// does not account for). Used by the placement and scoring paths.
-func (pp *numaPlugin) evaluate(task *pod_info.PodInfo, node *node_info.NodeInfo) (zoneAllocation, bool) {
-	if node == nil || !pp.shouldScore(task, node.NumaTopology) {
-		return nil, true
-	}
-	alloc := zoneAllocation{}
-	if !pp.solveTask(task, node, alloc) {
-		return nil, false
-	}
-	return alloc, true
-}
-
-// solveTask runs the evaluator on a node the caller has already gated. When alloc is non-nil, solve
-// records the placement into it; when nil, it only decides feasibility (zero-allocation).
-func (pp *numaPlugin) solveTask(task *pod_info.PodInfo, node *node_info.NodeInfo, alloc zoneAllocation) bool {
-	topo := node.NumaTopology
-	aware := pp.alignedAware(task, node)
-	concurrent, serial := pp.numaRequestsFor(task, topo.VectorMap).forScope(topo.Scope)
-	return solve(topo, aware, concurrent, serial, alloc)
-}
-
-// solve walks the concurrent and serial NUMA requests and reports whether the node can align them.
-// The concurrent requests share the per-zone ledger (native sidecars + app containers coexist), so
-// each reduces availability for the next; the serial (ordinary init) requests are each aligned
-// against the pristine availability, never accumulated. When alloc is non-nil the concurrent
-// requests' per-zone placement is recorded there; otherwise the walk is allocation-free (a `consumed`
-// scratch is taken only when a later request needs the reduced view).
-func solve(topo *node_info.NumaTopology, aware []int, concurrent, serial []resource_info.ResourceVector, alloc zoneAllocation) bool {
-	width := topo.VectorMap.Len()
-	var maskArr [stackZones]int
-	maskBuf := maskArr[:]
-	if len(topo.Zones) > stackZones {
-		maskBuf = make([]int, len(topo.Zones))
-	}
-
-	var consumed []float64
-	for i, req := range concurrent {
-		mask, ok := feasibleMask(topo, aware, req, consumed, width, maskBuf)
-		if !ok {
-			return false
-		}
-		last := i == len(concurrent)-1
-		if alloc == nil && last {
-			continue // nothing to record and no successor to reduce for
-		}
-		if consumed == nil && !last {
-			consumed = make([]float64, len(topo.Zones)*width)
-		}
-		drawAcrossMask(topo, aware, mask, req, consumed, alloc, width)
-	}
-	for _, req := range serial {
-		if _, ok := feasibleMask(topo, aware, req, nil, 0, nil); !ok {
-			return false
-		}
-	}
-	return true
-}
-
-// feasibleMask picks the mask the policy's evaluator would choose for one request, under the current
-// availability view (Available minus consumed).
-func feasibleMask(topo *node_info.NumaTopology, aware []int, req resource_info.ResourceVector, consumed []float64, width int, maskBuf []int) ([]int, bool) {
-	switch topo.Policy {
-	case node_info.TopologyPolicySingleNUMANode:
-		return singleNUMAEvaluator{}.fit(topo, aware, req, consumed, width, maskBuf)
-	case node_info.TopologyPolicyBestEffort:
-		return bestEffortEvaluator{}.fit(topo, aware, req, consumed, width, maskBuf)
-	default:
-		return restrictedEvaluator{}.fit(topo, aware, req, consumed, width, maskBuf)
-	}
-}
-
-// singleNUMAEvaluator (single-numa-node) requires each request to fit entirely within one NUMA zone,
-// the lowest that holds it.
-type singleNUMAEvaluator struct{}
-
-func (singleNUMAEvaluator) fit(topo *node_info.NumaTopology, aware []int, req resource_info.ResourceVector, consumed []float64, width int, maskBuf []int) ([]int, bool) {
-	for z := range topo.Zones {
-		if reqFitsZone(topo, aware, req, consumed, width, z) {
-			return oneZoneMask(maskBuf, z), true
-		}
-	}
-	return nil, false
-}
-
-// bestEffortEvaluator implements the best-effort policy, which never rejects, so its result feeds
-// scoring and the in-cycle ledger, never an admit decision.
-type bestEffortEvaluator struct{}
-
-// fit greedily grows a zone mask until it covers the request, returning the mask and whether it fits:
-//  1. Start with no zones; the unmet demand is the full request.
-//  2. Each round, add the unused zone that covers the most unmet demand (the sum, over
-//     still-needed resources, of min(remaining, available in that zone)), then subtract that zone's
-//     availability from the demand.
-//  3. Stop when every resource is met (fits) or no remaining zone can help (does not fit).
-//
-// The number of zones picked is the span. Taking the most-covering zone first yields the fewest
-// zones exactly when one resource dominates.
-func (bestEffortEvaluator) fit(topo *node_info.NumaTopology, aware []int, req resource_info.ResourceVector, consumed []float64, width int, maskBuf []int) ([]int, bool) {
-	var remArr [stackAware]float64
-	remaining := remArr[:0]
-	if len(aware) > stackAware {
-		remaining = make([]float64, 0, len(aware))
-	}
-	for _, idx := range aware {
-		remaining = append(remaining, req.Get(idx))
-	}
-	var usedArr [stackZones]bool
-	used := usedArr[:]
-	if len(topo.Zones) > stackZones {
-		used = make([]bool, len(topo.Zones))
-	}
-
-	mask := maskBuf[:0]
-	for len(mask) < len(topo.Zones) {
-		if allMet(remaining) {
-			return mask, true
-		}
-		best, bestCover := -1, 0.0
-		for z := range topo.Zones {
-			if used[z] {
-				continue
-			}
-			cover := 0.0
-			for i, idx := range aware {
-				if remaining[i] <= 0 {
-					continue
-				}
-				cover += math.Min(remaining[i], availableAt(topo, consumed, width, z, idx))
-			}
-			if cover > bestCover {
-				best, bestCover = z, cover
-			}
-		}
-		if best < 0 {
-			break
-		}
-		used[best] = true
-		mask = append(mask, best)
-		for i, idx := range aware {
-			remaining[i] -= availableAt(topo, consumed, width, best, idx)
-		}
-	}
-	if allMet(remaining) {
-		return mask, true
-	}
-	return nil, false
-}
-
-func allMet(remaining []float64) bool {
-	for _, r := range remaining {
-		if r > 0 {
-			return false
-		}
-	}
-	return true
-}
-
-// restrictedEvaluator reproduces the kubelet hint merge: all per-resource preferred widths (from
-// static Allocatable) must agree, and a mask of that width must satisfy every resource against
-// Available. single-numa-node is the width==1 case.
-type restrictedEvaluator struct{}
-
-func (restrictedEvaluator) fit(topo *node_info.NumaTopology, aware []int, req resource_info.ResourceVector, consumed []float64, width int, maskBuf []int) ([]int, bool) {
-	w := -1
-	for _, idx := range aware {
-		need := req.Get(idx)
-		if need <= 0 {
-			continue
-		}
-		k, ok := minWidthFromPrefix(topo.AllocatablePrefix[idx], need)
-		if !ok {
-			return nil, false
-		}
-		if w == -1 {
-			w = k
-		} else if k != w {
-			return nil, false
-		}
-	}
-	if w <= 0 {
-		return maskBuf[:0], true // no positive aware requests: trivially aligned (nil-safe)
-	}
-	if w == 1 {
-		for z := range topo.Zones {
-			if reqFitsZone(topo, aware, req, consumed, width, z) {
-				return oneZoneMask(maskBuf, z), true
-			}
-		}
-		return nil, false
-	}
-	return lowestSatisfyingReqMask(topo, aware, req, consumed, width, w, maskBuf)
-}
-
-// lowestSatisfyingReqMask returns the lexicographically-lowest width-w zone mask whose summed
-// Available satisfies every requested resource.
-func lowestSatisfyingReqMask(topo *node_info.NumaTopology, aware []int, req resource_info.ResourceVector, consumed []float64, width, w int, maskBuf []int) ([]int, bool) {
-	var found []int
-	combinations(len(topo.Zones), w, func(mask []int) bool {
-		if maskSatisfiesReq(topo, aware, req, consumed, width, mask) {
-			found = append(maskBuf[:0], mask...)
-			return false
-		}
-		return true
-	})
-	return found, found != nil
-}
-
-// reqFitsZone reports whether zone z alone satisfies every requested resource of the request.
-func reqFitsZone(topo *node_info.NumaTopology, aware []int, req resource_info.ResourceVector, consumed []float64, width, z int) bool {
-	for _, idx := range aware {
-		need := req.Get(idx)
-		if need <= 0 {
-			continue
-		}
-		if availableAt(topo, consumed, width, z, idx) < need {
-			return false
-		}
-	}
-	return true
 }
 
 // maskSatisfiesReq reports whether the summed Available over the mask's zones satisfies every
@@ -368,16 +278,6 @@ func minWidthFromPrefix(prefix []float64, need float64) (int, bool) {
 	return 0, false
 }
 
-// oneZoneMask writes a single-zone mask into buf (reusing its backing array, no allocation) and
-// returns it. buf is nil only for serial requests, whose returned mask the caller ignores.
-func oneZoneMask(buf []int, z int) []int {
-	if buf == nil {
-		return nil
-	}
-	buf[0] = z
-	return buf[:1]
-}
-
 // combinations yields every size-k subset of [0,n) as ascending index slices, in lexicographic
 // order, until yield returns false.
 func combinations(n, k int, yield func([]int) bool) {
@@ -445,4 +345,84 @@ func vectorToResourceList(vec resource_info.ResourceVector, topo *node_info.Numa
 		}
 	}
 	return out
+}
+
+func allZoneIndices(topo *node_info.NumaTopology) []int {
+	indices := make([]int, len(topo.Zones))
+	for index := range indices {
+		indices[index] = index
+	}
+	return indices
+}
+
+func enumerateNUMAMasks(topo *node_info.NumaTopology, yield func(pod_info.NUMAMask)) {
+	for width := 1; width <= len(topo.Zones); width++ {
+		combinations(len(topo.Zones), width, func(indices []int) bool { mask, _ := pod_info.NewNUMAMask(indices); yield(mask); return true })
+	}
+}
+
+func (state *evaluationState) mergedHint(request resource_info.ResourceVector) (topologymanager.TopologyHint, error) {
+	providers, err := state.hintProviders(request, true)
+	if err != nil {
+		return topologymanager.TopologyHint{}, err
+	}
+	hint, err := mergeTopologyHints(state.topology, providers)
+	if err != nil || hint.Preferred || state.topology.Policy != node_info.TopologyPolicyBestEffort {
+		return hint, err
+	}
+	providers, err = state.hintProviders(request, false)
+	if err != nil {
+		return topologymanager.TopologyHint{}, err
+	}
+	return mergeTopologyHints(state.topology, providers)
+}
+
+func (state *evaluationState) hintProviders(request resource_info.ResourceVector, preferredOnly bool) ([]map[string][]topologymanager.TopologyHint, error) {
+	topo := state.topology
+	var providers []map[string][]topologymanager.TopologyHint
+	for _, index := range state.zoneResources {
+		if request.Get(index) <= 0 {
+			continue
+		}
+		hints := state.zoneResourceHints(request, index, preferredOnly)
+		providers = append(providers, map[string][]topologymanager.TopologyHint{string(topo.AwareNames[index]): hints})
+	}
+	if state.memory == nil {
+		return providers, nil
+	}
+	hints, err := state.memory.providerHints(request, preferredOnly)
+	if err != nil {
+		return nil, err
+	}
+	if hints != nil {
+		providers = append(providers, map[string][]topologymanager.TopologyHint{string(v1.ResourceMemory): hints})
+	}
+	return providers, nil
+}
+
+func (state *evaluationState) zoneResourceHints(request resource_info.ResourceVector, index int, preferredOnly bool) []topologymanager.TopologyHint {
+	topo := state.topology
+	preferredWidth, _ := minWidthFromPrefix(topo.AllocatablePrefix[index], request.Get(index))
+	var hints []topologymanager.TopologyHint
+	appendHint := func(indices []int) bool {
+		if !maskSatisfiesReq(topo, []int{index}, request, state.consumed, topo.VectorMap.Len(), indices) {
+			return true
+		}
+		affinity, _ := bitmask.NewBitMask(indices...)
+		hints = append(hints, topologymanager.TopologyHint{NUMANodeAffinity: affinity, Preferred: len(indices) == preferredWidth})
+		return true
+	}
+	if preferredOnly {
+		if topo.Policy != node_info.TopologyPolicySingleNUMANode || preferredWidth == 1 {
+			combinations(len(topo.Zones), preferredWidth, appendHint)
+		}
+	} else {
+		enumerateNUMAMasks(topo, func(mask pod_info.NUMAMask) {
+			appendHint(mask.Indices())
+		})
+	}
+	if len(hints) == 0 {
+		return []topologymanager.TopologyHint{{Preferred: false}}
+	}
+	return hints
 }

@@ -9,28 +9,22 @@ import (
 	v1 "k8s.io/api/core/v1"
 	resourcehelper "k8s.io/component-helpers/resource"
 
+	commonpod "github.com/kai-scheduler/KAI-scheduler/pkg/common/pod"
+	commonresources "github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 )
 
-// podNumaRequests is a task decomposed into the alignment units the kubelet Topology Manager hints
-// for, as vectors. Pod scope: the whole pod is one request. Container scope: concurrent units (app
-// containers + native sidecars, charged against a shared per-zone ledger) and serial units (ordinary
-// init containers, each alignable on its own but never accumulated, since they free their resources
-// before the app containers run).
-type podNumaRequests struct {
-	podScope   []resource_info.ResourceVector
-	concurrent []resource_info.ResourceVector
-	serial     []resource_info.ResourceVector
+type admissionUnit struct {
+	container    *v1.Container
+	request      resource_info.ResourceVector
+	ordinaryInit bool
 }
 
-func (r *podNumaRequests) forScope(scope node_info.TopologyManagerScope) (concurrent, serial []resource_info.ResourceVector) {
-	if scope == node_info.TopologyScopePod {
-		return r.podScope, nil
-	}
-	return r.concurrent, r.serial
+type podNumaRequests struct {
+	podScope resource_info.ResourceVector
+	units    []admissionUnit
 }
 
 // numaRequestsFor builds and caches the task's NUMA requests on first use. Not safe for concurrent
@@ -51,27 +45,23 @@ func buildNumaRequests(pod *v1.Pod, vectorMap *resource_info.ResourceVectorMap) 
 	cpuIdx := vectorMap.GetIndex(v1.ResourceCPU)
 
 	podReq := resourcehelper.PodRequests(pod, resourcehelper.PodResourcesOptions{})
-	podVec := resource_info.NewResourceVectorFromResourceList(podReq, vectorMap)
-	setCPUMilli(podVec, cpuIdx, podGuaranteedCPUMilli(pod))
-	reqs := &podNumaRequests{podScope: []resource_info.ResourceVector{podVec}}
-
-	for i := range pod.Spec.InitContainers {
-		c := &pod.Spec.InitContainers[i]
-		vec := resource_info.NewResourceVectorFromResourceList(c.Resources.Requests, vectorMap)
-		setCPUMilli(vec, cpuIdx, guaranteedCPUMilli(pod, c))
-		if isNativeSidecar(c) {
-			reqs.concurrent = append(reqs.concurrent, vec)
-		} else {
-			reqs.serial = append(reqs.serial, vec)
+	for name := range podReq {
+		if commonresources.IsMemoryResource(name) {
+			delete(podReq, name)
 		}
 	}
-	for i := range pod.Spec.Containers {
-		c := &pod.Spec.Containers[i]
-		vec := resource_info.NewResourceVectorFromResourceList(c.Resources.Requests, vectorMap)
-		setCPUMilli(vec, cpuIdx, guaranteedCPUMilli(pod, c))
-		reqs.concurrent = append(reqs.concurrent, vec)
+	for _, container := range longRunningContainers(pod) {
+		for name, quantity := range container.Resources.Requests {
+			if commonresources.IsMemoryResource(name) {
+				amount := podReq[name]
+				amount.Add(quantity)
+				podReq[name] = amount
+			}
+		}
 	}
-	return reqs
+	podVec := resource_info.NewResourceVectorFromResourceList(podReq, vectorMap)
+	setCPUMilli(podVec, cpuIdx, podGuaranteedCPUMilli(pod))
+	return &podNumaRequests{podScope: podVec, units: admissionUnits(pod, vectorMap)}
 }
 
 func isNativeSidecar(c *v1.Container) bool {
@@ -89,7 +79,7 @@ func setCPUMilli(vec resource_info.ResourceVector, cpuIdx int, milli float64) {
 // container requesting fractional CPU stays in the shared pool and constrains no NUMA zone, so
 // summing its request (as resourcehelper.PodRequests does) would over-constrain the pod.
 func guaranteedCPUMilli(pod *v1.Pod, c *v1.Container) float64 {
-	if pod.Status.QOSClass != v1.PodQOSGuaranteed {
+	if !commonpod.IsGuaranteed(pod) {
 		return 0
 	}
 	q := c.Resources.Requests[v1.ResourceCPU]
@@ -118,4 +108,45 @@ func podGuaranteedCPUMilli(pod *v1.Pod) float64 {
 		longRunning += guaranteedCPUMilli(pod, &pod.Spec.Containers[i])
 	}
 	return math.Max(longRunning, initPeak)
+}
+
+func admissionUnits(pod *v1.Pod, vectorMap *resource_info.ResourceVectorMap) []admissionUnit {
+	units := make([]admissionUnit, 0, len(pod.Spec.InitContainers)+len(pod.Spec.Containers))
+	appendContainer := func(container *v1.Container, ordinary bool) {
+		request := resource_info.NewResourceVectorFromResourceList(container.Resources.Requests, vectorMap)
+		if ordinary {
+			for name := range container.Resources.Requests {
+				if commonresources.IsMemoryResource(name) {
+					index := vectorMap.GetIndex(name)
+					if index >= 0 {
+						request[index] = 0
+					}
+				}
+			}
+		}
+		setCPUMilli(request, vectorMap.GetIndex(v1.ResourceCPU), guaranteedCPUMilli(pod, container))
+		units = append(units, admissionUnit{container: container, request: request, ordinaryInit: ordinary})
+	}
+	for index := range pod.Spec.InitContainers {
+		container := &pod.Spec.InitContainers[index]
+		appendContainer(container, !isNativeSidecar(container))
+	}
+	for index := range pod.Spec.Containers {
+		appendContainer(&pod.Spec.Containers[index], false)
+	}
+	return units
+}
+
+func longRunningContainers(pod *v1.Pod) []*v1.Container {
+	containers := make([]*v1.Container, 0, len(pod.Spec.Containers)+len(pod.Spec.InitContainers))
+	for index := range pod.Spec.InitContainers {
+		container := &pod.Spec.InitContainers[index]
+		if isNativeSidecar(container) {
+			containers = append(containers, container)
+		}
+	}
+	for index := range pod.Spec.Containers {
+		containers = append(containers, &pod.Spec.Containers[index])
+	}
+	return containers
 }

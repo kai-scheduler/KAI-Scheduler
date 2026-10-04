@@ -10,6 +10,8 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 
+	commonpod "github.com/kai-scheduler/KAI-scheduler/pkg/common/pod"
+	commonresources "github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -49,15 +51,16 @@ type numaPlugin struct {
 	// effectiveAwareByNode maps a node name to its aware indices minus ignoreIndices; populated only
 	// when ignoreIndices is non-empty (otherwise the topology's AwareIndices are used directly).
 	effectiveAwareByNode map[string][]int
-	// hasModeledNodes is false when no node carries a modeled-policy topology, letting the
+	// hasScoredNodes is false when no node carries a scored-policy topology, letting the
 	// PrePredicateFn skip all per-task precompute.
-	hasModeledNodes bool
+	hasScoredNodes bool
 	// maxZones is the largest per-node NUMA-zone count in the cluster; the assumed span for a node
 	// with no NRT. Zero when no node reports topology, disabling scoring.
 	maxZones int
 	// awareDeviceIndices is the union, over scored nodes, of the shared-map indices of per-zone
 	// device resources (non cpu/memory/hugepages, minus ignoreList); drives wantsNuma.
-	awareDeviceIndices sets.Set[int]
+	awareDeviceIndices   sets.Set[int]
+	observedMemoryByNode map[string]sets.Set[v1.ResourceName]
 }
 
 func New(arguments framework.PluginArguments) framework.Plugin {
@@ -84,6 +87,7 @@ func (pp *numaPlugin) Name() string {
 func (pp *numaPlugin) OnSessionOpen(ssn *framework.Session) {
 	pp.ssn = ssn
 	pp.seedPlacements(ssn)
+	pp.seedMemoryGroups(ssn)
 	if pp.reconstructAvailable {
 		pp.reconstructNodeAvailable(ssn)
 	}
@@ -101,13 +105,13 @@ func (pp *numaPlugin) OnSessionOpen(ssn *framework.Session) {
 }
 
 // initCaches (re)builds the per-session predicate fast-path state (see evaluator.go): the per-task
-// memo, the ignore indices, the per-node effective-aware indices, and hasModeledNodes.
+// memo, the ignore indices, the per-node effective-aware indices, and hasScoredNodes.
 func (pp *numaPlugin) initCaches(ssn *framework.Session) {
 	pp.numaRequestCache = map[common_info.PodID]*podNumaRequests{}
 	pp.ignoreIndices = sets.New[int]()
 	pp.awareDeviceIndices = sets.New[int]()
 	pp.effectiveAwareByNode = nil
-	pp.hasModeledNodes = false
+	pp.hasScoredNodes = false
 	pp.maxZones = 0
 
 	vectorMap := ssn.ClusterInfo.ResourceVectorMap
@@ -131,9 +135,7 @@ func (pp *numaPlugin) initCaches(ssn *framework.Session) {
 		if !isScoredPolicy(topo.Policy) {
 			continue
 		}
-		if isModeledPolicy(topo.Policy) {
-			pp.hasModeledNodes = true
-		}
+		pp.hasScoredNodes = true
 		if pp.effectiveAwareByNode != nil {
 			pp.effectiveAwareByNode[node.Name] = filterAware(topo.AwareIndices, pp.ignoreIndices)
 		}
@@ -159,10 +161,10 @@ func filterAware(aware []int, ignore sets.Set[int]) []int {
 }
 
 // prePredicate is the PrePredicateFn: it computes a task's NUMA requests once, before FittingNode runs
-// per node. Skipped when no modeled node exists or the task is not Guaranteed.
+// per node. Skipped when no scored node exists or the task is not Guaranteed.
 func (pp *numaPlugin) prePredicate(task *pod_info.PodInfo, _ *podgroup_info.PodGroupInfo) error {
 	vectorMap := pp.ssn.ClusterInfo.ResourceVectorMap
-	if !pp.hasModeledNodes || vectorMap == nil || task.Pod == nil || task.Pod.Status.QOSClass != v1.PodQOSGuaranteed {
+	if !pp.hasScoredNodes || vectorMap == nil || !commonpod.IsGuaranteed(task.Pod) {
 		return nil // predicate builds the requests lazily against the node's (shared) map
 	}
 	pp.numaRequestsFor(task, vectorMap)
@@ -172,7 +174,7 @@ func (pp *numaPlugin) prePredicate(task *pod_info.PodInfo, _ *podgroup_info.PodG
 // nodePreOrder warms per-task scoring state. Skipped for non-NUMA-sensitive tasks.
 func (pp *numaPlugin) nodePreOrder(task *pod_info.PodInfo, _ []*node_info.NodeInfo) error {
 	vectorMap := pp.ssn.ClusterInfo.ResourceVectorMap
-	if pp.maxZones == 0 || vectorMap == nil || !pp.wantsNuma(task) {
+	if !pp.hasScoredNodes || pp.maxZones == 0 || vectorMap == nil || !pp.wantsNuma(task) {
 		return nil
 	}
 	pp.numaRequestsFor(task, vectorMap)
@@ -200,17 +202,18 @@ func (pp *numaPlugin) assumedSpan(task *pod_info.PodInfo, node *node_info.NodeIn
 	if topo == nil || len(topo.Zones) == 0 {
 		return pp.maxZones, true
 	}
-	if topo.Policy == node_info.TopologyPolicyNone || !pp.shouldScore(task, topo) {
+	if !pp.shouldScore(task, topo) {
 		return len(topo.Zones), true
 	}
-	alloc, ok := pp.evaluate(task, node)
-	if !ok {
+	placement, err := pp.evaluate(task, node)
+	if err != nil {
 		return 0, false
 	}
-	if len(alloc) == 0 {
-		return 1, true
+	span := len(placement.ZoneIndices())
+	if span > 0 {
+		return span, true
 	}
-	return len(alloc), true
+	return 1, true
 }
 
 // wantsNuma reports whether the task should be NUMA-scored: a Guaranteed pod, or one requesting a
@@ -219,7 +222,7 @@ func (pp *numaPlugin) wantsNuma(task *pod_info.PodInfo) bool {
 	if task.Pod == nil {
 		return false
 	}
-	if isGuaranteed(task) {
+	if commonpod.IsGuaranteed(task.Pod) {
 		return true
 	}
 	for idx := range pp.awareDeviceIndices {
@@ -230,22 +233,14 @@ func (pp *numaPlugin) wantsNuma(task *pod_info.PodInfo) bool {
 	return false
 }
 
-// placement rejects if the node's ledger changed after the predicate admitted the task.
+// placement re-solves after node selection so a changed ledger cannot commit a stale prediction.
 func (pp *numaPlugin) placement(task *pod_info.PodInfo, node *node_info.NodeInfo) (pod_info.NUMAPlacement, error) {
-	allocation, admit := pp.evaluate(task, node)
-	if !admit {
-		return pod_info.NUMAPlacement{}, errNotNumaAligned
-	}
-	return placementFromAllocation(allocation, node.NumaTopology), nil
+	return pp.evaluate(task, node)
 }
 
 func (pp *numaPlugin) predicate(task *pod_info.PodInfo, _ *podgroup_info.PodGroupInfo, node *node_info.NodeInfo) error {
-	if !pp.allocatable(task, node) {
-		// FittingNode already logs this failure at V(6); the shared sentinel keeps the reject path
-		// allocation-free (see errNotNumaAligned).
-		return errNotNumaAligned
-	}
-	return nil
+	_, err := pp.evaluate(task, node)
+	return err
 }
 
 // allocate charges the task's per-zone placement against the node's in-cycle ledger. The placement
@@ -255,8 +250,12 @@ func (pp *numaPlugin) predicate(task *pod_info.PodInfo, _ *podgroup_info.PodGrou
 func (pp *numaPlugin) allocate(event *framework.Event) {
 	task := event.Task
 	node := pp.ssn.ClusterInfo.Nodes[task.NodeName]
-	if node == nil || node.NumaTopology == nil {
+	if node == nil || node.NumaTopology == nil || !isScoredPolicy(node.NumaTopology.Policy) {
 		return
+	}
+	state := node.NumaTopology.MemoryGroups
+	if state != nil && state.Status == node_info.MemoryGroupsKnown {
+		state.ApplyOwner(memoryOwner(task), task.NUMAPlacement.MemoryGroups)
 	}
 	numaAllocate(node.NumaTopology, task.NUMAPlacement)
 }
@@ -264,20 +263,20 @@ func (pp *numaPlugin) allocate(event *framework.Event) {
 // deallocate frees a task's NUMA placement, if it's known, from the node's numa topology resources.
 func (pp *numaPlugin) deallocate(event *framework.Event) {
 	task := event.Task
-	if task.NUMAPlacement.IsEmpty() {
-		return
-	}
 	node := pp.ssn.ClusterInfo.Nodes[task.NodeName]
 	if node == nil {
 		log.InfraLogger.Errorf("numa plugin: node <%s> not found in session", task.NodeName)
 		return
 	}
 
-	if node.NumaTopology == nil {
+	if node.NumaTopology == nil || !isScoredPolicy(node.NumaTopology.Policy) {
 		return
 	}
 
 	numaDeallocate(node.NumaTopology, task.NUMAPlacement)
+	if state := node.NumaTopology.MemoryGroups; state != nil {
+		state.RemoveOwner(memoryOwner(task))
+	}
 }
 
 func numaAllocate(topo *node_info.NumaTopology, placement pod_info.NUMAPlacement) {
@@ -319,40 +318,22 @@ func parseIgnoreList(arguments framework.PluginArguments) sets.Set[v1.ResourceNa
 	return ignoreList
 }
 
-// shouldFilter gates the predicate: the plugin filters only on the rejecting policies. A Guaranteed
-// task is filtered always, a non-Guaranteed task only if it requests a topology-aware device.
-func (pp *numaPlugin) shouldFilter(task *pod_info.PodInfo, topo *node_info.NumaTopology) bool {
-	if topo == nil || task.Pod == nil || !isModeledPolicy(topo.Policy) {
-		return false
-	}
-	if isGuaranteed(task) {
-		return true
-	}
-	return pp.requestsAlignedDevice(task, topo)
-}
-
-// shouldScore gates placement, the in-cycle ledger, and scoring: the rejecting policies plus
-// best-effort. Same task criterion as shouldFilter, wider policy set.
+// shouldScore selects tasks whose CPU/device placement is modeled by the node's policy.
 func (pp *numaPlugin) shouldScore(task *pod_info.PodInfo, topo *node_info.NumaTopology) bool {
 	if topo == nil || task.Pod == nil || !isScoredPolicy(topo.Policy) {
 		return false
 	}
-	if isGuaranteed(task) {
+	if commonpod.IsGuaranteed(task.Pod) {
 		return true
 	}
 	return pp.requestsAlignedDevice(task, topo)
 }
 
 // isGuaranteed reports whether the task's pod is Guaranteed QoS.
-func isGuaranteed(task *pod_info.PodInfo) bool {
-	return task.Pod != nil && task.Pod.Status.QOSClass == v1.PodQOSGuaranteed
-}
-
 // isQoSGatedResource reports whether a resource is NUMA-aligned by the kubelet only for Guaranteed
 // pods (cpu via CPU Manager, memory/hugepages via Memory Manager).
 func isQoSGatedResource(name v1.ResourceName) bool {
-	return name == v1.ResourceCPU || name == v1.ResourceMemory ||
-		strings.HasPrefix(string(name), string(v1.ResourceHugePagesPrefix))
+	return name == v1.ResourceCPU || commonresources.IsMemoryResource(name)
 }
 
 // requestsAlignedDevice reports whether the task requests a topology-aware device resource the node
@@ -372,13 +353,7 @@ func (pp *numaPlugin) requestsAlignedDevice(task *pod_info.PodInfo, topo *node_i
 	return false
 }
 
-// isModeledPolicy reports whether the plugin filters (predicts kubelet rejection) for this policy.
-func isModeledPolicy(policy node_info.TopologyManagerPolicy) bool {
-	return policy == node_info.TopologyPolicySingleNUMANode || policy == node_info.TopologyPolicyRestricted
-}
-
-// isScoredPolicy reports whether the plugin accounts for and scores this policy: the modeled
-// policies plus best-effort (which never rejects but is steered toward aligned placements).
+// isScoredPolicy excludes policies without modeled hint generation or resource accounting.
 func isScoredPolicy(policy node_info.TopologyManagerPolicy) bool {
-	return isModeledPolicy(policy) || policy == node_info.TopologyPolicyBestEffort
+	return policy == node_info.TopologyPolicySingleNUMANode || policy == node_info.TopologyPolicyRestricted || policy == node_info.TopologyPolicyBestEffort
 }
