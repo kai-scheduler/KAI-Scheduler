@@ -1,11 +1,11 @@
 // Copyright 2025 NVIDIA CORPORATION
 // SPDX-License-Identifier: Apache-2.0
 
-// Command e2eshards splits the E2E suites into balanced, seed-randomized CI shards and
+// Command e2ebuckets splits the E2E suites into balanced, seed-randomized CI buckets and
 // verifies that every planned suite ran and passed.
 //
-//	e2eshards plan   [--shards N] [--seed S] [--history-dir DIR]
-//	e2eshards verify --packages JSON --reports-dir DIR
+//	e2ebuckets plan   [--buckets N] [--seed S] [--history-dir DIR]
+//	e2ebuckets verify --packages JSON --reports-dir DIR
 package main
 
 import (
@@ -19,14 +19,14 @@ import (
 )
 
 const (
-	defaultShards    = 3
+	defaultBuckets   = 3
 	defaultSuitesDir = "test/e2e/suites"
 	defaultDedicated = "test/e2e/suites/gitops,test/e2e/suites/upgrade"
 )
 
 func main() {
 	if len(os.Args) < 2 {
-		fail(fmt.Errorf("usage: e2eshards plan|verify [flags]"))
+		fail(fmt.Errorf("usage: e2ebuckets plan|verify [flags]"))
 	}
 	var err error
 	switch os.Args[1] {
@@ -48,14 +48,14 @@ func fail(err error) {
 }
 
 type matrixEntry struct {
-	Shard    string `json:"shard"`
+	Bucket   string `json:"bucket"`
 	Seed     string `json:"seed"`
 	Packages string `json:"packages"`
 }
 
 func runPlan(args []string) error {
 	flags := flag.NewFlagSet("plan", flag.ExitOnError)
-	shardCount := flags.Int("shards", defaultShards, "number of shards, clamped to the number of packages")
+	bucketCount := flags.Int("buckets", defaultBuckets, "number of buckets, clamped to the number of packages")
 	seed := flags.Int64("seed", 0, "random seed; derived from GITHUB_RUN_ID and GITHUB_RUN_ATTEMPT when 0")
 	historyDir := flags.String("history-dir", "", "directory with e2e-report-*.json files from earlier runs")
 	suitesRoot := flags.String("suites-root", defaultSuitesDir, "directory to scan for suites")
@@ -74,7 +74,7 @@ func runPlan(args []string) error {
 	if err != nil {
 		return err
 	}
-	*shardCount = min(*shardCount, len(packages))
+	*bucketCount = min(*bucketCount, len(packages))
 
 	var history []suiteReport
 	if *historyDir != "" {
@@ -93,29 +93,29 @@ func runPlan(args []string) error {
 		}
 	}
 
-	shards, err := Plan(packages, weights, *shardCount, *seed)
+	buckets, err := Plan(packages, weights, *bucketCount, *seed)
 	if err != nil {
 		return err
 	}
-	return writePlan(shards, packages, *seed)
+	return writePlan(buckets, packages, *seed)
 }
 
-func writePlan(shards []Shard, packages []string, seed int64) error {
+func writePlan(buckets []Bucket, packages []string, seed int64) error {
 	matrix := struct {
 		Include []matrixEntry `json:"include"`
 	}{}
 	summary := &strings.Builder{}
-	fmt.Fprintf(summary, "### E2E shards (seed `%d`)\n\n| Shard | Weight | Packages |\n|---|---|---|\n", seed)
-	for _, shard := range shards {
-		paths := make([]string, len(shard.Packages))
-		for i, pkg := range shard.Packages {
+	fmt.Fprintf(summary, "### E2E buckets (seed `%d`)\n\n| Bucket | Weight | Packages |\n|---|---|---|\n", seed)
+	for _, bucket := range buckets {
+		paths := make([]string, len(bucket.Packages))
+		for i, pkg := range bucket.Packages {
 			paths[i] = "./" + pkg
 		}
 		matrix.Include = append(matrix.Include, matrixEntry{
-			Shard: shard.Name, Seed: strconv.FormatInt(seed, 10), Packages: strings.Join(paths, " "),
+			Bucket: bucket.Name, Seed: strconv.FormatInt(seed, 10), Packages: strings.Join(paths, " "),
 		})
-		fmt.Fprintf(summary, "| %s | %d | %s |\n", shard.Name, shard.Weight, strings.Join(shard.Packages, "<br>"))
-		fmt.Printf("%s (weight %d): %s\n", shard.Name, shard.Weight, strings.Join(shard.Packages, " "))
+		fmt.Fprintf(summary, "| %s | %d | %s |\n", bucket.Name, bucket.Weight, strings.Join(bucket.Packages, "<br>"))
+		fmt.Printf("%s (weight %d): %s\n", bucket.Name, bucket.Weight, strings.Join(bucket.Packages, " "))
 	}
 
 	matrixJSON, err := json.Marshal(matrix)
@@ -135,7 +135,7 @@ func writePlan(shards []Shard, packages []string, seed int64) error {
 func runVerify(args []string) error {
 	flags := flag.NewFlagSet("verify", flag.ExitOnError)
 	packagesJSON := flags.String("packages", "", "JSON array of packages that must have run")
-	reportsDir := flags.String("reports-dir", "", "directory with the shard e2e-report-*.json files")
+	reportsDir := flags.String("reports-dir", "", "directory with the bucket e2e-report-*.json files")
 	_ = flags.Parse(args)
 
 	var expected []string

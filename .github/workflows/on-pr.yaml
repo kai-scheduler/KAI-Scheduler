@@ -247,8 +247,8 @@ jobs:
         run: |
           echo "Skipping build and test since only documentation files (.md or docs/) were changed."
 
-  prepare-e2e-shards:
-    name: Prepare E2E Shards
+  prepare-e2e-buckets:
+    name: Prepare E2E Buckets
     needs: [ check-build-and-test-required ]
     if: needs.check-build-and-test-required.outputs.code == 'true'
     runs-on: ubuntu-latest
@@ -267,7 +267,7 @@ jobs:
         with:
           go-version-file: go.mod
 
-      # Timing history only balances the shards, so a failure here must not fail the run.
+      # Timing history only balances the buckets, so a failure here must not fail the run.
       - name: Download E2E timing history
         continue-on-error: true
         env:
@@ -290,20 +290,20 @@ jobs:
           done
           echo "Found $found prior E2E runs with timing reports"
 
-      - name: Plan E2E shards
+      - name: Plan E2E buckets
         id: plan
         env:
-          E2E_SHARDS: ${{ vars.E2E_SHARD_COUNT || 3 }}
-        run: go run ./hack/e2eshards plan --shards "$E2E_SHARDS" --history-dir "$RUNNER_TEMP/e2e-history"
+          E2E_BUCKETS: ${{ vars.E2E_BUCKET_COUNT || 3 }}
+        run: go run ./hack/e2ebuckets plan --buckets "$E2E_BUCKETS" --history-dir "$RUNNER_TEMP/e2e-history"
 
   e2e-tests:
-    name: Run E2E Tests (${{ matrix.shard }})
-    needs: [ build, check-build-and-test-required, prepare-e2e-shards ]
+    name: Run E2E Tests (${{ matrix.bucket }})
+    needs: [ build, check-build-and-test-required, prepare-e2e-buckets ]
     if: needs.check-build-and-test-required.outputs.code == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.prepare-e2e-shards.outputs.matrix) }}
+      matrix: ${{ fromJSON(needs.prepare-e2e-buckets.outputs.matrix) }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -326,7 +326,7 @@ jobs:
       - name: Run e2e tests
         env:
           E2E_PACKAGES: ${{ matrix.packages }}
-          E2E_REPORT: e2e-report-${{ matrix.shard }}.json
+          E2E_REPORT: e2e-report-${{ matrix.bucket }}.json
           E2E_SEED: ${{ matrix.seed }}
         run: |
           read -r -a packages <<< "$E2E_PACKAGES"
@@ -335,7 +335,7 @@ jobs:
       - name: Report skipped tests
         if: always()
         env:
-          E2E_REPORT: e2e-report-${{ matrix.shard }}.json
+          E2E_REPORT: e2e-report-${{ matrix.bucket }}.json
         run: |
           echo "=== Skipped Tests ==="
           if [[ ! -f "$E2E_REPORT" ]]; then
@@ -348,8 +348,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: e2e-report-${{ matrix.shard }}
-          path: e2e-report-${{ matrix.shard }}.json
+          name: e2e-report-${{ matrix.bucket }}
+          path: e2e-report-${{ matrix.bucket }}.json
           if-no-files-found: warn
 
       - name: Uninstall KAI-scheduler
@@ -501,7 +501,7 @@ jobs:
     needs:
       - check-build-and-test-required
       - build
-      - prepare-e2e-shards
+      - prepare-e2e-buckets
       - e2e-tests
       - e2e-upgrade-tests
     if: always()
@@ -515,7 +515,7 @@ jobs:
           CHECK_RESULT: ${{ needs.check-build-and-test-required.result }}
           BUILD_RESULT: ${{ needs.build.result }}
           CODE_REQUIRED: ${{ needs.check-build-and-test-required.outputs.code }}
-          PREPARE_RESULT: ${{ needs.prepare-e2e-shards.result }}
+          PREPARE_RESULT: ${{ needs.prepare-e2e-buckets.result }}
           MAIN_RESULT: ${{ needs.e2e-tests.result }}
           UPGRADE_RESULT: ${{ needs.e2e-upgrade-tests.result }}
         run: |
@@ -535,8 +535,8 @@ jobs:
           failures=0
           results=(
             "Build:$BUILD_RESULT"
-            "Prepare E2E Shards:$PREPARE_RESULT"
-            "Main E2E Shards:$MAIN_RESULT"
+            "Prepare E2E Buckets:$PREPARE_RESULT"
+            "Main E2E Buckets:$MAIN_RESULT"
             "Upgrade E2E:$UPGRADE_RESULT"
           )
           for result_entry in "${results[@]}"; do
@@ -559,19 +559,19 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Download shard reports
+      - name: Download bucket reports
         if: needs.e2e-tests.result == 'success'
         uses: actions/download-artifact@v8
         with:
-          pattern: e2e-report-shard-*
+          pattern: e2e-report-bucket-*
           merge-multiple: true
           path: ${{ runner.temp }}/e2e-reports
 
       - name: Verify every planned E2E package ran and passed
         if: needs.e2e-tests.result == 'success'
         env:
-          PLANNED_PACKAGES: ${{ needs.prepare-e2e-shards.outputs.packages }}
-        run: go run ./hack/e2eshards verify --packages "$PLANNED_PACKAGES" --reports-dir "$RUNNER_TEMP/e2e-reports"
+          PLANNED_PACKAGES: ${{ needs.prepare-e2e-buckets.outputs.packages }}
+        run: go run ./hack/e2ebuckets verify --packages "$PLANNED_PACKAGES" --reports-dir "$RUNNER_TEMP/e2e-reports"
 
   # TODO: remove once the branch ruleset requires "E2E Gate" instead of "Run E2E Tests".
   e2e-legacy-required-check:

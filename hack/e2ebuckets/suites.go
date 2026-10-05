@@ -45,7 +45,7 @@ func DiscoverSuites(root string) ([]string, error) {
 	return suites, nil
 }
 
-// SplitDedicated separates suites that have their own CI job from the ones to shard.
+// SplitDedicated separates suites that have their own CI job from the ones to bucket.
 func SplitDedicated(suites, dedicated []string) (main []string, err error) {
 	for _, name := range dedicated {
 		if !slices.Contains(suites, name) {

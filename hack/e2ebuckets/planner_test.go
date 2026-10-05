@@ -13,9 +13,9 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestE2EShards(t *testing.T) {
+func TestE2EBuckets(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "E2E shard planner")
+	RunSpecs(t, "E2E bucket planner")
 }
 
 func pkgName(i int) string { return fmt.Sprintf("test/e2e/suites/p%02d", i) }
@@ -31,16 +31,16 @@ func fixture() ([]string, map[string]int) {
 }
 
 var _ = Describe("Plan", func() {
-	It("assigns every package exactly once with no empty shard", func() {
+	It("assigns every package exactly once with no empty bucket", func() {
 		packages, weights := fixture()
 		for seed := int64(1); seed <= 25; seed++ {
-			shards, err := Plan(packages, weights, 3, seed)
+			buckets, err := Plan(packages, weights, 3, seed)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(shards).To(HaveLen(3))
+			Expect(buckets).To(HaveLen(3))
 			var all []string
-			for _, shard := range shards {
-				Expect(shard.Packages).NotTo(BeEmpty())
-				all = append(all, shard.Packages...)
+			for _, bucket := range buckets {
+				Expect(bucket.Packages).NotTo(BeEmpty())
+				all = append(all, bucket.Packages...)
 			}
 			Expect(all).To(ConsistOf(packages))
 		}
@@ -54,35 +54,35 @@ var _ = Describe("Plan", func() {
 
 		distinct := map[string]bool{}
 		for seed := int64(1); seed <= 20; seed++ {
-			shards, _ := Plan(packages, weights, 3, seed)
-			distinct[fmt.Sprint(shards[0].Packages)] = true
+			buckets, _ := Plan(packages, weights, 3, seed)
+			distinct[fmt.Sprint(buckets[0].Packages)] = true
 		}
 		Expect(len(distinct)).To(BeNumerically(">", 1))
 	})
 
-	It("keeps the heaviest shard near the ideal split", func() {
+	It("keeps the heaviest bucket near the ideal split", func() {
 		packages, weights := fixture()
 		total := 0
 		for _, weight := range weights {
 			total += weight
 		}
 		for seed := int64(1); seed <= 25; seed++ {
-			shards, err := Plan(packages, weights, 3, seed)
+			buckets, err := Plan(packages, weights, 3, seed)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(heaviest(shards)).To(BeNumerically("<=", total/3*115/100))
+			Expect(heaviest(buckets)).To(BeNumerically("<=", total/3*115/100))
 		}
 	})
 
-	It("supports any shard count up to the package count", func() {
+	It("supports any bucket count up to the package count", func() {
 		packages, weights := fixture()
 		for count := 1; count <= len(packages); count++ {
-			shards, err := Plan(packages, weights, count, 3)
+			buckets, err := Plan(packages, weights, count, 3)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(shards).To(HaveLen(count))
+			Expect(buckets).To(HaveLen(count))
 		}
 	})
 
-	It("rejects more shards than packages and non-positive counts", func() {
+	It("rejects more buckets than packages and non-positive counts", func() {
 		packages, weights := fixture()
 		_, err := Plan(packages, weights, len(packages)+1, 1)
 		Expect(err).To(HaveOccurred())
