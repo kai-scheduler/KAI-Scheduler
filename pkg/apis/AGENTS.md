@@ -1,13 +1,10 @@
 # pkg/apis
 
-CRD Go types. Hand-written source is `*_types.go` plus kubebuilder markers; everything else is generated.
+API types are owned by the standalone module `github.com/kai-scheduler/api` (version in `go.mod`). All Go code in this repo imports them from there; nothing outside `pkg/apis` imports the packages below.
 
-| Group | Versions (storage version in bold) | Kinds |
-|---|---|---|
-| `scheduling` | `v1alpha2` (**BindRequest**), `v2alpha2` (**PodGroup**), `v2` (**Queue**) | BindRequest, PodGroup, Queue |
-| `kai` | `v1` (Config, SchedulingShard), `v1alpha1` (**Topology**) | Config, SchedulingShard, Topology |
+`pkg/apis` is a mirror of that module. It is still what `make generate manifests clients` read to produce `deployments/kai-scheduler/crds/` and `pkg/apis/client/`, and those CRDs are currently identical to the module's `config/crd`.
 
-- Storage version is set by `+kubebuilder:storageversion`; `grep -rn storageversion pkg/apis` to confirm before adding a version.
-- After changing types or markers run `make generate manifests clients`. Never edit `zz_generated*`, `pkg/apis/client/`, or `deployments/kai-scheduler/crds/`.
-- Changing a field in a served version is an API change: needs a changelog fragment, and users upgrade CRDs through `pkg/helmhooks` (`apply_crds.go`), so check that path still works.
-- `kai/v1` Config/SchedulingShard drive the operator; new fields usually need an operand change in `pkg/operator/operands/` and a default.
+- Do not change API types, CRD fields or API constants only in this repo. Ask first how the change should land in the `api` module and here; the two must not diverge.
+- Never edit `zz_generated*`, `pkg/apis/client/` or `deployments/kai-scheduler/crds/` by hand.
+- Storage versions: `grep -rn storageversion pkg/apis` (BindRequest `v1alpha2`, PodGroup `v2alpha2`, Queue `v2`, Topology `v1alpha1`). Config and SchedulingShard are `kai/v1`.
+- A field change in a served version is an API change and needs a changelog fragment. Users upgrade CRDs through `pkg/helmhooks` (`apply_crds.go`), so check that path still works.

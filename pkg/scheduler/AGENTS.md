@@ -9,7 +9,7 @@ Hot path: code under `plugins/`, `actions/` and `api/` runs for every pod in eve
 
 1. Create `plugins/<name>/` with `New(framework.PluginArguments) framework.Plugin` (`framework/plugins.go`).
 2. Register it in `InitDefaultPlugins` in `plugins/factory.go`.
-3. A registered plugin only runs if it is in the shard's plugin list. Default plugins and their priorities are defined in `pkg/apis/kai/v1/schedulingshard_types.go`; add it there if it must be on by default.
+3. A registered plugin only runs if it is in the shard's plugin list. Default plugins and their priorities are defined in `schedulingshard_types.go` of the `kai/v1` API (module `github.com/kai-scheduler/api`, mirrored in `pkg/apis/kai/v1`; see `pkg/apis/AGENTS.md`); add it there if it must be on by default.
 
 ## Adding an action
 

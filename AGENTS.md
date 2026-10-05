@@ -42,6 +42,7 @@ Only what linters and `gofmt` do not enforce:
 
 ## Pull requests
 
+- **Issue first** for features, behavior or API changes and non-trivial fixes: find or open an issue (templates in `.github/ISSUE_TEMPLATE/`) before the PR, and link it under "Related Issues" (`Fixes #N`). Typos, docs and trivial fixes do not need one.
 - Open PRs as draft. Title is `<type>(<scope>): <description>` (conventional commits); allowed scopes are in `.github/workflows/validate-pr-title.yaml`.
 - Fill in `.github/pull_request_template.md`.
 - **Changelog**: PRs that change behavior (feature, fix, API change, notable perf) need one fragment. Never edit `CHANGELOG.md` or write fragment files by hand.
