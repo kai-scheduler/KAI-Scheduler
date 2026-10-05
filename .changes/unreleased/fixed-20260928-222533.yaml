@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Node scale adjuster now accounts for nvFraction annotations when calculating needed GPU devices
+custom:
+  Author: "davidLif"
+  Issue: "2213"

@@ -30,14 +30,14 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 
-	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	commonconstants "github.com/kai-scheduler/api/constants"
+	enginev2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
 )
 
 const (
@@ -82,6 +82,10 @@ type PodGroupInfo struct {
 	RootSubGroupSet      *subgroup_info.SubGroupSet
 	PodSets              map[string]*subgroup_info.PodSet
 	InvalidSubGroupTasks pod_info.PodsMap
+
+	// CorePodNames is the sorted core (minimal satisfying) pod set published to the PodGroup status
+	// for semi-preemptible jobs. Filled at session close; nil for all other jobs.
+	CorePodNames []string
 
 	StalenessInfo
 
@@ -220,6 +224,16 @@ func (pgi *PodGroupInfo) PreemptionDelayEnd() *time.Time {
 func (pgi *PodGroupInfo) IsWithinPreemptionDelay(now time.Time) bool {
 	end := pgi.PreemptionDelayEnd()
 	return end != nil && now.Before(*end)
+}
+
+// IsSemiPreemptibleJob reports whether only the job's core (minimal satisfying shape) is protected,
+// leaving everything above it elastic and reclaimed first.
+func (pgi *PodGroupInfo) IsSemiPreemptibleJob() bool {
+	return pgi.Preemptibility == enginev2alpha2.SemiPreemptible
+}
+
+func (pgi *PodGroupInfo) HasEvictableTasks() bool {
+	return pgi.IsPreemptibleJob() || pgi.IsSemiPreemptibleJob()
 }
 
 func (pgi *PodGroupInfo) SetPodGroup(pg *enginev2alpha2.PodGroup) {
@@ -519,10 +533,7 @@ func (pgi *PodGroupInfo) IsStale() bool {
 }
 
 func (pgi *PodGroupInfo) IsGangSatisfied() bool {
-	if pgi.RootSubGroupSet == nil {
-		return false
-	}
-	return pgi.RootSubGroupSet.IsGangSatisfied()
+	return rootSubGroupSet(pgi).IsGangSatisfied()
 }
 
 func (pgi *PodGroupInfo) ShouldPipelineJob() bool {

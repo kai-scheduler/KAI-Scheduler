@@ -4,11 +4,12 @@
 package status_updater
 
 import (
+	"slices"
 	"strconv"
 
-	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/utils"
+	commonconstants "github.com/kai-scheduler/api/constants"
+	enginev2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
 )
 
 type podGroupStatusSyncResult string
@@ -29,6 +30,10 @@ func (su *defaultStatusUpdater) SyncPodGroupsWithPendingUpdates(podGroups []*eng
 			continue
 		}
 		podGroup := pgLatestUpdate.object.(*enginev2alpha2.PodGroup)
+		if !inFlightUpdateFound && pgLatestUpdate.isSupersededBy(podGroups[i]) {
+			su.appliedPodGroupUpdates.Delete(key)
+			continue
+		}
 		podGroupsyncResults := su.syncPodGroup(podGroup, podGroups[i])
 		// Delete the inflight update if it was applied + the pod group in the lister matches the inFlight
 		if podGroupsyncResults != snapshotStatusIsOlder && appliedUpdateFound {
@@ -40,6 +45,14 @@ func (su *defaultStatusUpdater) SyncPodGroupsWithPendingUpdates(podGroups []*eng
 
 	// Cleanup podGroups that don't comeup anymore
 	su.cleanUpdatesForNonSeenPodGroups(usedKeys)
+}
+
+func (u *inflightUpdate) isSupersededBy(live *enginev2alpha2.PodGroup) bool {
+	base := u.object.(*enginev2alpha2.PodGroup)
+	if live.ResourceVersion == base.ResourceVersion {
+		return false
+	}
+	return !slices.Contains(u.writtenResourceVersions, live.ResourceVersion)
 }
 
 func (su *defaultStatusUpdater) getLatestPgUpdate(key updatePayloadKey) (*inflightUpdate, bool, bool) {

@@ -19,11 +19,11 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/admission"
-	kaiv1binder "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/binder"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/api/constants"
+	kaiv1 "github.com/kai-scheduler/api/kai/v1"
+	"github.com/kai-scheduler/api/kai/v1/admission"
+	kaiv1binder "github.com/kai-scheduler/api/kai/v1/binder"
+	"github.com/kai-scheduler/api/kai/v1/common"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -102,8 +102,9 @@ func TestDeploymentForKAIConfig(t *testing.T) {
 						SchedulerName: ptr.To(constants.DefaultSchedulerName),
 					},
 					Admission: &admission.Admission{
-						Replicas:   ptr.To(int32(1)),
-						GPUSharing: ptr.To(true),
+						Replicas:                    ptr.To(int32(1)),
+						GPUSharing:                  ptr.To(true),
+						GPUFractionRuntimeClassName: ptr.To("custom-runtime-class"),
 						Webhook: &admission.Webhook{
 							TargetPort:  ptr.To(9443),
 							ProbePort:   ptr.To(8081),
@@ -121,6 +122,11 @@ func TestDeploymentForKAIConfig(t *testing.T) {
 			expectedArgs: []string{
 				"--gpu-sharing-enabled=true",
 				"--nri-plugin-enabled=true",
+				"--gpu-fraction-runtime-class-name",
+				"",
+			},
+			notExpectedArgs: []string{
+				"custom-runtime-class",
 			},
 		},
 		{

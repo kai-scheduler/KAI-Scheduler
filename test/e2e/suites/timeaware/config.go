@@ -12,11 +12,11 @@ import (
 
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 
-	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
-	kaiprometheus "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/prometheus"
 	usagedbapi "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/configurations"
 	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
+	kaiv1 "github.com/kai-scheduler/api/kai/v1"
+	kaiprometheus "github.com/kai-scheduler/api/kai/v1/prometheus"
 	"github.com/prometheus/common/model"
 )
 

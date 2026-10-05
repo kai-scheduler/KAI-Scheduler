@@ -17,14 +17,8 @@ import (
 	"k8s.io/utils/ptr"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/grouper"
-)
-
-const (
-	KartaGroupLabel   = "run.ai/karta-group"
-	KartaKindLabel    = "run.ai/karta-kind"
-	KartaVersionLabel = "run.ai/karta-version"
+	"github.com/kai-scheduler/api/podgrouper/constants"
 )
 
 type KartaGrouper struct {

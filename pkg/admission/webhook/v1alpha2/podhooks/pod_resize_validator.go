@@ -13,11 +13,11 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
-	v2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	commonpod "github.com/kai-scheduler/KAI-scheduler/pkg/common/pod"
-	commonpodgroup "github.com/kai-scheduler/KAI-scheduler/pkg/common/podgroup"
+	commonconstants "github.com/kai-scheduler/api/constants"
+	v2 "github.com/kai-scheduler/api/scheduling/v2"
+	v2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
+	commonpodgroup "github.com/kai-scheduler/api/utilities/podgroup"
 )
 
 var resizeLog = logf.Log.WithName("pod-resize-validator")
@@ -83,10 +83,17 @@ func (v *PodResizeValidator) validateResize(ctx context.Context, oldPod, newPod 
 		return nil
 	}
 
-	isPreemptible, err := commonpodgroup.IsPreemptible(ctx, pg, v.kubeClient)
+	preemptibility, err := commonpodgroup.GetPreemptibility(ctx, pg, v.kubeClient)
 	if err != nil {
 		resizeLog.Error(err, "failed to resolve preemptibility", "podgroup", pgName)
-		isPreemptible = true
+		preemptibility = v2alpha2.Preemptible
+	}
+
+	// A semi-preemptible group has both core (non-preemptible) and elastic (preemptible) pods at
+	// once, so the verdict must be per-pod: only the core pods are quota-checked.
+	isPreemptible := preemptibility != v2alpha2.NonPreemptible
+	if preemptibility == v2alpha2.SemiPreemptible {
+		isPreemptible = !isCorePod(pg, oldPod.Name)
 	}
 
 	delta := podResizeDelta(oldPod, newPod)
@@ -110,6 +117,20 @@ func (v *PodResizeValidator) validateResize(ctx context.Context, oldPod, newPod 
 	}
 
 	return nil
+}
+
+// isCorePod reports whether podName is in the scheduler's last-published core (non-preemptible) set
+// for pg. Absent SchedulingState (no scheduling cycle yet) means no pod is known to be core.
+func isCorePod(pg *v2alpha2.PodGroup, podName string) bool {
+	if pg.Status.SchedulingState == nil {
+		return false
+	}
+	for _, name := range pg.Status.SchedulingState.CorePods {
+		if name == podName {
+			return true
+		}
+	}
+	return false
 }
 
 func podResizeDelta(oldPod, newPod *corev1.Pod) corev1.ResourceList {

@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
+	"github.com/kai-scheduler/api/podgrouper/constants"
+	"github.com/kai-scheduler/api/scheduling/v2alpha2"
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
 	schedulingv1 "k8s.io/api/scheduling/v1"
@@ -395,6 +395,7 @@ func TestGetPodGroupMetadata_WithValidDefaultsConfigMap(t *testing.T) {
 		Data: map[string]string{
 			constants.DefaultPrioritiesConfigMapTypesKey: `[
 				{"typeName":"TestKind","group":"apps","priorityName":"cm-prio-apps","preemptibility":"preemptible"},
+				{"typeName":"TestKind","group":"semi.example.com","priorityName":"cm-prio-apps","preemptibility":"semi-preemptible"},
 				{"typeName":"TestKind","priorityName":"cm-prio-kind","preemptibility":"non-preemptible"}
 			]`,
 		},
@@ -430,6 +431,21 @@ func TestGetPodGroupMetadata_WithValidDefaultsConfigMap(t *testing.T) {
 			apiVersion:         "batch/v1",
 			wantPriorityClass:  cmPriorityKind,
 			wantPreemptibility: v2alpha2.NonPreemptible,
+		},
+		{
+			name:               "defaults_semi_preemptible_by_groupkind",
+			apiVersion:         "semi.example.com/v1",
+			wantPriorityClass:  cmPriorityApps,
+			wantPreemptibility: v2alpha2.SemiPreemptible,
+		},
+		{
+			name:       "pod_label_overrides_semi_preemptible_default",
+			apiVersion: "semi.example.com/v1",
+			podLabels: map[string]string{
+				"kai.scheduler/preemptibility": "preemptible",
+			},
+			wantPriorityClass:  cmPriorityApps,
+			wantPreemptibility: v2alpha2.Preemptible,
 		},
 		{
 			name:       "owner_preemptibility_overrides_defaults",
@@ -1075,6 +1091,32 @@ func TestCalcPodGroupPreemptibility(t *testing.T) {
 				"kai.scheduler/preemptibility": "non-preemptible",
 			},
 			expectedResult: "non-preemptible",
+		},
+		{
+			name: "valid semi-preemptible from owner",
+			ownerLabels: map[string]interface{}{
+				"kai.scheduler/preemptibility": "semi-preemptible",
+			},
+			podLabels:      nil,
+			expectedResult: "semi-preemptible",
+		},
+		{
+			name:        "valid semi-preemptible from pod",
+			ownerLabels: nil,
+			podLabels: map[string]string{
+				"kai.scheduler/preemptibility": "semi-preemptible",
+			},
+			expectedResult: "semi-preemptible",
+		},
+		{
+			name: "owner semi-preemptible overrides pod preemptible",
+			ownerLabels: map[string]interface{}{
+				"kai.scheduler/preemptibility": "semi-preemptible",
+			},
+			podLabels: map[string]string{
+				"kai.scheduler/preemptibility": "preemptible",
+			},
+			expectedResult: "semi-preemptible",
 		},
 		{
 			name: "invalid value from owner",

@@ -8,11 +8,11 @@ import (
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	rs "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
+	"github.com/kai-scheduler/api/scheduling/v2alpha2"
 	"k8s.io/utils/ptr"
 )
 
@@ -54,6 +54,18 @@ var _ = Describe("Quota Policy Check", func() {
 						rs.CpuResource:    3,
 						rs.MemoryResource: 3,
 						rs.GpuResource:    3,
+					},
+					expectedResult: false,
+				},
+				"fractional GPU allocation exactly matches deserved quota": {
+					deserved: rs.ResourceQuantities{
+						rs.GpuResource: 0.3,
+					},
+					allocatedNonPreemptible: rs.ResourceQuantities{
+						rs.GpuResource: 0.1,
+					},
+					requestedQuota: rs.ResourceQuantities{
+						rs.GpuResource: 0.2,
 					},
 					expectedResult: false,
 				},
@@ -139,6 +151,30 @@ var _ = Describe("Quota Policy Check", func() {
 				requestedShare rs.ResourceQuantities
 				expectedResult bool
 			}{
+				"single queue - non preemptible fractional GPU allocation exactly matches quota": {
+					queues: map[common_info.QueueID]*rs.QueueAttributes{
+						"queue1": {
+							UID:         "queue1",
+							Name:        "queue1",
+							ParentQueue: "",
+							QueueResourceShare: rs.QueueResourceShare{
+								GPU: rs.ResourceShare{
+									Deserved:                0.3,
+									AllocatedNotPreemptible: 0.1,
+								},
+							},
+						},
+					},
+					job: &podgroup_info.PodGroupInfo{
+						Name:      "job-a",
+						Namespace: "team-a",
+						Queue:     "queue1",
+					},
+					requestedShare: rs.ResourceQuantities{
+						rs.GpuResource: 0.2,
+					},
+					expectedResult: true,
+				},
 				"single queue - **preemptible** job - allocated non preemptible below quota": {
 					queues: map[common_info.QueueID]*rs.QueueAttributes{
 						"queue1": {

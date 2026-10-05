@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info/resources"
+	"github.com/kai-scheduler/api/constants"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
@@ -190,7 +190,11 @@ func convertResourceToFloat64(rName v1.ResourceName, rQuant resource.Quantity) f
 }
 
 func isGpuResource(resourceName v1.ResourceName) bool {
-	return strings.HasSuffix(string(resourceName), constants.GpuResource)
+	switch string(resourceName) {
+	case constants.GpuResource, GPUResourceName, amdGpuResourceName:
+		return true
+	}
+	return false
 }
 
 func normalizeResourceName(resourceName v1.ResourceName) v1.ResourceName {

@@ -17,12 +17,12 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
-	kaiv1binder "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/binder"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
 	binderplugins "github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common/test_utils"
+	"github.com/kai-scheduler/api/constants"
+	kaiv1 "github.com/kai-scheduler/api/kai/v1"
+	kaiv1binder "github.com/kai-scheduler/api/kai/v1/binder"
+	"github.com/kai-scheduler/api/kai/v1/common"
 
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
@@ -125,6 +125,21 @@ var _ = Describe("Binder", func() {
 					To(Equal(strconv.FormatBool(binderplugins.DefaultCDIEnabled)))
 				Expect(pluginConfig[binderplugins.HamiCorePluginName].Enabled).NotTo(BeNil())
 				Expect(*pluginConfig[binderplugins.HamiCorePluginName].Enabled).To(BeFalse())
+			})
+
+			It("passes --fips-only only when global.fipsOnly is set", func(ctx context.Context) {
+				objects, err := b.DesiredState(ctx, fakeKubeClient, kaiConfig)
+				Expect(err).To(BeNil())
+				deploymentT := test_utils.FindTypeInObjects[*appsv1.Deployment](objects)
+				Expect(deploymentT).NotTo(BeNil())
+				Expect((*deploymentT).Spec.Template.Spec.Containers[0].Args).NotTo(ContainElement("--fips-only"))
+
+				kaiConfig.Spec.Global.FIPSOnly = ptr.To(true)
+				objects, err = b.DesiredState(ctx, fakeKubeClient, kaiConfig)
+				Expect(err).To(BeNil())
+				deploymentT = test_utils.FindTypeInObjects[*appsv1.Deployment](objects)
+				Expect(deploymentT).NotTo(BeNil())
+				Expect((*deploymentT).Spec.Template.Spec.Containers[0].Args).To(ContainElement("--fips-only"))
 			})
 
 			It("passes volume binding timeout through plugin arguments", func(ctx context.Context) {

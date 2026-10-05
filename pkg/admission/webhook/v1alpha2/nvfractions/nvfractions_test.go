@@ -14,8 +14,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
+	"github.com/kai-scheduler/api/constants"
+	"github.com/kai-scheduler/api/utilities/resources"
 )
 
 func nvFractionsRequestKey(container string) string {
@@ -66,6 +66,220 @@ func TestMutateNoOpWithoutFractionRequest(t *testing.T) {
 	err := New("").Mutate(pod)
 	assert.NoError(t, err)
 	assert.Empty(t, pod.Annotations)
+}
+
+func TestMutateRejectsExistingTranslationTargets(t *testing.T) {
+	const containerName = "init-container"
+	tests := []struct {
+		name        string
+		annotations map[string]string
+		wantSource  string
+	}{
+		{
+			name: "memory request conflicts with existing request",
+			annotations: map[string]string{
+				constants.GpuMemory:                  "2000",
+				nvFractionsRequestKey(containerName): "1Gi",
+			},
+			wantSource: constants.GpuMemory,
+		},
+		{
+			name: "memory limit conflicts with existing limit",
+			annotations: map[string]string{
+				constants.GpuMemory:                  "2000",
+				constants.GpuMemoryLimit:             "3000Mi",
+				nvFractionsRequestKey(containerName): "2000Mi",
+				nvFractionsLimitKey(containerName):   "4000Mi",
+			},
+			wantSource: constants.GpuMemoryLimit,
+		},
+		{
+			name: "fraction limit conflicts with existing portion limit",
+			annotations: map[string]string{
+				constants.GpuFraction:      "0.5",
+				constants.GpuFractionLimit: "0.8",
+				resources.CalcGpuMemoryPortionLimitAnnotationForContainer(containerName): "0.9",
+			},
+			wantSource: constants.GpuFractionLimit,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pod := &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Annotations: tt.annotations},
+				Spec: v1.PodSpec{
+					InitContainers: []v1.Container{{Name: containerName}},
+					Containers:     []v1.Container{{Name: "container-0"}},
+				},
+			}
+			pod.Annotations[constants.GpuFractionContainerName] = containerName
+			before := pod.DeepCopy()
+
+			assert.ErrorContains(t, New("").Mutate(pod), tt.wantSource+" annotation conflicts with")
+			assert.Equal(t, before.Annotations, pod.Annotations)
+		})
+	}
+}
+
+func TestMutateKeepsMatchingTranslation(t *testing.T) {
+	tests := []struct {
+		name        string
+		annotations map[string]string
+	}{
+		{
+			name: "memory request",
+			annotations: map[string]string{
+				constants.GpuMemory:                  "2000",
+				nvFractionsRequestKey("container-0"): "2000Mi",
+			},
+		},
+		{
+			name: "memory limit",
+			annotations: map[string]string{
+				constants.GpuMemory:                  "2000",
+				constants.GpuMemoryLimit:             "3000Mi",
+				nvFractionsRequestKey("container-0"): "2000Mi",
+				nvFractionsLimitKey("container-0"):   "3000Mi",
+			},
+		},
+		{
+			name: "fraction limit",
+			annotations: map[string]string{
+				constants.GpuFraction:      "0.5",
+				constants.GpuFractionLimit: "0.8",
+				resources.CalcGpuMemoryPortionLimitAnnotationForContainer("container-0"): "0.8",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pod := &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Annotations: tt.annotations},
+				Spec:       v1.PodSpec{Containers: []v1.Container{{Name: "container-0"}}},
+			}
+			before := pod.DeepCopy()
+
+			assert.NoError(t, New("").Mutate(pod))
+			assert.Equal(t, before.Annotations, pod.Annotations)
+			assert.NoError(t, New("").Validate(context.Background(), nil, pod))
+		})
+	}
+}
+
+func TestShorthandLimitsMutateAndValidate(t *testing.T) {
+	tests := []struct {
+		name            string
+		annotations     map[string]string
+		translatedKey   string
+		translatedValue string
+		wantErrContains string
+	}{
+		{
+			name:            "fraction limit needs fraction",
+			annotations:     map[string]string{constants.GpuFractionLimit: "0.8"},
+			wantErrContains: "gpu-fraction.limit annotation can only be used together with the gpu-fraction annotation",
+		},
+		{
+			name:            "memory limit needs memory",
+			annotations:     map[string]string{constants.GpuMemoryLimit: "3000Mi"},
+			wantErrContains: "gpu-memory.limit annotation can only be used together with the gpu-memory annotation",
+		},
+		{
+			name: "fraction limit cannot use memory request",
+			annotations: map[string]string{
+				constants.GpuMemory:        "2000",
+				constants.GpuFractionLimit: "0.8",
+			},
+			wantErrContains: "gpu-fraction.limit annotation can only be used together with the gpu-fraction annotation",
+		},
+		{
+			name: "memory limit cannot use fraction request",
+			annotations: map[string]string{
+				constants.GpuFraction:    "0.5",
+				constants.GpuMemoryLimit: "3000Mi",
+			},
+			wantErrContains: "gpu-memory.limit annotation can only be used together with the gpu-memory annotation",
+		},
+		{
+			name: "fraction limit below request",
+			annotations: map[string]string{
+				constants.GpuFraction:      "0.5",
+				constants.GpuFractionLimit: "0.4",
+			},
+			translatedKey:   resources.CalcGpuMemoryPortionLimitAnnotationForContainer("container-0"),
+			translatedValue: "0.4",
+			wantErrContains: "must be greater than gpu-fraction annotation value",
+		},
+		{
+			name: "fraction limit above request",
+			annotations: map[string]string{
+				constants.GpuFraction:      "0.5",
+				constants.GpuFractionLimit: "0.8",
+			},
+			translatedKey:   resources.CalcGpuMemoryPortionLimitAnnotationForContainer("container-0"),
+			translatedValue: "0.8",
+		},
+		{
+			name: "memory limit below request",
+			annotations: map[string]string{
+				constants.GpuMemory:      "2000",
+				constants.GpuMemoryLimit: "1000Mi",
+			},
+			translatedKey:   nvFractionsLimitKey("container-0"),
+			translatedValue: "1000Mi",
+			wantErrContains: "must not be smaller than gpu-memory annotation value",
+		},
+		{
+			name: "memory limit above request",
+			annotations: map[string]string{
+				constants.GpuMemory:      "2000",
+				constants.GpuMemoryLimit: "3000Mi",
+			},
+			translatedKey:   nvFractionsLimitKey("container-0"),
+			translatedValue: "3000Mi",
+		},
+		{
+			name: "memory limit equal to request",
+			annotations: map[string]string{
+				constants.GpuMemory:      "2000",
+				constants.GpuMemoryLimit: "2000Mi",
+			},
+			translatedKey:   nvFractionsLimitKey("container-0"),
+			translatedValue: "2000Mi",
+		},
+		{
+			name: "memory limit needs a unit",
+			annotations: map[string]string{
+				constants.GpuMemory:      "2000",
+				constants.GpuMemoryLimit: "3000",
+			},
+			translatedKey:   nvFractionsLimitKey("container-0"),
+			translatedValue: "3000",
+			wantErrContains: "must be a positive Kubernetes memory quantity with a unit",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pod := &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Annotations: tt.annotations},
+				Spec:       v1.PodSpec{Containers: []v1.Container{{Name: "container-0"}}},
+			}
+			assert.NoError(t, New("").Mutate(pod))
+			if tt.translatedKey != "" {
+				assert.Equal(t, tt.translatedValue, pod.Annotations[tt.translatedKey])
+			}
+
+			err := New("").Validate(context.Background(), nil, pod)
+			if tt.wantErrContains != "" {
+				assert.ErrorContains(t, err, tt.wantErrContains)
+				return
+			}
+			assert.NoError(t, err)
+		})
+	}
 }
 
 func TestValidate(t *testing.T) {
@@ -294,6 +508,12 @@ func TestValidateDeviceAnnotationValues(t *testing.T) {
 		annotations     map[string]string
 		wantErrContains string
 	}{
+		{
+			name: "device annotation without a fraction request",
+			annotations: map[string]string{
+				resources.CalcGpuVisibleDevicesAnnotationForContainer("container-0"): "GPU-0",
+			},
+		},
 		{
 			name: "device annotation alongside a request on the same container",
 			annotations: map[string]string{

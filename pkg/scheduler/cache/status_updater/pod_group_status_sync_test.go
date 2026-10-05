@@ -21,14 +21,14 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/ptr"
 
-	kubeaischedfake "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/fake"
-	fakeschedulingv2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/typed/scheduling/v2alpha2/fake"
-	schedulingv2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/utils"
+	kubeaischedfake "github.com/kai-scheduler/api/client/clientset/versioned/fake"
+	fakeschedulingv2alpha2 "github.com/kai-scheduler/api/client/clientset/versioned/typed/scheduling/v2alpha2/fake"
+	schedulingv2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
 )
 
 var _ = Describe("Status Updater - Pod Groups Syncing", func() {
@@ -272,5 +272,39 @@ var _ = Describe("Status Updater - Pod Groups Syncing", func() {
 		for _, podGroup := range podGroupsOriginals {
 			Expect(podGroup.Status.SchedulingConditions).To(BeEmpty())
 		}
+	})
+
+	It("should drop applied updates once the cluster moved past the written object", func() {
+		close(finishUpdatesChan)
+		wg.Wait()
+		Eventually(func() int {
+			appliedPodGroupUpdatesCount := 0
+			statusUpdater.appliedPodGroupUpdates.Range(func(key any, value any) bool {
+				appliedPodGroupUpdatesCount += 1
+				return true
+			})
+			return appliedPodGroupUpdatesCount
+		}, 5*time.Second).Should(Equal(len(podGroupsOriginals)))
+
+		// An external writer (e.g. pod-group-assigner) cleared the scheduling conditions after our update landed.
+		podGroupsFromCluster := make([]*schedulingv2alpha2.PodGroup, 0, len(podGroupsOriginals))
+		for _, podGroup := range podGroupsOriginals {
+			podGroupCopy := podGroup.DeepCopy()
+			podGroupCopy.ResourceVersion = "external-write"
+			podGroupCopy.Status.SchedulingConditions = nil
+			podGroupsFromCluster = append(podGroupsFromCluster, podGroupCopy)
+		}
+
+		statusUpdater.SyncPodGroupsWithPendingUpdates(podGroupsFromCluster)
+
+		for _, podGroup := range podGroupsFromCluster {
+			Expect(podGroup.Status.SchedulingConditions).To(BeEmpty())
+		}
+		appliedPodGroupUpdatesCount := 0
+		statusUpdater.appliedPodGroupUpdates.Range(func(key any, value any) bool {
+			appliedPodGroupUpdatesCount += 1
+			return true
+		})
+		Expect(appliedPodGroupUpdatesCount).To(Equal(0))
 	})
 })

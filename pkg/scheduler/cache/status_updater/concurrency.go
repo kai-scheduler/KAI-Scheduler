@@ -12,8 +12,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 
-	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	enginev2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
 )
 
 func (su *defaultStatusUpdater) Run(stopCh <-chan struct{}) {
@@ -98,15 +98,23 @@ func (su *defaultStatusUpdater) updatePodGroup(
 
 	var statusErr, patchErr error
 	if updateData.updateStatus {
-		_, statusErr = su.kaiClient.SchedulingV2alpha2().PodGroups(podGroup.Namespace).UpdateStatus(
+		var updated *enginev2alpha2.PodGroup
+		updated, statusErr = su.kaiClient.SchedulingV2alpha2().PodGroups(podGroup.Namespace).UpdateStatus(
 			ctx, podGroup, metav1.UpdateOptions{},
 		)
+		if statusErr == nil {
+			updateData.writtenResourceVersions = append(updateData.writtenResourceVersions, updated.ResourceVersion)
+		}
 	}
 
 	if len(updateData.patchData) > 0 {
-		_, patchErr = su.kaiClient.SchedulingV2alpha2().PodGroups(podGroup.Namespace).Patch(
+		var patched *enginev2alpha2.PodGroup
+		patched, patchErr = su.kaiClient.SchedulingV2alpha2().PodGroups(podGroup.Namespace).Patch(
 			ctx, podGroup.Name, types.JSONPatchType, updateData.patchData, metav1.PatchOptions{}, updateData.subResources...,
 		)
+		if patchErr == nil {
+			updateData.writtenResourceVersions = append(updateData.writtenResourceVersions, patched.ResourceVersion)
+		}
 	}
 
 	if statusErr != nil || patchErr != nil {

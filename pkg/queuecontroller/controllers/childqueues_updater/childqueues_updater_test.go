@@ -13,7 +13,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	v2 "github.com/kai-scheduler/api/scheduling/v2"
 )
 
 func TestUpdateQueueChildren(t *testing.T) {

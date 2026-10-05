@@ -15,11 +15,11 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
-	kaiv1binder "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/binder"
 	binderplugins "github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins"
 	kaiConfigUtils "github.com/kai-scheduler/KAI-scheduler/pkg/operator/config"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common"
+	kaiv1 "github.com/kai-scheduler/api/kai/v1"
+	kaiv1binder "github.com/kai-scheduler/api/kai/v1/binder"
 )
 
 const (
@@ -225,6 +225,10 @@ func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1binder.Binder, fakeGPU 
 
 	if fakeGPU {
 		args = append(args, "--fake-gpu-nodes")
+	}
+
+	if common.IsFIPSOnly(kaiConfig.Spec.Global) {
+		args = append(args, "--fips-only")
 	}
 
 	if config.Replicas != nil && *config.Replicas > 1 {

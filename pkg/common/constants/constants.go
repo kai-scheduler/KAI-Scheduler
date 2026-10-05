@@ -55,8 +55,10 @@ const (
 	PodGroupAnnotationForPod      = "pod-group-name"
 	SkipPodGrouperAnnotation      = "kai.scheduler/skip-podgrouper"
 	GpuFraction                   = "gpu-fraction"
+	GpuFractionLimit              = GpuFraction + ".limit"
 	GpuFractionContainerName      = "gpu-fraction-container-name"
 	GpuMemory                     = "gpu-memory"
+	GpuMemoryLimit                = GpuMemory + ".limit"
 	ReceivedResourceType          = "received-resource-type"
 	GpuFractionsNumDevices        = "gpu-fraction-num-devices"
 	MpsAnnotation                 = "mps"
@@ -88,7 +90,7 @@ const (
 	KaiFractionContainerAnnotationPrefix = "kai.scheduler/container."
 	GpuMemoryPortionLimitSuffix          = ".gpu-memory.portion.limit"
 
-	// kai-gpu-fractioning statuses
+	// gpu-fractioning statuses
 	NvFractionNodeReadyConditionType = "gpu-fractioning.nvidia.com/Ready"
 )
 

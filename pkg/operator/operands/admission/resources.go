@@ -17,11 +17,11 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
-	kaiv1admission "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/admission"
-	kaiv1binder "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/binder"
 	generate "github.com/kai-scheduler/KAI-scheduler/pkg/operator/cert-utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common"
+	kaiv1 "github.com/kai-scheduler/api/kai/v1"
+	kaiv1admission "github.com/kai-scheduler/api/kai/v1/admission"
+	kaiv1binder "github.com/kai-scheduler/api/kai/v1/binder"
 )
 
 const (
@@ -451,7 +451,9 @@ func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1admission.Admission, nr
 		args = append(args, "--leader-elect")
 	}
 
-	if config.GPUFractionRuntimeClassName != nil {
+	if nriPluginEnabled {
+		args = append(args, "--gpu-fraction-runtime-class-name", "")
+	} else if config.GPUFractionRuntimeClassName != nil {
 		args = append(args, "--gpu-fraction-runtime-class-name", *config.GPUFractionRuntimeClassName)
 	}
 	if config.GPUPodRuntimeClassName != nil {

@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	resourceapi "k8s.io/api/resource/v1"
 
-	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
@@ -23,6 +22,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
+	schedulingv1alpha2 "github.com/kai-scheduler/api/scheduling/v1alpha2"
 )
 
 func TestStatement_Evict_Unevict(t *testing.T) {
@@ -1507,4 +1507,58 @@ func TestStatement_Allocate_Undo_Undo_DRA_ResourceClaimInfo(t *testing.T) {
 	// the clone; verify the sequence completes without errors.
 	err = s.undoOperation(1)
 	assert.NoError(t, err)
+}
+
+func TestStatement_Pipeline_TaskNotInJob(t *testing.T) {
+	// Pipeline must stop before mutating the task or node when UpdateTaskStatus detects an
+	// inconsistent session.
+	testMetadata := nodes_fake.TestClusterTopology{
+		Jobs: []*jobs_fake.TestJobBasic{
+			{
+				Name:                "pending_job0",
+				RequiredGPUsPerTask: 1,
+				QueueName:           "queue0",
+				Priority:            constants.PriorityTrainNumber,
+				Tasks: []*tasks_fake.TestTaskBasic{
+					{
+						State: pod_status.Pending,
+					},
+				},
+			},
+		},
+		Nodes: map[string]nodes_fake.TestNodeBasic{
+			"node0": {
+				GPUs: 1,
+			},
+		},
+	}
+	vectorMap := resource_info.NewResourceVectorMap()
+	jobsInfoMap, tasksToNodeMap, _ := jobs_fake.BuildJobsAndTasksMaps(testMetadata.Jobs, vectorMap)
+	nodesInfoMap := nodes_fake.BuildNodesInfoMap(testMetadata.Nodes, tasksToNodeMap, nil, vectorMap)
+
+	staleTask := jobsInfoMap["pending_job0"].GetAllPodsMap()["pending_job0-0"].Clone()
+	staleTask.UID = common_info.PodID("stale-uid-not-in-job")
+
+	s := &Statement{
+		operations: []Operation{},
+		ssn: &Session{
+			ClusterInfo: &api.ClusterInfo{
+				PodGroupInfos: jobsInfoMap,
+				Nodes:         nodesInfoMap,
+			},
+		},
+		sessionID: "1234",
+	}
+	nodeBefore := extractNodeAssertedInfo(nodesInfoMap["node0"])
+
+	err := s.Pipeline(staleTask, "node0", true)
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to find task")
+	assert.Equal(t, pod_status.Pending, staleTask.Status, "task status must not change")
+	assert.Equal(t, "", staleTask.NodeName, "task must not be assigned a node")
+	assert.False(t, staleTask.IsVirtualStatus, "task must not be marked virtual")
+	assert.Empty(t, s.operations, "no operation must be recorded for a failed pipeline")
+	assert.NotContains(t, nodesInfoMap["node0"].PodInfos, pod_info.PodKey(staleTask.Pod), "task must not be added to the node")
+	assert.Equal(t, nodeBefore, extractNodeAssertedInfo(nodesInfoMap["node0"]), "node accounting must not change")
 }

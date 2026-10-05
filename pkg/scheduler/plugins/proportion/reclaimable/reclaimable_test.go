@@ -6,7 +6,6 @@ package reclaimable
 import (
 	"testing"
 
-	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
@@ -14,6 +13,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	rs "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
+	commonconstants "github.com/kai-scheduler/api/constants"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -343,6 +343,40 @@ var _ = Describe("Can Reclaim Resources", func() {
 							FairShare:               2000,
 							Allocated:               0,
 							AllocatedNotPreemptible: 0,
+						},
+					},
+				},
+				canReclaim: true,
+			},
+			{
+				name: "Fractional GPU allocation exactly matches quota",
+				reclaimerInfo: &ReclaimerInfo{
+					Queue:             "queue1",
+					RequiredResources: resource_info.NewResource(1, 1, 0.2).ToVector(testVectorMap),
+					VectorMap:         testVectorMap,
+					IsPreemptable:     false,
+				},
+				queue: &rs.QueueAttributes{
+					UID:         "queue1",
+					ParentQueue: "",
+					QueueResourceShare: rs.QueueResourceShare{
+						GPU: rs.ResourceShare{
+							Deserved:                0.3,
+							FairShare:               0.3,
+							Allocated:               0.1,
+							AllocatedNotPreemptible: 0.1,
+						},
+						CPU: rs.ResourceShare{
+							Deserved:                2,
+							FairShare:               2,
+							Allocated:               1,
+							AllocatedNotPreemptible: 1,
+						},
+						Memory: rs.ResourceShare{
+							Deserved:                2,
+							FairShare:               2,
+							Allocated:               1,
+							AllocatedNotPreemptible: 1,
 						},
 					},
 				},

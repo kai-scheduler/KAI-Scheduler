@@ -159,7 +159,7 @@ spec:
                   ray=1100, subgrouporder=1000, taskorder=900, nominatednode=800,
                   dynamicresources=700, minruntime=600, topology=500, snapshot=400,
                   sg-nodelocalgreedy=360, sg-multinodegang=350, gpupack/gpuspread=300,
-                  nodeplacement=200, gpusharingorder=100.
+                  nodeplacement=200, gpusharingorder=100, backgroundpods=50.
                 type: object
               queueDepthPerAction:
                 additionalProperties:

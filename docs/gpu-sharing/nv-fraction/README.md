@@ -12,7 +12,7 @@ runtime:
 | Mode | Memory isolation | Request model |
 | --- | --- | --- |
 | `NonMemoryEnforced` | KAI schedules a fraction but does not enforce memory limits at the container level. | Pod-level `gpu-fraction` or `gpu-memory` annotations. |
-| `NvFractions` | CUDA memory limits are applied through the kai-gpu-fractioning's runtime integration. | Per-container `request` and `limit` annotations using Kubernetes memory quantities. |
+| `NvFractions` | CUDA memory limits are applied through the gpu-fractioning's runtime integration. | Per-container `request` and `limit` annotations using Kubernetes memory quantities. |
 
 NvFractions also adds these capabilities:
 
@@ -20,7 +20,7 @@ NvFractions also adds these capabilities:
   the value KAI schedules.
 - A limit can let a workload use spare memory above its request, while
   preserving the request as its guaranteed allocation.
-- KAI only schedules a fractional workload after kai-gpu-fractioning and
+- KAI only schedules a fractional workload after gpu-fractioning and
   its target GPU node report ready.
 
 For installation, runtime configuration, and the complete annotation
@@ -29,7 +29,7 @@ reference, see [GPU Sharing](../README.md).
 ## Prerequisites
 
 An administrator must install KAI in `NvFractions` mode and make the
-kai-gpu-fractioning ready before submitting workloads. In particular, the
+gpu-fractioning ready before submitting workloads. In particular, the
 `GpuFractioningConfig` named `default` and the target GPU node must report ready.
 See [NvFractions readiness](../README.md#nvfractions-readiness).
 

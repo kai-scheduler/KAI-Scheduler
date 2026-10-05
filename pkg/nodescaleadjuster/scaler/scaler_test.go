@@ -14,16 +14,16 @@ import (
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/nodescaleadjuster/consts"
 	testutils "github.com/kai-scheduler/KAI-scheduler/pkg/nodescaleadjuster/test-utils"
+	"github.com/kai-scheduler/api/constants"
 )
 
 func TestCreateScalingPod(t *testing.T) {
 	unschedulablePod := testutils.CreateUnschedulableFractionPod("pod", "namespace", "0.5", 1)
 	client := testutils.NewFakeClient(nil, unschedulablePod)
 	scaler := NewScaler(client, consts.DefaultScalingPodImage, testutils.ScalingPodNamespace,
-		testutils.ScalingPodAppLabel, testutils.ScalingPodServiceAccount)
+		testutils.ScalingPodAppLabel, testutils.ScalingPodServiceAccount, false)
 
 	pod, err := scaler.CreateScalingPod(unschedulablePod)
 	assert.Nil(t, err, "Failed to create scaling pod, err: %v", err)
@@ -39,7 +39,7 @@ func TestCreateScalingPodWithMultipleDevices(t *testing.T) {
 	unschedulablePod := testutils.CreateUnschedulableFractionPod("pod", "namespace", "0.5", 3)
 	client := testutils.NewFakeClient(nil, unschedulablePod)
 	scaler := NewScaler(client, consts.DefaultScalingPodImage, testutils.ScalingPodNamespace,
-		testutils.ScalingPodAppLabel, testutils.ScalingPodServiceAccount)
+		testutils.ScalingPodAppLabel, testutils.ScalingPodServiceAccount, false)
 
 	pod, err := scaler.CreateScalingPod(unschedulablePod)
 	assert.Nil(t, err, "Failed to create scaling pod, err: %v", err)
@@ -80,7 +80,7 @@ func TestFailGettingNumDevicesFromPod(t *testing.T) {
 	}
 	client := testutils.NewFakeClient(nil, unschedulablePod)
 	scaler := NewScaler(client, consts.DefaultScalingPodImage, testutils.ScalingPodNamespace,
-		testutils.ScalingPodAppLabel, testutils.ScalingPodServiceAccount)
+		testutils.ScalingPodAppLabel, testutils.ScalingPodServiceAccount, false)
 
 	pod, err := scaler.CreateScalingPod(unschedulablePod)
 	assert.NotNil(t, err, "Created scaling pod although should have failed")
@@ -104,7 +104,7 @@ func TestFailToCreateScalingPod(t *testing.T) {
 	}
 	client := testutils.NewFakeClient(interceptorFuncs, unschedulablePod)
 	scaler := NewScaler(client, consts.DefaultScalingPodImage, testutils.ScalingPodNamespace,
-		testutils.ScalingPodAppLabel, testutils.ScalingPodServiceAccount)
+		testutils.ScalingPodAppLabel, testutils.ScalingPodServiceAccount, false)
 
 	pod, err := scaler.CreateScalingPod(unschedulablePod)
 	assert.NotNil(t, err, "Created scaling pod although should have failed")
@@ -121,7 +121,7 @@ func TestCreateScalingPodFailOnStatusUpdate(t *testing.T) {
 	}
 	client := testutils.NewFakeClient(interceptorFuncs, unschedulablePod)
 	scaler := NewScaler(client, consts.DefaultScalingPodImage, testutils.ScalingPodNamespace,
-		testutils.ScalingPodAppLabel, testutils.ScalingPodServiceAccount)
+		testutils.ScalingPodAppLabel, testutils.ScalingPodServiceAccount, false)
 
 	pod, err := scaler.CreateScalingPod(unschedulablePod)
 	assert.NotNil(t, err, "Created scaling pod although should have failed to update status")
@@ -132,7 +132,7 @@ func TestDeleteScalingPod(t *testing.T) {
 	scalingPod := testutils.CreateScalingPod("pod-ns", "pod-name", 1)
 	client := testutils.NewFakeClient(nil, scalingPod)
 	scaler := NewScaler(client, consts.DefaultScalingPodImage, testutils.ScalingPodNamespace,
-		testutils.ScalingPodAppLabel, testutils.ScalingPodServiceAccount)
+		testutils.ScalingPodAppLabel, testutils.ScalingPodServiceAccount, false)
 	err := scaler.DeleteScalingPod(scalingPod)
 	assert.Nil(t, err, "Failed to delete scaling pod, err: %v", err)
 }
@@ -149,7 +149,7 @@ func TestFailToDeleteScalingPod(t *testing.T) {
 	}
 	client := testutils.NewFakeClient(interceptorFuncs, scalingPod)
 	scaler := NewScaler(client, consts.DefaultScalingPodImage, testutils.ScalingPodNamespace,
-		testutils.ScalingPodAppLabel, testutils.ScalingPodServiceAccount)
+		testutils.ScalingPodAppLabel, testutils.ScalingPodServiceAccount, false)
 	err := scaler.DeleteScalingPod(scalingPod)
 	assert.NotNil(t, err, "Deleted scaling pod although should have failed")
 }
@@ -159,7 +159,7 @@ func TestIsScalingPodExists(t *testing.T) {
 	scalingPod := testutils.CreateScalingPod("ns1", "pod1", 1)
 	client := testutils.NewFakeClient(nil, unschedulablePod, scalingPod)
 	scaler := NewScaler(client, consts.DefaultScalingPodImage, testutils.ScalingPodNamespace,
-		testutils.ScalingPodAppLabel, testutils.ScalingPodServiceAccount)
+		testutils.ScalingPodAppLabel, testutils.ScalingPodServiceAccount, false)
 
 	exists := scaler.IsScalingPodExistsForUnschedulablePod(unschedulablePod)
 	assert.True(t, exists, "Scaling pod does not exists")
@@ -169,7 +169,7 @@ func TestIsScalingPodDoesNotExist(t *testing.T) {
 	unschedulablePod := testutils.CreateUnschedulableFractionPod("pod1", "ns1", "0.5", 1)
 	client := testutils.NewFakeClient(nil, unschedulablePod)
 	scaler := NewScaler(client, consts.DefaultScalingPodImage, testutils.ScalingPodNamespace,
-		testutils.ScalingPodAppLabel, testutils.ScalingPodServiceAccount)
+		testutils.ScalingPodAppLabel, testutils.ScalingPodServiceAccount, false)
 
 	exits := scaler.IsScalingPodExistsForUnschedulablePod(unschedulablePod)
 	assert.False(t, exits, "Scaling pod should not exist")
@@ -181,7 +181,7 @@ func TestIsScalingPodStillNeeded(t *testing.T) {
 
 	client := testutils.NewFakeClient(nil, unschedulablePod, scalingPod)
 	scaler := NewScaler(client, consts.DefaultScalingPodImage, testutils.ScalingPodNamespace,
-		testutils.ScalingPodAppLabel, testutils.ScalingPodServiceAccount)
+		testutils.ScalingPodAppLabel, testutils.ScalingPodServiceAccount, false)
 
 	needed := scaler.IsScalingPodStillNeeded(scalingPod)
 	assert.True(t, needed, "Scaling pod is not needed while unschedulable pod still exists")
@@ -196,7 +196,7 @@ func TestIsScalingPodStillNeededPodNoCondition(t *testing.T) {
 
 	client := testutils.NewFakeClient(nil, unschedulablePod, scalingPod)
 	scaler := NewScaler(client, consts.DefaultScalingPodImage, testutils.ScalingPodNamespace,
-		testutils.ScalingPodAppLabel, testutils.ScalingPodServiceAccount)
+		testutils.ScalingPodAppLabel, testutils.ScalingPodServiceAccount, false)
 
 	needed := scaler.IsScalingPodStillNeeded(scalingPod)
 	assert.True(t, needed, "Scaling pod is not needed while unschedulable has no conditions")
@@ -216,7 +216,7 @@ func TestIsScalingPodStillNeededPodSchedulable(t *testing.T) {
 
 	client := testutils.NewFakeClient(nil, unschedulablePod, scalingPod)
 	scaler := NewScaler(client, consts.DefaultScalingPodImage, testutils.ScalingPodNamespace,
-		testutils.ScalingPodAppLabel, testutils.ScalingPodServiceAccount)
+		testutils.ScalingPodAppLabel, testutils.ScalingPodServiceAccount, false)
 
 	needed := scaler.IsScalingPodStillNeeded(scalingPod)
 	assert.False(t, needed, "Scaling pod is needed while unschedulable pod became schedulable")
@@ -227,7 +227,7 @@ func TestIsScalingPodStillNeededPodDoesNotExist(t *testing.T) {
 
 	client := testutils.NewFakeClient(nil, scalingPod)
 	scaler := NewScaler(client, consts.DefaultScalingPodImage, testutils.ScalingPodNamespace,
-		testutils.ScalingPodAppLabel, testutils.ScalingPodServiceAccount)
+		testutils.ScalingPodAppLabel, testutils.ScalingPodServiceAccount, false)
 
 	needed := scaler.IsScalingPodStillNeeded(scalingPod)
 	assert.False(t, needed, "Scaling pod is needed while unschedulable pod was deleted")
@@ -245,7 +245,7 @@ func TestIsScalingPodStillNeededFailedToGetPod(t *testing.T) {
 
 	client := testutils.NewFakeClient(interceptorFuncs, scalingPod)
 	scaler := NewScaler(client, consts.DefaultScalingPodImage, testutils.ScalingPodNamespace,
-		testutils.ScalingPodAppLabel, testutils.ScalingPodServiceAccount)
+		testutils.ScalingPodAppLabel, testutils.ScalingPodServiceAccount, false)
 
 	needed := scaler.IsScalingPodStillNeeded(scalingPod)
 	assert.True(t, needed, "Scaling pod is not needed while failed to get unschedulable pod")
@@ -260,7 +260,7 @@ func TestIsScalingPodStillNeededOnCompletion(t *testing.T) {
 
 	client := testutils.NewFakeClient(nil, unschedulablePod, scalingPod)
 	scaler := NewScaler(client, consts.DefaultScalingPodImage, testutils.ScalingPodNamespace,
-		testutils.ScalingPodAppLabel, testutils.ScalingPodServiceAccount)
+		testutils.ScalingPodAppLabel, testutils.ScalingPodServiceAccount, false)
 
 	needed := scaler.IsScalingPodStillNeeded(scalingPod)
 	assert.False(t, needed, "Scaling pod is needed although it completed")

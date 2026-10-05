@@ -1,7 +1,7 @@
 # Copyright 2025 NVIDIA CORPORATION
 # SPDX-License-Identifier: Apache-2.0
 
-FROM golang:1.26.3 AS debug
+FROM golang:1.26.8 AS debug
 ARG TARGETARCH
 ARG SERVICE_NAME
 ENV TARGETARCH=$TARGETARCH
@@ -17,7 +17,7 @@ USER 65532:65532
 
 ENTRYPOINT ["/go/bin/dlv", "exec", "--headless", "-l", ":10000", "--api-version=2", "/workspace/app", "--"]
 
-FROM golang:1.26.3-bookworm AS certs
+FROM golang:1.26.8-bookworm AS certs
 
 FROM scratch AS prod
 ARG TARGETARCH
@@ -35,7 +35,7 @@ USER 65532:65532
 
 ENTRYPOINT ["/workspace/app"]
 
-FROM nvcr.io/nvidia/distroless/go:v3.2.1 AS prod-cgo
+FROM nvcr.io/nvidia/distroless/go:v4.1.4 AS prod-cgo
 ARG TARGETARCH
 ARG SERVICE_NAME
 ENV TARGETARCH=$TARGETARCH

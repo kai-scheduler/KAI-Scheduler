@@ -21,9 +21,10 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
-	kaiv1common "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/fips"
 	kaiConfigUtils "github.com/kai-scheduler/KAI-scheduler/pkg/operator/config"
+	kaiv1 "github.com/kai-scheduler/api/kai/v1"
+	kaiv1common "github.com/kai-scheduler/api/kai/v1/common"
 )
 
 var controllerTypes = []string{"Deployment", "DaemonSet"}
@@ -252,10 +253,11 @@ func DaemonSetForKAIConfig(
 // outbound TLS handshake (e.g. to the API server via client-go) unless the hybrid
 // curve is disabled. See https://github.com/kubernetes/kubernetes/issues/133743.
 func FIPSOnlyEnv(global *kaiv1.GlobalConfig) []v1.EnvVar {
-	if global == nil || !ptr.Deref(global.FIPSOnly, false) {
-		return nil
-	}
-	return []v1.EnvVar{{Name: "GODEBUG", Value: "fips140=only,tlsmlkem=0"}}
+	return fips.OnlyEnv(IsFIPSOnly(global))
+}
+
+func IsFIPSOnly(global *kaiv1.GlobalConfig) bool {
+	return global != nil && ptr.Deref(global.FIPSOnly, false)
 }
 
 func ShouldCreatePodDisruptionBudget(replicas *int32, service *kaiv1common.Service) bool {

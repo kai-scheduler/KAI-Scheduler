@@ -12,10 +12,10 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
-	npeapi "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/numa_placement_exporter"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/npe/consts"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common"
+	kaiv1 "github.com/kai-scheduler/api/kai/v1"
+	npeapi "github.com/kai-scheduler/api/kai/v1/numa_placement_exporter"
 )
 
 const (

@@ -14,8 +14,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/nodescaleadjuster/scaler"
+	"github.com/kai-scheduler/api/utilities/resources"
 )
 
 type ScaleAdjuster struct {
@@ -99,12 +99,12 @@ func (sa *ScaleAdjuster) isInCoolDown() bool {
 }
 
 func (sa *ScaleAdjuster) createNewScalingPods(existingScalingPods []*corev1.Pod) (int, error) {
-	pods, err := sa.getUnschedulablePods()
+	pods, err := sa.getUnschedulableFractionalPods()
 	if err != nil {
 		return 0, fmt.Errorf("could not get unschedulable pods. err: %v", err)
 	}
 
-	log.Printf("Found %d unschedulable pods", len(pods))
+	log.Printf("Found %d unschedulable fractional pods", len(pods))
 
 	numNeededDevices, podsToScale := sa.calculator.calculateNumNeededDevices(pods)
 	if numNeededDevices == 0 {
@@ -143,7 +143,7 @@ func (sa *ScaleAdjuster) createNewScalingPods(existingScalingPods []*corev1.Pod)
 	return numCreatedPods, nil
 }
 
-func (sa *ScaleAdjuster) getUnschedulablePods() ([]*corev1.Pod, error) {
+func (sa *ScaleAdjuster) getUnschedulableFractionalPods() ([]*corev1.Pod, error) {
 	podsList := &corev1.PodList{}
 	err := sa.client.List(context.Background(), podsList)
 	if err != nil {

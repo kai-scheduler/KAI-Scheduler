@@ -41,13 +41,13 @@ import (
 	faketesting "k8s.io/client-go/testing"
 	"k8s.io/utils/ptr"
 
-	kubeaischedulerfake "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/fake"
-	fakeschedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/typed/scheduling/v1alpha2/fake"
-	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	featuregates "github.com/kai-scheduler/KAI-scheduler/pkg/common/feature_gates"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
+	kubeaischedulerfake "github.com/kai-scheduler/api/client/clientset/versioned/fake"
+	fakeschedulingv1alpha2 "github.com/kai-scheduler/api/client/clientset/versioned/typed/scheduling/v1alpha2/fake"
+	schedulingv1alpha2 "github.com/kai-scheduler/api/scheduling/v1alpha2"
 )
 
 func TestCache(t *testing.T) {

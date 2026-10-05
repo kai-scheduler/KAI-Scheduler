@@ -1,0 +1,49 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# A node diagnostics agent marked as a background workload: eight replicas, each
+# holding a single GPU, all of it treated as free capacity by the scheduler.
+#
+# No pod anti-affinity, even though spreading the replicas would be the usual
+# way to write this. Background pods are invisible to each other's affinity
+# checks while the scheduler is planning, so a required anti-affinity among them
+# is not enforced and two replicas can still share a node. Use a DaemonSet when
+# exactly one pod per node is a requirement.
+#
+# priorityClassName is set explicitly because a Deployment would otherwise
+# default to `inference`, which is non-preemptible and cannot run in a
+# zero-quota queue.
+#
+# The container traps SIGTERM and exits immediately, so eviction does not hold
+# up the user workload that displaced it.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: healthcheck
+spec:
+  replicas: 8
+  selector:
+    matchLabels:
+      app: healthcheck
+  template:
+    metadata:
+      labels:
+        app: healthcheck
+        kai.scheduler/background: "true"
+        kai.scheduler/queue: maintenance
+    spec:
+      schedulerName: kai-scheduler
+      priorityClassName: train
+      terminationGracePeriodSeconds: 5
+      containers:
+        - name: main
+          image: ubuntu
+          command: ["bash", "-c"]
+          args: ["trap 'exit 0' TERM; sleep infinity & wait"]
+          resources:
+            limits:
+              nvidia.com/gpu: "1"
+            requests:
+              cpu: 100m
+              memory: 128M

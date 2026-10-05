@@ -10,7 +10,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	commonconstants "github.com/kai-scheduler/api/constants"
 )
 
 const (
@@ -246,6 +246,22 @@ var _ = Describe("ResourceVectorMap", func() {
 			Expect(indexMap.GetIndex(commonconstants.GpuResource)).To(Equal(2))
 			Expect(indexMap.GetIndex("not-exist")).To(Equal(-1))
 			Expect(indexMap.GetIndex("")).To(Equal(-1))
+		})
+
+		It("should map only the exact GPU resource names to the GPU index", func() {
+			indexMap := buildTestVectorMap(v1.ResourceCPU, v1.ResourceMemory, v1.ResourceName(commonconstants.NvidiaGpuResource))
+
+			Expect(indexMap.GetIndex(commonconstants.NvidiaGpuResource)).To(Equal(GPUIndex))
+			Expect(indexMap.GetIndex(amdGpuResourceName)).To(Equal(GPUIndex))
+			Expect(indexMap.GetIndex(commonconstants.GpuResource)).To(Equal(GPUIndex))
+		})
+
+		It("should not treat other resources ending in gpu as GPUs", func() {
+			indexMap := buildTestVectorMap(v1.ResourceCPU, v1.ResourceMemory, v1.ResourceName(commonconstants.NvidiaGpuResource))
+			indexMap.AddResource("nvidia.com/vgpu")
+
+			Expect(indexMap.GetIndex("nvidia.com/vgpu")).ToNot(Equal(GPUIndex))
+			Expect(indexMap.GetIndex("example.com/mygpu")).To(Equal(-1))
 		})
 	})
 })

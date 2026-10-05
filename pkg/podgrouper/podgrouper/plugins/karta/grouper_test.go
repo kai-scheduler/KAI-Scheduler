@@ -373,9 +373,9 @@ func createTestKartaWithNameAndUID(gvk metav1.GroupVersionKind, name string, uid
 			Name: name,
 			UID:  uid,
 			Labels: map[string]string{
-				KartaGroupLabel:   gvk.Group,
-				KartaVersionLabel: gvk.Version,
-				KartaKindLabel:    gvk.Kind,
+				kartav1alpha1.LabelRootGroup:   gvk.Group,
+				kartav1alpha1.LabelRootVersion: gvk.Version,
+				kartav1alpha1.LabelRootKind:    gvk.Kind,
 			},
 		},
 		Spec: kartav1alpha1.KartaSpec{

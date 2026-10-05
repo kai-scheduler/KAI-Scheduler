@@ -13,8 +13,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/nodescaleadjuster/consts"
+	"github.com/kai-scheduler/api/utilities/resources"
 )
 
 type Scaler struct {
@@ -23,15 +23,19 @@ type Scaler struct {
 	namespace                string
 	scalingPodAppLabel       string
 	scalingPodServiceAccount string
+	fipsOnly                 bool
 }
 
-func NewScaler(client client.Client, image, namespace, scalingPodAppLabel, scalingPodServiceAccount string) *Scaler {
+func NewScaler(
+	client client.Client, image, namespace, scalingPodAppLabel, scalingPodServiceAccount string, fipsOnly bool,
+) *Scaler {
 	scaler := Scaler{
 		client:                   client,
 		image:                    image,
 		namespace:                namespace,
 		scalingPodAppLabel:       scalingPodAppLabel,
 		scalingPodServiceAccount: scalingPodServiceAccount,
+		fipsOnly:                 fipsOnly,
 	}
 
 	return &scaler
@@ -45,7 +49,7 @@ func (s *Scaler) CreateScalingPod(unschedulablePod *corev1.Pod) (*corev1.Pod, er
 	}
 
 	pod := createScalingPodSpec(s.scalingPodAppLabel, s.scalingPodServiceAccount,
-		unschedulablePod, s.image, s.namespace, numDevices)
+		unschedulablePod, s.image, s.namespace, numDevices, s.fipsOnly)
 	err = s.client.Create(context.TODO(), pod)
 	if err != nil {
 		err = fmt.Errorf("Failed to create scaling pod: %v. err=%v\n", pod.Name, err)

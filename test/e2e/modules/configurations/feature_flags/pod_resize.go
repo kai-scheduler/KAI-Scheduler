@@ -7,13 +7,13 @@ package feature_flags
 import (
 	"context"
 
-	kaiadmission "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/admission"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/configurations"
 	testContext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/testconfig"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
+	kaiadmission "github.com/kai-scheduler/api/kai/v1/admission"
 
-	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	kaiv1 "github.com/kai-scheduler/api/kai/v1"
 )
 
 // SetInPlacePodResizeValidation patches the KAI config's

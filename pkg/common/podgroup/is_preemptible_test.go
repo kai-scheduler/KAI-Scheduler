@@ -213,13 +213,13 @@ func TestIsPreemptible(t *testing.T) {
 			kubeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(tt.args.inClusterPriorityClasses...).
 				Build()
 
-			got, err := IsPreemptible(context.TODO(), tt.args.podGroup, kubeClient)
+			got, err := GetPreemptibility(context.TODO(), tt.args.podGroup, kubeClient)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("IsPreemptible() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("GetPreemptibility() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if got != tt.want {
-				t.Errorf("IsPreemptible() got = %v, want %v", got, tt.want)
+			if isPreemptible := got == v2alpha2.Preemptible; isPreemptible != tt.want {
+				t.Errorf("GetPreemptibility() got = %v, want preemptible = %v", got, tt.want)
 			}
 		})
 	}

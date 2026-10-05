@@ -14,8 +14,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
-	kaiv1common "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
+	kaiv1 "github.com/kai-scheduler/api/kai/v1"
+	kaiv1common "github.com/kai-scheduler/api/kai/v1/common"
 )
 
 const GpuFractioningConfigCRDName = "gpufractioningconfigs.gpu-fractioning.kai.scheduler"

@@ -5,6 +5,7 @@ package resources
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -19,6 +20,9 @@ import (
 // the gpu-fraction-container-name annotation, and NvFractions annotations. It is
 // configmap-agnostic and shared by the admission plugins.
 func ValidateGPUFractionRequest(pod *v1.Pod) error {
+	if err := validateShorthandLimits(pod); err != nil {
+		return err
+	}
 	if err := validateGpuMemoryPortionLimitAnnotation(pod); err != nil {
 		return err
 	}
@@ -50,9 +54,9 @@ func ValidateGPUFractionRequest(pod *v1.Pod) error {
 	legacyMemoryStr, hasLegacyMemory := pod.Annotations[constants.GpuMemory]
 	hasLegacyMemory = hasLegacyMemory && legacyMemoryStr != ""
 
-	// NvFractions limit cannot coexist with legacy fraction annotations;
-	// the prefer semantics only apply to request annotations.
-	if req.Limit != nil && (hasLegacyFraction || hasLegacyMemory) {
+	// A legacy gpu-memory request may accompany a translated shorthand limit.
+	_, hasMemoryLimitShorthand := pod.Annotations[constants.GpuMemoryLimit]
+	if req.Limit != nil && (hasLegacyFraction || (hasLegacyMemory && !hasMemoryLimitShorthand)) {
 		return fmt.Errorf("cannot combine %s limit annotation with %s or %s annotation",
 			constants.NvFractionsAnnotationPrefix, constants.GpuFraction, constants.GpuMemory)
 	}
@@ -69,6 +73,69 @@ func ValidateGPUFractionRequest(pod *v1.Pod) error {
 		}
 	}
 
+	return nil
+}
+
+func validateShorthandLimits(pod *v1.Pod) error {
+	if err := validateFractionLimitShorthand(pod); err != nil {
+		return err
+	}
+	return validateMemoryLimitShorthand(pod)
+}
+
+func validateFractionLimitShorthand(pod *v1.Pod) error {
+	rawLimit, found := pod.Annotations[constants.GpuFractionLimit]
+	if !found {
+		return nil
+	}
+	rawFraction := pod.Annotations[constants.GpuFraction]
+	if rawFraction == "" {
+		return fmt.Errorf("%s annotation can only be used together with the %s annotation",
+			constants.GpuFractionLimit, constants.GpuFraction)
+	}
+
+	fraction, _, err := parseGpuFractionalPortion(pod)
+	if err != nil {
+		return err
+	}
+	if err := validatePortionLimitDecimalPrecision(rawLimit, constants.GpuFractionLimit); err != nil {
+		return err
+	}
+	limit, err := strconv.ParseFloat(rawLimit, 64)
+	if err != nil || limit <= 0 || limit >= 1 || math.IsNaN(limit) {
+		return fmt.Errorf("%s annotation value must be a positive number smaller than 1.0. Got %s", constants.GpuFractionLimit, rawLimit)
+	}
+	if limit <= fraction {
+		return fmt.Errorf("%s annotation value (%s) must be greater than %s annotation value (%s)",
+			constants.GpuFractionLimit, rawLimit, constants.GpuFraction, rawFraction)
+	}
+	return nil
+}
+
+func validateMemoryLimitShorthand(pod *v1.Pod) error {
+	rawLimit, found := pod.Annotations[constants.GpuMemoryLimit]
+	if !found {
+		return nil
+	}
+	if pod.Annotations[constants.GpuMemory] == "" {
+		return fmt.Errorf("%s annotation can only be used together with the %s annotation",
+			constants.GpuMemoryLimit, constants.GpuMemory)
+	}
+
+	memory, _, err := parseGpuFractionalMemory(pod)
+	if err != nil {
+		return err
+	}
+	limit, err := resource.ParseQuantity(rawLimit)
+	_, numberErr := strconv.ParseFloat(rawLimit, 64)
+	if err != nil || limit.Sign() <= 0 || numberErr == nil {
+		return fmt.Errorf("%s annotation value must be a positive Kubernetes memory quantity with a unit",
+			constants.GpuMemoryLimit)
+	}
+	if limit.Cmp(*memory) < 0 {
+		return fmt.Errorf("%s annotation value (%s) must not be smaller than %s annotation value (%s MiB)",
+			constants.GpuMemoryLimit, rawLimit, constants.GpuMemory, pod.Annotations[constants.GpuMemory])
+	}
 	return nil
 }
 

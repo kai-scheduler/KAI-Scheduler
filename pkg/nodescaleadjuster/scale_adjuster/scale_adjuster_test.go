@@ -17,10 +17,10 @@ import (
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/nodescaleadjuster/consts"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/nodescaleadjuster/scaler"
 	testutils "github.com/kai-scheduler/KAI-scheduler/pkg/nodescaleadjuster/test-utils"
+	"github.com/kai-scheduler/api/constants"
 )
 
 type remainingPod struct {
@@ -67,7 +67,7 @@ var _ = Describe("Scale Adjuster Test Suite", func() {
 			}
 
 			scaler := scaler.NewScaler(client, consts.DefaultScalingPodImage, testutils.ScalingPodNamespace,
-				testutils.ScalingPodAppLabel, testutils.ScalingPodServiceAccount)
+				testutils.ScalingPodAppLabel, testutils.ScalingPodServiceAccount, false)
 			sa := NewScaleAdjuster(client, scaler, testutils.ScalingPodNamespace, int64(coolDown),
 				consts.DefaultGPUMemoryToFractionRatio, testutils.SchedulerName)
 			isInCoolDown, err := sa.Adjust()

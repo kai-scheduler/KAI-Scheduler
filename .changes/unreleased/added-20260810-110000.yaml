@@ -1,6 +1,0 @@
-kind: Added
-body: |-
-  Validate NvFractions GPU memory annotations
-custom:
-    Author: davidLif
-    Issue: "1316"

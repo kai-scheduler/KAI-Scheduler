@@ -6,7 +6,7 @@ package resource_share
 import (
 	"math"
 
-	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	commonconstants "github.com/kai-scheduler/api/constants"
 )
 
 type ResourceShare struct {

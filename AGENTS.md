@@ -160,11 +160,12 @@ Changelog entries are [changie](https://changie.dev) fragments. **Never edit `CH
 
 ```bash
 # Add a fragment (non-interactive — required for agents)
-make changelog KIND=<kind> BODY="short description under 20 words"
+# AUTHOR is the GitHub username to credit; ISSUE is the PR/issue number. Both required.
+make changelog KIND=<kind> BODY="short description under 20 words" AUTHOR="<github-user>" ISSUE="<pr-or-issue-number>"
 
 # Valid kinds: Added | Changed | Fixed | Removed
-make changelog KIND=Fixed  BODY="Scheduler exits on 401 instead of retrying indefinitely"
-make changelog KIND=Added  BODY="Helm value to disable resource-reservation namespace creation"
+make changelog KIND=Fixed  BODY="Scheduler exits on 401 instead of retrying indefinitely" AUTHOR="SomeUsername" ISSUE="1817"
+make changelog KIND=Added  BODY="Helm value to disable resource-reservation namespace creation" AUTHOR="SomeUsername" ISSUE="1820"
 
 # Preview the next release section (optional)
 make changelog-preview VERSION=v0.17.0
@@ -172,6 +173,7 @@ make changelog-preview VERSION=v0.17.0
 
 - Add a fragment on every PR that changes behavior (adds functionality, fixes a bug, changes an API, or gives a significant perf win). Skip it for refactors, docs, tests, and CI changes — apply the `skip-changelog` (or `dependencies`) label instead. CI fails a behavior PR that has neither.
 - Entries MUST be fewer than 20 words. Keep them clear and concise.
+- Always set `AUTHOR` (the PR author's GitHub username) and `ISSUE` (the PR number, or a linked issue number if one exists) — omitting them drops attribution and traceability from `CHANGELOG.md`. If the PR number isn't known yet, use the issue number; update the fragment once the PR is opened.
 - Commit the fragment with your code. Fragments never conflict between PRs or backports, so no coordination is needed.
 
 **Humans:** `make changelog` with no args runs the interactive prompts.

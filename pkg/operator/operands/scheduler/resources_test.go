@@ -14,15 +14,15 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/kai-scheduler/KAI-scheduler/cmd/scheduler/app/options"
-	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
-	kaiv1common "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
-	kaiprometheus "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/prometheus"
-	kaiv1qc "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/queue_controller"
-	kaiv1scheduler "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/scheduler"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	operatorcommon "github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common"
 	usagedbapi "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/api/constants"
+	kaiv1 "github.com/kai-scheduler/api/kai/v1"
+	kaiv1common "github.com/kai-scheduler/api/kai/v1/common"
+	kaiprometheus "github.com/kai-scheduler/api/kai/v1/prometheus"
+	kaiv1qc "github.com/kai-scheduler/api/kai/v1/queue_controller"
+	kaiv1scheduler "github.com/kai-scheduler/api/kai/v1/scheduler"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -548,7 +548,8 @@ tiers:
     arguments:
       cpu: binpack
       gpu: binpack
-  - name: gpusharingorder`,
+  - name: gpusharingorder
+  - name: backgroundpods`,
 			},
 		},
 		{
@@ -601,7 +602,8 @@ tiers:
   - name: nodeplacement
     arguments:
       cpu: binpack
-      gpu: spread`,
+      gpu: spread
+  - name: backgroundpods`,
 			},
 		},
 		{
@@ -686,7 +688,8 @@ tiers:
     arguments:
       cpu: binpack
       gpu: binpack
-  - name: gpusharingorder`,
+  - name: gpusharingorder
+  - name: backgroundpods`,
 			},
 		},
 		{
@@ -735,7 +738,8 @@ tiers:
     arguments:
       cpu: binpack
       gpu: binpack
-  - name: gpusharingorder`,
+  - name: gpusharingorder
+  - name: backgroundpods`,
 			},
 		},
 		{
@@ -785,7 +789,8 @@ tiers:
     arguments:
       cpu: binpack
       gpu: binpack
-  - name: gpusharingorder`,
+  - name: gpusharingorder
+  - name: backgroundpods`,
 			},
 		},
 		{
@@ -838,7 +843,8 @@ tiers:
     arguments:
       cpu: binpack
       gpu: binpack
-  - name: gpusharingorder`,
+  - name: gpusharingorder
+  - name: backgroundpods`,
 			},
 		},
 		{
@@ -891,7 +897,8 @@ tiers:
     arguments:
       cpu: binpack
       gpu: binpack
-  - name: gpusharingorder`,
+  - name: gpusharingorder
+  - name: backgroundpods`,
 			},
 		},
 		{
@@ -941,7 +948,8 @@ tiers:
   - name: nodeplacement
     arguments:
       cpu: binpack
-      gpu: spread`,
+      gpu: spread
+  - name: backgroundpods`,
 			},
 		},
 		{
@@ -990,6 +998,7 @@ tiers:
       cpu: binpack
       gpu: binpack
   - name: gpusharingorder
+  - name: backgroundpods
 usageDBConfig:
   clientType: prometheus
   connectionString: http://prometheus-operated.kai-scheduler.svc.cluster.local:9090
@@ -1237,6 +1246,7 @@ tiers:
       cpu: binpack
       gpu: binpack
   - name: gpusharingorder
+  - name: backgroundpods
 usageDBConfig:
   clientType: prometheus
   connectionString: http://prometheus-operated.kai-scheduler.svc.cluster.local:9090

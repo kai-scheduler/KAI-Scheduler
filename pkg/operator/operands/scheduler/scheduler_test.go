@@ -13,8 +13,8 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	policyv1 "k8s.io/api/policy/v1"
 
-	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
+	kaiv1 "github.com/kai-scheduler/api/kai/v1"
+	"github.com/kai-scheduler/api/kai/v1/common"
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -249,6 +249,7 @@ tiers:
             cpu: binpack
             gpu: binpack
         - name: gpusharingorder
+        - name: backgroundpods
 `))
 		})
 
@@ -305,6 +306,7 @@ tiers:
           arguments:
             cpu: spread
             gpu: spread
+        - name: backgroundpods
 `))
 		})
 	})
