@@ -319,7 +319,7 @@ jobs:
         run: |
           helm upgrade -i kai-scheduler /mnt/images/kai-scheduler-$PACKAGE_VERSION.tgz -n kai-scheduler --create-namespace \
             --values ./hack/kai-scheduler-fake-npe-values.yaml \
-            --set "global.gpuSharing=true" --set "global.registry=localhost:30100" --set "prometheus.enabled=false" --debug --wait
+            --set "global.gpuSharing=true" --set "global.registry=localhost:30100" --set "prometheus.enabled=true" --debug --wait
           kubectl create clusterrole pods-patcher --verb=patch --resource=pods
           kubectl create rolebinding fake-status-updater --clusterrole=pods-patcher --serviceaccount=gpu-operator:status-updater -n kai-resource-reservation
 
@@ -497,7 +497,7 @@ jobs:
           go tool ginkgo -r --keep-going --trace -vv --label-filter 'gitops' --output-dir=. --json-report=e2e-gitops-report.json ./test/e2e/suites/gitops
 
   e2e-gate:
-    name: E2E Gate
+    name: Run E2E Tests
     needs:
       - check-build-and-test-required
       - build
@@ -572,23 +572,6 @@ jobs:
         env:
           PLANNED_PACKAGES: ${{ needs.prepare-e2e-buckets.outputs.packages }}
         run: go run ./hack/e2ebuckets verify --packages "$PLANNED_PACKAGES" --reports-dir "$RUNNER_TEMP/e2e-reports"
-
-  # TODO: remove once the branch ruleset requires "E2E Gate" instead of "Run E2E Tests".
-  e2e-legacy-required-check:
-    name: Run E2E Tests
-    needs: [ e2e-gate ]
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check E2E gate
-        env:
-          E2E_GATE_RESULT: ${{ needs.e2e-gate.result }}
-        run: |
-          if [[ "$E2E_GATE_RESULT" != "success" ]]; then
-            echo "E2E Gate did not succeed: $E2E_GATE_RESULT"
-            exit 1
-          fi
-          echo "E2E Gate passed."
 
   cleanup-images-cache:
     name: Cleanup Images Cache
