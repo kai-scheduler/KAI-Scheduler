@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v0.18.3] - 2026-10-06
+
+### Changed
+- Updated gpu-fractioning chart dependency to v0.1.6 [#2290](https://github.com/kai-scheduler/KAI-Scheduler/issues/2290) [danbar2](https://github.com/danbar2)
+
 ## [v0.18.2] - 2026-10-01
 
 ### Added
