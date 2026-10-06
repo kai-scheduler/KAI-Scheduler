@@ -15,8 +15,8 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 
-	kubeaischedulerschema "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/scheme"
-	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	kubeaischedulerschema "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned/scheme"
+	enginev2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 )
 
 func TestEvictEventNotStarvedByRepeatedEvents(t *testing.T) {
