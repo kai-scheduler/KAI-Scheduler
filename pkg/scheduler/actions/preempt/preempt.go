@@ -101,9 +101,11 @@ func (alloc *preemptAction) Execute(ssn *framework.Session) {
 			if err := statement.Commit(); err != nil {
 				log.InfraLogger.Errorf("Failed to commit preemption statement: %v", err)
 			}
-		} else if shouldStopActionForSearchResult(searchResult) {
-			return
 		} else {
+			metrics.IncPreemptionFailure(preemptionFailureReason(searchResult))
+			if shouldStopActionForSearchResult(searchResult) {
+				return
+			}
 			log.InfraLogger.V(3).Infof("Didn't find a preemption strategy for job <%s/%s>",
 				job.Namespace, job.Name)
 			smallestFailedJobs.UpdateRepresentative(job)
@@ -125,7 +127,7 @@ func attemptToPreemptForPreemptor(
 	if result := ssn.IsNonPreemptibleJobOverQueueQuotaFn(preemptor, preemptorTasks); !result.IsSchedulable {
 		log.InfraLogger.V(3).Infof("Job <%v/%v> would have placed the queue resources over quota",
 			preemptor.Namespace, preemptor.Name)
-		return false, nil, nil, nil
+		return false, nil, nil, solvers.NewPreemptorOverQuotaSearchResult()
 	}
 
 	feasibleNodes := common.FeasibleNodesForJob(maps.Values(ssn.ClusterInfo.Nodes), preemptor)
@@ -137,6 +139,13 @@ func attemptToPreemptForPreemptor(
 		actionBudget,
 	)
 	return solver.SolveWithResult(ssn, preemptor)
+}
+
+func preemptionFailureReason(result *solvers.SearchResult) string {
+	if reason := result.Reason(); reason != "" {
+		return string(reason)
+	}
+	return "unknown"
 }
 
 func shouldStopActionForSearchResult(result *solvers.SearchResult) bool {
