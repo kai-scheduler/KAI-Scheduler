@@ -26,6 +26,8 @@ jobs:
         uses: dorny/paths-filter@v3
         id: filter
         with:
+          base: ${{ github.event.merge_group.base_sha }}
+          ref: ${{ github.event.merge_group.head_sha }}
           predicate-quantifier: "every"
           filters: |
             docs:
