@@ -278,6 +278,50 @@ func TestSolveWithResultRunsCompletePartialSearchForOneGeneratorBeforeNext(t *te
 	require.Equal(t, []string{"first:1", "second:1", "second:2", "second:3"}, factoryCalls)
 }
 
+func TestSolveWithResultPrefersMultiNodeGangForMultiPodJob(t *testing.T) {
+	ssn := newGeneratorTestSession(t, map[string]int{
+		"node-1": 1,
+		"node-2": 1,
+	})
+	require.NoError(t, ssn.InitNodeScoringPool())
+	pendingJob := addGeneratorTestPendingJob(t, ssn, 2, 10, "team-pending")
+	setGeneratorTestMinAvailable(pendingJob, 2)
+	victimJob, victimTasks := addGeneratorTestJob(t, ssn, 2, 20, "team-victim", "node-1", "node-2")
+	factoryCalls := []string{}
+
+	ssn.AddScenarioGenerator(constants.GeneratorNodeLocalGreedy, func(ctx framework.ScenarioGeneratorContext) framework.ScenarioGenerator {
+		solveCtx := ctx.(*SolveContext)
+		factoryCalls = append(factoryCalls, fmt.Sprintf("node-local:%d", solveCtx.ProbeK))
+		return &portfolioTestGenerator{name: constants.GeneratorNodeLocalGreedy}
+	})
+	ssn.AddScenarioGenerator(constants.GeneratorMultiNodeGang, func(ctx framework.ScenarioGeneratorContext) framework.ScenarioGenerator {
+		solveCtx := ctx.(*SolveContext)
+		factoryCalls = append(factoryCalls, fmt.Sprintf("multi-node:%d", solveCtx.ProbeK))
+		pendingTasks := podgroup_info.GetTasksToAllocate(
+			solveCtx.PartialPendingJob, ssn.SubGroupOrderFn, ssn.TaskOrderFn,
+			podgroup_info.SimulatedTaskAllocation,
+		)
+		sn := scenario.NewByNodeScenario(
+			ssn, solveCtx.PartialPendingJob, pendingTasks,
+			unrecordedVictimsForProbe(victimTasks, solveCtx.RecordedVictimsTasks, solveCtx.ProbeK),
+			solveCtx.RecordedVictimsJobs,
+		)
+		return &portfolioTestGenerator{name: constants.GeneratorMultiNodeGang, scenarios: []api.ScenarioInfo{sn}}
+	})
+	solver := NewJobsSolver(
+		jobSolverResultTestFeasibleNodes(ssn), nil, generatorTestVictimsQueueFactory(ssn, victimJob), framework.Reclaim, nil,
+	)
+
+	solved, statement, _, result := solver.SolveWithResult(ssn, pendingJob)
+	if statement != nil {
+		defer statement.Discard()
+	}
+
+	require.True(t, solved)
+	require.Equal(t, SearchResultSolved, result.Reason())
+	require.Equal(t, []string{"multi-node:1", "multi-node:2"}, factoryCalls)
+}
+
 func TestSolveWithResultStillSolvesWhenGeneratorRepeatsScenarios(t *testing.T) {
 	ssn := newGeneratorTestSession(t, map[string]int{
 		"node-1": 1,

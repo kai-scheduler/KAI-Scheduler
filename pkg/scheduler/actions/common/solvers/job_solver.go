@@ -10,6 +10,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/sets"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
@@ -115,7 +116,7 @@ func (s *JobSolver) SolveWithResult(
 	if s.generateVictimsQueue == nil {
 		return false, nil, nil, terminalSearchResult(SearchResultNoGenerator, jobBudget.ReducedBudget())
 	}
-	availableGenerators := ssn.ScenarioGeneratorRegistrations
+	availableGenerators := generatorsForJob(ssn.ScenarioGeneratorRegistrations, pendingJob)
 	if len(availableGenerators) == 0 {
 		return false, nil, nil, terminalSearchResult(SearchResultNoGenerator, jobBudget.ReducedBudget())
 	}
@@ -156,6 +157,33 @@ func (s *JobSolver) SolveWithResult(
 		lastResult = terminalSearchResult(SearchResultGeneratorsExhausted, jobBudget.ReducedBudget())
 	}
 	return false, nil, calcVictimNames(lastVictimTasks), lastResult
+}
+
+func generatorsForJob(
+	registrations []framework.ScenarioGeneratorRegistration, job *podgroup_info.PodGroupInfo,
+) []framework.ScenarioGeneratorRegistration {
+	preferred := constants.GeneratorNodeLocalGreedy
+	other := constants.GeneratorMultiNodeGang
+	if len(job.GetAllPodsMap()) > 1 {
+		preferred, other = other, preferred
+	}
+
+	preferredIndex, otherIndex := -1, -1
+	for index, registration := range registrations {
+		switch registration.Name {
+		case preferred:
+			preferredIndex = index
+		case other:
+			otherIndex = index
+		}
+	}
+	if preferredIndex < 0 || otherIndex < 0 || preferredIndex < otherIndex {
+		return registrations
+	}
+
+	ordered := append([]framework.ScenarioGeneratorRegistration(nil), registrations...)
+	ordered[preferredIndex], ordered[otherIndex] = ordered[otherIndex], ordered[preferredIndex]
+	return ordered
 }
 
 func (s *JobSolver) solvePendingJobWithGenerator(
