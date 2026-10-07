@@ -57,7 +57,10 @@ Metrics related to the core scheduling algorithm performance, task lifecycle, an
 | `podgroups_acted_on_by_action` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `action` | Cumulative count of pod groups considered/attempted by each action (may fail or be filtered). |
 | `scenarios_simulation_by_action` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `action` | Cumulative count of simulation scenarios run by each action during scheduling decisions. |
 | `scenarios_filtered_by_action` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `action` | Cumulative count of simulation scenarios filtered/rejected by each action. |
-| `total_preemption_attempts` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | Cumulative total of preemption attempts across the entire cluster lifetime. |
+| `total_preemption_attempts` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | Cumulative count of successful preemption strategies, incremented once per preemptor regardless of how many pods it evicts. Failed attempts are not counted; use `podgroups_acted_on_by_action{action="preempt"}` for attempts. |
+| `total_preemption_evictions` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | Cumulative count of victim pods evicted by the preempt action. See [Eviction counters](#eviction-counters). |
+| `total_reclaim_evictions` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | Cumulative count of victim pods evicted by the reclaim action. See [Eviction counters](#eviction-counters). |
+| `total_consolidation_evictions` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | Cumulative count of victim pods evicted by the consolidation action. See [Eviction counters](#eviction-counters). |
 | `pod_group_evicted_pods_total` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `podgroup`, `nodepool`, `action`, `owner_group`, `owner_kind`, `owner_name`, `owner_uid`, `subgroup` | Cumulative count of pods evicted per pod group, workload, and leaf subgroup. |
 | `pod_group_eviction_events_total` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `podgroup`, `nodepool`, `action`, `owner_group`, `owner_kind`, `owner_name`, `owner_uid` | Cumulative count of committed eviction decisions per affected pod group. |
 | `scenario_search_jobs_total` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `action`, `result`, `reduced_budget` | Cumulative count of jobs considered by bounded scenario search, grouped by scheduling action, terminal search result, and whether the job ran after the action budget was reduced. |
@@ -69,6 +72,32 @@ Metrics related to the core scheduling algorithm performance, task lifecycle, an
 | `scenario_search_scenarios_total` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `action`, `generator`, `state` | Cumulative count of bounded-search scenarios emitted by generators, simulated by the solver, rejected by validation, or skipped as duplicates of already-failed scenarios. |
 
 Zero-valued series for `pod_group_evicted_pods_total` and `pod_group_eviction_events_total` are created for PodGroups on this scheduler shard after they hold allocated resources, and removed when those PodGroups are deleted. Pending PodGroups do not create series.
+
+#### Eviction counters
+
+`total_preemption_evictions`, `total_reclaim_evictions` and `total_consolidation_evictions` count victim pods, not PodGroups or decisions. A strategy that evicts four pods adds four.
+
+- **When a pod is counted:** after the scheduler's eviction request for that pod succeeds. Evictions are only requested when an action commits its statement, so simulated and discarded scenarios never reach the counters.
+- **Failed eviction requests:** not counted. The scheduler logs the failure instead.
+- **Other actions:** evictions requested by other actions, such as stale gang eviction, are not counted in these metrics.
+
+All three counters are exported at 0 from scheduler startup and have no workload labels, so `rate()` and `increase()` work from the first eviction. With the default `kai` metrics namespace:
+
+```promql
+# Pods evicted per second by each action
+rate(kai_total_preemption_evictions[5m])
+rate(kai_total_reclaim_evictions[5m])
+rate(kai_total_consolidation_evictions[5m])
+
+# All scheduler-driven evictions in the last hour
+increase(kai_total_preemption_evictions[1h])
+  + increase(kai_total_reclaim_evictions[1h])
+  + increase(kai_total_consolidation_evictions[1h])
+
+# Preemption attempts and successful preemption strategies
+rate(kai_podgroups_acted_on_by_action{action="preempt"}[5m])
+rate(kai_podgroups_scheduled_by_action{action="preempt"}[5m])
+```
 
 ### Queue Fair-Share & Usage Metrics
 
