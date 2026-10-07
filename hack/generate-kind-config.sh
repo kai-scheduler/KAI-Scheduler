@@ -40,9 +40,6 @@ fi
 
 # Resolve version-specific settings for each feature config
 ENABLE_DRA_FEATURE_GATE=false
-# DRAExtendedResource is alpha in 1.32 (off by default); enable it explicitly for the
-# dra-enabled config so that DeviceClass.spec.extendedResourceName is persisted by the
-# apiserver. It remains alpha/beta through 1.35 and is not on by default.
 ENABLE_DRA_EXTENDED_RESOURCE_GATE=false
 RUNTIME_CONFIG=""
 
@@ -57,8 +54,10 @@ case "$FEATURE_CONFIG" in
     fi
     # k8s <= 1.31: DRA is alpha only (v1alpha3), no v1beta support
     # k8s >= 1.34: DRA is GA (v1), DynamicResourceAllocation gate on by default
-    # DRAExtendedResource is alpha in 1.32+ and must be enabled explicitly on all versions
-    ENABLE_DRA_EXTENDED_RESOURCE_GATE=true
+    # DRAExtendedResource was introduced in 1.34; older kubelets reject the gate.
+    if [ "$K8S_MINOR" -ge 34 ]; then
+      ENABLE_DRA_EXTENDED_RESOURCE_GATE=true
+    fi
     ;;
   default|*)
     ;;
