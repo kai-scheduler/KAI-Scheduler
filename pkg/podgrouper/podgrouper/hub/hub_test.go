@@ -119,6 +119,28 @@ var _ = Describe("SupportedTypes", func() {
 			Expect(plugin).NotTo(BeNil())
 			Expect(plugin.Name()).To(BeEquivalentTo("SkipTopOwner Grouper"))
 		})
+
+		It("should return StatefulSet grouper for apps/v1 StatefulSet", func() {
+			gvk := metav1.GroupVersionKind{
+				Group:   "apps",
+				Version: "v1",
+				Kind:    "StatefulSet",
+			}
+			plugin := hub.GetPodGrouperPlugin(gvk)
+			Expect(plugin).NotTo(BeNil())
+			Expect(plugin.Name()).To(BeEquivalentTo("StatefulSet Grouper"))
+		})
+
+		It("should return Default Grouper for apps/v1 ReplicaSet (unaffected)", func() {
+			gvk := metav1.GroupVersionKind{
+				Group:   "apps",
+				Version: "v1",
+				Kind:    "ReplicaSet",
+			}
+			plugin := hub.GetPodGrouperPlugin(gvk)
+			Expect(plugin).NotTo(BeNil())
+			Expect(plugin.Name()).To(BeEquivalentTo("Default Grouper"))
+		})
 	})
 
 	Context("Generic Karta Fallback Tests", func() {
