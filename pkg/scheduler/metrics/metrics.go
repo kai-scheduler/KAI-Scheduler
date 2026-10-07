@@ -170,8 +170,9 @@ func InitMetrics(namespace string) {
 		prometheus.CounterOpts{
 			Namespace: namespace,
 			Name:      "total_preemption_attempts",
-			Help: "Total successful preemption strategies, counted once per preemptor. " +
-				"For attempts, use podgroups_acted_on_by_action{action=\"preempt\"}",
+			Help: "Deprecated: use podgroups_scheduled_by_action{action=\"preempt\"} " +
+				"for successful preemptions and podgroups_acted_on_by_action{action=\"preempt\"} " +
+				"for attempts. Total successful preemption strategies, counted once per preemptor",
 		},
 	)
 	preemptionEvictions = newActionEvictionsCounter(namespace, "preemption", "preempt")

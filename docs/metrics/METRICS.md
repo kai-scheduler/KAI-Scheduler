@@ -57,7 +57,7 @@ Metrics related to the core scheduling algorithm performance, task lifecycle, an
 | `podgroups_acted_on_by_action` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `action` | Cumulative count of pod groups considered/attempted by each action (may fail or be filtered). |
 | `scenarios_simulation_by_action` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `action` | Cumulative count of simulation scenarios run by each action during scheduling decisions. |
 | `scenarios_filtered_by_action` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `action` | Cumulative count of simulation scenarios filtered/rejected by each action. |
-| `total_preemption_attempts` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | Cumulative count of successful preemption strategies, incremented once per preemptor regardless of how many pods it evicts. Failed attempts are not counted; use `podgroups_acted_on_by_action{action="preempt"}` for attempts. |
+| `total_preemption_attempts` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | **Deprecated.** Use `podgroups_scheduled_by_action{action="preempt"}`, which increases at the same point, or `podgroups_acted_on_by_action{action="preempt"}` for attempts. Cumulative count of successful preemption strategies, incremented once per preemptor regardless of how many pods it evicts. Failed attempts are not counted. |
 | `total_preemption_evictions` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | Cumulative count of victim pods evicted by the preempt action. See [Eviction counters](#eviction-counters). |
 | `total_reclaim_evictions` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | Cumulative count of victim pods evicted by the reclaim action. See [Eviction counters](#eviction-counters). |
 | `total_consolidation_evictions` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | Cumulative count of victim pods evicted by the consolidation action. See [Eviction counters](#eviction-counters). |
@@ -93,7 +93,7 @@ Attempts and successful strategies for each action come from the existing per-ac
 | `reclaim` | `podgroups_acted_on_by_action{action="reclaim"}` | `podgroups_scheduled_by_action{action="reclaim"}` | `total_reclaim_evictions` |
 | `consolidation` | `podgroups_acted_on_by_action{action="consolidation"}` | `podgroups_scheduled_by_action{action="consolidation"}` | `total_consolidation_evictions` |
 
-An attempt is counted for each PodGroup the action tries to place after its initial eligibility checks, and a success is counted when a strategy is found, just before the action commits it. For `preempt`, the success count increases at the same point as `total_preemption_attempts`.
+An attempt is counted for each PodGroup the action tries to place after its initial eligibility checks, and a success is counted when a strategy is found, just before the action commits it. For `preempt`, the success count increases at the same point as the deprecated `total_preemption_attempts`, so it can replace it.
 
 With the default `kai` metrics namespace:
 
