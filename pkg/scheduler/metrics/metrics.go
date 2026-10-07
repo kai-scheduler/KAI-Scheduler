@@ -640,7 +640,7 @@ func newActionEvictionsCounter(namespace, name, action string) prometheus.Counte
 			Namespace: namespace,
 			Name:      "total_" + name + "_evictions",
 			Help: "Total victim pods evicted by the " + action + " action, " +
-				"counted once the eviction request succeeds",
+				"counted when the API server accepts the pod deletion",
 		},
 	)
 }
