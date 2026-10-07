@@ -43,9 +43,9 @@ var _ = Describe("Queue Metrics", Ordered, func() {
 			},
 			Spec: v2.QueueSpec{
 				Resources: &v2.QueueResources{
-					GPU:    v2.QueueResource{Quota: 2},
-					CPU:    v2.QueueResource{Quota: 500},
-					Memory: v2.QueueResource{Quota: 4},
+					GPU:    v2.QueueResource{Quota: 2, Limit: 6},
+					CPU:    v2.QueueResource{Quota: 500, Limit: 3000},
+					Memory: v2.QueueResource{Quota: 4, Limit: 16},
 				},
 			},
 			Status: v2.QueueStatus{
@@ -53,6 +53,16 @@ var _ = Describe("Queue Metrics", Ordered, func() {
 					"nvidia.com/gpu":  resource.MustParse("1.5"),
 					v1.ResourceCPU:    resource.MustParse("250m"),
 					v1.ResourceMemory: resource.MustParse("2Gi"),
+				},
+				AllocatedNonPreemptible: map[v1.ResourceName]resource.Quantity{
+					"nvidia.com/gpu":  resource.MustParse("1"),
+					v1.ResourceCPU:    resource.MustParse("100m"),
+					v1.ResourceMemory: resource.MustParse("1Gi"),
+				},
+				Requested: map[v1.ResourceName]resource.Quantity{
+					"nvidia.com/gpu":  resource.MustParse("4"),
+					v1.ResourceCPU:    resource.MustParse("750m"),
+					v1.ResourceMemory: resource.MustParse("3Gi"),
 				},
 			},
 		}
@@ -73,6 +83,43 @@ var _ = Describe("Queue Metrics", Ordered, func() {
 		expectMetricValue(queueAllocatedGpus, labels, 1.5)
 		expectMetricValue(queueAllocatedCpus, labels, 0.25)
 		expectMetricValue(queueAllocatedMemory, labels, 2147483648)
+		expectMetricValue(queueAllocatedNonPreemptibleGpus, labels, 1)
+		expectMetricValue(queueAllocatedNonPreemptibleCpus, labels, 0.1)
+		expectMetricValue(queueAllocatedNonPreemptibleMemory, labels, 1073741824)
+		expectMetricValue(queueRequestedGpus, labels, 4)
+		expectMetricValue(queueRequestedCpus, labels, 0.75)
+		expectMetricValue(queueRequestedMemory, labels, 3221225472)
+		expectMetricValue(queueLimitGpus, labels, 6)
+		expectMetricValue(queueLimitCpus, labels, 3)
+		expectMetricValue(queueLimitMemory, labels, 16000000)
+	})
+
+	It("should report unlimited limits as -1", func() {
+		queue = &v2.Queue{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "test-queue",
+			},
+			Spec: v2.QueueSpec{
+				Resources: &v2.QueueResources{
+					GPU:    v2.QueueResource{Quota: 1, Limit: -1},
+					CPU:    v2.QueueResource{Quota: 1000, Limit: -1},
+					Memory: v2.QueueResource{Quota: 2, Limit: -1},
+				},
+			},
+		}
+		SetQueueMetrics(queue)
+
+		labels := prometheus.Labels{
+			queueNameLabel:         "test-queue",
+			queueMetadataNameLabel: "test-queue",
+			queueDisplayNameLabel:  "",
+			"queue_priority":       "normal",
+			"some_other_label":     "",
+		}
+
+		expectMetricValue(queueLimitGpus, labels, -1)
+		expectMetricValue(queueLimitCpus, labels, -1)
+		expectMetricValue(queueLimitMemory, labels, -1)
 	})
 
 	It("should populate queue_display_name when spec.displayName is set", func() {
@@ -175,6 +222,9 @@ var _ = Describe("Queue Metrics", Ordered, func() {
 		expectMetricValue(queueAllocatedGpus, labels, 0)
 		expectMetricValue(queueAllocatedCpus, labels, 0)
 		expectMetricValue(queueAllocatedMemory, labels, 0)
+		expectMetricValue(queueAllocatedNonPreemptibleGpus, labels, 0)
+		expectMetricValue(queueRequestedGpus, labels, 0)
+		expectMetricValue(queueLimitGpus, labels, 0)
 	})
 
 	It("should delete metrics when queue is deleted", func() {
@@ -216,6 +266,13 @@ var _ = Describe("Queue Metrics", Ordered, func() {
 		Expect(gathered).To(Equal(0))
 		gathered = testutil.CollectAndCount(queueAllocatedMemory)
 		Expect(gathered).To(Equal(0))
+		for _, gauge := range []*prometheus.GaugeVec{
+			queueAllocatedNonPreemptibleGpus, queueAllocatedNonPreemptibleCpus, queueAllocatedNonPreemptibleMemory,
+			queueRequestedGpus, queueRequestedCpus, queueRequestedMemory,
+			queueLimitGpus, queueLimitCpus, queueLimitMemory,
+		} {
+			Expect(testutil.CollectAndCount(gauge)).To(Equal(0))
+		}
 	})
 })
 

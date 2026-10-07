@@ -93,6 +93,21 @@ func TestScenarioSearchMetricWrappersUseExpectedLabels(t *testing.T) {
 	require.Equal(t, scenariosBefore+1, counterValue(t, "scenario_search_scenarios_total", scenariosLabels))
 }
 
+func TestPodGroupFirstStartWaitObservesSecondsPerQueue(t *testing.T) {
+	labels := map[string]string{
+		"queue_name":          "Research Team A",
+		"queue_metadata_name": "research-team-a",
+		"queue_display_name":  "Research Team A",
+	}
+	countBefore, sumBefore := histogramSnapshot(t, "pod_group_first_start_wait_seconds", labels)
+
+	ObservePodGroupFirstStartWait("Research Team A", "research-team-a", "Research Team A", 90*time.Second)
+
+	countAfter, sumAfter := histogramSnapshot(t, "pod_group_first_start_wait_seconds", labels)
+	require.Equal(t, countBefore+1, countAfter)
+	require.InEpsilon(t, sumBefore+90, sumAfter, 0.000001)
+}
+
 func TestScenarioSearchDurationMetricObservesSeconds(t *testing.T) {
 	labels := map[string]string{
 		"action":    "test-action-duration",
