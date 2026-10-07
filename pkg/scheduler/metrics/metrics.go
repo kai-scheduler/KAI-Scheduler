@@ -56,6 +56,9 @@ var (
 	scenariosSimulatedByAction                     *prometheus.CounterVec
 	scenariosFilteredByAction                      *prometheus.CounterVec
 	preemptionAttempts                             prometheus.Counter
+	preemptionEvictions                            prometheus.Counter
+	reclaimEvictions                               prometheus.Counter
+	consolidationEvictions                         prometheus.Counter
 	queueFairShareCPU                              *prometheus.GaugeVec
 	queueFairShareMemory                           *prometheus.GaugeVec
 	queueFairShareGPU                              *prometheus.GaugeVec
@@ -167,9 +170,13 @@ func InitMetrics(namespace string) {
 		prometheus.CounterOpts{
 			Namespace: namespace,
 			Name:      "total_preemption_attempts",
-			Help:      "Total preemption attempts in the cluster till now",
+			Help: "Total successful preemption strategies, counted once per preemptor. " +
+				"For attempts, use podgroups_acted_on_by_action{action=\"preempt\"}",
 		},
 	)
+	preemptionEvictions = newActionEvictionsCounter(namespace, "preemption", "preempt")
+	reclaimEvictions = newActionEvictionsCounter(namespace, "reclaim", "reclaim")
+	consolidationEvictions = newActionEvictionsCounter(namespace, "consolidation", "consolidation")
 
 	queueFairShareCPU = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
@@ -417,6 +424,19 @@ func podGroupEvictionLabels(podGroup *enginev2alpha2.PodGroup, nodepool, action 
 	}
 }
 
+// IncEvictedPodsByAction records one executed victim pod eviction for the scheduler action that requested it.
+// Evictions requested by other actions are not counted.
+func IncEvictedPodsByAction(action string) {
+	switch action {
+	case "preempt":
+		preemptionEvictions.Inc()
+	case "reclaim":
+		reclaimEvictions.Inc()
+	case "consolidation":
+		consolidationEvictions.Inc()
+	}
+}
+
 // IncPodGroupEvictedPods records a single pod eviction for a pod group.
 func IncPodGroupEvictedPods(podGroup *enginev2alpha2.PodGroup, nodepool, action, subgroup string) {
 	labels := append(podGroupEvictionLabels(podGroup, nodepool, action), subgroup)
@@ -612,4 +632,15 @@ func IncScenarioSearchScenario[A ~string](action A, generator string, state stri
 // Duration get the time since specified start
 func Duration(start time.Time) time.Duration {
 	return time.Since(start)
+}
+
+func newActionEvictionsCounter(namespace, name, action string) prometheus.Counter {
+	return promauto.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Name:      "total_" + name + "_evictions",
+			Help: "Total victim pods evicted by the " + action + " action, " +
+				"counted once the eviction request succeeds",
+		},
+	)
 }

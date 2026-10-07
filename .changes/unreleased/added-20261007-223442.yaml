@@ -1,0 +1,6 @@
+kind: Added
+body: |-
+  Scheduler counters for pods evicted by preempt, reclaim and consolidation actions
+custom:
+  Author: "theminjunchoi"
+  Issue: "2352"
