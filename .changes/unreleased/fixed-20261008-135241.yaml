@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Ignore ordinary init-container activity when validating observed NUMA memory groups
+custom:
+  Author: "itsomri"
+  Issue: "2013"
