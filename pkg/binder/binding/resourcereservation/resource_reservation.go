@@ -576,8 +576,24 @@ func (rsc *service) waitForGPUReservationPodAllocation(
 			}
 
 			pod, ok := event.Object.(*v1.Pod)
+			if !ok {
+				continue
+			}
 			if pod.Annotations != nil && pod.Annotations[gpuIndexAnnotationName] != "" {
 				return pod.Annotations[gpuIndexAnnotationName]
+			}
+			if event.Type == watch.Deleted {
+				logger.Error(fmt.Errorf("reservation pod deleted"),
+					"GPU reservation pod was deleted before a GPU was allocated",
+					"nodeName", nodeName, "name", gpuReservationPodName)
+				return unknownGpuIndicator
+			}
+			if pod.Status.Phase == v1.PodFailed || pod.Status.Phase == v1.PodSucceeded {
+				logger.Error(fmt.Errorf("reservation pod %s", pod.Status.Phase),
+					"GPU reservation pod terminated before a GPU was allocated",
+					"nodeName", nodeName, "name", gpuReservationPodName,
+					"reason", pod.Status.Reason, "message", pod.Status.Message)
+				return unknownGpuIndicator
 			}
 		}
 	}

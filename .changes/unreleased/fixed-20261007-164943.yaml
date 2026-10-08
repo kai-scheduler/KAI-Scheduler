@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  binder: stop waiting for a GPU reservation pod once it is Failed, Succeeded or deleted, instead of running out the allocation timeout
+custom:
+  Author: "tiffany-yu-ai"
+  Issue: ""
