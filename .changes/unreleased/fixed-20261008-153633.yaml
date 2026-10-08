@@ -3,4 +3,4 @@ body: |-
   Fix background pod displacement by preserving namespaced PodGroup identities in node snapshots.
 custom:
   Author: "itsomri"
-  Issue: "pending"
+  Issue: "2367"
