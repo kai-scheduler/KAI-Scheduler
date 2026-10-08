@@ -41,6 +41,40 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/storageclaim_info"
 )
 
+func TestNewTaskInfoPodGroupID(t *testing.T) {
+	tests := []struct {
+		name        string
+		namespace   string
+		annotations map[string]string
+		want        common_info.PodGroupID
+	}{
+		{
+			name: "default namespace", namespace: "default",
+			annotations: map[string]string{commonconstants.PodGroupAnnotationForPod: "healthcheck"},
+			want:        "default/healthcheck",
+		},
+		{
+			name: "same name in another namespace", namespace: "other",
+			annotations: map[string]string{commonconstants.PodGroupAnnotationForPod: "healthcheck"},
+			want:        "other/healthcheck",
+		},
+		{name: "missing annotation", namespace: "default"},
+		{
+			name: "empty annotation", namespace: "default",
+			annotations: map[string]string{commonconstants.PodGroupAnnotationForPod: ""},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pod := &v1.Pod{ObjectMeta: metav1.ObjectMeta{
+				Name: "healthcheck-pod", Namespace: tt.namespace, Annotations: tt.annotations,
+			}}
+			info := NewTaskInfo(pod, resource_info.NewResourceVectorMap(), TaskInfoOptions{})
+			assert.Equal(t, info.Job, tt.want)
+		})
+	}
+}
+
 func TestRequestedGPUComputeSharingMode(t *testing.T) {
 	tests := []struct {
 		name        string
