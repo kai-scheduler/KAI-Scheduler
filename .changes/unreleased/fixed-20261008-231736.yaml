@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Scheduler deletes only failed BindRequests; binder skips them and patches status with a resourceVersion precondition
+custom:
+  Author: "davidLif"
+  Issue: "2343"
