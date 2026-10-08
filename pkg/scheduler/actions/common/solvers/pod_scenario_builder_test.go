@@ -393,7 +393,11 @@ func createJobWithTasks(
 			), resource_info.NewResourceVectorMap()))
 	}
 
-	newJob := podgroup_info.NewPodGroupInfo(common_info.PodGroupID(strconv.Itoa(jobID)), jobTasks...)
+	for _, task := range jobTasks {
+		task.Job = common_info.PodGroupID(jobUID)
+	}
+
+	newJob := podgroup_info.NewPodGroupInfo(common_info.PodGroupID(jobUID), jobTasks...)
 	newJob.SetPodGroup(&schedulingv2alpha2.PodGroup{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("job%d", jobID),

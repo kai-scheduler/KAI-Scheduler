@@ -26,6 +26,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	k8splugins "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal/plugins"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
 )
 
 func newTestSession(t *testing.T, nodes map[string]*node_info.NodeInfo, podGroups map[common_info.PodGroupID]*podgroup_info.PodGroupInfo) *framework.Session {
@@ -75,7 +76,7 @@ func newNodeInfo(node *v1.Node) *node_info.NodeInfo {
 }
 
 func podWithNodeSelector(uid, name, jobID string, selector map[string]string) *pod_info.PodInfo {
-	return pod_info.NewTaskInfo(&v1.Pod{
+	return tasks_fake.BuildTaskInfo(&v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			UID:       types.UID(uid),
 			Name:      name,
@@ -91,7 +92,7 @@ func podWithNodeSelector(uid, name, jobID string, selector map[string]string) *p
 }
 
 func podWithNodeAffinity(uid, name, jobID, labelKey, labelValue string) *pod_info.PodInfo {
-	return pod_info.NewTaskInfo(&v1.Pod{
+	return tasks_fake.BuildTaskInfo(&v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			UID:       types.UID(uid),
 			Name:      name,
@@ -123,7 +124,7 @@ func podWithNodeAffinity(uid, name, jobID, labelKey, labelValue string) *pod_inf
 }
 
 func podWithNodeAffinityMatchFields(uid, name, jobID, targetNodeName string) *pod_info.PodInfo {
-	return pod_info.NewTaskInfo(&v1.Pod{
+	return tasks_fake.BuildTaskInfo(&v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			UID:       types.UID(uid),
 			Name:      name,
@@ -168,7 +169,7 @@ func podWithMixedNodeAffinityMatchFields(uid, name, jobID, targetNodeName, label
 }
 
 func podWithPreferredNodeAffinityOnly(uid, name, jobID, labelKey, labelValue string, weight int32) *pod_info.PodInfo {
-	return pod_info.NewTaskInfo(&v1.Pod{
+	return tasks_fake.BuildTaskInfo(&v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			UID:       types.UID(uid),
 			Name:      name,
@@ -201,7 +202,7 @@ func podWithPreferredNodeAffinityOnly(uid, name, jobID, labelKey, labelValue str
 }
 
 func podWithoutAffinity(uid, name, jobID string) *pod_info.PodInfo {
-	return pod_info.NewTaskInfo(&v1.Pod{
+	return tasks_fake.BuildTaskInfo(&v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			UID:       types.UID(uid),
 			Name:      name,
@@ -215,7 +216,7 @@ func podWithoutAffinity(uid, name, jobID string) *pod_info.PodInfo {
 }
 
 func victimPodOnNode(uid, name, jobID, nodeName string) *pod_info.PodInfo {
-	return pod_info.NewTaskInfo(&v1.Pod{
+	return tasks_fake.BuildTaskInfo(&v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			UID:       types.UID(uid),
 			Name:      name,
