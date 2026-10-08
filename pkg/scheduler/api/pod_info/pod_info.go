@@ -440,7 +440,7 @@ func PodKey(pod *v1.Pod) common_info.PodID {
 
 func getPodGroupID(pod *v1.Pod) common_info.PodGroupID {
 	if gn, found := pod.Annotations[commonconstants.PodGroupAnnotationForPod]; found && len(gn) != 0 {
-		return common_info.NewPodGroupID(pod.Namespace, gn)
+		return common_info.PodGroupID(gn)
 	}
 
 	return ""

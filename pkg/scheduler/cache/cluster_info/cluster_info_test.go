@@ -1451,6 +1451,19 @@ func TestSnapshotBackgroundPodsResolvePodGroups(t *testing.T) {
 			Spec:       enginev2alpha2.PodGroupSpec{Queue: "queue-0"},
 		})
 	}
+	for i, annotations := range []map[string]string{
+		nil,
+		{commonconstants.PodGroupAnnotationForPod: ""},
+	} {
+		kubeObjects = append(kubeObjects, &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: fmt.Sprintf("unmanaged-%d", i), Namespace: "default",
+				UID: types.UID(fmt.Sprintf("unmanaged-%d", i)), Annotations: annotations,
+			},
+			Spec:   corev1.PodSpec{NodeName: "node-1"},
+			Status: corev1.PodStatus{Phase: corev1.PodRunning},
+		})
+	}
 	clusterInfo := newClusterInfoTests(t, clusterInfoTestParams{
 		kubeObjects: kubeObjects, kaiSchedulerObjects: kaiObjects,
 	})
@@ -1459,8 +1472,12 @@ func TestSnapshotBackgroundPodsResolvePodGroups(t *testing.T) {
 		return
 	}
 	assert.Len(t, snapshot.PodGroupInfos, len(namespaces))
-	assert.Len(t, snapshot.Nodes["node-1"].PodInfos, len(namespaces))
+	assert.Len(t, snapshot.Nodes["node-1"].PodInfos, len(namespaces)+2)
 	for _, pod := range snapshot.Nodes["node-1"].PodInfos {
+		if pod.Name != "healthcheck-pod" {
+			assert.Empty(t, pod.Job, "unmanaged node pods must not acquire a PodGroup")
+			continue
+		}
 		podGroupID := common_info.NewPodGroupID(pod.Namespace, podGroupName)
 		assert.Equal(t, podGroupID, pod.Job)
 		podGroup, found := snapshot.PodGroupInfos[pod.Job]

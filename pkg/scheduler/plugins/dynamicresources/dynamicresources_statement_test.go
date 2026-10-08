@@ -554,8 +554,6 @@ func TestStatementEvictUnevict_WithDRAClaims(t *testing.T) {
 					DraPodClaims: ssn.ClusterInfo.ResourceClaims,
 				})
 
-				newTask.Job = task.Job
-
 				for _, podSet := range job.PodSets {
 					if _, exists := podSet.GetPodInfos()[task.UID]; exists {
 						delete(podSet.GetPodInfos(), task.UID)
