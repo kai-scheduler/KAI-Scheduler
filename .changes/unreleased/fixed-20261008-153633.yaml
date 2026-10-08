@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Fix background pod displacement by preserving namespaced PodGroup identities in node snapshots.
+custom:
+  Author: "itsomri"
+  Issue: "2367"
