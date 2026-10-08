@@ -103,10 +103,16 @@ includes only single-node blocks; cross-NUMA memory blocks are not split between
 
 A complete record requires every application and restartable init container requesting memory
 to have started and reported its requested memory/hugepage blocks. Partial startup, missing
-blocks, invalid block topology or amounts, and hidden ordinary-init allocations produce `null`.
+blocks, and invalid block topology or amounts produce `null`.
 An observation that becomes incomplete after publication also becomes `null`, rather than
 retaining stale groups or removing the annotation. This is the annotation string `"null"`;
 patching a JSON null into pod metadata would delete the key.
+
+Ordinary init-container memory blocks are not exposed by podResources and are outside this
+feature's scope. Their status does not independently invalidate a group observation. Temporary
+init allocations can still cause unexpected kubelet NUMA admission failures; a transient cause
+does not imply automatic recovery of a rejected pod. Native sidecars remain part of the complete
+long-running observation.
 
 Invalid observations are logged as errors with pod identity and allocation details. Incomplete
 observations log their reason at info level when first published as `null`; repeated incomplete
@@ -120,7 +126,7 @@ once per pod (shortly after the pod starts running) and on the rare re-allocatio
 small initial lag between a pod starting and the annotation appearing — during that window the
 plugin falls back to prediction for that pod, exactly as if the exporter were absent.
 
-During container startup and init transitions, either annotation can change. Memory-group
+During container startup, either annotation can change. Memory-group
 observations are revalidated on every reconciliation, including pods omitted by podresources.
 
 ### Drift reconciliation against the API server
@@ -159,8 +165,8 @@ requires separate scheduler support.
   the plugin falls back to prediction meanwhile.
 - **Exporter must be deployed on every relevant node**, or coverage is partial (mixed
   observed/predicted placement — still correct, just less accurate on un-covered nodes).
-- **Annotation write load:** bounded by writing only on change; container startup and init
-  transitions can produce several updates.
+- **Annotation write load:** bounded by writing only on change; container startup can produce
+  several updates.
 
 ## Superseded long-term by DRA
 

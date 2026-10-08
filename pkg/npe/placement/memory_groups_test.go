@@ -76,16 +76,22 @@ func TestMemoryGroupsCompleteness(t *testing.T) {
 		{name: "partial containers", modify: func(pod *v1.Pod) {
 			pod.Spec.Containers = append(pod.Spec.Containers, v1.Container{Name: "second", Resources: pod.Spec.Containers[0].Resources})
 		}, observed: &podresourcesv1.PodResources{Containers: []*podresourcesv1.ContainerResources{{Name: "first", Memory: []*podresourcesv1.ContainerMemory{memoryBlock(10, 0)}}}}, want: "null"},
-		{name: "hidden ordinary init", modify: func(pod *v1.Pod) {
+		{name: "ordinary init running before app startup", modify: func(pod *v1.Pod) {
 			pod.Spec.InitContainers = []v1.Container{{Name: "init"}}
 			pod.Status.InitContainerStatuses = []v1.ContainerStatus{{Name: "init", State: v1.ContainerState{Running: &v1.ContainerStateRunning{}}}}
 			pod.Status.ContainerStatuses = nil
-		}, want: "null"},
+			pod.Annotations = map[string]string{"kai.scheduler/numa-memory-groups-predicted": `[{"memoryNodes":["node-0"],"amount":{"memory":"1Gi"}}]`}
+		}, want: ""},
+		{name: "regressed application observation during ordinary init", modify: func(pod *v1.Pod) {
+			pod.Spec.InitContainers = []v1.Container{{Name: "init"}}
+			pod.Status.InitContainerStatuses = []v1.ContainerStatus{{Name: "init", State: v1.ContainerState{Running: &v1.ContainerStateRunning{}}}}
+			pod.Status.ContainerStatuses = nil
+		}, previous: true, want: "null"},
 		{name: "ordinary init restarted after app termination", modify: func(pod *v1.Pod) {
 			pod.Spec.InitContainers = []v1.Container{{Name: "init"}}
 			pod.Status.InitContainerStatuses = []v1.ContainerStatus{{Name: "init", State: v1.ContainerState{Running: &v1.ContainerStateRunning{}}}}
 			pod.Status.ContainerStatuses[0].State = v1.ContainerState{Terminated: &v1.ContainerStateTerminated{}}
-		}, observed: &podresourcesv1.PodResources{Containers: []*podresourcesv1.ContainerResources{{Name: "first", Memory: []*podresourcesv1.ContainerMemory{memoryBlock(10, 0)}}}}, want: "null"},
+		}, observed: &podresourcesv1.PodResources{Containers: []*podresourcesv1.ContainerResources{{Name: "first", Memory: []*podresourcesv1.ContainerMemory{memoryBlock(10, 0)}}}}, want: `[{"memoryNodes":["node-0"],"amount":{"memory":"10"}}]`},
 		{name: "sum overflow", observed: &podresourcesv1.PodResources{Containers: []*podresourcesv1.ContainerResources{{Name: "first", Memory: []*podresourcesv1.ContainerMemory{memoryBlock(math.MaxInt64, 0), memoryBlock(1, 0)}}}}, want: "null"},
 		{name: "block overflow", observed: &podresourcesv1.PodResources{Containers: []*podresourcesv1.ContainerResources{{Name: "first", Memory: []*podresourcesv1.ContainerMemory{memoryBlock(math.MaxUint64, 0)}}}}, want: "null"},
 		{name: "unknown memory container", observed: &podresourcesv1.PodResources{Containers: []*podresourcesv1.ContainerResources{{Name: "first", Memory: []*podresourcesv1.ContainerMemory{memoryBlock(10, 0)}}, {Name: "unknown", Memory: []*podresourcesv1.ContainerMemory{memoryBlock(1, 0)}}}}, want: "null"},
@@ -94,7 +100,25 @@ func TestMemoryGroupsCompleteness(t *testing.T) {
 			pod.Spec.InitContainers = []v1.Container{{Name: "init"}}
 			pod.Status.InitContainerStatuses = []v1.ContainerStatus{{Name: "init", State: v1.ContainerState{Terminated: &v1.ContainerStateTerminated{}}}}
 			pod.Status.ContainerStatuses = nil
-		}, want: "null"},
+		}, want: ""},
+		{name: "partial sidecar startup during ordinary init", modify: func(pod *v1.Pod) {
+			pod.Spec.InitContainers = []v1.Container{
+				{Name: "sidecar", RestartPolicy: &restartPolicy, Resources: pod.Spec.Containers[0].Resources},
+				{Name: "init"},
+			}
+			pod.Status.ContainerStatuses = nil
+			pod.Status.InitContainerStatuses = []v1.ContainerStatus{
+				{Name: "sidecar", State: v1.ContainerState{Running: &v1.ContainerStateRunning{}}},
+				{Name: "init", State: v1.ContainerState{Running: &v1.ContainerStateRunning{}}},
+			}
+		}, observed: &podresourcesv1.PodResources{Containers: []*podresourcesv1.ContainerResources{{Name: "sidecar", Memory: []*podresourcesv1.ContainerMemory{memoryBlock(10, 0)}}}}, want: "null"},
+		{name: "complete sidecar observation", modify: func(pod *v1.Pod) {
+			pod.Spec.InitContainers = []v1.Container{{Name: "sidecar", RestartPolicy: &restartPolicy, Resources: pod.Spec.Containers[0].Resources}}
+			pod.Status.InitContainerStatuses = []v1.ContainerStatus{{Name: "sidecar", State: v1.ContainerState{Running: &v1.ContainerStateRunning{}}}}
+		}, observed: &podresourcesv1.PodResources{Containers: []*podresourcesv1.ContainerResources{
+			{Name: "first", Memory: []*podresourcesv1.ContainerMemory{memoryBlock(10, 0)}},
+			{Name: "sidecar", Memory: []*podresourcesv1.ContainerMemory{memoryBlock(20, 0)}},
+		}}, want: `[{"memoryNodes":["node-0"],"amount":{"memory":"30"}}]`},
 		{name: "missing sidecar", modify: func(pod *v1.Pod) {
 			pod.Spec.InitContainers = []v1.Container{{Name: "sidecar", RestartPolicy: &restartPolicy, Resources: pod.Spec.Containers[0].Resources}}
 		}, observed: &podresourcesv1.PodResources{Containers: []*podresourcesv1.ContainerResources{{Name: "first", Memory: []*podresourcesv1.ContainerMemory{memoryBlock(10, 0)}}}}, want: "null"},
@@ -218,10 +242,11 @@ func TestMemoryGroupsObservationLogs(t *testing.T) {
 		{name: "missing resource block", modify: func(pod *v1.Pod) {
 			pod.Spec.Containers[0].Resources.Requests["hugepages-2Mi"] = resource.MustParse("2Mi")
 		}, observed: complete, wantValue: "null", wantReason: `container "first" has no podResources block for requested resource "hugepages-2Mi"`},
-		{name: "ordinary init allocation hidden", modify: func(pod *v1.Pod) {
+		{name: "ordinary init startup is quiet", modify: func(pod *v1.Pod) {
 			pod.Spec.InitContainers = []v1.Container{{Name: "warmup"}}
 			pod.Status.InitContainerStatuses = []v1.ContainerStatus{{Name: "warmup", State: v1.ContainerState{Running: &v1.ContainerStateRunning{}}}}
-		}, wantValue: "null", wantReason: `ordinary init container "warmup" is running; podResources does not report its memory allocation`},
+			pod.Status.ContainerStatuses = nil
+		}},
 		{name: "normal startup is quiet", modify: func(pod *v1.Pod) { pod.Status.ContainerStatuses = nil }},
 		{name: "normal startup is debug only", modify: func(pod *v1.Pod) { pod.Status.ContainerStatuses = nil }, verbosity: 2, wantReason: `container "first" has not started`, wantLevel: 2},
 		{name: "repeated incomplete observation is quiet", modify: func(pod *v1.Pod) {
