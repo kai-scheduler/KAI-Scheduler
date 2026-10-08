@@ -11,8 +11,10 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/sets"
 
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 )
 
@@ -45,7 +47,7 @@ func evalPlacement(topo *node_info.NumaTopology, ignore sets.Set[v1.ResourceName
 
 // amountAt returns the amounts placed on a given zone index, or nil if the zone is not in the placement.
 func amountAt(p pod_info.NUMAPlacement, zoneIndex int) v1.ResourceList {
-	for _, zp := range p {
+	for _, zp := range p.Zones {
 		if zp.ZoneIndex == zoneIndex {
 			return zp.Amount
 		}
@@ -233,4 +235,32 @@ func TestRestrictedSelectsLowestMask(t *testing.T) {
 	allocation, admit := evalPlacement(node, noIgnoreList, []v1.ResourceList{req(gpu, "4")})
 	assert.True(t, admit)
 	assert.Equal(t, []int{0, 1}, allocation.ZoneIndices(), "selects the lowest satisfying mask, not node-2")
+}
+
+func TestMemoryGroupAnnotationsDoNotChangeLegacyAdmission(t *testing.T) {
+	for _, observation := range []string{
+		`[{"memoryNodes":["node-0"],"amount":{"memory":"80Gi"}}]`,
+		`null`,
+	} {
+		t.Run(observation, func(t *testing.T) {
+			topology := numaTopology(node_info.TopologyPolicyRestricted, node_info.TopologyScopeContainer,
+				partialZone("node-0", map[string]string{"memory": "100Gi"}, map[string]string{"memory": "20Gi"}),
+				numaZone("node-1", map[string]string{"memory": "100Gi"}))
+			plugin, session, node := wiredPlugin(topology)
+			session.ClusterInfo.ResourceVectorMap = topology.VectorMap
+			owner := makeGuaranteedTask("owner", map[string]string{"memory": "80Gi"})
+			owner.Status = pod_status.Running
+			owner.Pod.Annotations = map[string]string{commonconstants.NumaMemoryGroupsObserved: observation}
+			node.PodInfos = pod_info.PodsMap{owner.UID: owner}
+			plugin.OnSessionOpen(session)
+			defer plugin.OnSessionClose(session)
+			probe := makeGuaranteedTask("probe", map[string]string{"memory": "120Gi"})
+			assert.True(t, plugin.shouldFilter(probe, topology))
+			assert.NoError(t, plugin.predicate(probe, nil, node))
+			placement, err := plugin.placement(probe, node)
+			assert.NoError(t, err)
+			assert.Equal(t, []int{0, 1}, placement.ZoneIndices())
+			assert.Empty(t, placement.MemoryGroups)
+		})
+	}
 }

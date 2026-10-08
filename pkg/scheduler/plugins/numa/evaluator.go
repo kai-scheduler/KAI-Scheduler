@@ -417,9 +417,9 @@ func placementFromAllocation(allocation zoneAllocation, topo *node_info.NumaTopo
 	}
 	sort.Ints(indices)
 
-	placement := make(pod_info.NUMAPlacement, 0, len(indices))
+	placement := pod_info.NUMAPlacement{Zones: make([]pod_info.ZonePlacement, 0, len(indices))}
 	for _, idx := range indices {
-		placement = append(placement, pod_info.ZonePlacement{
+		placement.Zones = append(placement.Zones, pod_info.ZonePlacement{
 			ZoneIndex: idx,
 			Amount:    vectorToResourceList(allocation[idx], topo),
 		})

@@ -37,7 +37,6 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
-	schedulingv1alpha2 "github.com/kai-scheduler/api/scheduling/v1alpha2"
 )
 
 func TestHandleAllocation(t *testing.T) {
@@ -1812,6 +1811,11 @@ type failingBindCache struct {
 	cache.Cache
 }
 
-func (f *failingBindCache) Bind(podInfo *pod_info.PodInfo, hostname string, bindRequestAnnotations map[string]string, predictedNUMAZones []schedulingv1alpha2.NUMAZonePlacement) error {
+func (f *failingBindCache) Bind(
+	podInfo *pod_info.PodInfo,
+	hostname string,
+	bindRequestAnnotations map[string]string,
+	numa cache.NUMAPrediction,
+) error {
 	return fmt.Errorf("create pod error")
 }

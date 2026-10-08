@@ -323,6 +323,25 @@ var _ = Describe("Cache", func() {
 		})
 	})
 	Describe("Bind", func() {
+		It("persists zones and memory groups and exposes the request before the informer watch", func() {
+			cache, stopCh := setupCacheWithObjects(true, nil, &schedulingv1alpha2.BindRequest{})
+			defer close(stopCh)
+			pod := &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "group-owner", Namespace: "ns", UID: types.UID("owner")}}
+			task := pod_info.NewTaskInfo(pod, resource_info.NewResourceVectorMap())
+			groups := []schedulingv1alpha2.NUMAMemoryGroupPlacement{{MemoryNodes: []string{"node-0", "node-1"}, Amount: v1.ResourceList{v1.ResourceMemory: resource.MustParse("120Gi")}}}
+			zones := []schedulingv1alpha2.NUMAZonePlacement{{Zone: "node-0", Amount: v1.ResourceList{v1.ResourceCPU: resource.MustParse("2")}}}
+			schedulerCache := cache.(*SchedulerCache)
+			Expect(schedulerCache.createBindRequest(task, "node-1", nil, NUMAPrediction{Zones: zones, MemoryGroups: groups})).To(Succeed())
+			request, err := schedulerCache.kubeAiSchedulerClient.SchedulingV1alpha2().BindRequests("ns").Get(context.Background(), "group-owner", metav1.GetOptions{})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(request.Spec.PredictedNUMAMemoryGroups).To(Equal(groups))
+			Expect(request.Spec.PredictedNUMAZones).To(Equal(zones))
+			stored, exists, err := schedulerCache.kubeAiSchedulerInformerFactory.Scheduling().V1alpha2().BindRequests().Informer().GetStore().GetByKey("ns/group-owner")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(exists).To(BeTrue())
+			Expect(stored.(*schedulingv1alpha2.BindRequest).Spec.PredictedNUMAMemoryGroups).To(Equal(groups))
+			Expect(stored.(*schedulingv1alpha2.BindRequest).Spec.PredictedNUMAZones).To(Equal(zones))
+		})
 		Context("failure to bind", func() {
 			It("should return error", func() {
 				objects := []runtime.Object{
@@ -369,7 +388,7 @@ var _ = Describe("Cache", func() {
 
 				taskInfo := pod_info.NewTaskInfo(pod, resource_info.NewResourceVectorMap())
 
-				err := cache.Bind(taskInfo, "node-1", map[string]string{}, nil)
+				err := cache.Bind(taskInfo, "node-1", map[string]string{}, NUMAPrediction{})
 				Expect(err).To(HaveOccurred())
 			})
 		})

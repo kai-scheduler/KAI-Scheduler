@@ -32,7 +32,7 @@ import (
 func (pp *numaPlugin) seedPlacements(ssn *framework.Session) {
 	for _, job := range ssn.ClusterInfo.PodGroupInfos {
 		for _, task := range job.GetAllPodsMap() {
-			if len(task.NUMAPlacement) > 0 || task.NodeName == "" {
+			if !task.NUMAPlacement.IsEmpty() || task.NodeName == "" {
 				continue
 			}
 			node := ssn.ClusterInfo.Nodes[task.NodeName]
@@ -101,16 +101,16 @@ func parsePlacementAnnotation(pod *v1.Pod, key string) ([]schedulingv1alpha2.NUM
 // as unknown.
 func placementFromRecord(record []schedulingv1alpha2.NUMAZonePlacement, topo *node_info.NumaTopology) pod_info.NUMAPlacement {
 	if len(record) == 0 {
-		return nil
+		return pod_info.NUMAPlacement{}
 	}
-	placement := make(pod_info.NUMAPlacement, 0, len(record))
+	placement := pod_info.NUMAPlacement{Zones: make([]pod_info.ZonePlacement, 0, len(record))}
 	for _, zone := range record {
 		idx, ok := topo.ZoneIndexByID(zone.Zone)
 		if !ok {
-			return nil
+			return pod_info.NUMAPlacement{}
 		}
-		placement = append(placement, pod_info.ZonePlacement{ZoneIndex: idx, Amount: zone.Amount})
+		placement.Zones = append(placement.Zones, pod_info.ZonePlacement{ZoneIndex: idx, Amount: zone.Amount})
 	}
-	sort.Slice(placement, func(i, j int) bool { return placement[i].ZoneIndex < placement[j].ZoneIndex })
+	sort.Slice(placement.Zones, func(i, j int) bool { return placement.Zones[i].ZoneIndex < placement.Zones[j].ZoneIndex })
 	return placement
 }

@@ -948,6 +948,30 @@ spec:
               podName:
                 description: PodName is the name of the pod to bind
                 type: string
+              predictedNUMAMemoryGroups:
+                description: PredictedNUMAMemoryGroups reserves Memory Manager groups
+                  before observed placement is available.
+                items:
+                  properties:
+                    amount:
+                      additionalProperties:
+                        anyOf:
+                        - type: integer
+                        - type: string
+                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                        x-kubernetes-int-or-string: true
+                      description: ResourceList is a set of (resource name, quantity)
+                        pairs.
+                      type: object
+                    memoryNodes:
+                      items:
+                        type: string
+                      type: array
+                  required:
+                  - amount
+                  - memoryNodes
+                  type: object
+                type: array
               predictedNUMAZones:
                 description: |-
                   PredictedNUMAZones is the scheduler's predicted NUMA placement of the pod's resources on the

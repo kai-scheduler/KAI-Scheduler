@@ -69,6 +69,7 @@ const (
 	NvidiaVisibleDevices          = "NVIDIA_VISIBLE_DEVICES"
 	NumaPlacementPredicted        = "kai.scheduler/numa-placement-predicted"
 	NumaPlacementObserved         = "kai.scheduler/numa-placement-observed"
+	NumaMemoryGroupsPredicted     = "kai.scheduler/numa-memory-groups-predicted"
 	NumaMemoryGroupsObserved      = "kai.scheduler/numa-memory-groups-observed"
 
 	// UsageDB Prometheus Selector

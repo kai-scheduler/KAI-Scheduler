@@ -135,8 +135,11 @@ func (ssn *Session) GetNodes() []ksf.NodeInfo {
 
 func (ssn *Session) BindPod(pod *pod_info.PodInfo) error {
 	bindRequestAnnotations := ssn.MutateBindRequestAnnotations(pod, pod.NodeName)
-	predictedNUMAZones := numaPlacementToZones(pod, ssn.ClusterInfo.Nodes[pod.NodeName])
-	if err := ssn.Cache.Bind(pod, pod.NodeName, bindRequestAnnotations, predictedNUMAZones); err != nil {
+	numa := cache.NUMAPrediction{
+		Zones:        numaPlacementToZones(pod, ssn.ClusterInfo.Nodes[pod.NodeName]),
+		MemoryGroups: numaPlacementToMemoryGroups(pod, ssn.ClusterInfo.Nodes[pod.NodeName]),
+	}
+	if err := ssn.Cache.Bind(pod, pod.NodeName, bindRequestAnnotations, numa); err != nil {
 		return err
 	}
 

@@ -43,6 +43,9 @@ type BindRequestSpec struct {
 	// selected node.
 	PredictedNUMAZones []NUMAZonePlacement `json:"predictedNUMAZones,omitempty"`
 
+	// PredictedNUMAMemoryGroups reserves Memory Manager groups before observed placement is available.
+	PredictedNUMAMemoryGroups []NUMAMemoryGroupPlacement `json:"predictedNUMAMemoryGroups,omitempty"`
+
 	// BackoffLimit is the number of retries before giving up
 	BackoffLimit *int32 `json:"backoffLimit,omitempty"`
 }
