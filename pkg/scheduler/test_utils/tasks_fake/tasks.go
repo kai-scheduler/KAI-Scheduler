@@ -11,8 +11,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	commonconstants "github.com/kai-scheduler/api/constants"
 	"github.com/kai-scheduler/api/utilities/resources"
 )
@@ -217,4 +219,11 @@ func applyPodAffinityLabels(
 	}
 
 	return affinity
+}
+
+// BuildTaskInfo preserves synthetic PodGroup IDs used by scheduler fixtures.
+func BuildTaskInfo(pod *v1.Pod, vectorMap *resource_info.ResourceVectorMap) *pod_info.PodInfo {
+	task := pod_info.NewTaskInfo(pod, vectorMap)
+	task.Job = common_info.PodGroupID(pod.Annotations[commonconstants.PodGroupAnnotationForPod])
+	return task
 }
