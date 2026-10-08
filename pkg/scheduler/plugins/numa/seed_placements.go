@@ -109,7 +109,7 @@ func placementFromRecord(record []schedulingv1alpha2.NUMAZonePlacement, topo *no
 		if !ok {
 			return pod_info.NUMAPlacement{}
 		}
-		placement.Zones = append(placement.Zones, pod_info.ZonePlacement{ZoneIndex: idx, Amount: zone.Amount})
+		placement.Zones = append(placement.Zones, pod_info.ZonePlacement{ZoneIndex: idx, Amount: zone.Amount.DeepCopy()})
 	}
 	sort.Slice(placement.Zones, func(i, j int) bool { return placement.Zones[i].ZoneIndex < placement.Zones[j].ZoneIndex })
 	return placement
