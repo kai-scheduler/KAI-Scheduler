@@ -565,11 +565,6 @@ func (c *ClusterInfo) getNodeToPodInfosMap(allPods []*v1.Pod, bindRequests bindr
 			StuckInReleasingThreshold: c.stuckInReleasingThreshold,
 		})
 
-		// Node task copies must use the same PodGroup identity as the session.
-		if podGroupName := pod.Annotations[constants.PodGroupAnnotationForPod]; podGroupName != "" {
-			podInfo.Job = common_info.NewPodGroupID(pod.Namespace, podGroupName)
-		}
-
 		if pod_info.IsResourceReservationTask(podInfo.Pod) {
 			podInfos := nodeReservationPodInfosMap[podInfo.NodeName]
 			podInfos = append(podInfos, podInfo)
