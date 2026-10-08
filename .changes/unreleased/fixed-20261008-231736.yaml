@@ -1,6 +1,6 @@
 kind: Fixed
 body: |-
-  Scheduler deletes only failed BindRequests; binder skips them and patches status with a resourceVersion precondition
+  Scheduler deletes only failed BindRequests; binder skips them and patches status with a resourceVersion precondition; Do not delete reservation pods related to failed binding requests that still has bind attempts
 custom:
   Author: "davidLif"
   Issue: "2343"
