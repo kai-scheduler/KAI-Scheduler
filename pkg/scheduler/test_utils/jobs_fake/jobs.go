@@ -113,6 +113,8 @@ func BuildJobInfo(
 	taskStatusIndex := map[pod_status.PodStatus]pod_info.PodsMap{}
 
 	for _, taskInfo := range taskInfos {
+		// Fixtures use synthetic IDs instead of namespaced PodGroup names.
+		taskInfo.Job = uid
 		allTasks[taskInfo.UID] = taskInfo
 		if len(taskStatusIndex[taskInfo.Status]) == 0 {
 			taskStatusIndex[taskInfo.Status] = pod_info.PodsMap{}
