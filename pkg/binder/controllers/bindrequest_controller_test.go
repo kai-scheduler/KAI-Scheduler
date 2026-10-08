@@ -306,7 +306,7 @@ var _ = Describe("BindRequest Controller", func() {
 		})
 
 		Context("repeated bind failure", func() {
-			It("keeps reporting BindingError instead of a misleading Bound event once the phase stops changing", func() {
+			It("report BindingError num of FailedAttempts 1 in this case) and stop reconciling the bindingrequest", func() {
 				repeatFailurePod := &v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "repeat-failure-pod",
@@ -328,8 +328,8 @@ var _ = Describe("BindRequest Controller", func() {
 
 				mockBinder := mock_binder.NewMockInterface(gomock.NewController(GinkgoT()))
 				mockBinder.EXPECT().Bind(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-					Return(errors.New("admission webhook denied the request")).Times(2)
-				mockBinder.EXPECT().Rollback(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(2)
+					Return(errors.New("admission webhook denied the request")).Times(1)
+				mockBinder.EXPECT().Rollback(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(1)
 				reconciler.binder = mockBinder
 
 				req := ctrl.Request{
@@ -343,8 +343,7 @@ var _ = Describe("BindRequest Controller", func() {
 				_, err := reconciler.Reconcile(context.TODO(), req)
 				Expect(err).Should(HaveOccurred())
 
-				// second reconcile on the same, still-Failed BindRequest: phase does not change,
-				// so UpdateStatus intentionally returns a nil error to avoid a duplicate requeue
+				// second reconcile on the same, due to the phase being failed and no binding backoffs left, the reconciler returns early without updating the status
 				_, err = reconciler.Reconcile(context.TODO(), req)
 				Expect(err).Should(BeNil())
 
@@ -353,7 +352,7 @@ var _ = Describe("BindRequest Controller", func() {
 				for event := range fakeEventRecorder.Events {
 					events = append(events, event)
 				}
-				Expect(events).To(HaveLen(2))
+				Expect(events).To(HaveLen(1))
 				for _, event := range events {
 					Expect(event).NotTo(ContainSubstring("bound successfully"))
 					Expect(event).To(ContainSubstring("BindingError"))
@@ -414,6 +413,36 @@ var _ = Describe("BindRequest Controller", func() {
 					Expect(bindRequest.Status.FailedAttempts).To(Equal(int32(4)))
 					Expect(res.RequeueAfter).To(Equal((8) * time.Second))
 				})
+			})
+		})
+
+		Context("BindRequest changed during the reconcile", func() {
+			// A reconcile holds its own copy for the length of the bind, during which the
+			// scheduler may delete the BindRequest and create a replacement under the same
+			// name. The outcome must not land on an object it does not describe. The fake
+			// client reuses resourceVersion "1" after a delete and create, so the
+			// replacement is staged here as an in-place change, which is the same
+			// precondition failure a real API server reports for a recreated object.
+			It("discards the outcome instead of stamping the newer object", func() {
+				original := baseRequest.DeepCopy()
+				original.Spec.SelectedNode = "stale-node"
+				Expect(fakeClient.Create(context.TODO(), original)).Should(Succeed())
+
+				stale := &schedulingv1alpha2.BindRequest{}
+				Expect(fakeClient.Get(context.TODO(), client.ObjectKeyFromObject(original), stale)).Should(Succeed())
+
+				newer := &schedulingv1alpha2.BindRequest{}
+				Expect(fakeClient.Get(context.TODO(), client.ObjectKeyFromObject(original), newer)).Should(Succeed())
+				newer.Spec.SelectedNode = "replacement-node"
+				Expect(fakeClient.Update(context.TODO(), newer)).Should(Succeed())
+
+				_, err := reconciler.UpdateStatus(context.TODO(), stale, ctrl.Result{}, nil)
+				Expect(err).Should(BeNil())
+
+				live := &schedulingv1alpha2.BindRequest{}
+				Expect(fakeClient.Get(context.TODO(), client.ObjectKeyFromObject(original), live)).Should(Succeed())
+				Expect(live.Spec.SelectedNode).To(Equal("replacement-node"))
+				Expect(live.Status.Phase).NotTo(Equal(schedulingv1alpha2.BindRequestPhaseSucceeded))
 			})
 		})
 	})

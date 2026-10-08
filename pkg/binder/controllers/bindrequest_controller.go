@@ -110,6 +110,15 @@ func (r *BindRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return result, nil
 	}
 
+	if bindRequest.Status.Phase == schedulingv1alpha2.BindRequestPhaseFailed {
+		if bindRequest.Spec.BackoffLimit == nil {
+			return result, nil
+		}
+		if bindRequest.Status.FailedAttempts >= *bindRequest.Spec.BackoffLimit {
+			return result, nil
+		}
+	}
+
 	defer func() {
 		var finalError error
 		if r := recover(); r != nil {
@@ -246,8 +255,24 @@ func (r *BindRequestReconciler) UpdateStatus(
 		return result, nil
 	}
 
-	patchErr := r.Client.Status().Patch(ctx, bindRequest, client.MergeFrom(originalBindRequest))
+	// The patch is addressed by name, and the scheduler may replace a BindRequest under the
+	// same name while a reconcile is in flight. The precondition keeps this outcome from
+	// landing on an object it does not describe.
+	patchErr := r.Client.Status().Patch(ctx, bindRequest,
+		client.MergeFromWithOptions(originalBindRequest, client.MergeFromWithOptimisticLock{}))
 	if patchErr != nil {
+		if kerrors.IsConflict(patchErr) || kerrors.IsNotFound(patchErr) {
+			logger.Info("BindRequest was replaced or removed during reconcile, discarding outcome.",
+				"Namespace", bindRequest.Namespace, "Name", bindRequest.Name,
+				"phase", bindRequest.Status.Phase)
+			if bindRequest.Status.Phase == schedulingv1alpha2.BindRequestPhaseSucceeded {
+				logger.Error(patchErr,
+					"The binder made a successful binding based on the older bindingRequest.",
+					"If this point has been reached, a bug has occurred ",
+					"(a bindingRequest was replaced by a newer one while the binder was binding the pod).")
+			}
+			return result, nil
+		}
 		logger.Error(patchErr, "Failed to patch status for BindRequest",
 			"Namespace", bindRequest.Namespace, "Name", bindRequest.Name)
 	}

@@ -295,7 +295,7 @@ func (sc *SchedulerCache) Snapshot() (*api.ClusterInfo, error) {
 		return nil, err
 	}
 
-	if cleanErr := sc.cleanStaleBindRequest(snapshot.BindRequests, snapshot.BindRequestsForDeletedNodes); cleanErr != nil {
+	if cleanErr := sc.cleanStaleBindRequest(snapshot.BindRequests, snapshot.FailedBindRequestsForShard); cleanErr != nil {
 		log.InfraLogger.V(2).Warnf("Failed to clean stale bind requests: %v", cleanErr)
 		err = multierr.Append(err, cleanErr)
 	}
@@ -516,12 +516,12 @@ func (sc *SchedulerCache) TaskPipelined(task *pod_info.PodInfo, message string) 
 // Clean Stale BindRequest
 func (sc *SchedulerCache) cleanStaleBindRequest(
 	snapshotBindRequests bindrequest_info.BindRequestMap,
-	snapshotBindRequestsForDeletedNodes []*bindrequest_info.BindRequestInfo,
+	failedBindRequestsForShard []*bindrequest_info.BindRequestInfo,
 ) error {
 	var err error
 
 	deletionsCompleted := sync.WaitGroup{}
-	errChan := make(chan error, len(snapshotBindRequestsForDeletedNodes)+len(snapshotBindRequests))
+	errChan := make(chan error, len(failedBindRequestsForShard)+len(snapshotBindRequests))
 
 	deleteBindRequest := func(bri *bindrequest_info.BindRequestInfo) {
 		if deleteError := sc.kubeAiSchedulerClient.SchedulingV1alpha2().BindRequests(
@@ -533,7 +533,7 @@ func (sc *SchedulerCache) cleanStaleBindRequest(
 		deletionsCompleted.Done()
 	}
 
-	for _, bindRequest := range snapshotBindRequestsForDeletedNodes {
+	for _, bindRequest := range failedBindRequestsForShard {
 		deletionsCompleted.Add(1)
 		go deleteBindRequest(bindRequest)
 	}
