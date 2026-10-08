@@ -25,6 +25,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
 )
 
 var testVectorMap = resource_info.NewResourceVectorMap()
@@ -491,7 +492,7 @@ func TestAccumulatedIdleGpus_updateStateWithScenario(t *testing.T) {
 			args: args{
 				scenario: scenario.NewByNodeScenario(nil,
 					nil,
-					[]*pod_info.PodInfo{pod_info.NewTaskInfo(&v1.Pod{
+					[]*pod_info.PodInfo{tasks_fake.BuildTaskInfo(&v1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
 							UID:       "uid1",
 							Name:      "pending1",
@@ -528,7 +529,7 @@ func TestAccumulatedIdleGpus_updateStateWithScenario(t *testing.T) {
 			args: args{
 				scenario: scenario.NewByNodeScenario(nil,
 					nil,
-					[]*pod_info.PodInfo{pod_info.NewTaskInfo(&v1.Pod{
+					[]*pod_info.PodInfo{tasks_fake.BuildTaskInfo(&v1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
 							UID:       "uid1",
 							Name:      "pending1",
@@ -570,7 +571,7 @@ func TestAccumulatedIdleGpus_updateStateWithScenario(t *testing.T) {
 			args: args{
 				scenario: scenario.NewByNodeScenario(nil,
 					nil,
-					[]*pod_info.PodInfo{pod_info.NewTaskInfo(&v1.Pod{
+					[]*pod_info.PodInfo{tasks_fake.BuildTaskInfo(&v1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
 							UID:       "uid1",
 							Name:      "pending1",
@@ -610,7 +611,7 @@ func TestAccumulatedIdleGpus_updateStateWithScenario(t *testing.T) {
 			args: args{
 				scenario: scenario.NewByNodeScenario(nil,
 					nil,
-					[]*pod_info.PodInfo{pod_info.NewTaskInfo(&v1.Pod{
+					[]*pod_info.PodInfo{tasks_fake.BuildTaskInfo(&v1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
 							UID:       "uid1",
 							Name:      "pending1",
@@ -663,7 +664,7 @@ func TestAccumulatedIdleGpus_updateStateWithScenario(t *testing.T) {
 				vectorMap1 := resource_info.BuildResourceVectorMap([]v1.ResourceList{n1.Status.Allocatable})
 				node1 := node_info.NewNodeInfo(n1, nodePodAffinityInfo, vectorMap1)
 
-				potentialVictim1 := pod_info.NewTaskInfo(&v1.Pod{
+				potentialVictim1 := tasks_fake.BuildTaskInfo(&v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
 						UID:       "uid2",
 						Name:      "pv1",
@@ -697,7 +698,7 @@ func TestAccumulatedIdleGpus_updateStateWithScenario(t *testing.T) {
 							"pv1pg": podgroup_info.NewPodGroupInfo("pv1pg"),
 						}}},
 						nil,
-						[]*pod_info.PodInfo{pod_info.NewTaskInfo(&v1.Pod{
+						[]*pod_info.PodInfo{tasks_fake.BuildTaskInfo(&v1.Pod{
 							ObjectMeta: metav1.ObjectMeta{
 								UID:       "uid1",
 								Name:      "pending1",
@@ -752,7 +753,7 @@ func TestAccumulatedIdleGpus_updateStateWithScenario(t *testing.T) {
 				vectorMap1 := resource_info.BuildResourceVectorMap([]v1.ResourceList{n1.Status.Allocatable})
 				node1 := node_info.NewNodeInfo(n1, nodePodAffinityInfo, vectorMap1)
 
-				potentialVictim1 := pod_info.NewTaskInfo(&v1.Pod{
+				potentialVictim1 := tasks_fake.BuildTaskInfo(&v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
 						UID:       "uid2",
 						Name:      "pv1",
@@ -786,7 +787,7 @@ func TestAccumulatedIdleGpus_updateStateWithScenario(t *testing.T) {
 							"pv1pg": podgroup_info.NewPodGroupInfo("pv1pg"),
 						}}},
 						nil,
-						[]*pod_info.PodInfo{pod_info.NewTaskInfo(&v1.Pod{
+						[]*pod_info.PodInfo{tasks_fake.BuildTaskInfo(&v1.Pod{
 							ObjectMeta: metav1.ObjectMeta{
 								UID:       "uid1",
 								Name:      "pending1",
@@ -838,7 +839,7 @@ func TestAccumulatedIdleGpus_updateStateWithScenario(t *testing.T) {
 				vectorMap1 := resource_info.BuildResourceVectorMap([]v1.ResourceList{n1.Status.Allocatable})
 				node1 := node_info.NewNodeInfo(n1, nodePodAffinityInfo, vectorMap1)
 
-				recordedVictim := pod_info.NewTaskInfo(&v1.Pod{
+				recordedVictim := tasks_fake.BuildTaskInfo(&v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
 						UID:       "uid2",
 						Name:      "pv1",
@@ -872,7 +873,7 @@ func TestAccumulatedIdleGpus_updateStateWithScenario(t *testing.T) {
 							"rv1pg": podgroup_info.NewPodGroupInfo("rv1pg"),
 						}}},
 						nil,
-						[]*pod_info.PodInfo{pod_info.NewTaskInfo(&v1.Pod{
+						[]*pod_info.PodInfo{tasks_fake.BuildTaskInfo(&v1.Pod{
 							ObjectMeta: metav1.ObjectMeta{
 								UID:       "uid1",
 								Name:      "pending1",
@@ -919,7 +920,7 @@ func TestAccumulatedIdleGpus_updateStateWithScenario(t *testing.T) {
 						"rv1pg": podgroup_info.NewPodGroupInfo("rv1pg"),
 					}}},
 					nil,
-					[]*pod_info.PodInfo{pod_info.NewTaskInfo(&v1.Pod{
+					[]*pod_info.PodInfo{tasks_fake.BuildTaskInfo(&v1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
 							UID:       "uid1",
 							Name:      "pending1",
@@ -938,7 +939,7 @@ func TestAccumulatedIdleGpus_updateStateWithScenario(t *testing.T) {
 						},
 					}, resource_info.NewResourceVectorMap())},
 					[]*pod_info.PodInfo{},
-					[]*podgroup_info.PodGroupInfo{podgroup_info.NewPodGroupInfo("rv1pg", pod_info.NewTaskInfo(&v1.Pod{
+					[]*podgroup_info.PodGroupInfo{podgroup_info.NewPodGroupInfo("rv1pg", tasks_fake.BuildTaskInfo(&v1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
 							UID:       "uid2",
 							Name:      "pv1",
@@ -986,7 +987,7 @@ func TestAccumulatedIdleGpus_updateStateWithScenario(t *testing.T) {
 						"rv1pg": podgroup_info.NewPodGroupInfo("rv1pg"),
 					}}},
 					nil,
-					[]*pod_info.PodInfo{pod_info.NewTaskInfo(&v1.Pod{
+					[]*pod_info.PodInfo{tasks_fake.BuildTaskInfo(&v1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
 							UID:       "uid1",
 							Name:      "pending1",
@@ -1005,7 +1006,7 @@ func TestAccumulatedIdleGpus_updateStateWithScenario(t *testing.T) {
 						},
 					}, resource_info.NewResourceVectorMap())},
 					[]*pod_info.PodInfo{},
-					[]*podgroup_info.PodGroupInfo{podgroup_info.NewPodGroupInfo("rv1pg", pod_info.NewTaskInfo(&v1.Pod{
+					[]*podgroup_info.PodGroupInfo{podgroup_info.NewPodGroupInfo("rv1pg", tasks_fake.BuildTaskInfo(&v1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
 							UID:       "uid2",
 							Name:      "pv1",
@@ -1136,7 +1137,7 @@ func TestAccumulatedIdleGpus_Filter(t *testing.T) {
 				vectorMap1 := resource_info.BuildResourceVectorMap([]v1.ResourceList{n1.Status.Allocatable})
 				node1 := node_info.NewNodeInfo(n1, nodePodAffinityInfo, vectorMap1)
 
-				potentialVictim1 := pod_info.NewTaskInfo(&v1.Pod{
+				potentialVictim1 := tasks_fake.BuildTaskInfo(&v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
 						UID:       "uid2",
 						Name:      "pv1",
@@ -1162,7 +1163,7 @@ func TestAccumulatedIdleGpus_Filter(t *testing.T) {
 					},
 				}, resource_info.NewResourceVectorMap())
 
-				recordedVictim1 := pod_info.NewTaskInfo(&v1.Pod{
+				recordedVictim1 := tasks_fake.BuildTaskInfo(&v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
 						UID:       "uid3",
 						Name:      "rv1",
@@ -1199,7 +1200,7 @@ func TestAccumulatedIdleGpus_Filter(t *testing.T) {
 						}}},
 						nil,
 						[]*pod_info.PodInfo{
-							pod_info.NewTaskInfo(&v1.Pod{
+							tasks_fake.BuildTaskInfo(&v1.Pod{
 								ObjectMeta: metav1.ObjectMeta{
 									UID:       "uid1",
 									Name:      "pending1",
@@ -1217,7 +1218,7 @@ func TestAccumulatedIdleGpus_Filter(t *testing.T) {
 									},
 								},
 							}, resource_info.NewResourceVectorMap()),
-							pod_info.NewTaskInfo(&v1.Pod{
+							tasks_fake.BuildTaskInfo(&v1.Pod{
 								ObjectMeta: metav1.ObjectMeta{
 									UID:       "uid5",
 									Name:      "pending1",
@@ -1235,7 +1236,7 @@ func TestAccumulatedIdleGpus_Filter(t *testing.T) {
 									},
 								},
 							}, resource_info.NewResourceVectorMap()),
-							pod_info.NewTaskInfo(&v1.Pod{
+							tasks_fake.BuildTaskInfo(&v1.Pod{
 								ObjectMeta: metav1.ObjectMeta{
 									UID:       "uid6",
 									Name:      "pending1",
@@ -1290,7 +1291,7 @@ func TestAccumulatedIdleGpus_Filter(t *testing.T) {
 				vectorMap1 := resource_info.BuildResourceVectorMap([]v1.ResourceList{n1.Status.Allocatable})
 				node1 := node_info.NewNodeInfo(n1, nodePodAffinityInfo, vectorMap1)
 
-				potentialVictim1 := pod_info.NewTaskInfo(&v1.Pod{
+				potentialVictim1 := tasks_fake.BuildTaskInfo(&v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
 						UID:       "uid2",
 						Name:      "pv1",
@@ -1316,7 +1317,7 @@ func TestAccumulatedIdleGpus_Filter(t *testing.T) {
 					},
 				}, resource_info.NewResourceVectorMap())
 
-				recordedVictim1 := pod_info.NewTaskInfo(&v1.Pod{
+				recordedVictim1 := tasks_fake.BuildTaskInfo(&v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
 						UID:       "uid3",
 						Name:      "rv1",
@@ -1353,7 +1354,7 @@ func TestAccumulatedIdleGpus_Filter(t *testing.T) {
 						}}},
 						nil,
 						[]*pod_info.PodInfo{
-							pod_info.NewTaskInfo(&v1.Pod{
+							tasks_fake.BuildTaskInfo(&v1.Pod{
 								ObjectMeta: metav1.ObjectMeta{
 									UID:       "uid1",
 									Name:      "pending1",
@@ -1371,7 +1372,7 @@ func TestAccumulatedIdleGpus_Filter(t *testing.T) {
 									},
 								},
 							}, resource_info.NewResourceVectorMap()),
-							pod_info.NewTaskInfo(&v1.Pod{
+							tasks_fake.BuildTaskInfo(&v1.Pod{
 								ObjectMeta: metav1.ObjectMeta{
 									UID:       "uid5",
 									Name:      "pending1",
@@ -1389,7 +1390,7 @@ func TestAccumulatedIdleGpus_Filter(t *testing.T) {
 									},
 								},
 							}, resource_info.NewResourceVectorMap()),
-							pod_info.NewTaskInfo(&v1.Pod{
+							tasks_fake.BuildTaskInfo(&v1.Pod{
 								ObjectMeta: metav1.ObjectMeta{
 									UID:       "uid6",
 									Name:      "pending1",
@@ -1447,7 +1448,7 @@ func TestAccumulatedIdleGpus_Filter(t *testing.T) {
 				vectorMap1 := resource_info.BuildResourceVectorMap([]v1.ResourceList{n1.Status.Allocatable})
 				node1 := node_info.NewNodeInfo(n1, nodePodAffinityInfo, vectorMap1)
 
-				potentialVictim1 := pod_info.NewTaskInfo(&v1.Pod{
+				potentialVictim1 := tasks_fake.BuildTaskInfo(&v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
 						UID:       "uid2",
 						Name:      "pv1",
@@ -1477,7 +1478,7 @@ func TestAccumulatedIdleGpus_Filter(t *testing.T) {
 						}}},
 						nil,
 						[]*pod_info.PodInfo{
-							pod_info.NewTaskInfo(&v1.Pod{
+							tasks_fake.BuildTaskInfo(&v1.Pod{
 								ObjectMeta: metav1.ObjectMeta{
 									UID:       "uid1",
 									Name:      "pending1",
