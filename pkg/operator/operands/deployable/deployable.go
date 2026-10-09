@@ -12,6 +12,7 @@ import (
 
 	"golang.org/x/exp/slices"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -56,7 +57,8 @@ func (d *DeployableOperands) Deploy(
 		return err
 	}
 
-	objectsToCreate, objectsToDelete, objectsToUpdate := d.calculateActionsOnObjects(desiredState, currentState)
+	objectsToCreate, objectsToDelete, objectsToUpdate := d.calculateActionsOnObjects(
+		desiredState, currentState, owningObject.GetUID())
 
 	reconcilerAsOwnerReference := v1.OwnerReference{
 		APIVersion: owningObject.GetObjectKind().GroupVersionKind().GroupVersion().String(),
@@ -152,7 +154,7 @@ func (d *DeployableOperands) getCurrentState(
 }
 
 func (d *DeployableOperands) calculateActionsOnObjects(
-	desiredState map[string]client.Object, currentState map[string]client.Object) (
+	desiredState map[string]client.Object, currentState map[string]client.Object, ownerUID types.UID) (
 	objectsToCreate []client.Object, objectsToDelete []client.Object, objectsToUpdate map[string]client.Object) {
 	objectsToCreate = []client.Object{}
 	objectsToDelete = []client.Object{}
@@ -162,7 +164,7 @@ func (d *DeployableOperands) calculateActionsOnObjects(
 	for key, obj := range desiredState {
 		if _, found := currentState[key]; found {
 			d.inheritFieldsFromCurrent(currentState[key], obj)
-			if reflect.DeepEqual(currentState[key], obj) {
+			if reflect.DeepEqual(currentState[key], obj) && !hasPreviousOwner(currentState[key], ownerUID) {
 				objectsNotToChange[key] = obj
 			} else {
 				objectsToUpdate[key] = obj
@@ -183,6 +185,14 @@ func (d *DeployableOperands) calculateActionsOnObjects(
 		}
 	}
 	return objectsToCreate, objectsToDelete, objectsToUpdate
+}
+
+// hasPreviousOwner reports whether obj is still controlled by an earlier owner with the same name, e.g. a
+// Config that was deleted and recreated. Such objects are collected as current, but the garbage collector
+// deletes them unless their owner reference is moved to the current owner.
+func hasPreviousOwner(obj client.Object, ownerUID types.UID) bool {
+	owner := v1.GetControllerOf(obj)
+	return owner != nil && owner.UID != ownerUID
 }
 
 func (d *DeployableOperands) inheritFieldsFromCurrent(currentObj client.Object, desiredObj client.Object) {
