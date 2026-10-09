@@ -20,6 +20,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -64,6 +65,7 @@ func New(options *Options, config *rest.Config) (*App, error) {
 
 	mgr, err := ctrl.NewManager(config, ctrl.Options{
 		Scheme: scheme,
+		Cache:  getCacheOptions(),
 		Metrics: server.Options{
 			BindAddress: options.MetricsAddr,
 		},
@@ -223,4 +225,32 @@ func createIndexesForResourceReservation(mgr manager.Manager) error {
 	}
 
 	return nil
+}
+
+func getCacheOptions() cache.Options {
+	return cache.Options{
+		ByObject: map[client.Object]cache.ByObject{
+			&corev1.ConfigMap{}: {Transform: compactConfigMap},
+		},
+	}
+}
+
+func compactConfigMap(obj any) (any, error) {
+	configMap, ok := obj.(*corev1.ConfigMap)
+	if !ok || isOwnedByPod(configMap) {
+		return obj, nil
+	}
+
+	compact := &corev1.ConfigMap{ObjectMeta: *configMap.ObjectMeta.DeepCopy()}
+	compact.ManagedFields = nil
+	return compact, nil
+}
+
+func isOwnedByPod(configMap *corev1.ConfigMap) bool {
+	for _, owner := range configMap.OwnerReferences {
+		if owner.APIVersion == "v1" && owner.Kind == "Pod" {
+			return true
+		}
+	}
+	return false
 }

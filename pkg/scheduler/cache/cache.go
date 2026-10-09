@@ -240,6 +240,9 @@ func newSchedulerCache(schedulerCacheParams *SchedulerCacheParams) (*SchedulerCa
 	if err := setSchedulerPodTransform(sc.informerFactory.Core().V1().Pods().Informer()); err != nil {
 		return nil, fmt.Errorf("failed to set scheduler pod transform: %w", err)
 	}
+	if err := setConfigMapTransform(sc.informerFactory.Core().V1().ConfigMaps().Informer()); err != nil {
+		return nil, fmt.Errorf("failed to set scheduler configmap transform: %w", err)
+	}
 	sc.kubeAiSchedulerInformerFactory = kubeaischedulerinfo.NewSharedInformerFactory(sc.kubeAiSchedulerClient, 0)
 	partitionSelector, err := sc.schedulingNodePoolParams.GetLabelSelector()
 	if err != nil {

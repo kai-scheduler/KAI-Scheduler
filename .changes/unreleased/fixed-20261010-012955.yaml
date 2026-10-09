@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Binder and scheduler no longer cache payloads of unrelated ConfigMaps, preventing OOMs in clusters with large ConfigMaps
+custom:
+  Author: "theminjunchoi"
+  Issue: "2373"
