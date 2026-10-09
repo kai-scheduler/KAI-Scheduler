@@ -396,6 +396,32 @@ var _ = Describe("Deployable", func() {
 		})
 	})
 
+	Describe("calculateActionsOnObjects", func() {
+		It("updates an unchanged object still owned by a previous owner with the same name", func() {
+			current := &v1.ServiceAccount{
+				TypeMeta: metav1.TypeMeta{Kind: "ServiceAccount", APIVersion: "v1"},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "binder",
+					Namespace: "kai-scheduler",
+					OwnerReferences: []metav1.OwnerReference{{
+						APIVersion: kaiv1.GroupVersion.String(),
+						Kind:       "Config",
+						Name:       "kai-config",
+						UID:        "deleted-config",
+						Controller: ptr.To(true),
+					}},
+				},
+			}
+			key := known_types.GetKey(current.GroupVersionKind(), current.Namespace, current.Name)
+			desired := map[string]client.Object{key: current.DeepCopy()}
+
+			_, _, objectsToUpdate := New(nil, nil).calculateActionsOnObjects(
+				desired, map[string]client.Object{key: current}, "current-config")
+
+			Expect(objectsToUpdate).To(HaveKey(key))
+		})
+	})
+
 	Describe("SortObjectByCreationOrder", func() {
 		var (
 			orderDefinition []string
