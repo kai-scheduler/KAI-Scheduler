@@ -187,9 +187,6 @@ func (d *DeployableOperands) calculateActionsOnObjects(
 	return objectsToCreate, objectsToDelete, objectsToUpdate
 }
 
-// hasPreviousOwner reports whether obj is still controlled by an earlier owner with the same name, e.g. a
-// Config that was deleted and recreated. Such objects are collected as current, but the garbage collector
-// deletes them unless their owner reference is moved to the current owner.
 func hasPreviousOwner(obj client.Object, ownerUID types.UID) bool {
 	owner := v1.GetControllerOf(obj)
 	return owner != nil && owner.UID != ownerUID
