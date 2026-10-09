@@ -170,6 +170,7 @@ func TestUpsertConfigMap(t *testing.T) {
 			resultConfigMap,
 		)
 		assert.Nil(t, err)
+		test.expectedConfigMap.Labels = map[string]string{GPUSharingConfigMapLabel: "true"}
 		assertConfigMapsEqual(t, test.expectedConfigMap, resultConfigMap)
 	}
 }
