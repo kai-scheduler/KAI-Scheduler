@@ -187,7 +187,7 @@ func (k *k8sLister) ListCSIDrivers() ([]*storage.CSIDriver, error) {
 // +kubebuilder:rbac:groups="scheduling.run.ai",resources=bindrequests,verbs=get;list;watch
 
 func (k *k8sLister) ListBindRequests() ([]*schedulingv1alpha2.BindRequest, error) {
-	return k.bindRequestLister.List(labels.Everything())
+	return k.bindRequestLister.List(k.partitionSelector)
 }
 
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
