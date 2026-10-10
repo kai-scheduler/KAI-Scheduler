@@ -50,6 +50,12 @@ func getStatusWithMetadata(
 		updatedStatus.ResourcesStatus.AllocatedNonPreemptible = metaData.CoreAllocated
 	case v2alpha2.NonPreemptible:
 		updatedStatus.ResourcesStatus.AllocatedNonPreemptible = metaData.Allocated
+	default:
+		// Only a non-empty value is cleared: ShouldUpdatePodGroupStatus compares with
+		// reflect.DeepEqual, so writing nil over an empty map would patch on every reconcile.
+		if len(updatedStatus.ResourcesStatus.AllocatedNonPreemptible) > 0 {
+			updatedStatus.ResourcesStatus.AllocatedNonPreemptible = nil
+		}
 	}
 
 	return updatedStatus
