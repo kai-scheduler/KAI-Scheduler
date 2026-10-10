@@ -102,21 +102,8 @@ func (r *BindRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return result, client.IgnoreNotFound(err)
 	}
 
-	if bindRequest.DeletionTimestamp != nil {
+	if !isActionableBindRequest(bindRequest) {
 		return result, nil
-	}
-
-	if bindRequest.Status.Phase == schedulingv1alpha2.BindRequestPhaseSucceeded {
-		return result, nil
-	}
-
-	if bindRequest.Status.Phase == schedulingv1alpha2.BindRequestPhaseFailed {
-		if bindRequest.Spec.BackoffLimit == nil {
-			return result, nil
-		}
-		if bindRequest.Status.FailedAttempts >= *bindRequest.Spec.BackoffLimit {
-			return result, nil
-		}
 	}
 
 	defer func() {
@@ -185,7 +172,7 @@ func (r *BindRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 // SetupWithManager sets up the controller with the Manager.
 func (r *BindRequestReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&schedulingv1alpha2.BindRequest{}).
+		Named("bindrequest").
 		Watches(&schedulingv1alpha2.BindRequest{}, r.eventHandlers()).
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: r.params.MaxConcurrentReconciles,
@@ -201,10 +188,21 @@ func (r *BindRequestReconciler) SetupWithManager(mgr ctrl.Manager) error {
 func (r *BindRequestReconciler) eventHandlers() handler.Funcs {
 	return handler.Funcs{
 		CreateFunc: func(ctx context.Context, event event.CreateEvent, wq workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+			bindRequest, ok := event.Object.(*schedulingv1alpha2.BindRequest)
+			if !ok {
+				return
+			}
+
+			if !isActionableBindRequest(bindRequest) {
+				return
+			}
 			h := handler.EnqueueRequestForObject{}
 			h.Create(ctx, event, wq)
 		},
 		UpdateFunc: func(ctx context.Context, event event.UpdateEvent, wq workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+			if !shouldEnqueueBindRequestUpdate(event.ObjectOld, event.ObjectNew) {
+				return
+			}
 			h := handler.EnqueueRequestForObject{}
 			h.Update(ctx, event, wq)
 		},
@@ -277,6 +275,9 @@ func (r *BindRequestReconciler) UpdateStatus(
 			"Namespace", bindRequest.Namespace, "Name", bindRequest.Name)
 	}
 
+	if err != nil && result.RequeueAfter == 0 {
+		return result, reconcile.TerminalError(err)
+	}
 	return result, err
 }
 
@@ -333,5 +334,39 @@ func (r *BindRequestReconciler) updatePodCondition(
 			logger.Error(err, "Failed to patch pod status", "pod", pod.Name,
 				"namespace", pod.Namespace)
 		}
+	}
+}
+
+func shouldEnqueueBindRequestUpdate(oldObject, newObject client.Object) bool {
+	newBindRequest, ok := newObject.(*schedulingv1alpha2.BindRequest)
+	if !ok || !isActionableBindRequest(newBindRequest) {
+		return false
+	}
+
+	if newObject.GetUID() != oldObject.GetUID() {
+		return true
+	}
+
+	oldBindRequest, ok := oldObject.(*schedulingv1alpha2.BindRequest)
+	if !ok {
+		return true
+	}
+
+	return oldBindRequest.Generation != newBindRequest.Generation
+}
+
+func isActionableBindRequest(bindRequest *schedulingv1alpha2.BindRequest) bool {
+	if bindRequest == nil || bindRequest.DeletionTimestamp != nil {
+		return false
+	}
+
+	switch bindRequest.Status.Phase {
+	case schedulingv1alpha2.BindRequestPhaseSucceeded:
+		return false
+	case schedulingv1alpha2.BindRequestPhaseFailed:
+		return bindRequest.Spec.BackoffLimit != nil &&
+			bindRequest.Status.FailedAttempts < *bindRequest.Spec.BackoffLimit
+	default:
+		return true
 	}
 }
