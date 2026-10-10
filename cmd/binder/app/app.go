@@ -14,12 +14,14 @@ import (
 	"k8s.io/client-go/rest"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -30,6 +32,7 @@ import (
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding/resourcereservation"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/common/gpusharingconfigmap"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/controllers"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins"
 	"github.com/kai-scheduler/api/constants"
@@ -64,6 +67,18 @@ func New(options *Options, config *rest.Config) (*App, error) {
 
 	mgr, err := ctrl.NewManager(config, ctrl.Options{
 		Scheme: scheme,
+		Cache: cache.Options{
+			ByObject: map[client.Object]cache.ByObject{
+				&corev1.ConfigMap{}: {
+					Label: labels.SelectorFromSet(labels.Set{gpusharingconfigmap.GPUSharingConfigMapLabel: "true"}),
+				},
+			},
+		},
+		Client: client.Options{
+			Cache: &client.CacheOptions{
+				DisableFor: []client.Object{&corev1.ConfigMap{}},
+			},
+		},
 		Metrics: server.Options{
 			BindAddress: options.MetricsAddr,
 		},
@@ -95,6 +110,8 @@ func New(options *Options, config *rest.Config) (*App, error) {
 		Scheme: scheme,
 		Cache: &client.CacheOptions{
 			Reader: mgr.GetCache(),
+			// Older GPU-sharing ConfigMaps have no label and are outside the filtered cache.
+			DisableFor: []client.Object{&corev1.ConfigMap{}},
 		},
 	})
 	if err != nil {

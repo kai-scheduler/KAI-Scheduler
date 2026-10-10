@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Limit binder ConfigMap caching to GPU-sharing ConfigMaps while preserving legacy reads
+custom:
+  Author: "enoodle"
+  Issue: "2377"
