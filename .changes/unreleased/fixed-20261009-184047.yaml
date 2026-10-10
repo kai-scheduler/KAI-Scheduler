@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Operator adopts objects left from a recreated Config instead of letting them be deleted, avoiding 401 crashloops
+custom:
+  Author: "theminjunchoi"
+  Issue: "2371"
