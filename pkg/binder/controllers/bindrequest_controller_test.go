@@ -18,10 +18,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	kubeaischedulerscheme "github.com/kai-scheduler/api/client/clientset/versioned/scheme"
 	schedulingv1alpha2 "github.com/kai-scheduler/api/scheduling/v1alpha2"
@@ -358,6 +361,91 @@ var _ = Describe("BindRequest Controller", func() {
 					Expect(event).To(ContainSubstring("BindingError"))
 				}
 			})
+		})
+	})
+
+	Describe("event handlers", func() {
+		var queue workqueue.TypedRateLimitingInterface[reconcile.Request]
+
+		BeforeEach(func() {
+			queue = workqueue.NewTypedRateLimitingQueue(
+				workqueue.DefaultTypedControllerRateLimiter[reconcile.Request]())
+			DeferCleanup(queue.ShutDown)
+		})
+
+		assertCreateQueueLength := func(bindRequest *schedulingv1alpha2.BindRequest, expected int) {
+			createQueue := workqueue.NewTypedRateLimitingQueue(
+				workqueue.DefaultTypedControllerRateLimiter[reconcile.Request]())
+			defer createQueue.ShutDown()
+
+			reconciler.eventHandlers().CreateFunc(context.TODO(),
+				event.CreateEvent{Object: bindRequest}, createQueue)
+			Expect(createQueue.Len()).To(Equal(expected))
+		}
+
+		It("enqueues only actionable BindRequest creates", func() {
+			assertCreateQueueLength(baseRequest.DeepCopy(), 1)
+
+			succeeded := baseRequest.DeepCopy()
+			succeeded.Status.Phase = schedulingv1alpha2.BindRequestPhaseSucceeded
+			assertCreateQueueLength(succeeded, 0)
+
+			failedWithoutBackoff := baseRequest.DeepCopy()
+			failedWithoutBackoff.Status.Phase = schedulingv1alpha2.BindRequestPhaseFailed
+			assertCreateQueueLength(failedWithoutBackoff, 0)
+
+			failedAfterBackoff := baseRequest.DeepCopy()
+			failedAfterBackoff.Status.Phase = schedulingv1alpha2.BindRequestPhaseFailed
+			failedAfterBackoff.Spec.BackoffLimit = ptr.To(int32(1))
+			failedAfterBackoff.Status.FailedAttempts = 1
+			assertCreateQueueLength(failedAfterBackoff, 0)
+
+			deleted := baseRequest.DeepCopy()
+			deleted.DeletionTimestamp = ptr.To(metav1.Now())
+			assertCreateQueueLength(deleted, 0)
+
+			failedWithRetry := baseRequest.DeepCopy()
+			failedWithRetry.Status.Phase = schedulingv1alpha2.BindRequestPhaseFailed
+			failedWithRetry.Spec.BackoffLimit = ptr.To(int32(2))
+			failedWithRetry.Status.FailedAttempts = 1
+			assertCreateQueueLength(failedWithRetry, 1)
+		})
+
+		It("enqueues only actionable BindRequest spec updates", func() {
+			oldBindRequest := baseRequest.DeepCopy()
+			updatedBindRequest := oldBindRequest.DeepCopy()
+			updatedBindRequest.Generation = oldBindRequest.Generation + 1
+			reconciler.eventHandlers().UpdateFunc(context.TODO(), event.UpdateEvent{
+				ObjectOld: oldBindRequest,
+				ObjectNew: updatedBindRequest,
+			}, queue)
+			Expect(queue.Len()).To(Equal(1))
+
+			request, shutdown := queue.Get()
+			Expect(shutdown).To(BeFalse())
+			queue.Done(request)
+
+			terminal := updatedBindRequest.DeepCopy()
+			terminal.Status.Phase = schedulingv1alpha2.BindRequestPhaseSucceeded
+			terminal.Generation++
+			reconciler.eventHandlers().UpdateFunc(context.TODO(), event.UpdateEvent{
+				ObjectOld: updatedBindRequest,
+				ObjectNew: terminal,
+			}, queue)
+			Expect(queue.Len()).To(Equal(0))
+		})
+
+		It("enqueues updates of a BindRequest replaced under the same name", func() {
+			oldBindRequest := baseRequest.DeepCopy()
+			oldBindRequest.UID = "old-uid"
+			replacement := oldBindRequest.DeepCopy()
+			replacement.UID = "new-uid"
+
+			reconciler.eventHandlers().UpdateFunc(context.TODO(), event.UpdateEvent{
+				ObjectOld: oldBindRequest,
+				ObjectNew: replacement,
+			}, queue)
+			Expect(queue.Len()).To(Equal(1))
 		})
 	})
 
