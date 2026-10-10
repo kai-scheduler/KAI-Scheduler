@@ -200,7 +200,10 @@ func filterGpusByEnoughResources(node *node_info.NodeInfo, pod *pod_info.PodInfo
 			filteredGPUs = append(filteredGPUs, gpuIdx)
 		}
 	}
-	idleGPUs := node.IdleVector.Get(resource_info.GPUIndex)
+	idleGPUs := node.IdleVector.Get(resource_info.GPUIndex) - float64(node.GpusHeldByIdleReservationPods())
+	if idleGPUs < 0 {
+		idleGPUs = 0
+	}
 	releasingGPUs := node.ReleasingVector.Get(resource_info.GPUIndex)
 	if idleGPUs > 0 || releasingGPUs > 0 {
 		for range int(idleGPUs) + int(releasingGPUs) {
