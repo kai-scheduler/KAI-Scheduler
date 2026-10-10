@@ -27,7 +27,6 @@ import (
 	"github.com/pkg/errors"
 	v1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/tools/cache"
 
@@ -65,7 +64,6 @@ type ClusterInfo struct {
 	restrictNodeScheduling    bool
 	clusterPodAffinityInfo    pod_affinity.ClusterPodAffinityInfo
 	includeCSIStorageObjects  bool
-	nodePoolSelector          labels.Selector
 	fairnessLevelType         FairnessLevelType
 	collectUsageData          bool
 	stuckInReleasingThreshold time.Duration
@@ -116,7 +114,6 @@ func New(
 		restrictNodeScheduling:    restrictNodeScheduling,
 		clusterPodAffinityInfo:    clusterPodAffinityInfo,
 		includeCSIStorageObjects:  includeCSIStorageObjects,
-		nodePoolSelector:          nodePoolSelector,
 		fairnessLevelType:         fairnessLevelType,
 		podGroupSync:              podGroupSync,
 		collectUsageData:          usageLister != nil,
@@ -168,7 +165,7 @@ func (c *ClusterInfo) Snapshot() (*api.ClusterInfo, error) {
 		return nil, err
 	}
 
-	snapshot.BindRequests, snapshot.BindRequestsForDeletedNodes, err = c.snapshotBindRequests(snapshot.Nodes)
+	snapshot.BindRequests, snapshot.FailedBindRequestsForShard, err = c.snapshotBindRequests()
 	if err != nil {
 		err = errors.WithStack(fmt.Errorf("error snapshotting bind requests: %w", err))
 		return nil, err
@@ -404,27 +401,25 @@ func (c *ClusterInfo) addTasksToNodes(allPods []*v1.Pod, existingPodsMap map[com
 	return resultPods, nil
 }
 
-func (c *ClusterInfo) snapshotBindRequests(nodes map[string]*node_info.NodeInfo) (
-	bindrequest_info.BindRequestMap, []*bindrequest_info.BindRequestInfo, error) {
+func (c *ClusterInfo) snapshotBindRequests() (bindrequest_info.BindRequestMap, []*bindrequest_info.BindRequestInfo, error) {
 	bindRequests, err := c.dataLister.ListBindRequests()
 	if err != nil {
 		return nil, nil, fmt.Errorf("error listing bind requests: %w", err)
 	}
 
 	result := bindrequest_info.BindRequestMap{}
-	requestsForDeletedNodes := []*bindrequest_info.BindRequestInfo{}
+	failedBindRequestsForShard := []*bindrequest_info.BindRequestInfo{}
 	for _, bindRequest := range bindRequests {
-		if _, found := nodes[bindRequest.Spec.SelectedNode]; !found {
-			if c.nodePoolSelector.Matches(labels.Set(bindRequest.Labels)) {
-				bri := bindrequest_info.NewBindRequestInfo(bindRequest)
-				requestsForDeletedNodes = append(requestsForDeletedNodes, bri)
-			}
-			continue
+		bri := bindrequest_info.NewBindRequestInfo(bindRequest)
+		if bri.IsFailed() {
+			failedBindRequestsForShard = append(failedBindRequestsForShard, bri)
+
+		} else {
+			result[bindrequest_info.NewKeyFromRequest(bindRequest)] = bri
 		}
-		result[bindrequest_info.NewKeyFromRequest(bindRequest)] = bindrequest_info.NewBindRequestInfo(bindRequest)
 	}
 
-	return result, requestsForDeletedNodes, nil
+	return result, failedBindRequestsForShard, nil
 }
 
 func (c *ClusterInfo) snapshotPodGroups(
