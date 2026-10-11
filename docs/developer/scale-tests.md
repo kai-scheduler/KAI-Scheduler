@@ -40,6 +40,11 @@ Tests are organized into contexts:
   - Whole GPU allocation tests
   - Distributed job scheduling
   - Reclaim scenarios
+  - Fraction scale scenarios (NvFractions mode): a burst of ~14 fraction pods per node (mixed 1/8 and 1/2 GPU) and a
+    churn run of short pods arriving over a 10 minute window. Both verify scheduler/binder decisions only: every pod is
+    bound, no GPU group exceeds one GPU's memory, and reservation pods match the GPU groups in use. KWOK nodes are
+    stamped with the `nvidia.com/gpu.memory` label and the `gpu-fractioning.nvidia.com/Ready` condition; no
+    gpu-fractioning operator is involved. The churn run fails when p95 scheduling latency exceeds 5 seconds.
 
 
 ## Environment Setup

@@ -24,6 +24,8 @@
     { id: 'inference-reclaim', title: 'Disaggregated Inference Reclaim', label: 'Duration' },
     { id: 'hero-job-reclaim', title: 'Zone-Constrained Hero Job Reclaim', label: 'Duration' },
     { id: 'elastic-job-reclaim', title: 'Elastic Distributed Job Reclaim', label: 'Duration' },
+    { id: 'fractions-allocation', title: 'Fractional GPU Allocation Burst', label: 'Duration' },
+    { id: 'fractions-churn-latency', title: 'Fractional GPU Churn p95 Scheduling Latency', label: 'Latency' },
   ];
 
   const TEST_CASES = [
@@ -115,6 +117,18 @@
     {
       id: 'elastic-job-reclaim', chartId: 'elastic-job-reclaim', timingField: 'duration_seconds',
       scale: name => name === 'Elastic distributed job reclaim',
+      legacy: () => false,
+    },
+    {
+      id: 'fractions-allocation', chartId: 'fractions-allocation', timingField: 'duration_seconds',
+      ignoredSeriesFields: ['gpu_groups', 'pods_per_second'],
+      scale: name => name === 'Fractions allocation burst',
+      legacy: () => false,
+    },
+    {
+      id: 'fractions-churn-latency', chartId: 'fractions-churn-latency', timingField: 'p95_latency_seconds',
+      ignoredSeriesFields: ['duration_seconds', 'p50_latency_seconds', 'p99_latency_seconds', 'max_latency_seconds'],
+      scale: name => name === 'Fractions churn latency',
       legacy: () => false,
     },
   ];
