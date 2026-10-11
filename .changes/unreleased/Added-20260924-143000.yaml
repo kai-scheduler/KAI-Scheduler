@@ -1,0 +1,6 @@
+kind: Added
+body: FullNodeFirst reclaim scenario generator. For a pending workload that needs a whole node, it proposes a node-scoped "free this node" victim set for the first reclaimable node it finds, so reclaim finds a scenario in near-constant time on large clusters instead of searching victim combinations.
+time: 2026-09-24T14:30:00.000000+00:00
+custom:
+    Author: mohitvinchoo
+    Issue: "1790"
