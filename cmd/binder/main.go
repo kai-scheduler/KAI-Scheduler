@@ -14,6 +14,7 @@ import (
 
 	"github.com/kai-scheduler/KAI-scheduler/cmd/binder/app"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/memorylimit"
 )
 
 var (
@@ -21,6 +22,10 @@ var (
 )
 
 func main() {
+	memorylimit.RunMain(runMain)
+}
+
+func runMain() {
 	options := app.InitOptions(nil)
 	opts := zap.Options{
 		Development: true,

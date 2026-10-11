@@ -8,9 +8,14 @@ import (
 	"os"
 
 	"github.com/kai-scheduler/KAI-scheduler/cmd/helm-hooks/app"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/memorylimit"
 )
 
 func main() {
+	memorylimit.RunMain(runMain)
+}
+
+func runMain() {
 	if err := app.Run(os.Args[1:]); err != nil {
 		fmt.Fprintf(os.Stderr, "Error while running helm-hooks: %v\n", err)
 		os.Exit(1)

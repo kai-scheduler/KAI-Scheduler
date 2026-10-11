@@ -16,6 +16,7 @@ import (
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/yaml"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/memorylimit"
 	env_tests "github.com/kai-scheduler/KAI-scheduler/pkg/env-tests"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/env-tests/timeaware"
 )
@@ -27,6 +28,10 @@ var (
 )
 
 func main() {
+	memorylimit.RunMain(runMain)
+}
+
+func runMain() {
 	flag.Parse()
 
 	if *enableControllerLogs {

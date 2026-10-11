@@ -13,9 +13,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"github.com/kai-scheduler/KAI-scheduler/cmd/podgroupcontroller/app"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/memorylimit"
 )
 
 func main() {
+	memorylimit.RunMain(runMain)
+}
+
+func runMain() {
 	options := app.InitOptions(nil)
 	config := ctrl.GetConfigOrDie()
 

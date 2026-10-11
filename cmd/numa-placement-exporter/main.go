@@ -8,9 +8,14 @@ import (
 	"os"
 
 	"github.com/kai-scheduler/KAI-scheduler/cmd/numa-placement-exporter/app"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/memorylimit"
 )
 
 func main() {
+	memorylimit.RunMain(runMain)
+}
+
+func runMain() {
 	if err := app.Run(); err != nil {
 		fmt.Printf("Error while running the NUMA placement exporter: %v\n", err)
 		os.Exit(1)

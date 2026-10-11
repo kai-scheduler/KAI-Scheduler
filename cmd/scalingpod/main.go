@@ -3,5 +3,11 @@
 
 package main
 
+import "github.com/kai-scheduler/KAI-scheduler/pkg/common/memorylimit"
+
 func main() {
+	memorylimit.RunMain(runMain)
+}
+
+func runMain() {
 }
