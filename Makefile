@@ -119,14 +119,14 @@ $(CHANGIE): $(LOCALBIN)
 	test -s $(LOCALBIN)/changie || GOBIN=$(LOCALBIN) go install github.com/miniscruff/changie@$(CHANGIE_VERSION)
 
 .PHONY: changelog
-changelog: changie ## Add a changelog entry. Agents: make changelog KIND=Fixed BODY="..." AUTHOR="<github-user>" ISSUE="<pr-or-issue-number>". Humans: make changelog (interactive).
+changelog: changie ## Add a changelog entry. Agents: make changelog KIND=Fixed BODY="..." AUTHOR="<github-user>" ISSUE="<issue-number>" PR="<pr-number>". Humans: make changelog (interactive).
 	@if [ -n "$(KIND)" ] && [ -n "$(BODY)" ]; then \
 		kind_lower=$$(echo "$(KIND)" | tr '[:upper:]' '[:lower:]'); \
 		ts=$$(date '+%Y%m%d-%H%M%S'); \
 		out=".changes/unreleased/$${kind_lower}-$${ts}.yaml"; \
 		printf 'kind: %s\nbody: |-\n  %s\n' "$(KIND)" "$(BODY)" > "$${out}"; \
-		if [ -n "$(AUTHOR)" ] || [ -n "$(ISSUE)" ]; then \
-			printf 'custom:\n  Author: "%s"\n  Issue: "%s"\n' "$(AUTHOR)" "$(ISSUE)" >> "$${out}"; \
+		if [ -n "$(AUTHOR)" ] || [ -n "$(ISSUE)" ] || [ -n "$(PR)" ]; then \
+			printf 'custom:\n  Author: "%s"\n  Issue: "%s"\n  PR: "%s"\n' "$(AUTHOR)" "$(ISSUE)" "$(PR)" >> "$${out}"; \
 		fi; \
 		echo "Created $${out}"; \
 	elif [ -n "$(KIND)" ] || [ -n "$(BODY)" ]; then \
