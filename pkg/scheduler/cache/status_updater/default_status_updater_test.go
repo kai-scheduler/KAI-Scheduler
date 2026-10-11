@@ -755,7 +755,7 @@ func TestDefaultStatusUpdater_RecordJobStatusEvent(t *testing.T) {
 			stopCh := make(chan struct{})
 			statusUpdater.Run(stopCh)
 
-			statusUpdater.RecordJobStatusEvent(jobInfos["test-job"], nil)
+			statusUpdater.RecordJobStatusEvent(jobInfos[common_info.NewPodGroupID(test.job.Namespace, test.job.Name)], nil)
 
 			events := []string{}
 			close(recorder.Events)
