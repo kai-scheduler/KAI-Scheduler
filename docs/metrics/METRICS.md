@@ -57,7 +57,10 @@ Metrics related to the core scheduling algorithm performance, task lifecycle, an
 | `podgroups_acted_on_by_action` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `action` | Cumulative count of pod groups considered/attempted by each action (may fail or be filtered). |
 | `scenarios_simulation_by_action` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `action` | Cumulative count of simulation scenarios run by each action during scheduling decisions. |
 | `scenarios_filtered_by_action` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `action` | Cumulative count of simulation scenarios filtered/rejected by each action. |
-| `total_preemption_attempts` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | Cumulative total of preemption attempts across the entire cluster lifetime. |
+| `total_preemption_attempts` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | **Deprecated.** Use `podgroups_scheduled_by_action{action="preempt"}`, which increases at the same point, or `podgroups_acted_on_by_action{action="preempt"}` for attempts. Cumulative count of successful preemption strategies, incremented once per preemptor regardless of how many pods it evicts. Failed attempts are not counted. |
+| `total_preemption_evictions` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | Cumulative count of victim pods evicted by the preempt action. See [Eviction counters](#eviction-counters). |
+| `total_reclaim_evictions` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | Cumulative count of victim pods evicted by the reclaim action. See [Eviction counters](#eviction-counters). |
+| `total_consolidation_evictions` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | Cumulative count of victim pods evicted by the consolidation action. See [Eviction counters](#eviction-counters). |
 | `pod_group_evicted_pods_total` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `podgroup`, `nodepool`, `action`, `owner_group`, `owner_kind`, `owner_name`, `owner_uid`, `subgroup` | Cumulative count of pods evicted per pod group, workload, and leaf subgroup. |
 | `pod_group_eviction_events_total` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `podgroup`, `nodepool`, `action`, `owner_group`, `owner_kind`, `owner_name`, `owner_uid` | Cumulative count of committed eviction decisions per affected pod group. |
 | `scenario_search_jobs_total` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `action`, `result`, `reduced_budget` | Cumulative count of jobs considered by bounded scenario search, grouped by scheduling action, terminal search result, and whether the job ran after the action budget was reduced. |
@@ -69,6 +72,50 @@ Metrics related to the core scheduling algorithm performance, task lifecycle, an
 | `scenario_search_scenarios_total` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `action`, `generator`, `state` | Cumulative count of bounded-search scenarios emitted by generators, simulated by the solver, rejected by validation, or skipped as duplicates of already-failed scenarios. |
 
 Zero-valued series for `pod_group_evicted_pods_total` and `pod_group_eviction_events_total` are created for PodGroups on this scheduler shard after they hold allocated resources, and removed when those PodGroups are deleted. Pending PodGroups do not create series.
+
+#### Eviction counters
+
+`total_preemption_evictions`, `total_reclaim_evictions` and `total_consolidation_evictions` count victim pods, not PodGroups or decisions. A strategy that evicts four pods adds four.
+
+- **When a pod is counted:** when the API server accepts the scheduler's request to delete the pod. The pod may still be terminating at that point. Evictions are only requested when an action commits its statement, so simulated and discarded scenarios never reach the counters. A pod that is already gone or terminated by then is not counted.
+- **Failed eviction requests:** not counted. The scheduler logs the failure instead.
+- **Evictions outside these actions:** not counted. This includes stale gang eviction and the `backgroundpods` plugin.
+
+`pod_group_evicted_pods_total` also carries an `action` label, but it is incremented per PodGroup when the scheduler records the eviction event, before the delete request is sent. It can therefore include requests that later fail, while these counters only include accepted deletions.
+
+All three counters are exported at 0 from scheduler startup and have no workload labels, so `rate()` and `increase()` work from the first eviction.
+
+Attempts and successful strategies for each action come from the existing per-action metrics:
+
+| Action | Attempts | Successful strategies | Victim pods evicted |
+|---|---|---|---|
+| `preempt` | `podgroups_acted_on_by_action{action="preempt"}` | `podgroups_scheduled_by_action{action="preempt"}` | `total_preemption_evictions` |
+| `reclaim` | `podgroups_acted_on_by_action{action="reclaim"}` | `podgroups_scheduled_by_action{action="reclaim"}` | `total_reclaim_evictions` |
+| `consolidation` | `podgroups_acted_on_by_action{action="consolidation"}` | `podgroups_scheduled_by_action{action="consolidation"}` | `total_consolidation_evictions` |
+
+An attempt is counted for each PodGroup the action tries to place after its initial eligibility checks, and a success is counted when a strategy is found, just before the action commits it. For `preempt`, the success count increases at the same point as the deprecated `total_preemption_attempts`, so it can replace it.
+
+With the default `kai` metrics namespace:
+
+```promql
+# Pods evicted per second by each action
+rate(kai_total_preemption_evictions[5m])
+rate(kai_total_reclaim_evictions[5m])
+rate(kai_total_consolidation_evictions[5m])
+
+# All scheduler-driven evictions in the last hour
+increase(kai_total_preemption_evictions[1h])
+  + increase(kai_total_reclaim_evictions[1h])
+  + increase(kai_total_consolidation_evictions[1h])
+
+# Attempts and successful strategies, per action
+sum by (action) (rate(kai_podgroups_acted_on_by_action{action=~"preempt|reclaim|consolidation"}[5m]))
+sum by (action) (rate(kai_podgroups_scheduled_by_action{action=~"preempt|reclaim|consolidation"}[5m]))
+
+# Average victim pods evicted per successful reclaim strategy
+increase(kai_total_reclaim_evictions[1h])
+  / increase(kai_podgroups_scheduled_by_action{action="reclaim"}[1h])
+```
 
 ### Queue Fair-Share & Usage Metrics
 

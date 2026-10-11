@@ -372,7 +372,9 @@ func (sc *SchedulerCache) evict(evictedPod *v1.Pod, evictedPodGroup *enginev2alp
 		err := sc.Evictor.Evict(evictedPod, message)
 		if err != nil {
 			log.InfraLogger.Errorf("Failed to evict pod: %v/%v, error: %v", evictedPod.Namespace, evictedPod.Name, err)
+			return
 		}
+		metrics.IncEvictedPodsByAction(evictionMetadata.Action)
 	}()
 }
 
