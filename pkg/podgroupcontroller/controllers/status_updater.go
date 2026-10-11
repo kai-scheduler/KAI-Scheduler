@@ -87,7 +87,7 @@ func (r *PodGroupReconciler) calculatePodGroupMetadata(
 			return nil, err
 		}
 	}
-	logger.V(3).Info(fmt.Sprintf("Pod-group calculated metadata %v", podGroupMetadata))
+	logger.V(4).Info("Pod-group calculated metadata", "metadata", podGroupMetadata)
 	return podGroupMetadata, nil
 }
 
@@ -102,8 +102,8 @@ func addPodMetadata(
 		logger.Error(err, fmt.Sprintf("Failed to calculate metadata for pod %s/%s", pod.Namespace, pod.Name))
 		return err
 	}
-	logger.V(3).Info(fmt.Sprintf("For pod %s/%s calculated metadata %v",
-		pod.Namespace, pod.Name, podMetadata))
+	logger.V(4).Info("Pod calculated metadata", "namespace", pod.Namespace, "name", pod.Name,
+		"metadata", podMetadata)
 
 	podGroupMetadata.AddPodMetadata(podMetadata, isCore)
 	return nil

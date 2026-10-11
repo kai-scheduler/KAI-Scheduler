@@ -1,0 +1,6 @@
+kind: Changed
+body: |-
+  Per-cycle and per-reconcile log lines move to debug verbosity; the pod-grouper logs owner names instead of objects
+custom:
+  Author: "sam-huang1223"
+  Issue: "2308"

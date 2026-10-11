@@ -9,7 +9,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-logr/logr/funcr"
 	"k8s.io/utils/ptr"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 func TestValidateSubGroups(t *testing.T) {
@@ -535,4 +537,34 @@ func errorsListEqual(want, got []error) bool {
 		}
 	}
 	return true
+}
+
+func TestValidateUpdateLogsAboveDefaultVerbosity(t *testing.T) {
+	for _, tt := range []struct {
+		verbosity int
+		wantLog   bool
+	}{
+		{verbosity: 3, wantLog: false},
+		{verbosity: 4, wantLog: true},
+	} {
+		var logs strings.Builder
+		ctx := log.IntoContext(context.Background(), funcr.New(func(_, args string) {
+			logs.WriteString(args + "\n")
+		}, funcr.Options{Verbosity: tt.verbosity}))
+		podGroup := &PodGroup{}
+
+		if _, err := podGroup.ValidateUpdate(ctx, podGroup, podGroup); err != nil {
+			t.Fatalf("ValidateUpdate() error = %v", err)
+		}
+		if got := strings.Contains(logs.String(), "validate update"); got != tt.wantLog {
+			t.Errorf("verbosity %d: logged validate update = %v, want %v", tt.verbosity, got, tt.wantLog)
+		}
+
+		if _, err := podGroup.ValidateCreate(ctx, podGroup); err != nil {
+			t.Fatalf("ValidateCreate() error = %v", err)
+		}
+		if !strings.Contains(logs.String(), "validate create") {
+			t.Errorf("verbosity %d: validate create was not logged", tt.verbosity)
+		}
+	}
 }

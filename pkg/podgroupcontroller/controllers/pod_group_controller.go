@@ -57,7 +57,7 @@ type PodGroupReconciler struct {
 func (r *PodGroupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
-	logger.V(3).Info("Reconciling pod group")
+	logger.V(4).Info("Reconciling pod group")
 	podGroup, err := r.getPodGroupObject(ctx, req)
 	if err != nil {
 		if errors.IsNotFound(err) {

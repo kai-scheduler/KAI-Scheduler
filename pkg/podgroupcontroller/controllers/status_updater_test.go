@@ -5,17 +5,22 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 
+	"github.com/go-logr/logr/funcr"
 	v1 "k8s.io/api/core/v1"
 	schedulingv1 "k8s.io/api/scheduling/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/kai-scheduler/api/scheduling/v2alpha2"
 
@@ -791,4 +796,50 @@ func createScheme(t *testing.T) *runtime.Scheme {
 		t.Fatal(err)
 	}
 	return scheme
+}
+
+func TestReconcileLogsDetailsAboveDefaultVerbosity(t *testing.T) {
+	detailMessages := []string{"Reconciling pod group", "Pod-group calculated metadata", "Pod calculated metadata"}
+	for _, tt := range []struct {
+		verbosity   int
+		wantDetails bool
+	}{
+		{verbosity: 3, wantDetails: false},
+		{verbosity: 4, wantDetails: true},
+	} {
+		t.Run(fmt.Sprintf("verbosity %d", tt.verbosity), func(t *testing.T) {
+			kubeClient := fake.NewClientBuilder().WithScheme(createScheme(t)).
+				WithStatusSubresource(&v2alpha2.PodGroup{}).
+				WithIndex(&v1.Pod{}, cluster_relations.PodGroupToPodsIndexer, cluster_relations.PodGroupNameIndexerFunc).
+				WithObjects(
+					&v2alpha2.PodGroup{
+						ObjectMeta: metav1.ObjectMeta{Namespace: "n1", Name: "pg1"},
+						Spec:       v2alpha2.PodGroupSpec{PriorityClassName: "c1"},
+					},
+					&v1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: "n1", Name: "pod1", Annotations: map[string]string{"pod-group-name": "pg1"},
+						},
+						Spec: v1.PodSpec{PriorityClassName: "c1"},
+					},
+					&schedulingv1.PriorityClass{ObjectMeta: metav1.ObjectMeta{Name: "c1"}, Value: 75},
+				).Build()
+			reconciler := &PodGroupReconciler{Client: kubeClient}
+
+			var logs strings.Builder
+			ctx := log.IntoContext(context.Background(), funcr.New(func(_, args string) {
+				logs.WriteString(args + "\n")
+			}, funcr.Options{Verbosity: tt.verbosity}))
+			_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Namespace: "n1", Name: "pg1"}})
+			if err != nil {
+				t.Fatalf("Reconcile() error = %v", err)
+			}
+
+			for _, message := range detailMessages {
+				if got := strings.Contains(logs.String(), message); got != tt.wantDetails {
+					t.Errorf("logged %q = %v, want %v; logs:\n%s", message, got, tt.wantDetails, logs.String())
+				}
+			}
+		})
+	}
 }

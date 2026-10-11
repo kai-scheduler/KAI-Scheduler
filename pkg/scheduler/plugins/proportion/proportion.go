@@ -343,7 +343,9 @@ func getNodeResources(ssn *framework.Session, node *node_info.NodeInfo) rs.Resou
 	nodeResource := rs.EmptyResourceQuantities()
 
 	if !scheduler_util.ValidateIsNodeReady(node.Node) {
-		log.InfraLogger.V(2).Infof("Node <%v> is not ready, not counting resource for proportion calculations", node.Name)
+		log.InfraLogger.V(5).Do(func() {
+			log.InfraLogger.Infof("Node <%v> is not ready, not counting resource for proportion calculations", node.Name)
+		})
 		return nodeResource
 	}
 
