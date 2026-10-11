@@ -20,6 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/ptr"
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
@@ -36,6 +37,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait/watcher"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/scale/topology"
 	"github.com/kai-scheduler/api/constants"
+	"github.com/kai-scheduler/api/kai/v1/common"
 	kaiv1alpha1 "github.com/kai-scheduler/api/kai/v1alpha1"
 	v2 "github.com/kai-scheduler/api/scheduling/v2"
 	"github.com/kai-scheduler/api/scheduling/v2alpha2"
@@ -616,6 +618,49 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 
 			It("workload scale scenario: elastic distributed job reclaim", func(ctx context.Context) {
 				elasticJobReclaim(ctx, testCtx, elasticVictimQueue, elasticReclaimQueue, numberOfNodes)
+			}, SpecTimeout(maxFlowTimeoutMinutes*time.Minute))
+		})
+
+		Context("Fraction scale scenarios", Ordered, func() {
+			var (
+				fractionQueue       *v2.Queue
+				originalSharingMode *common.GpuSharingMode
+				gpuMemoryMiB        int64
+			)
+
+			BeforeAll(func(ctx context.Context) {
+				originalSharingMode = currentGpuSharingMode(ctx, testCtx)
+				setGpuSharingMode(ctx, testCtx, ptr.To(common.GpuSharingModeNvFractions))
+				gpuMemoryMiB = stampNvFractionsNodes(ctx, testCtx)
+
+				fractionQueue = queue.CreateQueueObject(
+					"fractions-"+utils.GenerateRandomK8sName(10), parentQueue.Name)
+				fractionQueue.Spec.Resources.GPU.Quota = float64(numberOfNodes * gpusPerNode)
+				testCtx.AddQueues(ctx, []*v2.Queue{fractionQueue})
+
+				Expect(createPodCompletionStage(
+					ctx, testCtx.ControllerClient, time.Second*20, time.Second*40,
+				)).To(Succeed())
+			})
+
+			AfterAll(func(ctx context.Context) {
+				Expect(deletePodCompletionStage(ctx, testCtx.ControllerClient)).To(Succeed())
+				setGpuSharingMode(ctx, testCtx, originalSharingMode)
+			})
+
+			AfterEach(func(ctx context.Context) {
+				if CurrentSpecReport().Failed() {
+					return
+				}
+				cleanupTestQueue(ctx, testCtx, fractionQueue)
+			})
+
+			It("fraction scale scenario: allocation burst", func(ctx context.Context) {
+				fractionsAllocationBurst(ctx, testCtx, fractionQueue, numberOfNodes, gpuMemoryMiB, defaultFractionMix)
+			}, SpecTimeout(maxFlowTimeoutMinutes*time.Minute))
+
+			It("fraction scale scenario: churn latency", func(ctx context.Context) {
+				fractionsChurnLatency(ctx, testCtx, fractionQueue, numberOfNodes, gpuMemoryMiB, defaultFractionMix)
 			}, SpecTimeout(maxFlowTimeoutMinutes*time.Minute))
 		})
 	})
