@@ -1,6 +1,0 @@
-kind: Changed
-body: |-
-  Bucket pull request E2E tests into balanced parallel jobs with a configurable bucket count
-custom:
-  Author: "SiorMeir"
-  Issue: "2277"

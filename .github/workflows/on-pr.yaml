@@ -59,7 +59,7 @@ jobs:
     needs: [ check-build-and-test-required ]
     if: needs.check-build-and-test-required.outputs.code == 'true'
     name: Validate & Test
-    runs-on: cncf-ubuntu-8-32-x86
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -174,7 +174,7 @@ jobs:
     needs: [ check-build-and-test-required ]
     if: needs.check-build-and-test-required.outputs.code == 'true'
     name: Build
-    runs-on: cncf-ubuntu-8-32-x86
+    runs-on: ubuntu-latest
     outputs:
       package_version: ${{ steps.package_version.outputs.PACKAGE_VERSION }}
     steps:
@@ -204,7 +204,7 @@ jobs:
         uses: actions/setup-go@v7
         with:
           go-version: '1.26.8'
-          cache: false
+          cache: true
 
       - name: Move Docker Data to /mnt
         run: |
@@ -249,63 +249,11 @@ jobs:
         run: |
           echo "Skipping build and test since only documentation files (.md or docs/) were changed."
 
-  prepare-e2e-buckets:
-    name: Prepare E2E Buckets
-    needs: [ check-build-and-test-required ]
-    if: needs.check-build-and-test-required.outputs.code == 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      actions: read
-      contents: read
-    outputs:
-      matrix: ${{ steps.plan.outputs.matrix }}
-      packages: ${{ steps.plan.outputs.packages }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
-
-      - name: Set up Go
-        uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-
-      # Timing history only balances the buckets, so a failure here must not fail the run.
-      - name: Download E2E timing history
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          HISTORY_RUNS: ${{ vars.E2E_HISTORY_RUNS || 3 }}
-        run: |
-          found=0
-          # Merge-queue runs are the prod baseline. The any-run fallback is temporary, until merge_group runs
-          # with reports exist; remove it afterwards so PR runs do not skew the timings.
-          # --status success returns stale runs, so filter on conclusion instead.
-          merge_runs=$(gh run list --workflow on-pr.yaml --event merge_group --limit 30 --json databaseId,conclusion --jq '.[] | select(.conclusion=="success") | .databaseId')
-          any_runs=$(gh run list --workflow on-pr.yaml --limit 30 --json databaseId,conclusion --jq '.[] | select(.conclusion=="success") | .databaseId')
-          for run_id in $(printf '%s\n' $merge_runs $any_runs | awk '!seen[$0]++'); do
-            if gh run download "$run_id" --pattern 'e2e-report-*' --dir "$RUNNER_TEMP/e2e-history/$run_id"; then
-              echo "Using E2E timing history from run $run_id"
-              found=$(( found + 1 ))
-              (( found >= HISTORY_RUNS )) && break
-            fi
-          done
-          echo "Found $found prior E2E runs with timing reports"
-
-      - name: Plan E2E buckets
-        id: plan
-        env:
-          E2E_BUCKETS: ${{ vars.E2E_BUCKET_COUNT || 3 }}
-        run: go run ./hack/e2ebuckets plan --buckets "$E2E_BUCKETS" --history-dir "$RUNNER_TEMP/e2e-history"
-
   e2e-tests:
-    name: Run E2E Tests (${{ matrix.bucket }})
-    needs: [ build, check-build-and-test-required, prepare-e2e-buckets ]
+    name: Run E2E Tests
+    needs: [ build, check-build-and-test-required ]
     if: needs.check-build-and-test-required.outputs.code == 'true'
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.prepare-e2e-buckets.outputs.matrix) }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -326,58 +274,25 @@ jobs:
           kubectl create rolebinding fake-status-updater --clusterrole=pods-patcher --serviceaccount=gpu-operator:status-updater -n kai-resource-reservation
 
       - name: Run e2e tests
-        env:
-          E2E_PACKAGES: ${{ matrix.packages }}
-          E2E_REPORT: e2e-report-${{ matrix.bucket }}.json
-          E2E_SEED: ${{ matrix.seed }}
         run: |
-          read -r -a packages <<< "$E2E_PACKAGES"
-          go tool ginkgo -r --keep-going --randomize-all --randomize-suites --seed="$E2E_SEED" --trace -vv --label-filter '!autoscale && !scale && !upgrade && !gitops && !nightly' --output-dir=. --json-report="$E2E_REPORT" "${packages[@]}"
-
-      - name: Report skipped tests
-        if: always()
-        env:
-          E2E_REPORT: e2e-report-${{ matrix.bucket }}.json
-        run: |
+          go tool ginkgo -r --keep-going --randomize-all --randomize-suites --trace -vv --label-filter '!autoscale && !scale && !upgrade && !gitops && !nightly' --output-dir=. --json-report=e2e-report.json ./test/e2e/suites
+          echo ""
           echo "=== Skipped Tests ==="
-          if [[ ! -f "$E2E_REPORT" ]]; then
-            echo "No E2E report was produced"
-            exit 0
-          fi
-          jq -r '.[].SpecReports[] | select(.State == "skipped") | ([.ContainerHierarchyTexts[], .LeafNodeText] | join(" > "))' "$E2E_REPORT"
-
-      - name: Upload E2E report
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: e2e-report-${{ matrix.bucket }}
-          path: e2e-report-${{ matrix.bucket }}.json
-          if-no-files-found: warn
+          jq -r '.[].SpecReports[] | select(.State == "skipped") | ([.ContainerHierarchyTexts[], .LeafNodeText] | join(" > "))' e2e-report.json 2>/dev/null || echo "No skipped tests found"
 
       - name: Uninstall KAI-scheduler
-        if: always()
         run: |
-          if ! kubectl cluster-info >/dev/null 2>&1; then
-            echo "The cluster is unavailable; the Kind post-step will remove any remaining resources."
-            exit 0
-          fi
-          if ! helm status kai-scheduler -n kai-scheduler >/dev/null 2>&1; then
-            echo "KAI-scheduler is not installed; the Kind post-step will remove the cluster."
-            exit 0
-          fi
-
           helm uninstall kai-scheduler -n kai-scheduler
           echo "Waiting up to 60 seconds for pods to terminate..."
-          if ! kubectl get namespace kai-scheduler >/dev/null 2>&1; then
-            exit 0
-          fi
+          EXCLUDED_PODS="prometheus"
           for i in {1..12}; do
-            NON_TERM=$(kubectl get pods -n kai-scheduler --no-headers | awk '!/Terminating/ && !/prometheus/ { count++ } END { print count + 0 }')
+            EXCLUDE_PATTERN=$(echo "$EXCLUDED_PODS" | tr ' ' '|')
+            NON_TERM=$(kubectl get pods -n kai-scheduler --no-headers 2>/dev/null | grep -v Terminating | grep -vE "$EXCLUDE_PATTERN" | wc -l)
             if [ "$NON_TERM" -eq 0 ]; then
-              echo "Only Terminating pods remain or no pods are left. Safe to proceed."
+              echo "Only Terminating pods remain or no pods left (excluding: $EXCLUDED_PODS). Safe to proceed."
               exit 0
             fi
-            echo "Found $NON_TERM non-terminating pods... waiting (attempt $i/12)"
+            echo "Found $NON_TERM non-terminating pods (excluding: $EXCLUDED_PODS)... waiting (attempt $i/12)"
             sleep 5
           done
           echo "Pods did not terminate within 60 seconds. Uninstall incomplete."
@@ -497,83 +412,6 @@ jobs:
           GITOPS_KAI_REGISTRY: localhost:30100
         run: |
           go tool ginkgo -r --keep-going --trace -vv --label-filter 'gitops' --output-dir=. --json-report=e2e-gitops-report.json ./test/e2e/suites/gitops
-
-  e2e-gate:
-    name: Run E2E Tests
-    needs:
-      - check-build-and-test-required
-      - build
-      - prepare-e2e-buckets
-      - e2e-tests
-      - e2e-upgrade-tests
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
-
-      - name: Check E2E results
-        env:
-          CHECK_RESULT: ${{ needs.check-build-and-test-required.result }}
-          BUILD_RESULT: ${{ needs.build.result }}
-          CODE_REQUIRED: ${{ needs.check-build-and-test-required.outputs.code }}
-          PREPARE_RESULT: ${{ needs.prepare-e2e-buckets.result }}
-          MAIN_RESULT: ${{ needs.e2e-tests.result }}
-          UPGRADE_RESULT: ${{ needs.e2e-upgrade-tests.result }}
-        run: |
-          if [[ "$CHECK_RESULT" != "success" ]]; then
-            echo "The change-detection job did not succeed."
-            exit 1
-          fi
-          if [[ "$CODE_REQUIRED" == "false" ]]; then
-            echo "E2E tests are not required for this documentation-only change."
-            exit 0
-          fi
-          if [[ "$CODE_REQUIRED" != "true" ]]; then
-            echo "The change-detection job returned an unexpected code result: $CODE_REQUIRED"
-            exit 1
-          fi
-
-          failures=0
-          results=(
-            "Build:$BUILD_RESULT"
-            "Prepare E2E Buckets:$PREPARE_RESULT"
-            "Main E2E Buckets:$MAIN_RESULT"
-            "Upgrade E2E:$UPGRADE_RESULT"
-          )
-          for result_entry in "${results[@]}"; do
-            job_name=${result_entry%%:*}
-            job_result=${result_entry#*:}
-            if [[ "$job_result" != "success" ]]; then
-              echo "$job_name did not succeed: $job_result"
-              failures=$((failures + 1))
-            fi
-          done
-
-          if [[ "$failures" -ne 0 ]]; then
-            exit 1
-          fi
-          echo "All E2E jobs passed."
-
-      - name: Set up Go
-        if: needs.e2e-tests.result == 'success'
-        uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-
-      - name: Download bucket reports
-        if: needs.e2e-tests.result == 'success'
-        uses: actions/download-artifact@v8
-        with:
-          pattern: e2e-report-bucket-*
-          merge-multiple: true
-          path: ${{ runner.temp }}/e2e-reports
-
-      - name: Verify every planned E2E package ran and passed
-        if: needs.e2e-tests.result == 'success'
-        env:
-          PLANNED_PACKAGES: ${{ needs.prepare-e2e-buckets.outputs.packages }}
-        run: go run ./hack/e2ebuckets verify --packages "$PLANNED_PACKAGES" --reports-dir "$RUNNER_TEMP/e2e-reports"
 
   cleanup-images-cache:
     name: Cleanup Images Cache
