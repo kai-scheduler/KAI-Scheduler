@@ -12,6 +12,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/configurations/feature_flags"
 	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/pod_group"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/queue"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/utils"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
@@ -193,6 +194,63 @@ var _ = Describe("Topology", Ordered, func() {
 
 			Expect(len(scheduledNodes)).To(BeNumerically(">", 1), "Expected all pods scheduled to one more then one node, got %v", scheduledNodes)
 			Expect(len(scheduledRacks)).To(Equal(1), "Expected all pods scheduled to the same rack, got %v", scheduledRacks)
+		})
+
+		It("required node - replacement of a subgroup member stays on the node of the running members", func(ctx context.Context) {
+			namespace := queue.GetConnectedNamespaceToQueue(testCtx.Queues[0])
+
+			gpusPerNode := testTopologyData.TopologyNodes[gpuNodesNames[0]].
+				Status.Allocatable[v1.ResourceName(constants.NvidiaGpuResource)]
+			halfGpusPerNode := *resource.NewQuantity(int64(gpusPerNode.AsFloat64Slow()/2), resource.DecimalSI)
+			podResource := v1.ResourceRequirements{
+				Requests: v1.ResourceList{v1.ResourceName(constants.NvidiaGpuResource): halfGpusPerNode},
+				Limits:   v1.ResourceList{v1.ResourceName(constants.NvidiaGpuResource): halfGpusPerNode},
+			}
+
+			pgName := utils.GenerateRandomK8sName(10)
+			subGroupNodes := []pod_group.SubGroupNode{
+				{Name: "master", MinMember: ptr.To(int32(1)), PodCount: 1},
+				{Name: "worker", MinMember: ptr.To(int32(1)), PodCount: 1},
+			}
+			hierarchy := pod_group.BuildHierarchy(ctx, testCtx.KubeClientset, testCtx.Queues[0], pgName, subGroupNodes, podResource)
+			podGroup := pod_group.Create(namespace, pgName, testCtx.Queues[0].Name)
+			podGroup.Spec.MinMember = ptr.To(int32(2))
+			podGroup.Spec.SubGroups = hierarchy.SubGroups
+			podGroup.Spec.TopologyConstraint = v2alpha2.TopologyConstraint{
+				RequiredTopologyLevel: rd.NodeNameLabelKey,
+				Topology:              "e2e-topology-tree",
+			}
+			_, err := testCtx.KubeAiSchedClientset.SchedulingV2alpha2().PodGroups(namespace).Create(ctx,
+				podGroup, metav1.CreateOptions{})
+			Expect(err).To(Succeed())
+			wait.ForPodsScheduled(ctx, testCtx.ControllerClient, namespace, hierarchy.AllPods)
+
+			master, err := rd.GetPod(ctx, testCtx.KubeClientset, namespace, hierarchy.Pods["master"][0].Name)
+			Expect(err).To(Succeed())
+
+			err = testCtx.KubeClientset.CoreV1().Pods(namespace).Delete(ctx, hierarchy.Pods["worker"][0].Name,
+				metav1.DeleteOptions{GracePeriodSeconds: ptr.To(int64(0))})
+			Expect(err).To(Succeed())
+
+			// The blocker takes the capacity freed on the master's node, so only other nodes can fit a replacement
+			blocker := rd.CreatePodObject(testCtx.Queues[0], podResource)
+			blocker.Spec.NodeSelector = map[string]string{rd.NodeNameLabelKey: master.Spec.NodeName}
+			blocker, err = rd.CreatePod(ctx, testCtx.KubeClientset, blocker)
+			Expect(err).To(Succeed())
+			wait.ForPodScheduled(ctx, testCtx.ControllerClient, blocker)
+
+			replacement := pod_group.BuildHierarchy(ctx, testCtx.KubeClientset, testCtx.Queues[0], pgName,
+				subGroupNodes[1:], podResource).AllPods[0]
+			// Fail as soon as the replacement binds instead of waiting for an Unschedulable condition that never comes
+			Eventually(func() bool {
+				current, err := rd.GetPod(ctx, testCtx.KubeClientset, namespace, replacement.Name)
+				Expect(err).To(Succeed())
+				if current.Spec.NodeName != "" {
+					Fail(fmt.Sprintf("Replacement worker was bound to node %s, expected it to stay unschedulable "+
+						"since the running master is on node %s", current.Spec.NodeName, master.Spec.NodeName))
+				}
+				return rd.IsPodUnschedulable(current)
+			}, "1m", "500ms").Should(BeTrue())
 		})
 	}, MustPassRepeatedly(3))
 
