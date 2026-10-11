@@ -87,7 +87,7 @@ jobs:
         run: make test
 
       - name: Archive code coverage results
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v6
         with:
           name: code-coverage
           path: coverage/coverage.out
@@ -103,7 +103,7 @@ jobs:
 
       - name: Archive total coverage
         if: hashFiles('coverage/total-coverage.txt') != ''
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v6
         with:
           name: total-coverage
           path: coverage/total-coverage.txt
@@ -158,14 +158,14 @@ jobs:
             fi
           } > coverage-report.txt
       - name: Upload coverage report
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-report-for-comment
           path: coverage-report.txt
       - name: Save PR number
         run: echo "${{ github.event.number }}" > pr_number.txt
       - name: Upload PR number
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v6
         with:
           name: pr-number-for-comment
           path: pr_number.txt
@@ -348,7 +348,7 @@ jobs:
 
       - name: Upload E2E report
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v6
         with:
           name: e2e-report-${{ matrix.bucket }}
           path: e2e-report-${{ matrix.bucket }}.json
