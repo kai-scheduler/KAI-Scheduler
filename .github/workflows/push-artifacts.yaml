@@ -65,6 +65,15 @@ jobs:
         run: |
           helm push ./charts/kai-scheduler-$PACKAGE_VERSION.tgz oci://${{ env.DOCKER_REGISTRY }}
 
+      - name: Set up ORAS
+        if: startsWith(env.PACKAGE_VERSION, 'v')
+        uses: oras-project/setup-oras@v2
+
+      - name: Tag Helm Chart without v prefix
+        if: startsWith(env.PACKAGE_VERSION, 'v')
+        run: |
+          oras tag ${{ env.DOCKER_REGISTRY }}/kai-scheduler:$PACKAGE_VERSION ${PACKAGE_VERSION#v}
+
   build-and-push-fips:
     name: Build & Push FIPS
     if: startsWith(github.ref, 'refs/tags/')
