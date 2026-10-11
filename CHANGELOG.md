@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v0.18.5] - 2026-10-11
+
+### Added
+- Helm chart OCI tags without v prefix, enabling semver ranges like ~0.18.0 [#2393](https://github.com/kai-scheduler/KAI-Scheduler/issues/2393) [gshaibi](https://github.com/gshaibi)
+
+### Fixed
+- Fix background pod displacement by preserving namespaced PodGroup identities in node snapshots. [#2367](https://github.com/kai-scheduler/KAI-Scheduler/issues/2367) [itsomri](https://github.com/itsomri)
+
 ## [v0.18.4] - 2026-10-11
 
 ### Changed
