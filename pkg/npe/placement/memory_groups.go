@@ -16,10 +16,10 @@ import (
 	podresourcesv1 "k8s.io/kubelet/pkg/apis/podresources/v1"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	commonpod "github.com/kai-scheduler/KAI-scheduler/pkg/common/pod"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
+	"github.com/kai-scheduler/api/constants"
+	"github.com/kai-scheduler/api/scheduling/v1alpha2"
+	"github.com/kai-scheduler/api/utilities/resources"
 )
 
 const incompleteMemoryGroups = "null"
