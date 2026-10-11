@@ -32,10 +32,7 @@ type TestTaskBasic struct {
 	NodeAffinityNames []string
 	Annotations       map[string]string
 	PodAffinityLabels map[string]string
-	// PodAffinityLabels are put on the pod and, by default, also select the pods it attracts and
-	// repels (a pod attracting/repelling its own kind). PodAntiAffinitySelector overrides only the
-	// required anti-affinity term's matchLabels and is never added to the pod's labels, so a task
-	// can repel another set of pods without repelling itself. nil keeps the legacy behaviour.
+	// Selects pods to repel; does not change this pod's labels.
 	PodAntiAffinitySelector    map[string]string
 	PodAffinityTopologyKey     string
 	PodAntiAffinityTopologyKey string
@@ -179,9 +176,7 @@ func applyPodAffinityLabels(
 	if affinity == nil {
 		affinity = &v1.Affinity{}
 	}
-	// Legacy default: a pod repels pods carrying its own PodAffinityLabels. The selector is an
-	// override, not a merge: matchLabels is a conjunction, so merging would narrow it and could
-	// not express two values of the same key (e.g. repel tier=train while being tier=preprocess).
+
 	if podAntiAffinitySelector == nil {
 		podAntiAffinitySelector = podAffinityLabels
 	}
