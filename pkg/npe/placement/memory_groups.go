@@ -129,29 +129,17 @@ func aggregateMemoryGroups(observed *podresourcesv1.PodResources, expected map[s
 
 func memoryObservationComplete(pod *v1.Pod, represented map[string]*podresourcesv1.ContainerResources, expected map[string]v1.Container) (bool, bool, string) {
 	started := map[string]bool{}
-	applicationStarted := false
+	anyStarted := false
 	for _, status := range pod.Status.ContainerStatuses {
 		started[status.Name] = status.State.Running != nil || status.State.Terminated != nil
-		applicationStarted = applicationStarted || started[status.Name]
-	}
-	ordinaryInitStarted := false
-	anyStarted := applicationStarted
-	ordinaryInit := map[string]bool{}
-	for _, container := range pod.Spec.InitContainers {
-		ordinaryInit[container.Name] = !restartable(container)
+		anyStarted = anyStarted || started[status.Name]
 	}
 	for _, status := range pod.Status.InitContainerStatuses {
+		if _, exists := expected[status.Name]; !exists {
+			continue
+		}
 		started[status.Name] = status.State.Running != nil || status.State.Terminated != nil
 		anyStarted = anyStarted || started[status.Name]
-		if ordinaryInit[status.Name] && started[status.Name] {
-			if status.State.Running != nil {
-				return false, true, fmt.Sprintf("ordinary init container %q is running; podResources does not report its memory allocation", status.Name)
-			}
-			ordinaryInitStarted = true
-		}
-	}
-	if ordinaryInitStarted && !applicationStarted {
-		return false, true, "ordinary init containers completed but application containers have not started"
 	}
 	for _, container := range expected {
 		for name, amount := range container.Resources.Requests {
