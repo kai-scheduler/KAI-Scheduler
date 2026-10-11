@@ -1,0 +1,6 @@
+kind: Fixed
+body: CRD upgrade now fails early, naming the CRD, when stale storedVersions would break the apply
+time: 2026-10-11T11:36:21.931611+03:00
+custom:
+    Author: SiorMeir
+    Issue: "2381"
