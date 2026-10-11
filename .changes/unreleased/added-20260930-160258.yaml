@@ -1,0 +1,6 @@
+kind: Added
+body: |-
+  Workloads can opt out of being moved by consolidation with the kai.scheduler/safe-to-consolidate annotation
+custom:
+  Author: "sam-huang1223"
+  Issue: "2283"

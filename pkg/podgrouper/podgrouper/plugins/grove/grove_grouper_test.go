@@ -14,6 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
@@ -2022,4 +2023,104 @@ func TestGetPodGroupMetadata_EmptyTopology(t *testing.T) {
 	grouper := NewGroveGrouper(client, defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, client))
 	_, err := grouper.GetPodGroupMetadata(nil, pod)
 	assert.Error(t, err)
+}
+
+func TestGetPodGroupMetadata_SafeToConsolidate(t *testing.T) {
+	tests := []struct {
+		name                      string
+		podGangAnnotations        map[string]interface{}
+		topOwnerAnnotations       map[string]interface{}
+		expectedSafeToConsolidate *bool
+	}{
+		{
+			name:                      "not set",
+			expectedSafeToConsolidate: nil,
+		},
+		{
+			name: "from podgang",
+			podGangAnnotations: map[string]interface{}{
+				constants.SafeToConsolidateAnnotationKey: "false",
+			},
+			expectedSafeToConsolidate: ptr.To(false),
+		},
+		{
+			name: "from top owner",
+			topOwnerAnnotations: map[string]interface{}{
+				constants.SafeToConsolidateAnnotationKey: "false",
+			},
+			expectedSafeToConsolidate: ptr.To(false),
+		},
+		{
+			name: "podgang overrides top owner",
+			podGangAnnotations: map[string]interface{}{
+				constants.SafeToConsolidateAnnotationKey: "true",
+			},
+			topOwnerAnnotations: map[string]interface{}{
+				constants.SafeToConsolidateAnnotationKey: "false",
+			},
+			expectedSafeToConsolidate: ptr.To(true),
+		},
+		{
+			name: "invalid top owner value is ignored",
+			topOwnerAnnotations: map[string]interface{}{
+				constants.SafeToConsolidateAnnotationKey: "no",
+			},
+			expectedSafeToConsolidate: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			podGang := &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind":       "PodGang",
+					"apiVersion": "scheduler.grove.io/v1alpha1",
+					"metadata": map[string]interface{}{
+						"name":        "pgs1",
+						"namespace":   "test-ns",
+						"uid":         "1",
+						"annotations": tt.podGangAnnotations,
+					},
+					"spec": map[string]interface{}{
+						"podgroups": []interface{}{
+							map[string]interface{}{
+								"name":        "pg1",
+								"minReplicas": int64(1),
+								"podReferences": []interface{}{
+									map[string]interface{}{"namespace": "test-ns", "name": "pod1"},
+								},
+							},
+						},
+					},
+				},
+			}
+			topOwner := &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind":       "PodCliqueSet",
+					"apiVersion": "grove.io/v1alpha1",
+					"metadata": map[string]interface{}{
+						"name":        "pcs1",
+						"namespace":   "test-ns",
+						"uid":         "2",
+						"annotations": tt.topOwnerAnnotations,
+					},
+				},
+			}
+			pod := &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "pod1",
+					Namespace: "test-ns",
+					Labels: map[string]string{
+						labelKeyPodGangName: "pgs1",
+					},
+				},
+			}
+
+			client := fake.NewClientBuilder().WithScheme(scheme.Scheme).WithRuntimeObjects(podGang).Build()
+			grouper := NewGroveGrouper(client, defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, client))
+			metadata, err := grouper.GetPodGroupMetadata(topOwner, pod)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectedSafeToConsolidate, metadata.SafeToConsolidate)
+		})
+	}
 }

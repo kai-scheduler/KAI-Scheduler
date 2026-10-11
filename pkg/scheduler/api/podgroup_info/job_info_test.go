@@ -1906,6 +1906,38 @@ func TestPreemptionDelayEnd(t *testing.T) {
 	}
 }
 
+func TestIsSafeToConsolidate(t *testing.T) {
+	tests := []struct {
+		name     string
+		podGroup *enginev2alpha2.PodGroup
+		expected bool
+	}{
+		{name: "no podgroup", podGroup: nil, expected: true},
+		{name: "not set", podGroup: &enginev2alpha2.PodGroup{}, expected: true},
+		{
+			name: "set to true",
+			podGroup: &enginev2alpha2.PodGroup{
+				Spec: enginev2alpha2.PodGroupSpec{SafeToConsolidate: ptr.To(true)},
+			},
+			expected: true,
+		},
+		{
+			name: "set to false",
+			podGroup: &enginev2alpha2.PodGroup{
+				Spec: enginev2alpha2.PodGroupSpec{SafeToConsolidate: ptr.To(false)},
+			},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pgi := &PodGroupInfo{PodGroup: tt.podGroup}
+			assert.Equal(t, tt.expected, pgi.IsSafeToConsolidate())
+		})
+	}
+}
+
 func TestSetPodGroupLastEvictionTimestamp(t *testing.T) {
 	eviction := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
 

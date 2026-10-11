@@ -15,6 +15,7 @@ import (
 	v12 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
@@ -1295,6 +1296,101 @@ func TestCalcPodGroupPreemptionDelay(t *testing.T) {
 				[]*v12.PartialObjectMetadata{convertOwnerToPartial(owner)}, pod)
 
 			assert.Equal(t, tt.expected, delay)
+		})
+	}
+}
+
+func TestCalcSafeToConsolidate(t *testing.T) {
+	tests := []struct {
+		name             string
+		ownerAnnotations map[string]interface{}
+		podAnnotations   map[string]string
+		expected         *bool
+	}{
+		{
+			name: "false from owner",
+			ownerAnnotations: map[string]interface{}{
+				constants.SafeToConsolidateAnnotationKey: "false",
+			},
+			expected: ptr.To(false),
+		},
+		{
+			name: "false from pod",
+			podAnnotations: map[string]string{
+				constants.SafeToConsolidateAnnotationKey: "false",
+			},
+			expected: ptr.To(false),
+		},
+		{
+			name: "true from pod",
+			podAnnotations: map[string]string{
+				constants.SafeToConsolidateAnnotationKey: "true",
+			},
+			expected: ptr.To(true),
+		},
+		{
+			name: "owner overrides pod",
+			ownerAnnotations: map[string]interface{}{
+				constants.SafeToConsolidateAnnotationKey: "true",
+			},
+			podAnnotations: map[string]string{
+				constants.SafeToConsolidateAnnotationKey: "false",
+			},
+			expected: ptr.To(true),
+		},
+		{
+			name: "invalid owner value falls through to pod",
+			ownerAnnotations: map[string]interface{}{
+				constants.SafeToConsolidateAnnotationKey: "no",
+			},
+			podAnnotations: map[string]string{
+				constants.SafeToConsolidateAnnotationKey: "false",
+			},
+			expected: ptr.To(false),
+		},
+		{
+			name: "invalid pod value is ignored",
+			podAnnotations: map[string]string{
+				constants.SafeToConsolidateAnnotationKey: "never",
+			},
+			expected: nil,
+		},
+		{
+			name:     "no annotations",
+			expected: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			owner := &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind":       "test_kind",
+					"apiVersion": "test_version",
+					"metadata": map[string]interface{}{
+						"name":        "test_name",
+						"namespace":   "test_namespace",
+						"uid":         "1",
+						"annotations": tt.ownerAnnotations,
+					},
+				},
+			}
+
+			pod := &v1.Pod{}
+			if tt.podAnnotations != nil {
+				pod.ObjectMeta = v12.ObjectMeta{
+					Annotations: tt.podAnnotations,
+				}
+			}
+
+			defaultGrouper := NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, fake.NewFakeClient())
+			safe := defaultGrouper.calcSafeToConsolidate(
+				[]*v12.PartialObjectMetadata{convertOwnerToPartial(owner)}, pod)
+			assert.Equal(t, tt.expected, safe)
+
+			metadata, err := defaultGrouper.GetPodGroupMetadata(owner, pod)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expected, metadata.SafeToConsolidate)
 		})
 	}
 }

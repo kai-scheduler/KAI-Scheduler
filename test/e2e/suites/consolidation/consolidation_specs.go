@@ -6,6 +6,7 @@ package consolidation
 
 import (
 	"context"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -13,6 +14,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/utils/ptr"
 	"k8s.io/utils/strings/slices"
@@ -28,6 +30,8 @@ import (
 	"github.com/kai-scheduler/api/constants"
 	v2 "github.com/kai-scheduler/api/scheduling/v2"
 )
+
+const safeToConsolidateAnnotationKey = "kai.scheduler/safe-to-consolidate"
 
 func DescribeConsolidationSpecs() bool {
 	return Describe("Consolidation", Ordered, func() {
@@ -206,6 +210,77 @@ func DescribeConsolidationSpecs() bool {
 					wait.ForPodScheduled(ctx, testCtx.ControllerClient, &pod)
 				}
 			}
+		})
+
+		It("Does not move workloads that are not safe to consolidate", func(ctx context.Context) {
+			capacity.SkipIfInsufficientClusterTopologyResources(testCtx.KubeClientset, []capacity.ResourceList{
+				{
+					Gpu:      resource.MustParse("2"),
+					PodCount: 2,
+				},
+				{
+					Gpu:      resource.MustParse("2"),
+					PodCount: 2,
+				},
+			})
+
+			testQueue := testCtx.Queues[0]
+			requirements := v1.ResourceRequirements{
+				Limits: map[v1.ResourceName]resource.Quantity{
+					constants.NvidiaGpuResource: resource.MustParse("1"),
+				},
+			}
+			annotations := map[string]string{safeToConsolidateAnnotationKey: "false"}
+
+			fillerJobs, _, err := fillers.FillAllNodesWithJobs(
+				ctx, testCtx, testQueue, requirements, annotations, nil, priorityClass,
+			)
+			Expect(err).To(Succeed())
+			Expect(len(fillerJobs)).Should(BeNumerically(">", 0))
+
+			numReleasedGPUs := int64(0)
+			lastNodeName := ""
+			var remainingJobs []*batchv1.Job
+			for _, job := range fillerJobs {
+				pods := rd.GetJobPods(ctx, testCtx.KubeClientset, job)
+				Expect(len(pods)).Should(BeNumerically(">", 0))
+				if numReleasedGPUs >= 2 || pods[0].Spec.NodeName == lastNodeName {
+					remainingJobs = append(remainingJobs, job)
+					continue
+				}
+				lastNodeName = pods[0].Spec.NodeName
+				rd.DeleteJob(ctx, testCtx.KubeClientset, job)
+				numReleasedGPUs += 1
+			}
+			Expect(numReleasedGPUs).Should(BeNumerically(">", 1))
+
+			remainingPodUIDs := map[string]types.UID{}
+			for _, job := range remainingJobs {
+				pods := rd.GetJobPods(ctx, testCtx.KubeClientset, job)
+				Expect(pods).To(HaveLen(1))
+				remainingPodUIDs[job.Name] = pods[0].UID
+			}
+
+			gpuQuantity := resource.NewQuantity(numReleasedGPUs, resource.DecimalSI)
+			testedPod := rd.CreatePodObject(testQueue, v1.ResourceRequirements{
+				Limits: map[v1.ResourceName]resource.Quantity{
+					constants.NvidiaGpuResource: *gpuQuantity,
+				},
+			})
+			// Same priority as the fillers, so that only consolidation could make room for it.
+			testedPod.Spec.PriorityClassName = priorityClass
+			testedPod, err = rd.CreatePod(ctx, testCtx.KubeClientset, testedPod)
+			Expect(err).To(Succeed())
+			wait.ForPodUnschedulable(ctx, testCtx.ControllerClient, testedPod)
+
+			Consistently(func(g Gomega) {
+				for _, job := range remainingJobs {
+					pods := rd.GetJobPods(ctx, testCtx.KubeClientset, job)
+					g.Expect(pods).To(HaveLen(1))
+					g.Expect(pods[0].UID).To(Equal(remainingPodUIDs[job.Name]))
+					g.Expect(pods[0].DeletionTimestamp).To(BeNil())
+				}
+			}).WithTimeout(30 * time.Second).WithPolling(5 * time.Second).Should(Succeed())
 		})
 	})
 }
