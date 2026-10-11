@@ -324,11 +324,49 @@ func TestNodeLocalGreedyRequeuesRecordedOverlap(t *testing.T) {
 	sn = requireByNodeScenario(t, generator.Next())
 	require.NotEmpty(t, sn.PotentialVictimsTasks())
 	require.Subset(t, podNames(victimTasks), podNames(sn.PotentialVictimsTasks()))
+	requireNoRecordedPotentialVictims(t, sn)
 	for next := generator.Next(); next != nil; next = generator.Next() {
 		sn = requireByNodeScenario(t, next)
 		require.NotEmpty(t, sn.PotentialVictimsTasks())
 		require.Subset(t, podNames(victimTasks), podNames(sn.PotentialVictimsTasks()))
+		requireNoRecordedPotentialVictims(t, sn)
 	}
+}
+
+// A victim job evicted in part by an earlier, smaller probe keeps those pods as recorded victims
+// only: the per-node scenarios built from its other pods do not add them again.
+func TestNodeLocalGreedyLeavesRecordedVictimsOutOfPotentialVictims(t *testing.T) {
+	ssn := newGeneratorTestSession(t, map[string]int{"node-1": 2, "node-2": 2})
+	victimJob, victimTasks := addGeneratorTestJob(t, ssn, 4, 1, "team-victim", "node-1", "node-2")
+	setGeneratorTestMinAvailable(victimJob, 1)
+	var recordedTasks []*pod_info.PodInfo
+	for _, task := range victimTasks {
+		if task.NodeName == "node-1" {
+			recordedTasks = append(recordedTasks, task)
+		}
+	}
+	pendingJob := addGeneratorTestPendingJob(t, ssn, 2, 10, "team-pending")
+
+	generator := NewNodeLocalGreedyGenerator(&SolveContext{
+		Session:              ssn,
+		ActionType:           framework.Reclaim,
+		PartialPendingJob:    pendingJob,
+		RecordedVictimsJobs:  []*podgroup_info.PodGroupInfo{victimJob.CloneWithTasks(recordedTasks)},
+		GenerateVictimsQueue: generatorTestVictimsQueueFactory(ssn, victimJob),
+		FeasibleNodes:        ssn.ClusterInfo.Nodes,
+	})
+	require.NotNil(t, generator)
+
+	scenariosWithPotentialVictims := 0
+	for next := generator.Next(); next != nil; next = generator.Next() {
+		sn := requireByNodeScenario(t, next)
+		require.ElementsMatch(t, podNames(recordedTasks), podNames(sn.RecordedVictimsTasks()))
+		requireNoRecordedPotentialVictims(t, sn)
+		if len(sn.PotentialVictimsTasks()) > 0 {
+			scenariosWithPotentialVictims++
+		}
+	}
+	require.Positive(t, scenariosWithPotentialVictims)
 }
 
 func TestScenarioGeneratorConstructorsRejectMalformedContext(t *testing.T) {
@@ -650,4 +688,16 @@ func podNamesFromMap(tasks pod_info.PodsMap) []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+func requireNoRecordedPotentialVictims(t *testing.T, sn *scenario.ByNodeScenario) {
+	t.Helper()
+
+	recorded := map[common_info.PodID]bool{}
+	for _, task := range sn.RecordedVictimsTasks() {
+		recorded[task.UID] = true
+	}
+	for _, task := range sn.PotentialVictimsTasks() {
+		require.False(t, recorded[task.UID], "recorded victim %s is also a potential victim", task.Name)
+	}
 }

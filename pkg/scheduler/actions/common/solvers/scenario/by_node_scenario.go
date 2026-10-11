@@ -4,7 +4,6 @@
 package scenario
 
 import (
-	"golang.org/x/exp/maps"
 	"golang.org/x/exp/slices"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
@@ -55,20 +54,22 @@ func (bns *ByNodeScenario) AddPotentialVictimsTasks(tasks []*pod_info.PodInfo) {
 	}
 }
 
+// VictimsTasksFromNodes returns the potential victim tasks, on any node, of the jobs that have a
+// potential victim on nodeNames. Recorded victims are left out: the scenario already holds them.
 func (bns *ByNodeScenario) VictimsTasksFromNodes(nodeNames []string) []*pod_info.PodInfo {
-	var tasks []*pod_info.PodInfo
 	victimsJobs := bns.potentialVictimsJobsFromNodes(nodeNames)
 
-	for _, jobID := range victimsJobs {
-		for _, jobTaskGroup := range bns.victimsJobsTaskGroups[jobID] {
-			tasks = append(tasks, maps.Values(jobTaskGroup.GetAllPodsMap())...)
+	var tasks []*pod_info.PodInfo
+	for _, task := range bns.PotentialVictimsTasks() {
+		if victimsJobs[task.Job] {
+			tasks = append(tasks, task)
 		}
 	}
 
 	return tasks
 }
 
-func (bns *ByNodeScenario) potentialVictimsJobsFromNodes(nodeNames []string) []common_info.PodGroupID {
+func (bns *ByNodeScenario) potentialVictimsJobsFromNodes(nodeNames []string) map[common_info.PodGroupID]bool {
 	victimsJobs := map[common_info.PodGroupID]bool{}
 	for _, node := range nodeNames {
 		for _, jobID := range bns.potentialVictimsJobsByNode[node] {
@@ -76,5 +77,5 @@ func (bns *ByNodeScenario) potentialVictimsJobsFromNodes(nodeNames []string) []c
 		}
 	}
 
-	return maps.Keys(victimsJobs)
+	return victimsJobs
 }

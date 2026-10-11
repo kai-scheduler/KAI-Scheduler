@@ -9,6 +9,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
@@ -523,4 +524,49 @@ func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A scenario already holds its recorded victims, so they are not returned again as a node's
+// potential victims, even when the same job also has potential victims on that node.
+func TestPodByNodeScenario_VictimsTasksFromNodesLeavesOutRecordedVictims(t *testing.T) {
+	task := func(name, nodeName string) *pod_info.PodInfo {
+		return pod_info.NewTaskInfo(&v1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:        name,
+				Namespace:   "n1",
+				UID:         types.UID(name),
+				Annotations: map[string]string{commonconstants.PodGroupAnnotationForPod: "pg1"},
+			},
+			Spec:   v1.PodSpec{NodeName: nodeName},
+			Status: v1.PodStatus{Phase: v1.PodRunning},
+		}, resource_info.NewResourceVectorMap())
+	}
+	recorded, potential, sameNodePotential := task("recorded", "node1"), task("potential", "node2"),
+		task("same-node-potential", "node1")
+	job := podgroup_info.NewPodGroupInfo("pg1", recorded, potential, sameNodePotential)
+	session := &framework.Session{ClusterInfo: &api.ClusterInfo{
+		PodGroupInfos: map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{"pg1": job},
+	}}
+
+	bns := NewByNodeScenario(session, podgroup_info.NewPodGroupInfo("pending"), nil,
+		[]*pod_info.PodInfo{potential, sameNodePotential},
+		[]*podgroup_info.PodGroupInfo{job.CloneWithTasks([]*pod_info.PodInfo{recorded})})
+
+	want := []*pod_info.PodInfo{potential, sameNodePotential}
+	for _, nodeName := range []string{"node1", "node2"} {
+		if got := bns.VictimsTasksFromNodes([]string{nodeName}); !reflect.DeepEqual(got, want) {
+			t.Errorf("VictimsTasksFromNodes(%s) = %v, want %v", nodeName, podNames(got), podNames(want))
+		}
+	}
+	if got := bns.VictimsTasksFromNodes([]string{"node3"}); len(got) != 0 {
+		t.Errorf("VictimsTasksFromNodes(node3) = %v, want none", podNames(got))
+	}
+}
+
+func podNames(tasks []*pod_info.PodInfo) []string {
+	names := make([]string, 0, len(tasks))
+	for _, task := range tasks {
+		names = append(names, task.Name)
+	}
+	return names
 }
