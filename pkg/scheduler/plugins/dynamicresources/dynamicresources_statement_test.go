@@ -544,7 +544,7 @@ func TestStatementEvictUnevict_WithDRAClaims(t *testing.T) {
 			t.Logf("Running test number: %d, test name: %s", i, test.name)
 
 			ssn := setupTestSession(t, test.topology, controller)
-			job := ssn.ClusterInfo.PodGroupInfos[common_info.PodGroupID("test-job")]
+			job := ssn.ClusterInfo.PodGroupInfos[common_info.NewPodGroupID("test", "test-job")]
 			task := job.GetAllPodsMap()[common_info.PodID("test-job-0")]
 
 			if test.bindRequest != nil {
@@ -762,7 +762,7 @@ func setupTestSession(t *testing.T, topology test_utils.TestTopologyBasic, contr
 }
 
 func getTaskByStatus(t *testing.T, ssn *framework.Session, jobName string, status pod_status.PodStatus) *pod_info.PodInfo {
-	job := ssn.ClusterInfo.PodGroupInfos[common_info.PodGroupID(jobName)]
+	job := ssn.ClusterInfo.PodGroupInfos[common_info.NewPodGroupID("test", jobName)]
 	assert.NotNil(t, job, "Job %s should exist", jobName)
 
 	for _, task := range job.GetAllPodsMap() {

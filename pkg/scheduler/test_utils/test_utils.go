@@ -137,14 +137,28 @@ type TestExpectedNodesResources struct {
 func MatchExpectedAndRealTasks(t *testing.T, testNumber int, testMetadata TestTopologyBasic, ssn *framework.Session) {
 
 	tasksToGPUGroup := make(map[string]map[string]string)
+	jobIDsByName := map[string][]common_info.PodGroupID{}
+	for _, job := range testMetadata.Jobs {
+		jobIDsByName[job.Name] = append(jobIDsByName[job.Name], common_info.NewPodGroupID(job.Namespace, job.Name))
+	}
 
 	for jobName, jobExpectedResult := range testMetadata.JobExpectedResults {
 		var sumOfJobRequestedGPU, sumOfJobRequestedMillisCpu, sumOfJobRequestedMemory, sumOfAcceptedGpus float64
-		job, found := ssn.ClusterInfo.PodGroupInfos[common_info.PodGroupID(jobName)]
+		jobID := common_info.PodGroupID(jobName)
+		ids := jobIDsByName[jobName]
+		if len(ids) > 1 {
+			t.Errorf("Job name %q is ambiguous; expected results must use namespaced PodGroup IDs", jobName)
+			continue
+		}
+		if len(ids) == 1 {
+			jobID = ids[0]
+		}
+		job, found := ssn.ClusterInfo.PodGroupInfos[jobID]
 		if !found {
 			t.Errorf("Test number: %d, name: %s, has failed. Couldn't find job: %s for expected tasks.", testNumber, testMetadata.Name, jobName)
+			continue
 		}
-		for _, taskInfo := range ssn.ClusterInfo.PodGroupInfos[common_info.PodGroupID(jobName)].GetAllPodsMap() {
+		for _, taskInfo := range job.GetAllPodsMap() {
 
 			if taskInfo.Status != jobExpectedResult.Status {
 				t.Errorf("Test number: %d, name: %s, has failed. Task name: %s, actual uses status: %s, was expecting status: %s", testNumber, testMetadata.Name, taskInfo.Name, taskInfo.Status, jobExpectedResult.Status)

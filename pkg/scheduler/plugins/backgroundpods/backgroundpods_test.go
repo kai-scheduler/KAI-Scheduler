@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
@@ -70,7 +71,7 @@ func buildSessionOnNodes(
 
 	for _, node := range ssn.ClusterInfo.Nodes {
 		for _, podInfo := range node.PodInfos {
-			if isBackgroundJob(string(podInfo.Job)) {
+			if isBackgroundJob(podInfo.Pod.Annotations[constants.PodGroupAnnotationForPod]) {
 				if podInfo.Pod.Labels == nil {
 					podInfo.Pod.Labels = map[string]string{}
 				}
