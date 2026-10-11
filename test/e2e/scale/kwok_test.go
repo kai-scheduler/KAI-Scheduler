@@ -644,8 +644,8 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 			})
 
 			AfterAll(func(ctx context.Context) {
-				Expect(deletePodCompletionStage(ctx, testCtx.ControllerClient)).To(Succeed())
 				setGpuSharingMode(ctx, testCtx, originalSharingMode)
+				Expect(runtimeClient.IgnoreNotFound(deletePodCompletionStage(ctx, testCtx.ControllerClient))).To(Succeed())
 			})
 
 			AfterEach(func(ctx context.Context) {

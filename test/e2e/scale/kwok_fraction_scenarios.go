@@ -16,7 +16,9 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -25,7 +27,6 @@ import (
 	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/utils"
-	waitutils "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
 	"github.com/kai-scheduler/api/constants"
 	kaiv1 "github.com/kai-scheduler/api/kai/v1"
 	"github.com/kai-scheduler/api/kai/v1/common"
@@ -143,7 +144,23 @@ func setGpuSharingMode(ctx context.Context, testCtx *testcontext.TestContext, mo
 		}
 		config.Spec.Global.GpuSharingMode = mode
 	})).To(Succeed())
-	waitutils.ForKAIConfigStatusOKWithTimeout(ctx, testCtx.ControllerClient, fractionConfigTimeout)
+	waitForConfigDeployed(ctx, testCtx)
+}
+
+// DependenciesFulfilled is excluded: NvFractions mode reports it False without a gpu-fractioning operator,
+// which the scale environment intentionally lacks.
+func waitForConfigDeployed(ctx context.Context, testCtx *testcontext.TestContext) {
+	Eventually(func(g Gomega) {
+		config := &kaiv1.Config{}
+		g.Expect(testCtx.ControllerClient.Get(ctx, runtimeClient.ObjectKey{
+			Name: constants.DefaultKAIConfigSingeltonInstanceName}, config)).To(Succeed())
+		for _, conditionType := range []kaiv1.ConditionType{kaiv1.ConditionTypeDeployed, kaiv1.ConditionTypeAvailable} {
+			condition := meta.FindStatusCondition(config.Status.Conditions, string(conditionType))
+			g.Expect(condition).NotTo(BeNil(), "condition %s missing", conditionType)
+			g.Expect(condition.Status).To(Equal(metav1.ConditionTrue), "condition %s not true", conditionType)
+			g.Expect(condition.ObservedGeneration).To(Equal(config.Generation), "condition %s is stale", conditionType)
+		}
+	}, fractionConfigTimeout, podsPollIntervalSeconds*time.Second).Should(Succeed())
 }
 
 func currentGpuSharingMode(ctx context.Context, testCtx *testcontext.TestContext) *common.GpuSharingMode {
