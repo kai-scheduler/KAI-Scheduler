@@ -16,10 +16,10 @@ type Plugin interface {
 
 Plugins are registered using a builder pattern:
 ```go
-type PluginBuilder func(map[string]string) Plugin
+type PluginBuilder func(PluginArguments) Plugin
 
 // Register a new plugin
-RegisterPluginBuilder("my-plugin", func(args map[string]string) Plugin {
+RegisterPluginBuilder("my-plugin", func(args PluginArguments) Plugin {
     return &MyPlugin{}
 })
 ```

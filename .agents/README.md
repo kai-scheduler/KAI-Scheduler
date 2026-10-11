@@ -19,13 +19,7 @@ Take a scheduler snapshot and compare it on v0.13.0 and v0.14.0.
 
 ### Claude Code
 
-Claude Code can use the same repo-owned skill content, but may require exposing the skill through Claude's configured skill directory if the current setup does not scan `.agents/skills/` directly.
-
-Example:
-
-```bash
-ln -s /path/to/KAI-Scheduler/.agents/skills/snapshots ~/.claude/skills/snapshots
-```
+`.claude/skills` is a checked-in symlink to `.agents/skills/`, so Claude Code discovers these skills automatically.
 
 ### Other Harnesses
 

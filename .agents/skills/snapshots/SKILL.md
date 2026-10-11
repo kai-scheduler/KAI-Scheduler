@@ -32,12 +32,7 @@ Run scripts from the repository root:
 .agents/skills/snapshots/scripts/compare-snapshot-refs.sh --snapshot snapshots/issue-123.gzip --refs main,v0.14.2
 ```
 
-- `capture-snapshot.sh`: port-forward the scheduler and download `/get-snapshot`. Default target is `deployment/kai-scheduler-default` in namespace `kai-scheduler` on local/remote port `8081`. The script inherits `KUBECONFIG`, for example:
-
-```bash
-KUBECONFIG=$HOME/.kube/engine-scale-test \
-  .agents/skills/snapshots/scripts/capture-snapshot.sh --output snapshots/example.gzip
-```
+- `capture-snapshot.sh`: port-forward the scheduler and download `/get-snapshot`. Default target is `deployment/kai-scheduler-default` in namespace `kai-scheduler` on local/remote port `8081`. The script inherits `KUBECONFIG`.
 
 - `inspect-snapshot.sh`: validate that the archive contains `snapshot.json` and print top-level structure. Run this before replaying user-provided artifacts.
 - `run-snapshot.sh`: build `snapshot-tool` with `make build-go SERVICE_NAME=snapshot-tool` and replay on the current checkout, or use `--ref` to switch to one Git ref, replay, and restore the original branch or commit. For large snapshots, start with `--verbosity 2`. For reruns, prefer `--no-build --tool bin/snapshot-tool-amd64`. If a ref-based run is interrupted hard enough that the shell trap does not execute, the repo can stay detached; check with `git status --short --branch` and restore with `git switch <branch>`.
@@ -51,5 +46,5 @@ KUBECONFIG=$HOME/.kube/engine-scale-test \
 4. Replay on the reported KAI version first, aligned to the exact tag or commit.
 5. Use `--verbosity 2` first. Compare timing from action timestamps inside the logs, not whole-command wall clock, because builds and verbosity can dominate.
 6. Replay on candidate fixed or regressed refs only after the reported version is understood.
-7. If a version appears stuck, stop waiting indefinitely and keep the partial log as evidence. In the runs here, `v0.14.0` completed `reclaim` materially faster than `v0.13.0`, while `v0.14.4` appeared to stall in `reclaim` past an interactive timeout.
+7. If a version appears stuck, stop waiting indefinitely and keep the partial log as evidence.
 8. Report refs, commands, log paths, action timings, errors, and whether the issue reproduced.
