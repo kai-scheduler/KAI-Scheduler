@@ -1,0 +1,65 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+name: Require Linked Issue
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize, labeled, unlabeled]
+    branches:
+      - main
+      - 'v*.*'
+  merge_group:
+    types: [checks_requested]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  require-linked-issue:
+    name: Require Linked Issue
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip validation for merge queue
+        if: github.event_name == 'merge_group'
+        run: echo "Linked issue was already validated before entering merge queue"
+
+      # Exempt: maintainers (MAINTAINERS.md), bots, and PRs a maintainer labels `skip-issue`.
+      - name: Check PR closes an issue
+        if: >-
+          github.event_name == 'pull_request' &&
+          !contains(github.event.pull_request.labels.*.name, 'skip-issue') &&
+          !contains(github.event.pull_request.labels.*.name, 'dependencies') &&
+          !contains(github.event.pull_request.labels.*.name, 'bot') &&
+          github.event.pull_request.user.login != 'dependabot[bot]' &&
+          github.event.pull_request.user.login != 'KaiPilotBot'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          # Read the list from the base branch so a PR cannot add its author to it.
+          if gh api "repos/$OWNER/$REPO/contents/MAINTAINERS.md?ref=$BASE_REF" --jq .content | base64 -d \
+            | sed -nE 's|.*github\.com/([^)]*).*|\1|p' | grep -Fixq "$PR_AUTHOR"; then
+            echo "Maintainer PRs do not require a linked issue."
+            exit 0
+          fi
+
+          count=$(gh api graphql -f owner="$OWNER" -f repo="$REPO" -F pr="$PR_NUMBER" -f query='
+            query($owner: String!, $repo: String!, $pr: Int!) {
+              repository(owner: $owner, name: $repo) {
+                pullRequest(number: $pr) { closingIssuesReferences(first: 1) { totalCount } }
+              }
+            }' --jq '.data.repository.pullRequest.closingIssuesReferences.totalCount')
+
+          if [ "$count" -gt 0 ]; then
+            echo "Linked issue found."
+            exit 0
+          fi
+
+          echo "::error::No linked issue. Open an issue first, then add 'Fixes #<number>' to the PR description (or link it from the Development sidebar and re-run this check). A maintainer can apply the 'skip-issue' label to opt out."
+          exit 1
