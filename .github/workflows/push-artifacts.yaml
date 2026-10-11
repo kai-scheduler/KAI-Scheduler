@@ -81,7 +81,6 @@ jobs:
         if: startsWith(env.PACKAGE_VERSION, 'v')
         uses: oras-project/setup-oras@v2
 
-      # Helm ignores v-prefixed OCI tags when resolving version ranges (e.g. ~0.18.0), so add a plain semver alias.
       - name: Tag Helm Chart without v prefix
         if: startsWith(env.PACKAGE_VERSION, 'v')
         run: |
