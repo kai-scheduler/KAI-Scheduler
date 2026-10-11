@@ -1,6 +1,0 @@
-kind: Fixed
-body: |-
-  Scheduler no longer drops Evict events on PodGroups that repeatedly emit Unschedulable, StaleJob or NotReady events
-custom:
-  Author: "JacobTheJacobs"
-  Issue: ""

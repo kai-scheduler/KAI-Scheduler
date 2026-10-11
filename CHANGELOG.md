@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v0.16.11] - 2026-10-11
+
+### Fixed
+- Binder no longer logs a misleading bind-success event after a bind failure on the same reconcile
+- Accept exact fractional GPU quota matches
+- Fix fair-share distribution of over-quota resources to prioritize higher-priority queues [#2278](https://github.com/kai-scheduler/KAI-Scheduler/issues/2278) [karangupta982](https://github.com/karangupta982)
+- Scheduler no longer drops Evict events on PodGroups that repeatedly emit Unschedulable, StaleJob or NotReady events [JacobTheJacobs](https://github.com/JacobTheJacobs)
+- Scheduler no longer counts unrelated extended resources ending in `gpu` (such as HAMi's `nvidia.com/vgpu`) as GPU capacity; only `nvidia.com/gpu` and `amd.com/gpu` map to the GPU slot [#2194](https://github.com/kai-scheduler/KAI-Scheduler/issues/2194) [Abdelsalam-Abbas](https://github.com/Abdelsalam-Abbas)
+- CRD upgrade now fails early, naming the CRD, when stale storedVersions would break the apply [#2381](https://github.com/kai-scheduler/KAI-Scheduler/issues/2381) [SiorMeir](https://github.com/SiorMeir)
+
 ## [v0.16.10] - 2026-09-28
 
 ### Fixed
