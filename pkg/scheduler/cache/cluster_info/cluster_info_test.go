@@ -2735,3 +2735,70 @@ func createTestResourceSlice(name, nodeName, driver string, deviceCount int) *re
 		},
 	}
 }
+
+func TestSnapshotMarksJobsWithTerminatingVictims(t *testing.T) {
+	podGroup := func(name string) *enginev2alpha2.PodGroup {
+		return &enginev2alpha2.PodGroup{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "my-ns", Name: name, UID: types.UID(name)},
+			Spec:       enginev2alpha2.PodGroupSpec{Queue: "my-queue"},
+		}
+	}
+	pod := func(name, podGroupName, nodeName string, deletedAgo *time.Duration) *corev1.Pod {
+		p := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace:   "my-ns",
+				Name:        name,
+				UID:         types.UID(name),
+				Annotations: map[string]string{commonconstants.PodGroupAnnotationForPod: podGroupName},
+			},
+			Spec:   corev1.PodSpec{NodeName: nodeName},
+			Status: corev1.PodStatus{Phase: corev1.PodPending},
+		}
+		if nodeName != "" {
+			p.Status.Phase = corev1.PodRunning
+		}
+		if deletedAgo != nil {
+			p.DeletionTimestamp = ptr.To(metav1.NewTime(time.Now().Add(-*deletedAgo)))
+			p.Finalizers = []string{"test"}
+		}
+		return p
+	}
+	justDeleted, deletedLongAgo := time.Second, 10*time.Minute
+
+	clusterInfo := newClusterInfoTests(t, clusterInfoTestParams{
+		kubeObjects: []runtime.Object{
+			&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-1"}},
+			pod("preemptor-pod", "preemptor", "", nil),
+			pod("other-preemptor-pod", "other-preemptor", "", nil),
+			pod("bystander-pod", "bystander", "", nil),
+			pod("victim", "victim-job", "node-1", &justDeleted),
+			pod("stuck-victim", "stuck-victim-job", "node-1", &deletedLongAgo),
+		},
+		kaiSchedulerObjects: []runtime.Object{
+			&enginev2.Queue{ObjectMeta: metav1.ObjectMeta{Name: "my-department"},
+				Spec: enginev2.QueueSpec{Resources: &enginev2.QueueResources{}}},
+			&enginev2.Queue{ObjectMeta: metav1.ObjectMeta{Name: "my-queue"},
+				Spec: enginev2.QueueSpec{ParentQueue: "my-department"}},
+			podGroup("preemptor"), podGroup("other-preemptor"), podGroup("bystander"),
+			podGroup("victim-job"), podGroup("stuck-victim-job"),
+		},
+	})
+	clusterInfo.RecordEviction("victim", types.NamespacedName{Namespace: "my-ns", Name: "preemptor"})
+	clusterInfo.RecordEviction("stuck-victim", types.NamespacedName{Namespace: "my-ns", Name: "other-preemptor"})
+	clusterInfo.RecordEviction("gone-victim", types.NamespacedName{Namespace: "my-ns", Name: "other-preemptor"})
+
+	snapshot, err := clusterInfo.Snapshot()
+	assert.NoError(t, err)
+	hasTerminatingVictims := func(name string) bool {
+		job, found := snapshot.PodGroupInfos[common_info.NewPodGroupID("my-ns", name)]
+		assert.True(t, found, "job %s not in the snapshot", name)
+		return found && job.HasTerminatingVictims
+	}
+	assert.True(t, hasTerminatingVictims("preemptor"), "its victim is terminating")
+	assert.False(t, hasTerminatingVictims("other-preemptor"), "its victims are stuck in releasing or gone")
+	assert.False(t, hasTerminatingVictims("bystander"), "nothing was evicted for it")
+	assert.Equal(t, map[types.UID]types.NamespacedName{
+		"victim":       {Namespace: "my-ns", Name: "preemptor"},
+		"stuck-victim": {Namespace: "my-ns", Name: "other-preemptor"},
+	}, clusterInfo.victims, "victims that left the cluster are forgotten")
+}
