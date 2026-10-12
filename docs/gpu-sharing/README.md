@@ -117,7 +117,7 @@ gpu-fractioning:
       effect: NoSchedule
 ```
 
-For air-gapped environments, mirror both the KAI images and the gpu-fractioning chart and images, or vendor the dependency before installing.
+For air-gapped environments, mirror both the KAI images and the gpu-fractioning chart and images, or vendor the dependency before installing. The chart declares gpu-fractioning as a version range rather than a fixed version, so `Chart.yaml` does not name the version to mirror. Each KAI release publishes the version it bundles as the `subcharts.yaml` asset on its [GitHub Release](https://github.com/kai-scheduler/KAI-Scheduler/releases).
 
 ### Runtime class and CDI
 
