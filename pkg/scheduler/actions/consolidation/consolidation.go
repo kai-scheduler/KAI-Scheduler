@@ -193,7 +193,7 @@ func buildPreemptibleFilterFunc(ssn *framework.Session, preemptor *podgroup_info
 			return false
 		}
 
-		if !job.IsSafeToConsolidate() {
+		if !job.IsSafeToDisrupt() {
 			return false
 		}
 

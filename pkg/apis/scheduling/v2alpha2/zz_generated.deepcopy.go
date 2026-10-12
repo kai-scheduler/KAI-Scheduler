@@ -187,8 +187,8 @@ func (in *PodGroupSpec) DeepCopyInto(out *PodGroupSpec) {
 		*out = new(v1.Duration)
 		**out = **in
 	}
-	if in.SafeToConsolidate != nil {
-		in, out := &in.SafeToConsolidate, &out.SafeToConsolidate
+	if in.SafeToDisrupt != nil {
+		in, out := &in.SafeToDisrupt, &out.SafeToDisrupt
 		*out = new(bool)
 		**out = **in
 	}

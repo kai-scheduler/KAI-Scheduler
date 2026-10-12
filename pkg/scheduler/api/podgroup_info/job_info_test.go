@@ -1906,7 +1906,7 @@ func TestPreemptionDelayEnd(t *testing.T) {
 	}
 }
 
-func TestIsSafeToConsolidate(t *testing.T) {
+func TestIsSafeToDisrupt(t *testing.T) {
 	tests := []struct {
 		name     string
 		podGroup *enginev2alpha2.PodGroup
@@ -1917,14 +1917,14 @@ func TestIsSafeToConsolidate(t *testing.T) {
 		{
 			name: "set to true",
 			podGroup: &enginev2alpha2.PodGroup{
-				Spec: enginev2alpha2.PodGroupSpec{SafeToConsolidate: ptr.To(true)},
+				Spec: enginev2alpha2.PodGroupSpec{SafeToDisrupt: ptr.To(true)},
 			},
 			expected: true,
 		},
 		{
 			name: "set to false",
 			podGroup: &enginev2alpha2.PodGroup{
-				Spec: enginev2alpha2.PodGroupSpec{SafeToConsolidate: ptr.To(false)},
+				Spec: enginev2alpha2.PodGroupSpec{SafeToDisrupt: ptr.To(false)},
 			},
 			expected: false,
 		},
@@ -1933,7 +1933,7 @@ func TestIsSafeToConsolidate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			pgi := &PodGroupInfo{PodGroup: tt.podGroup}
-			assert.Equal(t, tt.expected, pgi.IsSafeToConsolidate())
+			assert.Equal(t, tt.expected, pgi.IsSafeToDisrupt())
 		})
 	}
 }

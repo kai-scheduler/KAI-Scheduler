@@ -2072,14 +2072,14 @@ func getTestsMetadata() []integration_tests_utils.TestTopologyMetadata {
 		},
 		{
 			TestTopologyBasic: test_utils.TestTopologyBasic{
-				Name: "Running jobs that are not safe to consolidate are not moved",
+				Name: "Running jobs that are not safe to disrupt are not moved",
 				Jobs: []*jobs_fake.TestJobBasic{
 					{
 						Name:                "running_job0",
 						RequiredGPUsPerTask: 2,
 						Priority:            constants.PriorityTrainNumber,
 						QueueName:           "queue0",
-						SafeToConsolidate:   ptr.To(false),
+						SafeToDisrupt:       ptr.To(false),
 						Tasks: []*tasks_fake.TestTaskBasic{
 							{
 								NodeName: "node0",
@@ -2092,7 +2092,7 @@ func getTestsMetadata() []integration_tests_utils.TestTopologyMetadata {
 						RequiredGPUsPerTask: 2,
 						Priority:            constants.PriorityTrainNumber,
 						QueueName:           "queue0",
-						SafeToConsolidate:   ptr.To(false),
+						SafeToDisrupt:       ptr.To(false),
 						Tasks: []*tasks_fake.TestTaskBasic{
 							{
 								NodeName: "node1",
@@ -2152,7 +2152,7 @@ func getTestsMetadata() []integration_tests_utils.TestTopologyMetadata {
 		},
 		{
 			TestTopologyBasic: test_utils.TestTopologyBasic{
-				Name: "Consolidation moves the job that is safe to consolidate instead of the one that is not",
+				Name: "Consolidation moves the job that is safe to disrupt instead of the one that is not",
 				Jobs: []*jobs_fake.TestJobBasic{
 					{
 						Name:                "running_job0",
@@ -2171,7 +2171,7 @@ func getTestsMetadata() []integration_tests_utils.TestTopologyMetadata {
 						RequiredGPUsPerTask: 2,
 						Priority:            constants.PriorityTrainNumber,
 						QueueName:           "queue0",
-						SafeToConsolidate:   ptr.To(false),
+						SafeToDisrupt:       ptr.To(false),
 						Tasks: []*tasks_fake.TestTaskBasic{
 							{
 								NodeName: "node1",
@@ -2232,7 +2232,7 @@ func getTestsMetadata() []integration_tests_utils.TestTopologyMetadata {
 		},
 		{
 			TestTopologyBasic: test_utils.TestTopologyBasic{
-				Name: "A pending job that is not safe to consolidate still consolidates others",
+				Name: "A pending job that is not safe to disrupt still consolidates others",
 				Jobs: []*jobs_fake.TestJobBasic{
 					{
 						Name:                "running_job0",
@@ -2263,7 +2263,7 @@ func getTestsMetadata() []integration_tests_utils.TestTopologyMetadata {
 						RequiredGPUsPerTask: 3,
 						Priority:            constants.PriorityTrainNumber,
 						QueueName:           "queue0",
-						SafeToConsolidate:   ptr.To(false),
+						SafeToDisrupt:       ptr.To(false),
 						Tasks: []*tasks_fake.TestTaskBasic{
 							{
 								State: pod_status.Pending,

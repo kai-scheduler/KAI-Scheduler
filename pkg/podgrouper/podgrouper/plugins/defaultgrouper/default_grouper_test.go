@@ -1300,7 +1300,7 @@ func TestCalcPodGroupPreemptionDelay(t *testing.T) {
 	}
 }
 
-func TestCalcSafeToConsolidate(t *testing.T) {
+func TestCalcSafeToDisrupt(t *testing.T) {
 	tests := []struct {
 		name             string
 		ownerAnnotations map[string]interface{}
@@ -1310,48 +1310,48 @@ func TestCalcSafeToConsolidate(t *testing.T) {
 		{
 			name: "false from owner",
 			ownerAnnotations: map[string]interface{}{
-				constants.SafeToConsolidateAnnotationKey: "false",
+				constants.SafeToDisruptAnnotationKey: "false",
 			},
 			expected: ptr.To(false),
 		},
 		{
 			name: "false from pod",
 			podAnnotations: map[string]string{
-				constants.SafeToConsolidateAnnotationKey: "false",
+				constants.SafeToDisruptAnnotationKey: "false",
 			},
 			expected: ptr.To(false),
 		},
 		{
 			name: "true from pod",
 			podAnnotations: map[string]string{
-				constants.SafeToConsolidateAnnotationKey: "true",
+				constants.SafeToDisruptAnnotationKey: "true",
 			},
 			expected: ptr.To(true),
 		},
 		{
 			name: "owner overrides pod",
 			ownerAnnotations: map[string]interface{}{
-				constants.SafeToConsolidateAnnotationKey: "true",
+				constants.SafeToDisruptAnnotationKey: "true",
 			},
 			podAnnotations: map[string]string{
-				constants.SafeToConsolidateAnnotationKey: "false",
+				constants.SafeToDisruptAnnotationKey: "false",
 			},
 			expected: ptr.To(true),
 		},
 		{
 			name: "invalid owner value falls through to pod",
 			ownerAnnotations: map[string]interface{}{
-				constants.SafeToConsolidateAnnotationKey: "no",
+				constants.SafeToDisruptAnnotationKey: "no",
 			},
 			podAnnotations: map[string]string{
-				constants.SafeToConsolidateAnnotationKey: "false",
+				constants.SafeToDisruptAnnotationKey: "false",
 			},
 			expected: ptr.To(false),
 		},
 		{
 			name: "invalid pod value is ignored",
 			podAnnotations: map[string]string{
-				constants.SafeToConsolidateAnnotationKey: "never",
+				constants.SafeToDisruptAnnotationKey: "never",
 			},
 			expected: nil,
 		},
@@ -1384,13 +1384,13 @@ func TestCalcSafeToConsolidate(t *testing.T) {
 			}
 
 			defaultGrouper := NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, fake.NewFakeClient())
-			safe := defaultGrouper.calcSafeToConsolidate(
+			safe := defaultGrouper.calcSafeToDisrupt(
 				[]*v12.PartialObjectMetadata{convertOwnerToPartial(owner)}, pod)
 			assert.Equal(t, tt.expected, safe)
 
 			metadata, err := defaultGrouper.GetPodGroupMetadata(owner, pod)
 			assert.NoError(t, err)
-			assert.Equal(t, tt.expected, metadata.SafeToConsolidate)
+			assert.Equal(t, tt.expected, metadata.SafeToDisrupt)
 		})
 	}
 }

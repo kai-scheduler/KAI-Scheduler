@@ -31,7 +31,7 @@ import (
 	v2 "github.com/kai-scheduler/api/scheduling/v2"
 )
 
-const safeToConsolidateAnnotationKey = "kai.scheduler/safe-to-consolidate"
+const safeToDisruptAnnotationKey = "kai.scheduler/safe-to-disrupt"
 
 func DescribeConsolidationSpecs() bool {
 	return Describe("Consolidation", Ordered, func() {
@@ -212,7 +212,7 @@ func DescribeConsolidationSpecs() bool {
 			}
 		})
 
-		It("Does not move workloads that are not safe to consolidate", func(ctx context.Context) {
+		It("Does not move workloads that are not safe to disrupt", func(ctx context.Context) {
 			capacity.SkipIfInsufficientClusterTopologyResources(testCtx.KubeClientset, []capacity.ResourceList{
 				{
 					Gpu:      resource.MustParse("2"),
@@ -230,7 +230,7 @@ func DescribeConsolidationSpecs() bool {
 					constants.NvidiaGpuResource: resource.MustParse("1"),
 				},
 			}
-			annotations := map[string]string{safeToConsolidateAnnotationKey: "false"}
+			annotations := map[string]string{safeToDisruptAnnotationKey: "false"}
 
 			fillerJobs, _, err := fillers.FillAllNodesWithJobs(
 				ctx, testCtx, testQueue, requirements, annotations, nil, priorityClass,
