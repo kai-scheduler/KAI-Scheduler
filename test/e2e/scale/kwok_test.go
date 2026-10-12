@@ -623,7 +623,7 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 
 		Context("Fraction scale scenarios", Ordered, func() {
 			var (
-				fractionQueue       *v2.Queue
+				fractionTiers       []fractionTier
 				originalSharingMode *common.GpuSharingMode
 				gpuMemoryMiB        int64
 			)
@@ -633,34 +633,33 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 				setGpuSharingMode(ctx, testCtx, ptr.To(common.GpuSharingModeNvFractions))
 				gpuMemoryMiB = stampNvFractionsNodes(ctx, testCtx)
 
-				fractionQueue = queue.CreateQueueObject(
-					"fractions-"+utils.GenerateRandomK8sName(10), parentQueue.Name)
-				fractionQueue.Spec.Resources.GPU.Quota = float64(numberOfNodes * gpusPerNode)
-				testCtx.AddQueues(ctx, []*v2.Queue{fractionQueue})
-
-				Expect(createPodCompletionStage(
-					ctx, testCtx.ControllerClient, time.Second*20, time.Second*40,
-				)).To(Succeed())
+				fractionTiers = []fractionTier{{fractionsPerGPU: 2}, {fractionsPerGPU: 8}}
+				fractionQueues := make([]*v2.Queue, 0, len(fractionTiers))
+				for i := range fractionTiers {
+					fractionTiers[i].queue = queue.CreateQueueObject(
+						fmt.Sprintf("fractions-1-of-%d-%s", fractionTiers[i].fractionsPerGPU, utils.GenerateRandomK8sName(10)),
+						parentQueue.Name)
+					fractionTiers[i].queue.Spec.Resources.GPU.Quota = float64(numberOfNodes * gpusPerNode / len(fractionTiers))
+					fractionQueues = append(fractionQueues, fractionTiers[i].queue)
+				}
+				testCtx.AddQueues(ctx, fractionQueues)
 			})
 
 			AfterAll(func(ctx context.Context) {
 				setGpuSharingMode(ctx, testCtx, originalSharingMode)
-				Expect(runtimeClient.IgnoreNotFound(deletePodCompletionStage(ctx, testCtx.ControllerClient))).To(Succeed())
 			})
 
 			AfterEach(func(ctx context.Context) {
 				if CurrentSpecReport().Failed() {
 					return
 				}
-				cleanupTestQueue(ctx, testCtx, fractionQueue)
+				for _, tier := range fractionTiers {
+					cleanupTestQueue(ctx, testCtx, tier.queue)
+				}
 			})
 
-			It("fraction scale scenario: allocation burst", func(ctx context.Context) {
-				fractionsAllocationBurst(ctx, testCtx, fractionQueue, numberOfNodes, gpuMemoryMiB, defaultFractionMix)
-			}, SpecTimeout(maxFlowTimeoutMinutes*time.Minute))
-
-			It("fraction scale scenario: churn latency", func(ctx context.Context) {
-				fractionsChurnLatency(ctx, testCtx, fractionQueue, numberOfNodes, gpuMemoryMiB, defaultFractionMix)
+			It("fraction scale scenario: mixed saturation", func(ctx context.Context) {
+				fractionsSaturation(ctx, testCtx, fractionTiers, numberOfNodes, gpuMemoryMiB)
 			}, SpecTimeout(maxFlowTimeoutMinutes*time.Minute))
 		})
 	})

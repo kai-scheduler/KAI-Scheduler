@@ -24,8 +24,13 @@
     { id: 'inference-reclaim', title: 'Disaggregated Inference Reclaim', label: 'Duration' },
     { id: 'hero-job-reclaim', title: 'Zone-Constrained Hero Job Reclaim', label: 'Duration' },
     { id: 'elastic-job-reclaim', title: 'Elastic Distributed Job Reclaim', label: 'Duration' },
-    { id: 'fractions-allocation', title: 'Fractional GPU Allocation Burst', label: 'Duration' },
-    { id: 'fractions-churn-latency', title: 'Fractional GPU Churn p95 Scheduling Latency', label: 'Latency' },
+    { id: 'fractions-saturation-allocation', title: 'Mixed Fraction Saturation: Allocation Time', label: 'Duration' },
+    { id: 'fractions-saturation-scheduling', title: 'Mixed Fraction Saturation: Scheduling Time', label: 'Duration' },
+  ];
+
+  const SATURATION_DERIVED_FIELDS = [
+    'pods', 'allocated_pods', 'unschedulable_pods', 'gpu_utilization_pct', 'allocation_seconds', 'scheduling_seconds',
+    'bind_lag_p50_seconds', 'bind_lag_p95_seconds', 'bind_lag_max_seconds',
   ];
 
   const TEST_CASES = [
@@ -120,15 +125,15 @@
       legacy: () => false,
     },
     {
-      id: 'fractions-allocation', chartId: 'fractions-allocation', timingField: 'duration_seconds',
-      ignoredSeriesFields: ['gpu_groups', 'pods_per_second'],
-      scale: name => name === 'Fractions allocation burst',
+      id: 'fractions-saturation-allocation', chartId: 'fractions-saturation-allocation',
+      timingField: 'allocation_seconds', ignoredSeriesFields: SATURATION_DERIVED_FIELDS,
+      scale: name => name === 'Mixed fractions saturation - allocation',
       legacy: () => false,
     },
     {
-      id: 'fractions-churn-latency', chartId: 'fractions-churn-latency', timingField: 'p95_latency_seconds',
-      ignoredSeriesFields: ['duration_seconds', 'p50_latency_seconds', 'p99_latency_seconds', 'max_latency_seconds'],
-      scale: name => name === 'Fractions churn latency',
+      id: 'fractions-saturation-scheduling', chartId: 'fractions-saturation-scheduling',
+      timingField: 'scheduling_seconds', ignoredSeriesFields: SATURATION_DERIVED_FIELDS,
+      scale: name => name === 'Mixed fractions saturation - scheduling',
       legacy: () => false,
     },
   ];
