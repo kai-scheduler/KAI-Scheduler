@@ -16,14 +16,14 @@ import (
 	faketesting "k8s.io/client-go/testing"
 	"k8s.io/utils/ptr"
 
-	kubeaischedulerfake "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/fake"
-	enginev2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
-	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
+	kubeaischedulerfake "github.com/kai-scheduler/api/client/clientset/versioned/fake"
+	commonconstants "github.com/kai-scheduler/api/constants"
+	enginev2 "github.com/kai-scheduler/api/scheduling/v2"
+	enginev2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
 )
 
 // A pod evicted for a job marks that job, in the following snapshots, until the pod has terminated;

@@ -20,8 +20,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
-	v2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/capacity"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd"
@@ -29,6 +27,8 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/queue"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/utils"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
+	v2 "github.com/kai-scheduler/api/scheduling/v2"
+	v2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
 )
 
 // DescribePreemptSemiPreemptibleSpecs proves the two-step semi-preemptible lifecycle: a job first expands

@@ -31,6 +31,7 @@ import (
 	"go.uber.org/multierr"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/discovery"
@@ -43,14 +44,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	ksf "k8s.io/kube-scheduler/framework"
 
-	kubeaischedulerver "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned"
-	kubeaischedulerschema "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/scheme"
-	kubeaischedulerinfo "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/informers/externalversions"
-	enginelisters "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/listers/scheduling/v2alpha2"
-	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	featuregates "github.com/kai-scheduler/KAI-scheduler/pkg/common/feature_gates"
-	draversionawareclient "github.com/kai-scheduler/KAI-scheduler/pkg/common/resources/dra_version_aware_client"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
@@ -68,6 +62,14 @@ import (
 	k8splugins "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal/plugins"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/utils"
+	kubeaischedulerver "github.com/kai-scheduler/api/client/clientset/versioned"
+	kubeaischedulerschema "github.com/kai-scheduler/api/client/clientset/versioned/scheme"
+	kubeaischedulerinfo "github.com/kai-scheduler/api/client/informers/externalversions"
+	enginelisters "github.com/kai-scheduler/api/client/listers/scheduling/v2alpha2"
+	schedulingv1alpha2 "github.com/kai-scheduler/api/scheduling/v1alpha2"
+	enginev2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
+	draversionawareclient "github.com/kai-scheduler/api/utilities/resources/dra_version_aware_client"
 )
 
 func init() {
@@ -112,6 +114,45 @@ func registerSchedulerPodInformer(informerFactory informers.SharedInformerFactor
 	})
 }
 
+func registerPodGroupEvictionMetricHandlers(
+	informer k8scache.SharedIndexInformer,
+	partitionSelector labels.Selector,
+	nodePoolLabelKey string,
+	evictionActionNames []string,
+) error {
+	_, err := informer.AddEventHandler(k8scache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			if podGroup, ok := obj.(*enginev2alpha2.PodGroup); ok {
+				metrics.InitPodGroupEvictionMetrics(podGroup, partitionSelector, nodePoolLabelKey, evictionActionNames)
+			}
+		},
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			oldPodGroup, oldOK := oldObj.(*enginev2alpha2.PodGroup)
+			newPodGroup, newOK := newObj.(*enginev2alpha2.PodGroup)
+			if oldOK && newOK {
+				metrics.InitPodGroupEvictionMetricsOnUpdate(
+					oldPodGroup, newPodGroup, partitionSelector, nodePoolLabelKey, evictionActionNames,
+				)
+			}
+		},
+		DeleteFunc: func(obj interface{}) {
+			podGroup, ok := obj.(*enginev2alpha2.PodGroup)
+			if !ok {
+				tombstone, tombstoneOK := obj.(k8scache.DeletedFinalStateUnknown)
+				if !tombstoneOK {
+					return
+				}
+				podGroup, ok = tombstone.Obj.(*enginev2alpha2.PodGroup)
+				if !ok {
+					return
+				}
+			}
+			metrics.DeletePodGroupEvictionMetrics(podGroup, partitionSelector, nodePoolLabelKey, evictionActionNames)
+		},
+	})
+	return err
+}
+
 // New returns a Cache implementation.
 func New(schedulerCacheParams *SchedulerCacheParams) (Cache, error) {
 	return newSchedulerCache(schedulerCacheParams)
@@ -134,6 +175,7 @@ type SchedulerCacheParams struct {
 	UpdatePodEvictionCondition  bool
 	StuckInReleasingThreshold   time.Duration
 	DiscoveryClient             discovery.DiscoveryInterface
+	EvictionActionNames         []string
 }
 
 type SchedulerCache struct {
@@ -179,7 +221,7 @@ func newSchedulerCache(schedulerCacheParams *SchedulerCacheParams) (*SchedulerCa
 	schedulerName := schedulerCacheParams.SchedulerName
 
 	// Prepare event clients.
-	broadcaster := record.NewBroadcaster()
+	broadcaster := newEventBroadcaster()
 	// The new broadcaster objects uses watch.NewLongQueueBroadcaster(maxQueuedEvents, watch.DropIfChannelFull) under the hood.
 	// This means that we need to be careful when writing events using the recorder.
 	// If the broadcaster will have more then maxQueuedEvents waiting to be published, he will drop all incoming recording requests.
@@ -199,6 +241,18 @@ func newSchedulerCache(schedulerCacheParams *SchedulerCacheParams) (*SchedulerCa
 		return nil, fmt.Errorf("failed to set scheduler pod transform: %w", err)
 	}
 	sc.kubeAiSchedulerInformerFactory = kubeaischedulerinfo.NewSharedInformerFactory(sc.kubeAiSchedulerClient, 0)
+	partitionSelector, err := sc.schedulingNodePoolParams.GetLabelSelector()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create scheduling partition selector: %w", err)
+	}
+	if err := registerPodGroupEvictionMetricHandlers(
+		sc.kubeAiSchedulerInformerFactory.Scheduling().V2alpha2().PodGroups().Informer(),
+		partitionSelector,
+		sc.schedulingNodePoolParams.NodePoolLabelKey,
+		schedulerCacheParams.EvictionActionNames,
+	); err != nil {
+		return nil, fmt.Errorf("failed to register PodGroup eviction metric handlers: %w", err)
+	}
 
 	if err := featuregates.SetDRAFeatureGate(schedulerCacheParams.DiscoveryClient); err != nil {
 		return nil, fmt.Errorf("failed to determine dynamic resource allocation availability: %w", err)
@@ -241,7 +295,7 @@ func (sc *SchedulerCache) Snapshot() (*api.ClusterInfo, error) {
 		return nil, err
 	}
 
-	if cleanErr := sc.cleanStaleBindRequest(snapshot.BindRequests, snapshot.BindRequestsForDeletedNodes); cleanErr != nil {
+	if cleanErr := sc.cleanStaleBindRequest(snapshot.BindRequests, snapshot.FailedBindRequestsForShard); cleanErr != nil {
 		log.InfraLogger.V(2).Warnf("Failed to clean stale bind requests: %v", cleanErr)
 		err = multierr.Append(err, cleanErr)
 	}
@@ -298,12 +352,20 @@ func (sc *SchedulerCache) Evict(evictedPod *v1.Pod, evictedPodGroup *podgroup_in
 	return nil
 }
 
+func (sc *SchedulerCache) RecordPodGroupEvictionEvent(podGroup *podgroup_info.PodGroupInfo, action string) {
+	nodepool := utils.GetNodePoolNameFromLabels(
+		podGroup.PodGroup.Labels,
+		sc.schedulingNodePoolParams.NodePoolLabelKey,
+	)
+	metrics.IncPodGroupEvictionEvents(podGroup.PodGroup, nodepool, action)
+}
+
 func (sc *SchedulerCache) evict(evictedPod *v1.Pod, evictedPodGroup *enginev2alpha2.PodGroup, evictionMetadata eviction_info.EvictionMetadata, message string) {
 	sc.workersWaitGroup.Add(1)
 	go func() {
 		defer sc.workersWaitGroup.Done()
 		if len(message) > 0 {
-			sc.StatusUpdater.Evicted(evictedPodGroup, evictionMetadata, message)
+			sc.StatusUpdater.Evicted(evictedPod, evictedPodGroup, evictionMetadata, message)
 		}
 
 		log.InfraLogger.V(6).Do(func() {
@@ -457,12 +519,12 @@ func (sc *SchedulerCache) TaskPipelined(task *pod_info.PodInfo, message string) 
 // Clean Stale BindRequest
 func (sc *SchedulerCache) cleanStaleBindRequest(
 	snapshotBindRequests bindrequest_info.BindRequestMap,
-	snapshotBindRequestsForDeletedNodes []*bindrequest_info.BindRequestInfo,
+	failedBindRequestsForShard []*bindrequest_info.BindRequestInfo,
 ) error {
 	var err error
 
 	deletionsCompleted := sync.WaitGroup{}
-	errChan := make(chan error, len(snapshotBindRequestsForDeletedNodes)+len(snapshotBindRequests))
+	errChan := make(chan error, len(failedBindRequestsForShard)+len(snapshotBindRequests))
 
 	deleteBindRequest := func(bri *bindrequest_info.BindRequestInfo) {
 		if deleteError := sc.kubeAiSchedulerClient.SchedulingV1alpha2().BindRequests(
@@ -474,7 +536,7 @@ func (sc *SchedulerCache) cleanStaleBindRequest(
 		deletionsCompleted.Done()
 	}
 
-	for _, bindRequest := range snapshotBindRequestsForDeletedNodes {
+	for _, bindRequest := range failedBindRequestsForShard {
 		deletionsCompleted.Add(1)
 		go deleteBindRequest(bindRequest)
 	}
@@ -530,4 +592,14 @@ func (sc *SchedulerCache) GetDataLister() data_lister.DataLister {
 		return nil
 	}
 	return data_lister.New(sc.informerFactory, sc.kubeAiSchedulerInformerFactory, sc.nrtInformerFactory, sc.usageLister, selector)
+}
+
+// newEventBroadcaster keys client-go's per-object event budget on reason too, so status events
+// re-sent every cycle cannot starve Evict events.
+func newEventBroadcaster() record.EventBroadcaster {
+	return record.NewBroadcaster(record.WithCorrelatorOptions(record.CorrelatorOptions{
+		SpamKeyFunc: func(e *v1.Event) string {
+			return string(e.InvolvedObject.UID) + "/" + e.Type + "/" + e.Reason
+		},
+	}))
 }

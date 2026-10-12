@@ -6,9 +6,9 @@ package node_info
 import (
 	resourceapi "k8s.io/api/resource/v1"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/api/utilities/resources"
 )
 
 // draDeviceKey uniquely identifies a physical DRA device on the node.
