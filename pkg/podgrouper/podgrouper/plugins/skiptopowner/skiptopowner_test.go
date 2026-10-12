@@ -20,9 +20,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
 	grouperplugin "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/grouper"
+	"github.com/kai-scheduler/api/podgrouper/constants"
 )
 
 func TestSkipTopOwnerGrouper(t *testing.T) {

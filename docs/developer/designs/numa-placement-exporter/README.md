@@ -36,6 +36,7 @@ allocated. Surfacing it removes the prediction entirely.
 ## Goals
 
 - Publish, per pod, the actual NUMA-node assignment of its topology-aligned resources.
+- Report pod-level Memory Manager groups, including allocations spanning multiple NUMA nodes.
 - Let the NUMA scheduler plugin consume observed placement when available, and fall back to
   prediction when not — so the exporter is purely additive.
 - Keep the scheduler's consumption cheap (no new informer, no new CRD if avoidable).
@@ -46,8 +47,8 @@ allocated. Surfacing it removes the prediction entirely.
   exporter is complementary (per-pod attribution).
 - Influencing the kubelet's placement. The exporter is read-only with respect to allocation; it
   observes and reports, it does not hint or pin.
-- Supporting pods the kubelet does not NUMA-align (non-Guaranteed). Those have no exclusive
-  placement to report.
+- Reporting static Memory Manager allocations for non-Guaranteed pods. They have no Memory
+  Manager blocks; their memory-group annotation is `[]`.
 
 ## Design Details
 
@@ -57,7 +58,7 @@ A DaemonSet on each NUMA/GPU node. Each instance:
 
 1. Connects to the local kubelet podresources gRPC socket
    (`/var/lib/kubelet/pod-resources/kubelet.sock`, hostPath-mounted, read-only).
-2. Calls `List` (and watches, where supported) to get per-pod, per-container resource
+2. Calls `List` to get per-pod, per-container resource
    allocations: device IDs with `Topology.Nodes` (NUMA affinity), `cpu_ids`, and memory blocks
    with their NUMA node.
 3. Maps each allocation to a NUMA node:
@@ -65,12 +66,15 @@ A DaemonSet on each NUMA/GPU node. Each instance:
    - **CPUs**: map `cpu_ids` → NUMA node using the node's CPU topology (from `/sys` or the NRT
      zones already on the node).
    - **Memory**: the podresources memory blocks carry their NUMA node.
-4. Writes the result onto the pod as an annotation (only for pods holding aligned resources,
-   only when the value changes).
+4. Writes the per-zone result for pods holding aligned resources and a separate memory-group
+   annotation, only when the values change.
+
+A synchronized, node-scoped pod informer supplies resource requests, QoS, and container status
+for memory-group completeness checks. Pod updates also trigger reconciliation.
 
 ### Published format
 
-A single annotation on the pod, resource → {NUMA node → quantity}:
+For non-memory resources (CPUs and devices): an annotation on the pod, resource → {NUMA node → quantity}:
 
 ```
 kai.scheduler/numa-placement-observed: |
@@ -80,37 +84,66 @@ kai.scheduler/numa-placement-observed: |
 This represents multi-zone placement too (a `restricted`/multi-NUMA pod would list more than
 one node), so it is not specific to `single-numa-node`.
 
+### Memory Manager groups
+
+Memory groups are reported in another annotation - groups of NUMA-node sets and reserved amounts:
+
+```
+kai.scheduler/numa-memory-groups-observed: |
+  [{"memoryNodes":["node-0","node-1"],"amount":{"memory":"17179869184"}}]
+```
+
+Blocks sharing the same NUMA-node set are aggregated across containers by resource (`memory`
+or `hugepages-<size>`). Zero-sized blocks still retain their group. Per-zone memory attribution
+includes only single-node blocks; cross-NUMA memory blocks are not split between zones.
+
+- **Absent:** no memory-group observation yet.
+- **List:** complete groups; `[]` means no groups, including all non-Guaranteed pods.
+- **JSON `null`:** incomplete or invalid observation, not an empty allocation.
+
+A complete record requires every application and restartable init container requesting memory
+to have started and reported its requested memory/hugepage blocks. Partial startup, missing
+blocks, and invalid block topology or amounts produce `null`.
+An observation that becomes incomplete after publication also becomes `null`, rather than
+retaining stale groups or removing the annotation. This is the annotation string `"null"`;
+patching a JSON null into pod metadata would delete the key.
+
+Ordinary init-container memory blocks are not exposed by podResources and are outside this
+feature's scope. Their status does not independently invalidate a group observation. Temporary
+init allocations can still cause unexpected kubelet NUMA admission failures; a transient cause
+does not imply automatic recovery of a rejected pod. Native sidecars remain part of the complete
+long-running observation.
+
+Invalid observations are logged as errors with pod identity and allocation details. Incomplete
+observations log their reason at info level when first published as `null`; repeated incomplete
+observations and normal startup waits are available at verbosity 2.
+
 ### Lifecycle and freshness
 
-Placement is **stable**: the kubelet pins a pod's exclusive resources for the pod's lifetime,
+Steady-state placement is **stable**: the kubelet pins a pod's exclusive resources for the pod's lifetime,
 so once written the annotation does not change until the pod ends. The exporter therefore writes
 once per pod (shortly after the pod starts running) and on the rare re-allocation. There is a
 small initial lag between a pod starting and the annotation appearing — during that window the
 plugin falls back to prediction for that pod, exactly as if the exporter were absent.
 
+During container startup, either annotation can change. Memory-group
+observations are revalidated on every reconciliation, including pods omitted by podresources.
+
 ### Drift reconciliation against the API server
 
-The fast path is driven by the podresources `List` and an in-memory cache of the last value
-written per pod, so a pod is patched only when its computed placement changes. That cache
-assumes the exporter's last successful patch still reflects what is actually on the pod object —
-an assumption that breaks if the annotation is removed or mutated externally.
-
-To catch the out-of-band case, a second, slower pass reconciles against the API server. On its
-own interval it lists the pods assigned to this node (`spec.nodeName` field selector), compares
-each pod's **live** annotation value to the value the exporter computes from podresources, and
-patches the ones that have **drifted** (missing, stale, or externally modified).
-
-The interval is configurable via `--drift-resync-interval`, **defaulting to `60s`**, and is
-**disabled by `0`** (relying solely on the in-memory cache). The pass is read-mostly: it lists
-pods (one paginated `List` per interval, scoped to the node) and patches only the drifted
-subset, so steady-state cost is one list per interval and zero writes once placement is stable.
+Podresources polling and node-scoped pod informer events use the same reconciliation path.
+Each pass compares computed observations with the pod's annotations in the informer cache and
+patches only missing or different values, repairing out-of-band removal or modification too.
+There is no separate drift pass or last-written placement cache. Memory-observation history is
+retained by pod UID so incomplete observations cannot revert to absence while the informer lags.
 
 ### RBAC and security
 
 - **Exporter → kubelet podresources:** read-only access to the podresources socket via a hostPath
   mount. This is the same surface NRT exporters use.
-- **Exporter → API server:** `patch` on pods (annotations only), scoped to the annotation key, plus
-  `list` on pods for the drift-reconciliation pass (scoped to this node via field selector).
+- **Exporter → API server:** `get`, `list`, `watch`, and `patch` on pods. The informer uses a
+  `spec.nodeName` field selector, and writes affect only owned annotations. These limits are
+  enforced in code; standard RBAC cannot restrict annotation keys or field selectors.
 - **Scheduler:** no new permissions — it already lists/watches pods.
 
 ## Interaction with the NUMA plugin and NRT
@@ -123,14 +156,17 @@ subset, so steady-state cost is one list per interval and zero writes once place
   caveats) is bypassed for annotated pods; the fingerprint freshness signal is still useful for
   the aggregate `Available` numbers but is no longer load-bearing for reclaim accuracy.
 
+The new memory-group annotation is additive: older schedulers ignore it, and consuming it
+requires separate scheduler support.
+
 ## Limitations and Caveats
 
 - **Initial-observation lag:** a just-started pod is unannotated until the exporter observes it;
   the plugin falls back to prediction meanwhile.
 - **Exporter must be deployed on every relevant node**, or coverage is partial (mixed
   observed/predicted placement — still correct, just less accurate on un-covered nodes).
-- **Annotation write load:** bounded by writing only for aligned pods and only on change;
-  placement stability keeps this to roughly one write per pod lifetime.
+- **Annotation write load:** bounded by writing only on change; container startup can produce
+  several updates.
 
 ## Superseded long-term by DRA
 
@@ -142,8 +178,8 @@ NUMA, which DRA does not yet manage — [KEP-3695][kep3695] tracks bridging podr
 workloads move to DRA, the need for it fades.
 
 The topology-aware WG is building per-container NUMA-placement feedback from the same podresources
-data: the [`numaplacement`][numaplacement] encoding and resource-topology-exporter PRs 
-([#390][rte390]/#396) derive each container's actual NUMA affinity and publish it — but as 
+data: the [`numaplacement`][numaplacement] encoding and resource-topology-exporter PRs
+([#390][rte390]/#396) derive each container's actual NUMA affinity and publish it — but as
 **NRT CRD node-level attributes** (alongside the fingerprint), *not* as pod annotations. Assuming this capability
 is adopted by the community, it could replace our own implementation.
 

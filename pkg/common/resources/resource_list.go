@@ -7,10 +7,16 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strings"
 
 	"golang.org/x/exp/maps"
 	v1 "k8s.io/api/core/v1"
 )
+
+// IsMemoryResource includes ordinary memory and all hugepage sizes managed by Memory Manager.
+func IsMemoryResource(name v1.ResourceName) bool {
+	return name == v1.ResourceMemory || strings.HasPrefix(string(name), v1.ResourceHugePagesPrefix)
+}
 
 func SumResources(left, right v1.ResourceList) v1.ResourceList {
 	total := left.DeepCopy()
