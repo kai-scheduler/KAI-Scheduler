@@ -278,11 +278,8 @@ func (pi *PodInfo) SetVectorMap(vectorMap *resource_info.ResourceVectorMap) {
 	// AcceptedResourceVector stays as-is since it's set by setAcceptedResources
 }
 
+// Clone shares ResReqVector and GpuRequirement, which are only set while building the pod info.
 func (pi *PodInfo) Clone() *PodInfo {
-	var resReqVectorClone resource_info.ResourceVector
-	if pi.ResReqVector != nil {
-		resReqVectorClone = pi.ResReqVector.Clone()
-	}
 	var acceptedResourceVectorClone resource_info.ResourceVector
 	if pi.AcceptedResourceVector != nil {
 		acceptedResourceVectorClone = pi.AcceptedResourceVector.Clone()
@@ -297,9 +294,9 @@ func (pi *PodInfo) Clone() *PodInfo {
 		NodeName:               pi.NodeName,
 		Status:                 pi.Status,
 		Pod:                    pi.Pod,
-		GpuRequirement:         *pi.GpuRequirement.Clone(),
+		GpuRequirement:         pi.GpuRequirement,
 		AcceptedGpuRequirement: *pi.AcceptedGpuRequirement.Clone(),
-		ResReqVector:           resReqVectorClone,
+		ResReqVector:           pi.ResReqVector,
 		AcceptedResourceVector: acceptedResourceVectorClone,
 		VectorMap:              pi.VectorMap,
 		NUMAPlacement:          pi.NUMAPlacement.Clone(),
