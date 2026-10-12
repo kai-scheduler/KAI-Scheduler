@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -61,4 +62,20 @@ func TestApplyCRDs_TakesOverConflictingFields(t *testing.T) {
 	assert.Equal(t, "topology", got.Spec.Names.Singular)
 	assert.Equal(t, apiextensionsv1.ClusterScoped, got.Spec.Scope)
 	assert.NotEmpty(t, got.Spec.Versions)
+}
+
+func TestApplyCRDs_FailsBeforeApplyOnStaleStoredVersion(t *testing.T) {
+	ctx := context.Background()
+	stale := &apiextensionsv1.CustomResourceDefinition{
+		ObjectMeta: metav1.ObjectMeta{Name: "bindrequests.scheduling.run.ai"},
+		Status:     apiextensionsv1.CustomResourceDefinitionStatus{StoredVersions: []string{"v1alpha1", "v1alpha2"}},
+	}
+	c := fake.NewClientBuilder().WithScheme(crdScheme(t)).WithObjects(stale).Build()
+
+	err := ApplyCRDs(ctx, c)
+
+	require.ErrorContains(t, err, "bindrequests.scheduling.run.ai")
+	assert.ErrorContains(t, err, "v1alpha1")
+	got := &apiextensionsv1.CustomResourceDefinition{}
+	assert.True(t, apierrors.IsNotFound(c.Get(ctx, client.ObjectKey{Name: topologyCRDName}, got)))
 }

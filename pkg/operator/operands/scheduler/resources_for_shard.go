@@ -25,11 +25,11 @@ import (
 	"sigs.k8s.io/yaml"
 
 	"github.com/kai-scheduler/KAI-scheduler/cmd/scheduler/app/options"
-	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common"
 	usagedbapi "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/api/constants"
+	kaiv1 "github.com/kai-scheduler/api/kai/v1"
 )
 
 const (
@@ -352,7 +352,11 @@ func (s *SchedulerForShard) serviceForShard(
 	if service.Annotations == nil {
 		service.Annotations = map[string]string{}
 	}
-	service.Annotations["prometheus.io/scrape"] = "true"
+	prometheusScrape := "true"
+	if kaiConfig.Spec.Prometheus.ServiceMonitor != nil && kaiConfig.Spec.Prometheus.ServiceMonitor.Enabled != nil && *kaiConfig.Spec.Prometheus.ServiceMonitor.Enabled {
+		prometheusScrape = "false"
+	}
+	service.Annotations["prometheus.io/scrape"] = prometheusScrape
 
 	service.Spec.ClusterIP = "None"
 	service.Spec.Ports = []corev1.ServicePort{

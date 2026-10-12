@@ -13,7 +13,6 @@ import (
 	reflect "reflect"
 	time "time"
 
-	v1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	api "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	common_info "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	eviction_info "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
@@ -21,6 +20,7 @@ import (
 	podgroup_info "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	data_lister "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/cluster_info/data_lister"
 	plugins "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal/plugins"
+	v1alpha2 "github.com/kai-scheduler/api/scheduling/v1alpha2"
 	gomock "go.uber.org/mock/gomock"
 	v1 "k8s.io/api/core/v1"
 	informers "k8s.io/client-go/informers"
@@ -172,6 +172,18 @@ func (m *MockCache) RecordJobStatusEvent(job *podgroup_info.PodGroupInfo, resolv
 func (mr *MockCacheMockRecorder) RecordJobStatusEvent(job, resolveDetailedFitErrors any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RecordJobStatusEvent", reflect.TypeOf((*MockCache)(nil).RecordJobStatusEvent), job, resolveDetailedFitErrors)
+}
+
+// RecordPodGroupEvictionEvent mocks base method.
+func (m *MockCache) RecordPodGroupEvictionEvent(job *podgroup_info.PodGroupInfo, action string) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "RecordPodGroupEvictionEvent", job, action)
+}
+
+// RecordPodGroupEvictionEvent indicates an expected call of RecordPodGroupEvictionEvent.
+func (mr *MockCacheMockRecorder) RecordPodGroupEvictionEvent(job, action any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RecordPodGroupEvictionEvent", reflect.TypeOf((*MockCache)(nil).RecordPodGroupEvictionEvent), job, action)
 }
 
 // Run mocks base method.

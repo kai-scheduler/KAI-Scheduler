@@ -11,7 +11,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/common"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/api/constants"
 )
 
 const numOfGpusEnvVarBC = "RUNAI_NUM_OF_GPUS" // Deprecated, please use GPU_PORTION env var instead.

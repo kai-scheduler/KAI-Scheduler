@@ -14,7 +14,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/informers"
 
-	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -31,6 +30,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/priority"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/scheduler_util"
+	enginev2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
 	"k8s.io/client-go/kubernetes/fake"
 )
 

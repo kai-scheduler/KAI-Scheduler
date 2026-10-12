@@ -20,10 +20,6 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/utils/ptr"
 
-	kaiv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	schedulingv2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
-	schedulingv2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/env-tests/binder"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/env-tests/podgroupcontroller"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/env-tests/queuecontroller"
@@ -39,6 +35,10 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf_util"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins"
+	"github.com/kai-scheduler/api/constants"
+	kaiv1alpha2 "github.com/kai-scheduler/api/scheduling/v1alpha2"
+	schedulingv2 "github.com/kai-scheduler/api/scheduling/v2"
+	schedulingv2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
 )
 
 const simulationCycleInterval = time.Millisecond * 10
