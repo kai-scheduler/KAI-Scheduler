@@ -8,8 +8,8 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
 	testContext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
+	kaiv1 "github.com/kai-scheduler/api/kai/v1"
 )
 
 // SetFailedSearchBackoff sets the failed-search backoff of action on the default shard. A nil bound
