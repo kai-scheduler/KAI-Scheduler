@@ -22,7 +22,7 @@ SERVICE_NAMES := podgrouper scheduler binder resourcereservation snapshot-tool s
 
 # Directory of CRDs owned by the api module.
 # Lazy (=) so `go list` runs only when sync-api-crds is invoked.
-API_CRD_DIR = $(shell go list -m -f '{{.Dir}}' github.com/kai-scheduler/api)/config/crd
+API_CRD_DIR = $(shell go mod download github.com/kai-scheduler/api && go list -m -f '{{.Dir}}' github.com/kai-scheduler/api)/config/crd
 
 
 lint: fmt-go vet-go lint-go
