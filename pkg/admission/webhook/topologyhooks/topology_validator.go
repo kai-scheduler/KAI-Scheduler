@@ -12,7 +12,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
+	kaiv1alpha1 "github.com/kai-scheduler/api/kai/v1alpha1"
 )
 
 var topologyValidatorLog = logf.Log.WithName("topology-validator")
@@ -34,8 +34,17 @@ func (v *topologyValidator) ValidateCreate(_ context.Context, topology *kaiv1alp
 	return nil, validateAliases(topology.Spec.Levels)
 }
 
-func (v *topologyValidator) ValidateUpdate(_ context.Context, _, newTopology *kaiv1alpha1.Topology) (admission.Warnings, error) {
+func (v *topologyValidator) ValidateUpdate(_ context.Context, oldTopology, newTopology *kaiv1alpha1.Topology) (admission.Warnings, error) {
 	topologyValidatorLog.Info("validate update", "name", newTopology.Name)
+	oldLevels, newLevels := oldTopology.Spec.Levels, newTopology.Spec.Levels
+	if len(oldLevels) != len(newLevels) {
+		return nil, fmt.Errorf("nodeLabel structure is immutable; only aliases may be edited")
+	}
+	for i := range oldLevels {
+		if oldLevels[i].NodeLabel != newLevels[i].NodeLabel {
+			return nil, fmt.Errorf("nodeLabel structure is immutable; only aliases may be edited")
+		}
+	}
 	return nil, validateAliases(newTopology.Spec.Levels)
 }
 

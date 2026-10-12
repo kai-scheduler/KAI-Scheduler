@@ -12,12 +12,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 
-	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	scheduler_cache "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
+	schedulingv1alpha2 "github.com/kai-scheduler/api/scheduling/v1alpha2"
 )
 
 const benchmarkBindRequestCount = 5000
@@ -28,7 +28,7 @@ func TestSessionClearDropsRetainedReferences(t *testing.T) {
 			BindRequests: bindrequest_info.BindRequestMap{
 				bindrequest_info.NewKey("namespace", "pod"): &bindrequest_info.BindRequestInfo{},
 			},
-			BindRequestsForDeletedNodes: []*bindrequest_info.BindRequestInfo{{}},
+			FailedBindRequestsForShard: []*bindrequest_info.BindRequestInfo{{}},
 		},
 		Config:               &conf.SchedulerConfiguration{},
 		plugins:              map[string]Plugin{"plugin": nil},
@@ -114,7 +114,7 @@ func newSessionWithFinalizedBindRequest(
 			BindRequests: bindrequest_info.BindRequestMap{
 				bindrequest_info.NewKey("namespace", "pod"): bindrequest_info.NewBindRequestInfo(bindRequest),
 			},
-			BindRequestsForDeletedNodes: []*bindrequest_info.BindRequestInfo{
+			FailedBindRequestsForShard: []*bindrequest_info.BindRequestInfo{
 				bindrequest_info.NewBindRequestInfo(bindRequest),
 			},
 		},

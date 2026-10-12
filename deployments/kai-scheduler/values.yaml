@@ -372,6 +372,9 @@ prometheus:
   # Prometheus but will use the external instance for usage metrics.
   # Example: http://prometheus-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090
   # externalPrometheusUrl: ""
+  serviceMonitor:
+    # Enable the Prometheus Operator ServiceMonitor resource to monitor Kai services
+    enabled: false
 
 defaultQueue:
   createDefaultQueue: true

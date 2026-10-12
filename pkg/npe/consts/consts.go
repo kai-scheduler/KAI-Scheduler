@@ -23,8 +23,6 @@ const (
 	// keep the initial-observation lag small.
 	DefaultPollInterval = 1 * time.Second
 
-	// DefaultDriftResyncInterval is how often the exporter reconciles against the API server to
-	// repair pods whose annotation drifted from the observed placement (removed or modified
-	// out-of-band). Set to 0 to disable, relying solely on the in-memory write cache.
+	// DefaultDriftResyncInterval retains the default for the deprecated, ignored CLI flag.
 	DefaultDriftResyncInterval = 60 * time.Second
 )
