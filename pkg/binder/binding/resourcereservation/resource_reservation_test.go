@@ -6,6 +6,7 @@ package resourcereservation
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strconv"
 	"sync/atomic"
 	"testing"
@@ -1413,6 +1414,104 @@ var _ = Describe("Race condition: reservation pod deleted during concurrent bind
 	)
 
 	Context("SyncForGpuGroup with stale cache - no fraction pods visible", func() {
+		failedRequest := func(backoffLimit *int32, failedAttempts int32) *schedulingv1alpha2.BindRequest {
+			return &schedulingv1alpha2.BindRequest{
+				Spec: schedulingv1alpha2.BindRequestSpec{
+					SelectedGPUGroups: []string{gpuGroup},
+					BackoffLimit:      backoffLimit,
+				},
+				Status: schedulingv1alpha2.BindRequestStatus{
+					Phase:          schedulingv1alpha2.BindRequestPhaseFailed,
+					FailedAttempts: failedAttempts,
+				},
+			}
+		}
+		backoffLimit := int32(2)
+		zeroBackoff := int32(0)
+		failedWithoutBackoff := failedRequest(nil, 0)
+		failedAfterBackoff := failedRequest(&backoffLimit, backoffLimit)
+		failedWithRetry := failedRequest(&backoffLimit, 1)
+		pendingRequest := &schedulingv1alpha2.BindRequest{
+			Spec: schedulingv1alpha2.BindRequestSpec{
+				SelectedGPUGroups: []string{gpuGroup},
+			},
+			Status: schedulingv1alpha2.BindRequestStatus{
+				Phase: schedulingv1alpha2.BindRequestPhasePending,
+			},
+		}
+		succeededRequest := pendingRequest.DeepCopy()
+		succeededRequest.Status.Phase = schedulingv1alpha2.BindRequestPhaseSucceeded
+		otherGroupRequest := failedWithRetry.DeepCopy()
+		otherGroupRequest.Spec.SelectedGPUGroups = []string{"other-group"}
+
+		DescribeTable("failed BindRequests preserve only needed reservations",
+			func(bindRequests []*schedulingv1alpha2.BindRequest, preserveReservation bool) {
+				objects := []runtime.Object{reservationPod.DeepCopy()}
+				for i, request := range bindRequests {
+					request = request.DeepCopy()
+					request.Name = fmt.Sprintf("bind-request-%d", i)
+					request.Namespace = "team-a"
+					request.Spec.PodName = fmt.Sprintf("fraction-pod-%d", i)
+					request.Spec.SelectedNode = nodeName
+					objects = append(objects, request, &v1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      request.Spec.PodName,
+							Namespace: request.Namespace,
+						},
+						Status: v1.PodStatus{Phase: v1.PodPending},
+					})
+				}
+				clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).
+					WithRuntimeObjects(objects...).
+					WithInterceptorFuncs(interceptor.Funcs{
+						List: func(ctx context.Context, c runtimeClient.WithWatch, list runtimeClient.ObjectList, opts ...runtimeClient.ListOption) error {
+							if err := c.List(ctx, list, opts...); err != nil {
+								return err
+							}
+							if requests, ok := list.(*schedulingv1alpha2.BindRequestList); ok {
+								// Exercise each requested order independently of fake-client ordering.
+								sort.Slice(requests.Items, func(i, j int) bool {
+									return requests.Items[i].Name < requests.Items[j].Name
+								})
+							}
+							return nil
+						},
+					}).Build()
+				rsc := initializeTestService(clientWithObjs)
+
+				Expect(rsc.SyncForGpuGroup(context.Background(), gpuGroup)).To(Succeed())
+
+				pods := &v1.PodList{}
+				Expect(clientWithObjs.List(context.Background(), pods,
+					runtimeClient.InNamespace(resourceReservationNameSpace))).To(Succeed())
+				if preserveReservation {
+					Expect(pods.Items).To(HaveLen(1))
+					Expect(pods.Items[0].Name).To(Equal(reservationPod.Name))
+				} else {
+					Expect(pods.Items).To(BeEmpty())
+				}
+			},
+			Entry("failed request with a retry remaining", []*schedulingv1alpha2.BindRequest{failedWithRetry}, true),
+			Entry("failed request without a backoff limit", []*schedulingv1alpha2.BindRequest{failedWithoutBackoff}, false),
+			Entry("failed request with zero backoff", []*schedulingv1alpha2.BindRequest{failedRequest(&zeroBackoff, 0)}, false),
+			Entry("failed request at the backoff limit", []*schedulingv1alpha2.BindRequest{failedAfterBackoff}, false),
+			Entry("failed request above the backoff limit", []*schedulingv1alpha2.BindRequest{failedRequest(&backoffLimit, 3)}, false),
+			Entry("failed request without backoff before pending request", []*schedulingv1alpha2.BindRequest{failedWithoutBackoff, pendingRequest}, true),
+			Entry("pending request before failed request without backoff", []*schedulingv1alpha2.BindRequest{pendingRequest, failedWithoutBackoff}, true),
+			Entry("exhausted request before pending request", []*schedulingv1alpha2.BindRequest{failedAfterBackoff, pendingRequest}, true),
+			Entry("pending request before exhausted request", []*schedulingv1alpha2.BindRequest{pendingRequest, failedAfterBackoff}, true),
+			Entry("failed request without backoff before retrying request", []*schedulingv1alpha2.BindRequest{failedWithoutBackoff, failedWithRetry}, true),
+			Entry("retrying request before failed request without backoff", []*schedulingv1alpha2.BindRequest{failedWithRetry, failedWithoutBackoff}, true),
+			Entry("exhausted request before retrying request", []*schedulingv1alpha2.BindRequest{failedAfterBackoff, failedWithRetry}, true),
+			Entry("retrying request before exhausted request", []*schedulingv1alpha2.BindRequest{failedWithRetry, failedAfterBackoff}, true),
+			Entry("exhausted request before succeeded request with a live pod", []*schedulingv1alpha2.BindRequest{failedAfterBackoff, succeededRequest}, true),
+			Entry("succeeded request with a live pod before exhausted request", []*schedulingv1alpha2.BindRequest{succeededRequest, failedAfterBackoff}, true),
+			Entry("only terminal failures", []*schedulingv1alpha2.BindRequest{failedWithoutBackoff, failedAfterBackoff}, false),
+			Entry("only terminal failures in reverse order", []*schedulingv1alpha2.BindRequest{failedAfterBackoff, failedWithoutBackoff}, false),
+			Entry("retrying request for another group", []*schedulingv1alpha2.BindRequest{otherGroupRequest}, false),
+			Entry("no requests", []*schedulingv1alpha2.BindRequest{}, false),
+		)
+
 		It("should preserve reservation pod when an active BindRequest exists for the gpu group", func() {
 			activeBindRequest := &schedulingv1alpha2.BindRequest{
 				ObjectMeta: metav1.ObjectMeta{

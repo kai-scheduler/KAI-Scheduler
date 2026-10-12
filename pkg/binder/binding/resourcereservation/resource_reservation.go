@@ -249,9 +249,9 @@ func (rsc *service) hasActiveBindRequestsForGpuGroup(ctx context.Context, gpuGro
 		if br.Status.Phase == schedulingv1alpha2.BindRequestPhaseFailed {
 			// If the binding backoff limit is not spent, the binder will keep retrying.
 			if br.Spec.BackoffLimit == nil || br.Status.FailedAttempts >= *br.Spec.BackoffLimit {
-				return false, nil
+				continue
 			}
-			continue
+			return true, nil
 		}
 
 		if br.Status.Phase == schedulingv1alpha2.BindRequestPhaseSucceeded {
