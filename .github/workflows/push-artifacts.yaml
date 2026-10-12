@@ -20,6 +20,9 @@ jobs:
   build-and-push:
     name: Build & Push
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -73,6 +76,11 @@ jobs:
           helm dependency build ./deployments/kai-scheduler
           helm package ./deployments/kai-scheduler -d ./charts --app-version $PACKAGE_VERSION --version $PACKAGE_VERSION
 
+      # Reads the Chart.lock the step above left behind, so it names the sub-chart
+      # versions this chart was actually built with, not a later re-resolution.
+      - name: Generate subcharts.yaml
+        run: make subcharts-manifest
+
       - name: Push Helm Chart
         run: |
           helm push ./charts/kai-scheduler-$PACKAGE_VERSION.tgz oci://${{ env.DOCKER_REGISTRY }}
@@ -85,6 +93,15 @@ jobs:
         if: startsWith(env.PACKAGE_VERSION, 'v')
         run: |
           oras tag ${{ env.DOCKER_REGISTRY }}/kai-scheduler:$PACKAGE_VERSION ${PACKAGE_VERSION#v}
+
+      - name: Upload subcharts.yaml as Release asset
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.PACKAGE_VERSION }}
+          files: subcharts.yaml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-and-push-fips:
     name: Build & Push FIPS

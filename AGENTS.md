@@ -180,6 +180,13 @@ make changelog-preview VERSION=v0.17.0
 
 **Releasing (maintainers):** don't fold the changelog by hand. Dispatch the **Release — Prepare Changelog** workflow with a version (e.g. `v0.17.0`) from the target branch — `main` for a minor/major, a `v*.*` branch for a patch. It folds the pending fragments into `CHANGELOG.md`, clears them, and opens a PR. Merging that PR auto-tags the version and publishes the GitHub Release.
 
+**Sub-chart versions:** the chart declares `gpu-fractioning` as a version range (`~0.1.0`) rather than an exact pin, so a gpu-fractioning patch is picked up by the next chart build instead of needing a PR here. `deployments/kai-scheduler/Chart.lock` is therefore **not tracked** — it is local build output. `helm dependency build` resolves the range by itself when no lock is present, so every call site stays as it is.
+
+Two things follow:
+
+- **A leftover local `Chart.lock` freezes you.** Once a build writes one, later builds install that version and never re-check the registry. Run `rm -f deployments/kai-scheduler/Chart.lock` to pick up a newer gpu-fractioning. CI is unaffected — a fresh checkout never has one.
+- **Which version shipped is recorded on the release**, not in git: a `subcharts.yaml` asset on the GitHub Release, plus a `Bundle gpu-fractioning <version>` changelog entry that **Release — Prepare Changelog** adds by itself when the resolved version moves.
+
 ### CI Checks (on-pr.yaml)
 PRs trigger: `make validate` → `make test` → `make build` → E2E tests
 - Docs-only changes (`.md` files, `docs/`) skip build/test
