@@ -9,7 +9,7 @@ import (
 
 	"k8s.io/utils/ptr"
 
-	kaiv1binder "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/binder"
+	kaiv1binder "github.com/kai-scheduler/api/kai/v1/binder"
 )
 
 const (

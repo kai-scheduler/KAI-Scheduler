@@ -1,0 +1,6 @@
+kind: Fixed
+body: Avoid duplicate full job solver probes
+time: 2026-09-25T17:42:09.321716879+02:00
+custom:
+    Author: enoodle
+    Issue: "1749"

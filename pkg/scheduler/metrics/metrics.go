@@ -25,6 +25,13 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto" // auto-registry collectors in default registry
+	"gopkg.in/yaml.v3"
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/labels"
+
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/utils"
+	enginev2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
 )
 
 const (
@@ -57,6 +64,7 @@ var (
 	queueGPUUsage                                  *prometheus.GaugeVec
 	usageQueryLatency                              *prometheus.HistogramVec
 	podGroupEvictedPodsTotal                       *prometheus.CounterVec
+	podGroupEvictionEventsTotal                    *prometheus.CounterVec
 	scenarioSearchJobsTotal                        *prometheus.CounterVec
 	scenarioSearchActionBudgetConfiguredSeconds    *prometheus.GaugeVec
 	scenarioSearchJobBudgetConfiguredSeconds       prometheus.Gauge
@@ -214,7 +222,20 @@ func InitMetrics(namespace string) {
 			Namespace: namespace,
 			Name:      "pod_group_evicted_pods_total",
 			Help:      "Total number of pods evicted per pod group",
-		}, []string{"podgroup", "namespace", "uid", "nodepool", "action"})
+		}, []string{
+			"podgroup", "namespace", "nodepool", "action",
+			"owner_group", "owner_kind", "owner_name", "owner_uid", "subgroup",
+		})
+
+	podGroupEvictionEventsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Name:      "pod_group_eviction_events_total",
+			Help:      "Total number of committed eviction decisions per pod group",
+		}, []string{
+			"podgroup", "namespace", "nodepool", "action",
+			"owner_group", "owner_kind", "owner_name", "owner_uid",
+		})
 
 	scenarioSearchJobsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
@@ -365,9 +386,199 @@ func RegisterPreemptionAttempts() {
 	preemptionAttempts.Inc()
 }
 
+type topOwnerMetadata struct {
+	Name  string `yaml:"name"`
+	UID   string `yaml:"uid"`
+	Group string `yaml:"group"`
+	Kind  string `yaml:"kind"`
+}
+
+func ownerLabels(podGroup *enginev2alpha2.PodGroup) topOwnerMetadata {
+	var metadata topOwnerMetadata
+	if value := podGroup.Annotations[commonconstants.TopOwnerMetadataKey]; value != "" {
+		if err := yaml.Unmarshal([]byte(value), &metadata); err != nil {
+			return topOwnerMetadata{}
+		}
+	}
+	return metadata
+}
+
+func podGroupEvictionLabels(podGroup *enginev2alpha2.PodGroup, nodepool, action string) []string {
+	owner := ownerLabels(podGroup)
+	return []string{
+		podGroup.Name,
+		podGroup.Namespace,
+		nodepool,
+		action,
+		owner.Group,
+		owner.Kind,
+		owner.Name,
+		owner.UID,
+	}
+}
+
 // IncPodGroupEvictedPods records a single pod eviction for a pod group.
-func IncPodGroupEvictedPods(name, namespace, uid, nodepool, action string) {
-	podGroupEvictedPodsTotal.WithLabelValues(name, namespace, uid, nodepool, action).Inc()
+func IncPodGroupEvictedPods(podGroup *enginev2alpha2.PodGroup, nodepool, action, subgroup string) {
+	labels := append(podGroupEvictionLabels(podGroup, nodepool, action), subgroup)
+	podGroupEvictedPodsTotal.WithLabelValues(labels...).Inc()
+}
+
+// IncPodGroupEvictionEvents records a committed eviction decision for a pod group.
+func IncPodGroupEvictionEvents(podGroup *enginev2alpha2.PodGroup, nodepool, action string) {
+	podGroupEvictionEventsTotal.WithLabelValues(podGroupEvictionLabels(podGroup, nodepool, action)...).Inc()
+}
+
+// InitPodGroupEvictionMetrics creates zero-valued series before the first eviction.
+// Pending PodGroups and PodGroups outside this scheduler shard are skipped so they do not allocate series.
+func InitPodGroupEvictionMetrics(
+	podGroup *enginev2alpha2.PodGroup,
+	partitionSelector labels.Selector,
+	nodePoolLabelKey string,
+	evictionActionNames []string,
+) {
+	if !matchesPartition(podGroup, partitionSelector) || !hasAllocatedResources(podGroup) {
+		return
+	}
+	initPodGroupEvictionSeries(podGroup, nodePoolLabelKey, evictionActionNames)
+}
+
+// InitPodGroupEvictionMetricsOnUpdate creates series when a PodGroup first holds resources,
+// adds series for new leaf subgroups, and deletes series for leaves that were removed.
+func InitPodGroupEvictionMetricsOnUpdate(
+	oldPodGroup, newPodGroup *enginev2alpha2.PodGroup,
+	partitionSelector labels.Selector,
+	nodePoolLabelKey string,
+	evictionActionNames []string,
+) {
+	if !matchesPartition(newPodGroup, partitionSelector) || !hasAllocatedResources(newPodGroup) {
+		return
+	}
+	if !hasAllocatedResources(oldPodGroup) {
+		initPodGroupEvictionSeries(newPodGroup, nodePoolLabelKey, evictionActionNames)
+		return
+	}
+
+	oldSubgroups := leafSubgroups(oldPodGroup.Spec.SubGroups)
+	oldLeaves := make(map[string]struct{}, len(oldSubgroups))
+	for _, subgroup := range oldSubgroups {
+		oldLeaves[subgroup] = struct{}{}
+	}
+	newSubgroups := leafSubgroups(newPodGroup.Spec.SubGroups)
+	newLeaves := make(map[string]struct{}, len(newSubgroups))
+	for _, subgroup := range newSubgroups {
+		newLeaves[subgroup] = struct{}{}
+	}
+
+	oldNodepool := utils.GetNodePoolNameFromLabels(oldPodGroup.Labels, nodePoolLabelKey)
+	for _, subgroup := range oldSubgroups {
+		if _, exists := newLeaves[subgroup]; exists {
+			continue
+		}
+		for _, action := range evictionActionNames {
+			deleteEvictedPodSeries(oldPodGroup, oldNodepool, action, subgroup)
+		}
+	}
+
+	newNodepool := utils.GetNodePoolNameFromLabels(newPodGroup.Labels, nodePoolLabelKey)
+	for _, subgroup := range newSubgroups {
+		if _, exists := oldLeaves[subgroup]; exists {
+			continue
+		}
+		for _, action := range evictionActionNames {
+			metricLabels := append(podGroupEvictionLabels(newPodGroup, newNodepool, action), subgroup)
+			podGroupEvictedPodsTotal.WithLabelValues(metricLabels...).Add(0)
+		}
+	}
+}
+
+func initPodGroupEvictionSeries(
+	podGroup *enginev2alpha2.PodGroup,
+	nodePoolLabelKey string,
+	evictionActionNames []string,
+) {
+	nodepool := utils.GetNodePoolNameFromLabels(podGroup.Labels, nodePoolLabelKey)
+	subgroups := leafSubgroups(podGroup.Spec.SubGroups)
+	for _, action := range evictionActionNames {
+		eventLabels := podGroupEvictionLabels(podGroup, nodepool, action)
+		podGroupEvictionEventsTotal.WithLabelValues(eventLabels...).Add(0)
+		for _, subgroup := range subgroups {
+			podLabels := append(eventLabels, subgroup)
+			podGroupEvictedPodsTotal.WithLabelValues(podLabels...).Add(0)
+		}
+	}
+}
+
+func matchesPartition(podGroup *enginev2alpha2.PodGroup, partitionSelector labels.Selector) bool {
+	return partitionSelector.Matches(labels.Set(podGroup.Labels))
+}
+
+func hasAllocatedResources(podGroup *enginev2alpha2.PodGroup) bool {
+	return resourceListHasQuantity(podGroup.Status.ResourcesStatus.Allocated) ||
+		resourceListHasQuantity(podGroup.Status.ResourcesStatus.AllocatedNonPreemptible)
+}
+
+func resourceListHasQuantity(resources v1.ResourceList) bool {
+	for _, quantity := range resources {
+		if !quantity.IsZero() {
+			return true
+		}
+	}
+	return false
+}
+
+func leafSubgroups(subgroups []enginev2alpha2.SubGroup) []string {
+	if len(subgroups) == 0 {
+		return []string{""}
+	}
+
+	parents := make(map[string]struct{}, len(subgroups))
+	for _, subgroup := range subgroups {
+		if subgroup.Parent != nil {
+			parents[*subgroup.Parent] = struct{}{}
+		}
+	}
+
+	leaves := make([]string, 0, len(subgroups))
+	for _, subgroup := range subgroups {
+		if _, isParent := parents[subgroup.Name]; !isParent {
+			leaves = append(leaves, subgroup.Name)
+		}
+	}
+	return leaves
+}
+
+// DeletePodGroupEvictionMetrics removes this shard's series for a deleted pod group.
+// Each series is addressed by its full label values so Prometheus can drop the hashed entry.
+func DeletePodGroupEvictionMetrics(
+	podGroup *enginev2alpha2.PodGroup,
+	partitionSelector labels.Selector,
+	nodePoolLabelKey string,
+	evictionActionNames []string,
+) {
+	if !matchesPartition(podGroup, partitionSelector) {
+		return
+	}
+	deletePodGroupEvictionSeries(podGroup, nodePoolLabelKey, evictionActionNames)
+}
+
+func deletePodGroupEvictionSeries(
+	podGroup *enginev2alpha2.PodGroup,
+	nodePoolLabelKey string,
+	evictionActionNames []string,
+) {
+	nodepool := utils.GetNodePoolNameFromLabels(podGroup.Labels, nodePoolLabelKey)
+	for _, action := range evictionActionNames {
+		eventLabels := podGroupEvictionLabels(podGroup, nodepool, action)
+		podGroupEvictionEventsTotal.DeleteLabelValues(eventLabels...)
+		for _, subgroup := range leafSubgroups(podGroup.Spec.SubGroups) {
+			podGroupEvictedPodsTotal.DeleteLabelValues(append(eventLabels, subgroup)...)
+		}
+	}
+}
+
+func deleteEvictedPodSeries(podGroup *enginev2alpha2.PodGroup, nodepool, action, subgroup string) {
+	labelValues := append(podGroupEvictionLabels(podGroup, nodepool, action), subgroup)
+	podGroupEvictedPodsTotal.DeleteLabelValues(labelValues...)
 }
 
 func IncScenarioSearchJobs[A ~string](action A, result string, reducedBudget bool) {

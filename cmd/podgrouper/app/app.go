@@ -25,10 +25,10 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
-	kubeAiSchedulerV2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	controllers "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper"
 	pluginshub "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/hub"
+	v2 "github.com/kai-scheduler/api/scheduling/v2"
+	kubeAiSchedulerV2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
 	// +kubebuilder:scaffold:imports
 )
 

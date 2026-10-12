@@ -7,9 +7,9 @@ import (
 	"slices"
 	"strconv"
 
-	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/utils"
+	commonconstants "github.com/kai-scheduler/api/constants"
+	enginev2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
 )
 
 type podGroupStatusSyncResult string
