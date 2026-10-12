@@ -249,7 +249,7 @@ func (r *BindRequestReconciler) UpdateStatus(
 		bindRequest.Status.Phase = schedulingv1alpha2.BindRequestPhaseSucceeded
 	}
 
-	if originalBindRequest.Status.Phase == bindRequest.Status.Phase {
+	if originalBindRequest.Status == bindRequest.Status {
 		return result, nil
 	}
 
