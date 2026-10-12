@@ -4,6 +4,7 @@
 package metrics
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -11,6 +12,14 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/require"
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/utils/ptr"
+
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	enginev2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
 )
 
 // TestQueueLabels exercises the three queue identification labels emitted on
@@ -60,6 +69,232 @@ func TestQueueLabels(t *testing.T) {
 			ResetQueueUsage()
 		})
 	}
+}
+
+func TestPodGroupEvictionMetricLifecycle(t *testing.T) {
+	tag := fmt.Sprintf("%s-%d", t.Name(), time.Now().UnixNano())
+	podGroup := &enginev2alpha2.PodGroup{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pg-" + tag,
+			Namespace: "ns-" + tag,
+			Labels:    map[string]string{"node-pool": "gpu"},
+			Annotations: map[string]string{
+				commonconstants.TopOwnerMetadataKey: "group: jobset.x-k8s.io\nkind: JobSet\nname: train-x\nuid: owner-uid\n",
+			},
+		},
+		Spec: enginev2alpha2.PodGroupSpec{
+			SubGroups: []enginev2alpha2.SubGroup{
+				{Name: "pipeline", MinSubGroup: ptr.To(int32(2))},
+				{Name: "prefill", Parent: ptr.To("pipeline"), MinMember: ptr.To(int32(1))},
+				{Name: "decode", Parent: ptr.To("pipeline"), MinMember: ptr.To(int32(1))},
+			},
+		},
+		Status: enginev2alpha2.PodGroupStatus{
+			ResourcesStatus: enginev2alpha2.PodGroupResourcesStatus{
+				Allocated: v1.ResourceList{
+					commonconstants.NvidiaGpuResource: resource.MustParse("1"),
+				},
+			},
+		},
+	}
+	evictionActionNames := []string{"preempt"}
+	partition := labels.Everything()
+
+	InitPodGroupEvictionMetrics(podGroup, partition, "node-pool", evictionActionNames)
+	require.Equal(t, 2, countMetricsForPodGroup(t, "pod_group_evicted_pods_total", podGroup))
+	require.Equal(t, 1, countMetricsForPodGroup(t, "pod_group_eviction_events_total", podGroup))
+	require.Zero(t, metricValueForLabels(t, "pod_group_evicted_pods_total", map[string]string{
+		"podgroup":  podGroup.Name,
+		"namespace": podGroup.Namespace,
+		"action":    "preempt",
+		"subgroup":  "prefill",
+	}))
+
+	IncPodGroupEvictedPods(podGroup, "gpu", "preempt", "prefill")
+	InitPodGroupEvictionMetrics(podGroup, partition, "node-pool", evictionActionNames)
+	require.Equal(t, float64(1), metricValueForLabels(t, "pod_group_evicted_pods_total", map[string]string{
+		"podgroup":  podGroup.Name,
+		"namespace": podGroup.Namespace,
+		"action":    "preempt",
+		"subgroup":  "prefill",
+	}))
+
+	oldPodGroup := podGroup.DeepCopy()
+	podGroup.Spec.SubGroups = append(podGroup.Spec.SubGroups,
+		enginev2alpha2.SubGroup{Name: "postprocessor", Parent: ptr.To("pipeline"), MinMember: ptr.To(int32(1))})
+	InitPodGroupEvictionMetricsOnUpdate(oldPodGroup, podGroup, partition, "node-pool", evictionActionNames)
+	require.Equal(t, 3, countMetricsForPodGroup(t, "pod_group_evicted_pods_total", podGroup))
+	require.Equal(t, float64(1), metricValueForLabels(t, "pod_group_evicted_pods_total", map[string]string{
+		"podgroup":  podGroup.Name,
+		"namespace": podGroup.Namespace,
+		"action":    "preempt",
+		"subgroup":  "prefill",
+	}))
+
+	DeletePodGroupEvictionMetrics(podGroup, partition, "node-pool", evictionActionNames)
+	require.Zero(t, countMetricsForPodGroup(t, "pod_group_evicted_pods_total", podGroup))
+	require.Zero(t, countMetricsForPodGroup(t, "pod_group_eviction_events_total", podGroup))
+}
+
+func TestPodGroupEvictionMetricsSkipOtherPartitions(t *testing.T) {
+	partition := labels.SelectorFromSet(map[string]string{"node-pool": "gpu-a"})
+	tag := fmt.Sprintf("%d", time.Now().UnixNano())
+	foreignPodGroup := &enginev2alpha2.PodGroup{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "foreign-" + tag,
+			Namespace: "ns-" + tag,
+			Labels:    map[string]string{"node-pool": "gpu-b"},
+		},
+		Status: enginev2alpha2.PodGroupStatus{
+			ResourcesStatus: enginev2alpha2.PodGroupResourcesStatus{
+				Allocated: v1.ResourceList{
+					commonconstants.NvidiaGpuResource: resource.MustParse("1"),
+				},
+			},
+		},
+	}
+
+	InitPodGroupEvictionMetrics(foreignPodGroup, partition, "node-pool", []string{"preempt"})
+	InitPodGroupEvictionMetricsOnUpdate(foreignPodGroup.DeepCopy(), foreignPodGroup, partition, "node-pool", []string{"preempt"})
+	DeletePodGroupEvictionMetrics(foreignPodGroup, partition, "node-pool", []string{"preempt"})
+	require.Zero(t, countMetricsForPodGroup(t, "pod_group_evicted_pods_total", foreignPodGroup))
+	require.Zero(t, countMetricsForPodGroup(t, "pod_group_eviction_events_total", foreignPodGroup))
+
+	localPodGroup := foreignPodGroup.DeepCopy()
+	localPodGroup.Name = "local-" + tag
+	localPodGroup.Labels["node-pool"] = "gpu-a"
+	InitPodGroupEvictionMetrics(localPodGroup, partition, "node-pool", []string{"preempt"})
+	require.Equal(t, 1, countMetricsForPodGroup(t, "pod_group_evicted_pods_total", localPodGroup))
+	require.Equal(t, 1, countMetricsForPodGroup(t, "pod_group_eviction_events_total", localPodGroup))
+	DeletePodGroupEvictionMetrics(localPodGroup, partition, "node-pool", []string{"preempt"})
+}
+
+func TestPodGroupEvictionMetricsSkipPendingPodGroups(t *testing.T) {
+	partition := labels.Everything()
+	tag := fmt.Sprintf("%d", time.Now().UnixNano())
+	pending := &enginev2alpha2.PodGroup{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pending-" + tag,
+			Namespace: "ns-" + tag,
+			Labels:    map[string]string{"node-pool": "gpu"},
+		},
+	}
+
+	InitPodGroupEvictionMetrics(pending, partition, "node-pool", []string{"preempt"})
+	InitPodGroupEvictionMetricsOnUpdate(pending.DeepCopy(), pending, partition, "node-pool", []string{"preempt"})
+	require.Zero(t, countMetricsForPodGroup(t, "pod_group_evicted_pods_total", pending))
+	require.Zero(t, countMetricsForPodGroup(t, "pod_group_eviction_events_total", pending))
+
+	allocated := pending.DeepCopy()
+	allocated.Status.ResourcesStatus.Allocated = v1.ResourceList{
+		commonconstants.NvidiaGpuResource: resource.MustParse("1"),
+	}
+	InitPodGroupEvictionMetricsOnUpdate(pending, allocated, partition, "node-pool", []string{"preempt"})
+	require.Equal(t, 1, countMetricsForPodGroup(t, "pod_group_evicted_pods_total", allocated))
+	require.Equal(t, 1, countMetricsForPodGroup(t, "pod_group_eviction_events_total", allocated))
+	DeletePodGroupEvictionMetrics(allocated, partition, "node-pool", []string{"preempt"})
+}
+
+func TestPodGroupEvictionMetricsDeleteRemovedSubgroup(t *testing.T) {
+	tag := fmt.Sprintf("%d", time.Now().UnixNano())
+	podGroup := &enginev2alpha2.PodGroup{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pg-" + tag,
+			Namespace: "ns-" + tag,
+			Labels:    map[string]string{"node-pool": "gpu"},
+		},
+		Spec: enginev2alpha2.PodGroupSpec{
+			SubGroups: []enginev2alpha2.SubGroup{
+				{Name: "prefill", MinMember: ptr.To(int32(1))},
+				{Name: "decode", MinMember: ptr.To(int32(1))},
+			},
+		},
+		Status: enginev2alpha2.PodGroupStatus{
+			ResourcesStatus: enginev2alpha2.PodGroupResourcesStatus{
+				Allocated: v1.ResourceList{
+					commonconstants.NvidiaGpuResource: resource.MustParse("1"),
+				},
+			},
+		},
+	}
+	partition := labels.Everything()
+	actions := []string{"preempt", "reclaim"}
+
+	InitPodGroupEvictionMetrics(podGroup, partition, "node-pool", actions)
+	require.Equal(t, 4, countMetricsForPodGroup(t, "pod_group_evicted_pods_total", podGroup))
+	require.Equal(t, 2, countMetricsForPodGroup(t, "pod_group_eviction_events_total", podGroup))
+
+	oldPodGroup := podGroup.DeepCopy()
+	podGroup.Spec.SubGroups = []enginev2alpha2.SubGroup{
+		{Name: "prefill", MinMember: ptr.To(int32(1))},
+	}
+	InitPodGroupEvictionMetricsOnUpdate(oldPodGroup, podGroup, partition, "node-pool", actions)
+	require.Equal(t, 2, countMetricsForPodGroup(t, "pod_group_evicted_pods_total", podGroup))
+	require.Equal(t, 2, countMetricsForPodGroup(t, "pod_group_eviction_events_total", podGroup))
+
+	DeletePodGroupEvictionMetrics(podGroup, partition, "node-pool", actions)
+	require.Zero(t, countMetricsForPodGroup(t, "pod_group_evicted_pods_total", podGroup))
+	require.Zero(t, countMetricsForPodGroup(t, "pod_group_eviction_events_total", podGroup))
+}
+
+func countMetricsForPodGroup(t *testing.T, familyName string, podGroup *enginev2alpha2.PodGroup) int {
+	t.Helper()
+	families, err := prometheus.DefaultGatherer.Gather()
+	require.NoError(t, err)
+	count := 0
+	for _, family := range families {
+		if family.GetName() != familyName {
+			continue
+		}
+		for _, metric := range family.GetMetric() {
+			labels := labelsForMetric(metric)
+			if labels["podgroup"] == podGroup.Name && labels["namespace"] == podGroup.Namespace {
+				count++
+			}
+		}
+	}
+	return count
+}
+
+func metricValueForLabels(t *testing.T, familyName string, expected map[string]string) float64 {
+	t.Helper()
+	family := metricFamily(t, familyName)
+	for _, metric := range family.GetMetric() {
+		labels := labelsForMetric(metric)
+		matches := true
+		for name, value := range expected {
+			if labels[name] != value {
+				matches = false
+				break
+			}
+		}
+		if matches {
+			return metric.GetCounter().GetValue()
+		}
+	}
+	t.Fatalf("metric %s with labels %v not found", familyName, expected)
+	return 0
+}
+
+func metricFamily(t *testing.T, name string) *dto.MetricFamily {
+	t.Helper()
+	families, err := prometheus.DefaultGatherer.Gather()
+	require.NoError(t, err)
+	for _, family := range families {
+		if family.GetName() == name {
+			return family
+		}
+	}
+	t.Fatalf("metric family %s not found", name)
+	return nil
+}
+
+func labelsForMetric(metric *dto.Metric) map[string]string {
+	labels := map[string]string{}
+	for _, pair := range metric.GetLabel() {
+		labels[pair.GetName()] = pair.GetValue()
+	}
+	return labels
 }
 
 func TestScenarioSearchMetricWrappersUseExpectedLabels(t *testing.T) {

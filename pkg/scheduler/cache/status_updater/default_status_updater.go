@@ -19,9 +19,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/record"
 
-	kai "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned"
-	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -31,6 +28,9 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/utils"
+	kai "github.com/kai-scheduler/api/client/clientset/versioned"
+	commonconstants "github.com/kai-scheduler/api/constants"
+	enginev2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
 )
 
 const (
@@ -103,6 +103,7 @@ func New(
 }
 
 func (su *defaultStatusUpdater) Evicted(
+	evictedPod *v1.Pod,
 	evictedPodGroup *enginev2alpha2.PodGroup,
 	evictionMetadata eviction_info.EvictionMetadata,
 	message string,
@@ -122,11 +123,10 @@ func (su *defaultStatusUpdater) Evicted(
 
 	nodepool := utils.GetNodePoolNameFromLabels(evictedPodGroup.Labels, su.nodePoolLabelKey)
 	metrics.IncPodGroupEvictedPods(
-		evictedPodGroup.Name,
-		evictedPodGroup.Namespace,
-		string(evictedPodGroup.UID),
+		evictedPodGroup,
 		nodepool,
 		evictionMetadata.Action,
+		evictedPod.Labels[commonconstants.SubGroupLabelKey],
 	)
 }
 

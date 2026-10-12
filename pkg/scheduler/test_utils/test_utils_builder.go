@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"time"
 
-	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/api/constants"
+	kaiv1alpha1 "github.com/kai-scheduler/api/kai/v1alpha1"
 
 	. "go.uber.org/mock/gomock"
 	"gopkg.in/yaml.v2"
@@ -20,7 +20,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 
-	enginev2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
 	_ "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
@@ -38,6 +37,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/numa"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
+	enginev2 "github.com/kai-scheduler/api/scheduling/v2"
 )
 
 const (

@@ -1,0 +1,6 @@
+kind: Changed
+body: |-
+  Updated gpu-fractioning chart dependency to v0.1.7
+custom:
+  Author: "barakle1"
+  Issue: "2353"

@@ -12,8 +12,6 @@ import (
 	"gopkg.in/h2non/gock.v1"
 	resourceapi "k8s.io/api/resource/v1"
 
-	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	featuregates "github.com/kai-scheduler/KAI-scheduler/pkg/common/feature_gates"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
@@ -27,6 +25,8 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
+	"github.com/kai-scheduler/api/constants"
+	schedulingv1alpha2 "github.com/kai-scheduler/api/scheduling/v1alpha2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -544,7 +544,7 @@ func TestStatementEvictUnevict_WithDRAClaims(t *testing.T) {
 			t.Logf("Running test number: %d, test name: %s", i, test.name)
 
 			ssn := setupTestSession(t, test.topology, controller)
-			job := ssn.ClusterInfo.PodGroupInfos[common_info.PodGroupID("test-job")]
+			job := ssn.ClusterInfo.PodGroupInfos[common_info.NewPodGroupID("test", "test-job")]
 			task := job.GetAllPodsMap()[common_info.PodID("test-job-0")]
 
 			if test.bindRequest != nil {
@@ -762,7 +762,7 @@ func setupTestSession(t *testing.T, topology test_utils.TestTopologyBasic, contr
 }
 
 func getTaskByStatus(t *testing.T, ssn *framework.Session, jobName string, status pod_status.PodStatus) *pod_info.PodInfo {
-	job := ssn.ClusterInfo.PodGroupInfos[common_info.PodGroupID(jobName)]
+	job := ssn.ClusterInfo.PodGroupInfos[common_info.NewPodGroupID("test", jobName)]
 	assert.NotNil(t, job, "Job %s should exist", jobName)
 
 	for _, task := range job.GetAllPodsMap() {

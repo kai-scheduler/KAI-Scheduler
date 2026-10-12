@@ -24,11 +24,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
-	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding/resourcereservation/group_mutex"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/fips"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
+	"github.com/kai-scheduler/api/constants"
+	schedulingv1alpha2 "github.com/kai-scheduler/api/scheduling/v1alpha2"
+	"github.com/kai-scheduler/api/utilities/resources"
 )
 
 type Interface interface {
@@ -247,6 +247,10 @@ func (rsc *service) hasActiveBindRequestsForGpuGroup(ctx context.Context, gpuGro
 		}
 
 		if br.Status.Phase == schedulingv1alpha2.BindRequestPhaseFailed {
+			// If the binding backoff limit is not spent, the binder will keep retrying.
+			if br.Spec.BackoffLimit == nil || br.Status.FailedAttempts >= *br.Spec.BackoffLimit {
+				return false, nil
+			}
 			continue
 		}
 

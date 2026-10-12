@@ -22,7 +22,6 @@ package proportion
 import (
 	"math"
 
-	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
@@ -43,6 +42,7 @@ import (
 	rs "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/scheduler_util"
+	commonconstants "github.com/kai-scheduler/api/constants"
 )
 
 const (

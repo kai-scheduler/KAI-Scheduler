@@ -12,7 +12,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/configurations/feature_flags"
 	e2econstant "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/constant"
 	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
@@ -20,6 +19,7 @@ import (
 	numautil "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/numa"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/utils"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
+	v2 "github.com/kai-scheduler/api/scheduling/v2"
 )
 
 // DescribeNUMAPreemptSpecs asserts NUMA constraints are honored when a higher-priority pod preempts:

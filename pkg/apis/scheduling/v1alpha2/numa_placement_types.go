@@ -12,3 +12,8 @@ type NUMAZonePlacement struct {
 	Zone   string          `json:"zone"`
 	Amount v1.ResourceList `json:"amount"`
 }
+
+type NUMAMemoryGroupPlacement struct {
+	MemoryNodes []string        `json:"memoryNodes"`
+	Amount      v1.ResourceList `json:"amount"`
+}

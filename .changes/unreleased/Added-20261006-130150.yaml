@@ -1,0 +1,6 @@
+kind: Added
+body: Allow configuring ServiceMonitor with Helm and do not set prometheus.io/scrape=true annotation when using a ServiceMonitor
+time: 2026-10-06T13:01:50.966893-04:00
+custom:
+    Author: treydock
+    Issue: "2340"
