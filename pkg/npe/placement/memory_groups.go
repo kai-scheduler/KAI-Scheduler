@@ -19,10 +19,14 @@ import (
 	commonpod "github.com/kai-scheduler/KAI-scheduler/pkg/common/pod"
 	"github.com/kai-scheduler/api/constants"
 	"github.com/kai-scheduler/api/scheduling/v1alpha2"
-	"github.com/kai-scheduler/api/utilities/resources"
 )
 
 const incompleteMemoryGroups = "null"
+
+// isMemoryResource includes ordinary memory and all hugepage sizes managed by Memory Manager.
+func isMemoryResource(name v1.ResourceName) bool {
+	return name == v1.ResourceMemory || strings.HasPrefix(string(name), v1.ResourceHugePagesPrefix)
+}
 
 // MemoryGroupsValue builds the pod's observed memory-group annotation from podResources allocations.
 // Non-Guaranteed pods return "[]". Guaranteed pods return "" before allocations start, "null" for
@@ -110,7 +114,7 @@ func aggregateMemoryGroups(observed *podresourcesv1.PodResources, expected map[s
 				groups = append(groups, v1alpha2.NUMAMemoryGroupPlacement{MemoryNodes: zones, Amount: v1.ResourceList{}})
 			}
 			name := v1.ResourceName(memoryResourceName(block.GetMemoryType()))
-			if !resources.IsMemoryResource(name) {
+			if !isMemoryResource(name) {
 				return nil, nil, fmt.Errorf("unsupported memory resource %q for container %q", name, container.GetName())
 			}
 			quantity := groups[index].Amount[name]
@@ -143,7 +147,7 @@ func memoryObservationComplete(pod *v1.Pod, represented map[string]*podresources
 	}
 	for _, container := range expected {
 		for name, amount := range container.Resources.Requests {
-			if !resources.IsMemoryResource(name) || amount.Sign() <= 0 {
+			if !isMemoryResource(name) || amount.Sign() <= 0 {
 				continue
 			}
 			entry, exists := represented[container.Name]

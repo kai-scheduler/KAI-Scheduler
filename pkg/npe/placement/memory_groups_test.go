@@ -306,3 +306,19 @@ func TestMemoryGroupsObservationLogs(t *testing.T) {
 		})
 	}
 }
+
+func TestIsMemoryResource(t *testing.T) {
+	for name, want := range map[v1.ResourceName]bool{
+		v1.ResourceMemory:           true,
+		"hugepages-2Mi":             true,
+		"hugepages-1Gi":             true,
+		v1.ResourceCPU:              false,
+		v1.ResourceEphemeralStorage: false,
+		"example.com/memory":        false,
+		"":                          false,
+	} {
+		if got := isMemoryResource(name); got != want {
+			t.Errorf("%q: got %v, want %v", name, got, want)
+		}
+	}
+}
