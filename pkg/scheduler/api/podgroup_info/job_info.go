@@ -206,6 +206,15 @@ func (pgi *PodGroupInfo) IsPreemptibleJob() bool {
 	return pgi.Preemptibility == enginev2alpha2.Preemptible
 }
 
+// IsSafeToDisrupt reports whether the podgroup's pods may be evicted for reasons other than fairness or
+// priority, such as consolidation.
+func (pgi *PodGroupInfo) IsSafeToDisrupt() bool {
+	if pgi.PodGroup == nil || pgi.PodGroup.Spec.SafeToDisrupt == nil {
+		return true
+	}
+	return *pgi.PodGroup.Spec.SafeToDisrupt
+}
+
 // PreemptionDelayEnd returns the earliest time this podgroup may trigger eviction
 // of other workloads, or nil when no preemption delay is configured.
 func (pgi *PodGroupInfo) PreemptionDelayEnd() *time.Time {

@@ -108,6 +108,7 @@ func (h *Handler) createPodGroupForMetadata(podGroupMetadata Metadata) *scheduli
 			Preemptibility:       podGroupMetadata.Preemptibility,
 			PreemptionDelay:      podGroupMetadata.PreemptionDelay,
 			StalenessGracePeriod: podGroupMetadata.StalenessGracePeriod,
+			SafeToDisrupt:        podGroupMetadata.SafeToDisrupt,
 		},
 	}
 	if podGroupMetadata.MinSubGroup != nil {

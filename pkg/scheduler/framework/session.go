@@ -86,6 +86,7 @@ type Session struct {
 	CanReclaimResourcesFns                []api.CanReclaimResourcesFn
 	ReclaimVictimFilterFns                []api.VictimFilterFn
 	PreemptVictimFilterFns                []api.VictimFilterFn
+	ConsolidationVictimFilterFns          []api.VictimFilterFn
 	ReclaimScenarioValidatorFns           []api.ScenarioValidatorFn
 	PreemptScenarioValidatorFns           []api.ScenarioValidatorFn
 	OnJobSolutionStartFns                 []api.OnJobSolutionStartFn
@@ -444,6 +445,7 @@ func (ssn *Session) clear() {
 	ssn.CanReclaimResourcesFns = nil
 	ssn.ReclaimVictimFilterFns = nil
 	ssn.PreemptVictimFilterFns = nil
+	ssn.ConsolidationVictimFilterFns = nil
 	ssn.ReclaimScenarioValidatorFns = nil
 	ssn.PreemptScenarioValidatorFns = nil
 	ssn.OnJobSolutionStartFns = nil

@@ -80,6 +80,7 @@ func (dg *DefaultGrouper) GetPodGroupMetadata(topOwner *unstructured.Unstructure
 		Preemptibility:       preemptibility,
 		PreemptionDelay:      dg.calcPodGroupPreemptionDelay(allOwners, pod),
 		StalenessGracePeriod: dg.calcStalenessGracePeriod(allOwners, pod),
+		SafeToDisrupt:        dg.calcSafeToDisrupt(allOwners, pod),
 		MinAvailable:         1,
 	}
 
@@ -314,6 +315,28 @@ func (dg *DefaultGrouper) calcStalenessGracePeriod(allOwners []*metav1.PartialOb
 			return stale
 		} else {
 			logger.Error(err, "Invalid staleness-grace-period annotation found on pod", "pod", pod.GetName(), "stalenessGracePeriod", staleStr)
+		}
+	}
+	return nil
+}
+
+// calcSafeToDisrupt reads the safe-to-disrupt annotation from owners then the pod.
+// First valid value wins; invalid values are ignored with a warning.
+func (dg *DefaultGrouper) calcSafeToDisrupt(allOwners []*metav1.PartialObjectMetadata, pod *v1.Pod) *bool {
+	for _, owner := range allOwners {
+		if safeStr, found := owner.GetAnnotations()[constants.SafeToDisruptAnnotationKey]; found {
+			if safe, err := v2alpha2.ParseSafeToDisrupt(safeStr); err == nil {
+				return safe
+			} else {
+				logger.Error(err, "Invalid safe-to-disrupt annotation found on owner", "owner", owner.GetName(), "safeToDisrupt", safeStr)
+			}
+		}
+	}
+	if safeStr, found := pod.GetAnnotations()[constants.SafeToDisruptAnnotationKey]; found {
+		if safe, err := v2alpha2.ParseSafeToDisrupt(safeStr); err == nil {
+			return safe
+		} else {
+			logger.Error(err, "Invalid safe-to-disrupt annotation found on pod", "pod", pod.GetName(), "safeToDisrupt", safeStr)
 		}
 	}
 	return nil
