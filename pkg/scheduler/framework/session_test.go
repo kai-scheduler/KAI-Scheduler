@@ -4,6 +4,7 @@
 package framework
 
 import (
+	"errors"
 	"runtime"
 	"strconv"
 	"testing"
@@ -16,11 +17,36 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	scheduler_cache "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
 )
 
 const benchmarkBindRequestCount = 5000
+
+func TestOrderedNodesByTaskSortsByScoreThenName(t *testing.T) {
+	ssn := &Session{}
+	assert.NoError(t, ssn.InitNodeScoringPool())
+	scores := map[string]float64{"a": 1, "b": 2, "c": 1, "d": 0}
+	ssn.AddNodeOrderFn(func(_ *pod_info.PodInfo, node *node_info.NodeInfo) (float64, error) {
+		score, ok := scores[node.Name]
+		if !ok {
+			return 0, errors.New("no score")
+		}
+		return score, nil
+	})
+
+	var nodes []*node_info.NodeInfo
+	for _, name := range []string{"d", "c", "failed", "b", "a"} {
+		nodes = append(nodes, &node_info.NodeInfo{Name: name})
+	}
+	var ordered []string
+	for _, node := range ssn.OrderedNodesByTask(nodes, &pod_info.PodInfo{}) {
+		ordered = append(ordered, node.Name)
+	}
+	assert.Equal(t, []string{"b", "a", "c", "d"}, ordered)
+}
 
 func TestSessionClearDropsRetainedReferences(t *testing.T) {
 	ssn := &Session{
