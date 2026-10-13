@@ -2015,6 +2015,27 @@ func TestPodGroupInfo_GetSearchShapeKey(t *testing.T) {
 		assert.NotEqual(t, base.GetSearchShapeKey(), other.GetSearchShapeKey())
 	})
 
+	t.Run("another snapshot's resource vector layout", func(t *testing.T) {
+		withRDMA := func(pod *v1.Pod) {
+			pod.Spec.Containers[0].Resources.Requests["rdma/hca_shared_devices_a"] = resource.MustParse("8")
+		}
+		layout := func(names ...v1.ResourceName) *resource_info.ResourceVectorMap {
+			vectorMap := resource_info.NewResourceVectorMap()
+			for _, name := range names {
+				vectorMap.AddResource(name)
+			}
+			return vectorMap
+		}
+		inLayout := func(vectorMap *resource_info.ResourceVectorMap) string {
+			pod := task("a", v1.PodPending, "8", withRDMA).Pod
+			return job("uid", "queue", pod_info.NewTaskInfo(pod, vectorMap)).GetSearchShapeKey()
+		}
+		key := inLayout(layout("rdma/hca_shared_devices_a", "example.com/fpga"))
+		assert.Equal(t, key, inLayout(layout("example.com/fpga", "rdma/hca_shared_devices_a")), "reordered")
+		assert.Equal(t, key, inLayout(layout("example.com/fpga", "rdma/hca_shared_devices_a", "example.com/nic")),
+			"one more resource type")
+	})
+
 	t.Run("the session's own placements", func(t *testing.T) {
 		placed := job("uid", "queue", pendingA(), pendingB())
 		before := placed.GetSearchShapeKey()

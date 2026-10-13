@@ -674,7 +674,7 @@ func (pgi *PodGroupInfo) GetSchedulingConstraintsSignature() common_info.Schedul
 // GetSearchShapeKey identifies what a scenario search depends on in the job itself: its PodGroup and
 // queue, and the constraints and resource requests of its pods that the API shows waiting for a node:
 // pending, unbound, ungated and not being deleted. It ignores the session's own placements, so it
-// does not change within a session.
+// does not change within a session, and resource vector layouts, which every snapshot rebuilds.
 func (pgi *PodGroupInfo) GetSearchShapeKey() string {
 	var pendingPods []string
 	for _, task := range pgi.GetAllPodsMap() {
@@ -684,7 +684,7 @@ func (pgi *PodGroupInfo) GetSearchShapeKey() string {
 			continue
 		}
 		pendingPods = append(pendingPods,
-			fmt.Sprint(task.GetSchedulingConstraintsSignature(), task.ResReqVector, task.GpuRequirement))
+			fmt.Sprint(task.GetSchedulingConstraintsSignature(), requestedResources(task), task.GpuRequirement))
 	}
 	slices.Sort(pendingPods)
 	var generation int64
@@ -692,6 +692,17 @@ func (pgi *PodGroupInfo) GetSearchShapeKey() string {
 		generation = pgi.PodGroup.Generation
 	}
 	return fmt.Sprintf("%s|%d|%s|%v", pgi.PodGroupUID, generation, pgi.Queue, pendingPods)
+}
+
+// requestedResources names the task's non-zero resource requests. A resource's position in the
+// vector depends on the order its snapshot first saw the cluster's resource names in.
+func requestedResources(task *pod_info.PodInfo) map[v1.ResourceName]float64 {
+	if task.VectorMap == nil {
+		return nil
+	}
+	requests := task.ResReqVector.ToResourceQuantities(task.VectorMap)
+	maps.DeleteFunc(requests, func(_ v1.ResourceName, quantity float64) bool { return quantity == 0 })
+	return requests
 }
 
 func (pgi *PodGroupInfo) generateSchedulingConstraintsSignature() common_info.SchedulingConstraintsSignature {
