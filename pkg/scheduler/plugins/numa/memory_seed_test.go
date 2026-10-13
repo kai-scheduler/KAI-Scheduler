@@ -82,7 +82,7 @@ func TestMemoryGroupObservationPrecedence(t *testing.T) {
 			}
 			pp.seedMemoryGroups(session)
 			state := node.NumaTopology.MemoryGroups
-			assert.Equal(t, test.known, state.Status == node_info.MemoryGroupsKnown)
+			assert.Equal(t, test.known, state.Known)
 			if test.used > 0 {
 				assert.Equal(t, int64(200<<30)-test.used, state.Available(node.NumaTopology, 3, v1.ResourceMemory))
 			} else {

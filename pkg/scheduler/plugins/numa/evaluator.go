@@ -93,7 +93,7 @@ func (pp *numaPlugin) evaluationMemoryResources(task *pod_info.PodInfo, node *no
 func validateEvaluationTopology(topo *node_info.NumaTopology, hasMemory bool) error {
 	if hasMemory {
 		state := topo.MemoryGroups
-		if state == nil || state.Status != node_info.MemoryGroupsKnown {
+		if state == nil || !state.Known {
 			return errMemoryStateUnknown
 		}
 	}

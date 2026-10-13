@@ -22,11 +22,27 @@ func memoryLedgerTopology() *NumaTopology {
 	})
 }
 
+func TestMemoryGroupStateClonePreservesKnown(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		state MemoryGroupState
+	}{
+		{name: "zero value"},
+		{name: "known empty", state: MemoryGroupState{Known: true}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			clone := test.state.Clone()
+			require.Equal(t, test.state.Known, clone.Known)
+			require.Nil(t, clone.Groups)
+		})
+	}
+}
+
 func TestMemoryGroupOwnerLifecycle(t *testing.T) {
 	topology := memoryLedgerTopology()
 	mask, err := pod_info.NewNUMAMask([]int{0, 1})
 	require.NoError(t, err)
-	state := &MemoryGroupState{Status: MemoryGroupsKnown}
+	state := &MemoryGroupState{Known: true}
 	allocation := []pod_info.MemoryGroupPlacement{{Mask: mask, Amount: v1.ResourceList{v1.ResourceMemory: resource.MustParse("120Gi")}}}
 	require.NoError(t, state.ValidateOwner(topology, "first", allocation))
 	state.ApplyOwner("first", allocation)
@@ -49,7 +65,7 @@ func TestMemoryGroupValidationAtomicity(t *testing.T) {
 	mask, _ := pod_info.NewNUMAMask([]int{0, 1})
 	singleton, _ := pod_info.NewNUMAMask([]int{0})
 	unknown, _ := pod_info.NewNUMAMask([]int{2})
-	state := &MemoryGroupState{Status: MemoryGroupsKnown}
+	state := &MemoryGroupState{Known: true}
 	allocation := []pod_info.MemoryGroupPlacement{{Mask: mask, Amount: v1.ResourceList{v1.ResourceMemory: resource.MustParse("120Gi")}}}
 	require.NoError(t, state.ValidateOwner(topology, "first", allocation))
 	state.ApplyOwner("first", allocation)
@@ -70,7 +86,7 @@ func TestMemoryGroupValidationAtomicity(t *testing.T) {
 func TestMemoryGroupDuplicateMasksCannotExceedCapacity(t *testing.T) {
 	topology := memoryLedgerTopology()
 	mask, _ := pod_info.NewNUMAMask([]int{0, 1})
-	state := &MemoryGroupState{Status: MemoryGroupsKnown}
+	state := &MemoryGroupState{Known: true}
 	placement := pod_info.MemoryGroupPlacement{Mask: mask, Amount: v1.ResourceList{v1.ResourceMemory: resource.MustParse("120Gi")}}
 	require.Error(t, state.ValidateOwner(topology, "duplicate", []pod_info.MemoryGroupPlacement{placement, placement}))
 	require.Empty(t, state.Groups)
@@ -80,7 +96,7 @@ func TestMemoryGroupZeroOwnerPinsUntilRemoval(t *testing.T) {
 	topology := memoryLedgerTopology()
 	mask, _ := pod_info.NewNUMAMask([]int{0, 1})
 	singleton, _ := pod_info.NewNUMAMask([]int{0})
-	state := &MemoryGroupState{Status: MemoryGroupsKnown}
+	state := &MemoryGroupState{Known: true}
 	allocation := []pod_info.MemoryGroupPlacement{{Mask: mask, Amount: v1.ResourceList{v1.ResourceMemory: resource.MustParse("0")}}}
 	require.NoError(t, state.ValidateOwner(topology, "zero", allocation))
 	state.ApplyOwner("zero", allocation)
@@ -91,7 +107,7 @@ func TestMemoryGroupZeroOwnerPinsUntilRemoval(t *testing.T) {
 
 func TestMemoryOwnerValidationDoesNotMutateState(t *testing.T) {
 	topology := memoryLedgerTopology()
-	state := &MemoryGroupState{Status: MemoryGroupsKnown}
+	state := &MemoryGroupState{Known: true}
 	allocation := []pod_info.MemoryGroupPlacement{{Mask: 3, Amount: v1.ResourceList{v1.ResourceMemory: resource.MustParse("120Gi")}}}
 	before := state.Clone()
 	require.NoError(t, state.ValidateOwner(topology, "owner", allocation))
@@ -110,7 +126,7 @@ func TestMemoryLedgerRetainsBytePrecisionAtFloatBoundary(t *testing.T) {
 	topology := newNumaTopology(TopologyPolicyRestricted, TopologyScopeContainer, resource_info.NewResourceVectorMap(), []NumaZoneSpec{
 		{ID: "node-0", Allocatable: capacity, Available: capacity},
 	})
-	state := &MemoryGroupState{Status: MemoryGroupsKnown}
+	state := &MemoryGroupState{Known: true}
 	allocation := []pod_info.MemoryGroupPlacement{{Mask: 1, Amount: v1.ResourceList{v1.ResourceMemory: resource.MustParse("1")}}}
 	require.NoError(t, state.ValidateOwner(topology, "first", allocation))
 	state.ApplyOwner("first", allocation)

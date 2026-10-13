@@ -254,7 +254,7 @@ func (pp *numaPlugin) allocate(event *framework.Event) {
 		return
 	}
 	state := node.NumaTopology.MemoryGroups
-	if state != nil && state.Status == node_info.MemoryGroupsKnown {
+	if state != nil && state.Known {
 		state.ApplyOwner(memoryOwner(task), task.NUMAPlacement.MemoryGroups)
 	}
 	numaAllocate(node.NumaTopology, task.NUMAPlacement)

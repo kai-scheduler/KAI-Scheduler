@@ -14,15 +14,8 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 )
 
-type MemoryGroupStatus int
-
-const (
-	MemoryGroupsUnknown MemoryGroupStatus = iota
-	MemoryGroupsKnown
-)
-
 type MemoryGroupState struct {
-	Status MemoryGroupStatus
+	Known  bool
 	Groups map[pod_info.NUMAMask]*MemoryGroup
 }
 
@@ -34,7 +27,7 @@ func (state *MemoryGroupState) Clone() *MemoryGroupState {
 	if state == nil {
 		return nil
 	}
-	result := &MemoryGroupState{Status: state.Status, Groups: map[pod_info.NUMAMask]*MemoryGroup{}}
+	result := &MemoryGroupState{Known: state.Known, Groups: map[pod_info.NUMAMask]*MemoryGroup{}}
 	if state.Groups == nil {
 		result.Groups = nil
 	}

@@ -238,7 +238,7 @@ func TestRestrictedSelectsLowestMask(t *testing.T) {
 func knownMemoryNode(policy node_info.TopologyManagerPolicy, scope node_info.TopologyManagerScope) (*numaPlugin, *node_info.NodeInfo) {
 	topology := twoZoneNode(policy, req("memory", "100Gi"))
 	topology.Scope = scope
-	topology.MemoryGroups = &node_info.MemoryGroupState{Status: node_info.MemoryGroupsKnown, Groups: map[pod_info.NUMAMask]*node_info.MemoryGroup{}}
+	topology.MemoryGroups = &node_info.MemoryGroupState{Known: true, Groups: map[pod_info.NUMAMask]*node_info.MemoryGroup{}}
 	plugin, _, node := wiredPlugin(topology)
 	return plugin, node
 }
@@ -296,7 +296,7 @@ func TestMemorySolverMergedAndFinalMasksDiffer(t *testing.T) {
 	topology := numaTopology(node_info.TopologyPolicyBestEffort, node_info.TopologyScopeContainer,
 		numaZone("node-0", map[string]string{"memory": "100Gi", gpu: "1"}),
 		numaZone("node-1", map[string]string{"memory": "100Gi", gpu: "1"}))
-	topology.MemoryGroups = &node_info.MemoryGroupState{Status: node_info.MemoryGroupsKnown}
+	topology.MemoryGroups = &node_info.MemoryGroupState{Known: true}
 	mask, _ := pod_info.NewNUMAMask([]int{0, 1})
 	require.NoError(t, applyTestMemoryOwner(topology.MemoryGroups, topology, "pinned", []pod_info.MemoryGroupPlacement{{Mask: mask, Amount: req("memory", "120Gi")}}))
 	plugin, _, node := wiredPlugin(topology)
@@ -358,7 +358,7 @@ func TestOrdinaryInitCPUAndDevicesStillConstrainAdmission(t *testing.T) {
 				topology := numaTopology(node_info.TopologyPolicySingleNUMANode, scope,
 					numaZone("node-0", map[string]string{"memory": "100Gi", "cpu": "4", gpu: "4"}),
 					numaZone("node-1", map[string]string{"memory": "100Gi", "cpu": "4", gpu: "4"}))
-				topology.MemoryGroups = &node_info.MemoryGroupState{Status: node_info.MemoryGroupsKnown}
+				topology.MemoryGroups = &node_info.MemoryGroupState{Known: true}
 				plugin, _, node := wiredPlugin(topology)
 				task := restrictedPod("init-resource", []v1.ResourceList{req("memory", "40Gi")},
 					initReq{req: req(string(name), "5", "memory", "250Gi")})
@@ -373,7 +373,7 @@ func TestMemorySolverMemoryHintsJointResources(t *testing.T) {
 	topology := numaTopology(node_info.TopologyPolicyRestricted, node_info.TopologyScopeContainer,
 		numaZone("node-0", map[string]string{"memory": "100Gi", "hugepages-2Mi": "2Gi"}),
 		numaZone("node-1", map[string]string{"memory": "100Gi", "hugepages-2Mi": "2Gi"}))
-	topology.MemoryGroups = &node_info.MemoryGroupState{Status: node_info.MemoryGroupsKnown}
+	topology.MemoryGroups = &node_info.MemoryGroupState{Known: true}
 	plugin, _, node := wiredPlugin(topology)
 	placement, err := plugin.evaluate(makeGuaranteedTask("joint", map[string]string{"memory": "40Gi", "hugepages-2Mi": "3Gi"}), node)
 	require.NoError(t, err)
@@ -390,7 +390,7 @@ func TestUnifiedSolverUnknownMemoryState(t *testing.T) {
 					if missing {
 						node.NumaTopology.MemoryGroups = nil
 					} else {
-						node.NumaTopology.MemoryGroups.Status = node_info.MemoryGroupsUnknown
+						node.NumaTopology.MemoryGroups.Known = false
 					}
 					task := makeGuaranteedTask("unknown", map[string]string{"memory": "40Gi"})
 					_, err := plugin.evaluate(task, node)
@@ -478,7 +478,7 @@ func TestEvaluatePreservesInputState(t *testing.T) {
 				numaZone("node-0", map[string]string{"memory": "100Gi", gpu: "1"}),
 				numaZone("node-1", map[string]string{"memory": "100Gi", gpu: "1"}))
 			plugin, _, node := wiredPlugin(topology)
-			topology.MemoryGroups = &node_info.MemoryGroupState{Status: node_info.MemoryGroupsKnown}
+			topology.MemoryGroups = &node_info.MemoryGroupState{Known: true}
 			require.NoError(t, applyTestMemoryOwner(topology.MemoryGroups, topology, "existing", []pod_info.MemoryGroupPlacement{{Mask: 1, Amount: req("memory", "10Gi")}}))
 			task := makeGuaranteedTask("candidate", map[string]string{"memory": "20Gi", gpu: "1"})
 			if failing {
@@ -509,12 +509,12 @@ func TestEvaluatePreservesInputState(t *testing.T) {
 func TestEvaluateValidationPrecedence(t *testing.T) {
 	tests := []struct {
 		name         string
-		status       node_info.MemoryGroupStatus
+		known        bool
 		expected     error
 		errorMessage string
 	}{
 		{name: "unknown before zone limit", expected: errMemoryStateUnknown},
-		{name: "known enforces zone limit", status: node_info.MemoryGroupsKnown, errorMessage: "NUMA placement supports at most 8 NUMA zones"},
+		{name: "known enforces zone limit", known: true, errorMessage: "NUMA placement supports at most 8 NUMA zones"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -523,7 +523,7 @@ func TestEvaluateValidationPrecedence(t *testing.T) {
 			for len(topology.Zones) <= pod_info.MaxNUMAZones {
 				topology.Zones = append(topology.Zones, topology.Zones[0])
 			}
-			topology.MemoryGroups.Status = test.status
+			topology.MemoryGroups.Known = test.known
 			_, err := plugin.evaluate(makeGuaranteedTask("candidate", map[string]string{"memory": "1Gi"}), node)
 			if test.expected != nil {
 				require.ErrorIs(t, err, test.expected)
@@ -599,7 +599,7 @@ func TestExternalPodMemoryConflictsMakeNodeUnknown(t *testing.T) {
 		second.Pod.Annotations = map[string]string{commonconstants.NumaMemoryGroupsObserved: record}
 		node.PodInfos = pod_info.PodsMap{first.UID: first, second.UID: second}
 		plugin.seedMemoryGroups(session)
-		require.Equal(t, node_info.MemoryGroupsUnknown, node.NumaTopology.MemoryGroups.Status)
+		require.False(t, node.NumaTopology.MemoryGroups.Known)
 		require.Empty(t, node.NumaTopology.MemoryGroups.Groups)
 	}
 }
@@ -612,7 +612,7 @@ func TestNonePolicySkipsEvaluation(t *testing.T) {
 				topology := node.NumaTopology
 				switch condition {
 				case "unknown":
-					topology.MemoryGroups.Status = node_info.MemoryGroupsUnknown
+					topology.MemoryGroups.Known = false
 				case "missing":
 					topology.MemoryGroups = nil
 				case "conflict":
@@ -667,7 +667,7 @@ func TestNonePolicySkipsAccounting(t *testing.T) {
 
 func TestNonePolicySkipsMemorySeedingAndCaches(t *testing.T) {
 	topology := twoZoneNode(node_info.TopologyPolicyNone, req("memory", "100Gi", gpu, "1"))
-	topology.MemoryGroups = &node_info.MemoryGroupState{Status: node_info.MemoryGroupsUnknown}
+	topology.MemoryGroups = &node_info.MemoryGroupState{Known: false}
 	plugin, session, node := wiredPlugin(topology)
 	session.ClusterInfo.ResourceVectorMap = topology.VectorMap
 	owner := memoryTestTask("owner", "120Gi")

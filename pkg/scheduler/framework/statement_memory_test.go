@@ -51,7 +51,7 @@ func testStatementMemoryMove(t *testing.T, zones []pod_info.ZonePlacement) {
 	node.NumaTopology = nodes_fake.NewNumaTopologyWithMap(node_info.TopologyPolicyNone, node_info.TopologyScopeContainer, vectorMap,
 		node_info.NumaZoneSpec{ID: "node-0", Allocatable: v1.ResourceList{v1.ResourceMemory: resource.MustParse("100Gi")}},
 		node_info.NumaZoneSpec{ID: "node-1", Allocatable: v1.ResourceList{v1.ResourceMemory: resource.MustParse("100Gi")}})
-	state := &node_info.MemoryGroupState{Status: node_info.MemoryGroupsKnown, Groups: map[pod_info.NUMAMask]*node_info.MemoryGroup{}}
+	state := &node_info.MemoryGroupState{Known: true, Groups: map[pod_info.NUMAMask]*node_info.MemoryGroup{}}
 	node.NumaTopology.MemoryGroups = state
 	owner := types.UID(task.UID)
 	require.NoError(t, state.ValidateOwner(node.NumaTopology, owner, original.MemoryGroups))

@@ -87,7 +87,7 @@ func TestMergeTopologyHints(t *testing.T) {
 func TestMemorySolverSingleNUMAOnOneZone(t *testing.T) {
 	topology := numaTopology(node_info.TopologyPolicySingleNUMANode, node_info.TopologyScopeContainer,
 		numaZone("node-0", map[string]string{"memory": "100Gi"}))
-	topology.MemoryGroups = &node_info.MemoryGroupState{Status: node_info.MemoryGroupsKnown}
+	topology.MemoryGroups = &node_info.MemoryGroupState{Known: true}
 	plugin, _, node := wiredPlugin(topology)
 	placement, err := plugin.evaluate(makeGuaranteedTask("single-zone", map[string]string{"memory": "40Gi"}), node)
 	require.NoError(t, err)

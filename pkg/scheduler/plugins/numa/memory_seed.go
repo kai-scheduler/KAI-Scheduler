@@ -170,7 +170,7 @@ func (pp *numaPlugin) seedMemoryGroups(ssn *framework.Session) {
 			continue
 		}
 		state := &node_info.MemoryGroupState{
-			Status: node_info.MemoryGroupsKnown,
+			Known:  true,
 			Groups: map[pod_info.NUMAMask]*node_info.MemoryGroup{},
 		}
 		topo.MemoryGroups = state
@@ -200,7 +200,7 @@ func (pp *numaPlugin) seedMemoryGroups(ssn *framework.Session) {
 			placements[owner] = placement
 			applySeededMemoryPlacement(task, placement)
 			if placement.source == memoryGroupsUnknown {
-				state.Status = node_info.MemoryGroupsUnknown
+				state.Known = false
 				continue
 			}
 			if placement.source == memoryGroupsObserved {
@@ -211,7 +211,7 @@ func (pp *numaPlugin) seedMemoryGroups(ssn *framework.Session) {
 				}
 			}
 		}
-		if state.Status == node_info.MemoryGroupsUnknown {
+		if !state.Known {
 			state.Groups = map[pod_info.NUMAMask]*node_info.MemoryGroup{}
 			log.InfraLogger.V(6).Do(func() {
 				log.InfraLogger.Infof("numa: memory group state unknown on node <%s>", node.Name)

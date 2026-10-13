@@ -164,7 +164,7 @@ func TestRestrictedScopeAndInit(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			topo := numaTopology(node_info.TopologyPolicyRestricted, tc.scope, base...)
 			pp, _, node := wiredPlugin(topo)
-			topo.MemoryGroups = &node_info.MemoryGroupState{Status: node_info.MemoryGroupsKnown}
+			topo.MemoryGroups = &node_info.MemoryGroupState{Known: true}
 
 			placement, err := pp.evaluate(restrictedPod(tc.name, tc.apps, tc.inits...), node)
 			assert.Equal(t, tc.admit, err == nil)
@@ -232,7 +232,7 @@ func TestRestrictedMaskSelection(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			topo := numaTopology(node_info.TopologyPolicyRestricted, node_info.TopologyScopeContainer, tc.zones...)
 			pp, _, node := wiredPlugin(topo)
-			topo.MemoryGroups = &node_info.MemoryGroupState{Status: node_info.MemoryGroupsKnown}
+			topo.MemoryGroups = &node_info.MemoryGroupState{Known: true}
 
 			placement, err := pp.evaluate(restrictedPod(tc.name, []v1.ResourceList{tc.req}), node)
 			assert.Equal(t, tc.admit, err == nil)

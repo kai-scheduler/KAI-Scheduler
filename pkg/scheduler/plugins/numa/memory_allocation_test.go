@@ -22,7 +22,7 @@ func TestMemoryHintErrorDiagnostics(t *testing.T) {
 		numaZone("node-0", map[string]string{"memory": "100Gi", "hugepages-2Mi": "2Mi"}),
 		numaZone("node-1", map[string]string{"memory": "100Gi", "hugepages-2Mi": "2Mi"}),
 		numaZone("node-2", map[string]string{"memory": "100Gi", "hugepages-2Mi": "2Mi"}))
-	groups := &node_info.MemoryGroupState{Status: node_info.MemoryGroupsKnown}
+	groups := &node_info.MemoryGroupState{Known: true}
 	singleton, err := pod_info.NewNUMAMask([]int{0})
 	require.NoError(t, err)
 	wide, err := pod_info.NewNUMAMask([]int{1, 2})
@@ -89,7 +89,7 @@ func TestMemoryHintErrorDiagnostics(t *testing.T) {
 
 func TestMemorySolverReusesHintsUntilAllocationChanges(t *testing.T) {
 	topology := twoZoneNode(node_info.TopologyPolicyBestEffort, req("memory", "100Gi"))
-	solver := &memorySolver{topology: topology, groups: &node_info.MemoryGroupState{Status: node_info.MemoryGroupsKnown}}
+	solver := &memorySolver{topology: topology, groups: &node_info.MemoryGroupState{Known: true}}
 	first := solver.hintsFor(req("memory", "30Gi"))
 	require.Same(t, first, solver.hintsFor(req("memory", "32212254720")))
 	require.Len(t, first.hints, 3)
