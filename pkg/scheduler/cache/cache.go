@@ -202,6 +202,7 @@ type SchedulerCache struct {
 	stuckInReleasingThreshold time.Duration
 
 	internalPlugins *k8splugins.K8sPlugins
+	failedSearches  *failedSearches
 
 	K8sClusterPodAffinityInfo
 }
@@ -216,6 +217,7 @@ func newSchedulerCache(schedulerCacheParams *SchedulerCacheParams) (*SchedulerCa
 		stuckInReleasingThreshold: schedulerCacheParams.StuckInReleasingThreshold,
 		kubeClient:                draversionawareclient.NewDRAAwareClient(schedulerCacheParams.KubeClient),
 		kubeAiSchedulerClient:     schedulerCacheParams.KAISchedulerClient,
+		failedSearches:            newFailedSearches(time.Now),
 	}
 
 	schedulerName := schedulerCacheParams.SchedulerName
@@ -294,6 +296,7 @@ func (sc *SchedulerCache) Snapshot() (*api.ClusterInfo, error) {
 		log.InfraLogger.Errorf("Error during snapshot: %v", err)
 		return nil, err
 	}
+	sc.failedSearches.mark(snapshot.PodGroupInfos)
 
 	if cleanErr := sc.cleanStaleBindRequest(snapshot.BindRequests, snapshot.FailedBindRequestsForShard); cleanErr != nil {
 		log.InfraLogger.V(2).Warnf("Failed to clean stale bind requests: %v", cleanErr)
@@ -301,6 +304,16 @@ func (sc *SchedulerCache) Snapshot() (*api.ClusterInfo, error) {
 	}
 
 	return snapshot, err
+}
+
+func (sc *SchedulerCache) RecordFailedSearch(
+	action string, job *podgroup_info.PodGroupInfo, minBackoff, maxBackoff time.Duration,
+) {
+	sc.failedSearches.record(action, job, minBackoff, maxBackoff)
+}
+
+func (sc *SchedulerCache) ClearFailedSearch(action string, job *podgroup_info.PodGroupInfo) {
+	sc.failedSearches.clear(action, job.UID)
 }
 
 func (sc *SchedulerCache) Run(stopCh <-chan struct{}) {

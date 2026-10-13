@@ -26,6 +26,7 @@ import (
 
 	"golang.org/x/exp/maps"
 	"golang.org/x/exp/slices"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
@@ -86,6 +87,10 @@ type PodGroupInfo struct {
 	// CorePodNames is the sorted core (minimal satisfying) pod set published to the PodGroup status
 	// for semi-preemptible jobs. Filled at session close; nil for all other jobs.
 	CorePodNames []string
+
+	// SearchBackoffUntil maps each action that skips the job, because its scenario searches for the
+	// job found no solution, to the time the skip ends.
+	SearchBackoffUntil map[string]time.Time
 
 	StalenessInfo
 
@@ -664,6 +669,29 @@ func (pgi *PodGroupInfo) GetSchedulingConstraintsSignature() common_info.Schedul
 	}
 
 	return pgi.schedulingConstraintsSignature
+}
+
+// GetSearchShapeKey identifies what a scenario search depends on in the job itself: its PodGroup and
+// queue, and the constraints and resource requests of its pods that the API shows waiting for a node:
+// pending, unbound, ungated and not being deleted. It ignores the session's own placements, so it
+// does not change within a session.
+func (pgi *PodGroupInfo) GetSearchShapeKey() string {
+	var pendingPods []string
+	for _, task := range pgi.GetAllPodsMap() {
+		pod := task.Pod
+		if pod.Status.Phase != v1.PodPending || pod.Spec.NodeName != "" || pod.DeletionTimestamp != nil ||
+			len(pod.Spec.SchedulingGates) > 0 {
+			continue
+		}
+		pendingPods = append(pendingPods,
+			fmt.Sprint(task.GetSchedulingConstraintsSignature(), task.ResReqVector, task.GpuRequirement))
+	}
+	slices.Sort(pendingPods)
+	var generation int64
+	if pgi.PodGroup != nil {
+		generation = pgi.PodGroup.Generation
+	}
+	return fmt.Sprintf("%s|%d|%s|%v", pgi.PodGroupUID, generation, pgi.Queue, pendingPods)
 }
 
 func (pgi *PodGroupInfo) generateSchedulingConstraintsSignature() common_info.SchedulingConstraintsSignature {

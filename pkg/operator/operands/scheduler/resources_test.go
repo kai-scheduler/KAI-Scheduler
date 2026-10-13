@@ -323,6 +323,58 @@ func TestValidateScenarioSearchBudgets(t *testing.T) {
 			},
 			expectError: false,
 		},
+		{
+			name: "valid failed search backoff with a per-action override",
+			config: &kaiv1.ScenarioSearchBudgets{
+				MinFailedSearchBackoff: map[string]metav1.Duration{
+					constants.ActionDefault: scenarioSearchDuration("10s"),
+					constants.ActionPreempt: scenarioSearchDuration("0s"),
+				},
+				MaxFailedSearchBackoff: map[string]metav1.Duration{
+					constants.ActionDefault: scenarioSearchDuration("2m"),
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "invalid failed search backoff action key",
+			config: &kaiv1.ScenarioSearchBudgets{
+				MinFailedSearchBackoff: map[string]metav1.Duration{"allocate": scenarioSearchDuration("10s")},
+			},
+			expectError: true,
+			errorText:   []string{"minFailedSearchBackoff", "allocate"},
+		},
+		{
+			name: "invalid max failed search backoff action key",
+			config: &kaiv1.ScenarioSearchBudgets{
+				MaxFailedSearchBackoff: map[string]metav1.Duration{"allocate": scenarioSearchDuration("10s")},
+			},
+			expectError: true,
+			errorText:   []string{"maxFailedSearchBackoff", "allocate"},
+		},
+		{
+			name: "negative failed search backoff",
+			config: &kaiv1.ScenarioSearchBudgets{
+				MinFailedSearchBackoff: map[string]metav1.Duration{constants.ActionReclaim: scenarioSearchDuration("-1s")},
+			},
+			expectError: true,
+		},
+		{
+			name: "max failed search backoff resolved from default below an action's min",
+			config: &kaiv1.ScenarioSearchBudgets{
+				MinFailedSearchBackoff: map[string]metav1.Duration{constants.ActionReclaim: scenarioSearchDuration("1m")},
+				MaxFailedSearchBackoff: map[string]metav1.Duration{constants.ActionDefault: scenarioSearchDuration("30s")},
+			},
+			expectError: true,
+			errorText:   []string{"maxFailedSearchBackoff", constants.ActionReclaim},
+		},
+		{
+			name: "max failed search backoff without min leaves the backoff disabled",
+			config: &kaiv1.ScenarioSearchBudgets{
+				MaxFailedSearchBackoff: map[string]metav1.Duration{constants.ActionDefault: scenarioSearchDuration("30s")},
+			},
+			expectError: false,
+		},
 	}
 
 	for _, tt := range tests {
