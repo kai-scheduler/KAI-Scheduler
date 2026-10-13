@@ -78,6 +78,16 @@ spec:
                   cpu:
                     description: CPU resources in millicpus. 1000 = 1 cpu
                     properties:
+                      lendingLimit:
+                        description: |-
+                          LendingLimit is the maximum amount of unused Quota that sibling queues may
+                          borrow. When unset, there is no lending limit (all unused Quota may enter
+                          the over-quota pool) — the historical behavior.
+                          When set to 0, unused Quota is not lent: Quota stays exclusively reserved
+                          even while idle. When set to N, at most N of unused Quota is lendable;
+                          the remainder (Quota - N) is exclusive.
+                          Must be non-negative, and must not exceed Quota when Quota is finite.
+                        type: number
                       limit:
                         type: number
                       overQuotaWeight:
@@ -88,6 +98,16 @@ spec:
                   gpu:
                     description: GPU resources in fractions. 0.7 = 70% of a gpu
                     properties:
+                      lendingLimit:
+                        description: |-
+                          LendingLimit is the maximum amount of unused Quota that sibling queues may
+                          borrow. When unset, there is no lending limit (all unused Quota may enter
+                          the over-quota pool) — the historical behavior.
+                          When set to 0, unused Quota is not lent: Quota stays exclusively reserved
+                          even while idle. When set to N, at most N of unused Quota is lendable;
+                          the remainder (Quota - N) is exclusive.
+                          Must be non-negative, and must not exceed Quota when Quota is finite.
+                        type: number
                       limit:
                         type: number
                       overQuotaWeight:
@@ -99,6 +119,16 @@ spec:
                     description: Memory resources in megabytes. 1 = 10^6  (1000*1000)
                       bytes
                     properties:
+                      lendingLimit:
+                        description: |-
+                          LendingLimit is the maximum amount of unused Quota that sibling queues may
+                          borrow. When unset, there is no lending limit (all unused Quota may enter
+                          the over-quota pool) — the historical behavior.
+                          When set to 0, unused Quota is not lent: Quota stays exclusively reserved
+                          even while idle. When set to N, at most N of unused Quota is lendable;
+                          the remainder (Quota - N) is exclusive.
+                          Must be non-negative, and must not exceed Quota when Quota is finite.
+                        type: number
                       limit:
                         type: number
                       overQuotaWeight:

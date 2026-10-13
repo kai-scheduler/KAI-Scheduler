@@ -21,6 +21,8 @@ type ResourceQuota struct {
 	OverQuotaWeight float64 `json:"overQuotaWeight"`
 	// +optional
 	Limit float64 `json:"limit"`
+	// +optional
+	LendingLimit *float64 `json:"lendingLimit,omitempty"`
 }
 
 type QueueUsage map[v1.ResourceName]float64
