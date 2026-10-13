@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Report Pod binding outcomes only after accepted status updates
+custom:
+  Author: "NVGreg"
+  Issue: "2343"
