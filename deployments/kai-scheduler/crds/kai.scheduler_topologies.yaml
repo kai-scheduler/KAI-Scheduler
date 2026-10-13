@@ -95,8 +95,6 @@ spec:
                 type: array
                 x-kubernetes-list-type: atomic
                 x-kubernetes-validations:
-                - message: nodeLabel structure is immutable; only aliases may be edited
-                  rule: self.map(l, l.nodeLabel) == oldSelf.map(l, l.nodeLabel)
                 - message: nodeLabel must be unique
                   rule: size(self.filter(i, size(self.filter(j, j.nodeLabel == i.nodeLabel))
                     > 1)) == 0

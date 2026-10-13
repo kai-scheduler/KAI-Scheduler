@@ -59,8 +59,7 @@ ginkgo -r --randomize-all --trace -vv ./test/e2e/suites/preempt
 
 ### Code Generation
 ```bash
-make manifests                # Generate RBAC and sync CRDs from the api module
-make sync-api-crds            # Copy CRDs from github.com/kai-scheduler/api into the chart (run after every api bump)
+make manifests                # Generate RBAC
 make generate-mocks           # Generate mock implementations
 make validate                 # Verify generated code is up to date. Also format and vet codebase
 ```
@@ -82,7 +81,7 @@ make validate                 # Verify generated code is up to date. Also format
 - `common` - Shared utilities (k8s utils, feature gates, flags)
 
 ### API types
-CRD types (Queue, PodGroup, BindRequest, Config, SchedulingShard, ...), generated clients, shared constants and resource/podgroup helpers live in the separate module `github.com/kai-scheduler/api`, not in this repo. API/CRD changes start with a PR there; after a tag is cut, bump it in `go.mod` and run `make sync-api-crds`.
+CRD types (Queue, PodGroup, BindRequest, Config, SchedulingShard, ...), generated clients, shared constants and resource/podgroup helpers live in the separate module `github.com/kai-scheduler/api`, not in this repo. API/CRD changes start with a PR there; after a tag is cut, bump it in `go.mod`.
 
 ### Tools (`/cmd/`)
 - `fairshare-simulator` - Simulate fairshare scheduling decisions
