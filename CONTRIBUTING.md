@@ -27,11 +27,12 @@ Open an issue with a clear description, steps to reproduce, and relevant environ
 Help us keep the docs clear and useful by fixing typos, updating outdated information, or adding examples.
 
 ### Contributing Changes
+- Open an Issue – For features, behavior or API changes and non-trivial fixes, find or open an [issue](https://github.com/kai-scheduler/KAI-scheduler/issues/new/choose) first so maintainers can confirm the direction. Trivial fixes and documentation changes do not need one.
 - Fork and Clone – Begin by forking the repository and cloning it to your local machine.
 - Create a Branch – Use a descriptive branch name, such as feature/add-cool-feature or bugfix/fix-issue123.
 - Make Changes – Keep your commits small, focused, and well-documented. For detailed build and test instructions, refer to [Building from Source](docs/developer/building-from-source.md).
 - Log Changes – For behavior-affecting changes (features, fixes, API changes), add a changelog entry by running `make changelog` (powered by [changie](https://changie.dev)). This creates a small fragment file under `.changes/unreleased/` instead of editing `CHANGELOG.md` directly, so entries never conflict between PRs or backports. `CHANGELOG.md` is the source of truth for released versions (following [keepachangelog.com](https://keepachangelog.com/en/1.1.0/)); your fragment stays in `.changes/unreleased/` until a maintainer cuts the next release, which folds the pending fragments into `CHANGELOG.md` and clears them. Skip logging internal changes like refactoring or tests. CI checks for a fragment; add the `skip-changelog` label to your PR to skip if your change doesn't require a changelog entry.
-- Submit a PR – Open a pull request and reference any relevant issues or discussions.
+- Submit a PR – Open a pull request and link the issue (`Fixes #N`) under "Related Issues" in the PR description.
 - Approval Policy – PRs from external contributors require approval from 2 trusted reviewers (organization members or collaborators) before merging.
 - Coverage - Please look at the coverage change details and create unit tests, integration tests or end-to-end tests to cover new functionality or changes.
 
@@ -74,21 +75,7 @@ PR titles must follow the [Conventional Commits](https://www.conventionalcommits
 
 #### Scopes (Optional)
 
-Common scopes for KAI Scheduler:
-- 'scheduler'
-- 'binder'
-- 'podgrouper'
-- 'admission'
-- 'operator'
-- 'queue-controller'
-- 'pod-group-controller'
-- 'resource-reservation'
-- 'chart'
-- 'api'
-- 'node-scale-adjuster'
-- 'ci'
-- 'release'
-- 'docs'
+The allowed scopes are listed in [`.github/workflows/validate-pr-title.yaml`](.github/workflows/validate-pr-title.yaml).
 
 #### Breaking Changes
 
