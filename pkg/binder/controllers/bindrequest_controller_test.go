@@ -102,178 +102,128 @@ var _ = Describe("BindRequest Controller", func() {
 	})
 
 	Describe("Reconcile", func() {
-		DescribeTable("reports only accepted binding outcomes", func(statusOutcome string, bindingFails, withBackoff bool) {
-			ctx := context.Background()
-			pod := &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "outcome-pod", Namespace: "default"}}
-			node := &v1.Node{ObjectMeta: metav1.ObjectMeta{Name: "outcome-node"}}
-			Expect(fakeClient.Create(ctx, pod)).To(Succeed())
-			Expect(fakeClient.Create(ctx, node)).To(Succeed())
-			bindRequest := baseRequest.DeepCopy()
-			bindRequest.Spec.PodName = pod.Name
-			bindRequest.Spec.SelectedNode = node.Name
-			if withBackoff {
-				bindRequest.Spec.BackoffLimit = ptr.To(int32(2))
-			}
-			Expect(fakeClient.Create(ctx, bindRequest)).To(Succeed())
+		DescribeTable("retries status write errors without losing Pod reports",
+			func(writeFailure string, bindingFails, withBackoff bool) {
+				ctx := context.Background()
+				pod := &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "status-pod", Namespace: "default"}}
+				node := &v1.Node{ObjectMeta: metav1.ObjectMeta{Name: "status-node"}}
+				Expect(fakeClient.Create(ctx, pod)).To(Succeed())
+				Expect(fakeClient.Create(ctx, node)).To(Succeed())
+				bindRequest := baseRequest.DeepCopy()
+				bindRequest.Spec.PodName = pod.Name
+				bindRequest.Spec.SelectedNode = node.Name
+				if withBackoff {
+					bindRequest.Spec.BackoffLimit = ptr.To(int32(3))
+				}
+				Expect(fakeClient.Create(ctx, bindRequest)).To(Succeed())
 
-			var bindErr error
-			if bindingFails {
-				bindErr = errors.New("temporary binding failure")
-			}
-			statusErr := kerrors.NewServerTimeout(schema.GroupResource{
-				Group: schedulingv1alpha2.GroupVersion.Group, Resource: "bindrequests",
-			}, "patch", 1)
-			if statusOutcome == "timeout" {
+				statusErr := kerrors.NewServerTimeout(schema.GroupResource{
+					Group: schedulingv1alpha2.GroupVersion.Group, Resource: "bindrequests",
+				}, "patch", 1)
+				statusPatches := 0
 				reconciler.Client = interceptor.NewClient(fakeClient, interceptor.Funcs{
 					SubResourcePatch: func(ctx context.Context, c client.Client, subResource string,
 						obj client.Object, patch client.Patch, opts ...client.SubResourcePatchOption) error {
 						if _, ok := obj.(*schedulingv1alpha2.BindRequest); ok {
-							return statusErr
+							statusPatches++
+							if statusPatches == 1 && writeFailure != "none" {
+								if writeFailure == "after commit" {
+									Expect(c.SubResource(subResource).Patch(ctx, obj, patch, opts...)).To(Succeed())
+								}
+								return statusErr
+							}
 						}
 						return c.SubResource(subResource).Patch(ctx, obj, patch, opts...)
 					},
 				})
-			}
-			mockBinder := mock_binder.NewMockInterface(gomock.NewController(GinkgoT()))
-			mockBinder.EXPECT().Bind(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-				DoAndReturn(func(ctx context.Context, _ *v1.Pod, _ *v1.Node, request *schedulingv1alpha2.BindRequest) error {
-					switch statusOutcome {
-					case "replaced":
-						newer := request.DeepCopy()
-						newer.Spec.SelectedNode = "replacement-node"
-						Expect(fakeClient.Update(ctx, newer)).To(Succeed())
-					case "metadata":
-						newer := request.DeepCopy()
-						newer.Annotations = map[string]string{"test-metadata": "changed"}
-						Expect(fakeClient.Update(ctx, newer)).To(Succeed())
-						Expect(newer.Spec).To(Equal(request.Spec))
-						Expect(shouldEnqueueBindRequestUpdate(request, newer)).To(BeFalse())
-					case "removed":
-						Expect(fakeClient.Delete(ctx, request)).To(Succeed())
-					}
-					return bindErr
-				})
-			if bindingFails {
-				mockBinder.EXPECT().Rollback(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
-			}
-			reconciler.binder = mockBinder
 
-			result, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(bindRequest)})
-			stored := &schedulingv1alpha2.BindRequest{}
-			getErr := fakeClient.Get(ctx, client.ObjectKeyFromObject(bindRequest), stored)
-			if statusOutcome == "removed" {
-				Expect(kerrors.IsNotFound(getErr)).To(BeTrue())
-			} else {
-				Expect(getErr).NotTo(HaveOccurred())
-			}
-			storedPod := &v1.Pod{}
-			Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(pod), storedPod)).To(Succeed())
-			if statusOutcome != "accepted" {
-				if statusOutcome == "replaced" || statusOutcome == "metadata" {
-					if bindingFails && withBackoff {
-						Expect(result.RequeueAfter).To(BeNumerically(">", 0))
-					} else {
-						Expect(result.Requeue).To(BeTrue())
+				var bindErr error
+				phase, conditionStatus, eventReason := schedulingv1alpha2.BindRequestPhaseSucceeded, v1.ConditionTrue, "Normal Bound"
+				bindCalls := 1
+				if bindingFails {
+					bindErr = errors.New("temporary binding failure")
+					phase, conditionStatus, eventReason = schedulingv1alpha2.BindRequestPhaseFailed, v1.ConditionFalse, "Warning BindingError"
+					if writeFailure == "before commit" || withBackoff {
+						bindCalls++
 					}
-				} else {
-					Expect(result).To(Equal(ctrl.Result{}))
 				}
-				if statusOutcome == "timeout" {
+				mockBinder := mock_binder.NewMockInterface(gomock.NewController(GinkgoT()))
+				mockBinder.EXPECT().Bind(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+					DoAndReturn(func(ctx context.Context, pod *v1.Pod, node *v1.Node, _ *schedulingv1alpha2.BindRequest) error {
+						if bindErr == nil {
+							pod.Spec.NodeName = node.Name
+							return fakeClient.Update(ctx, pod)
+						}
+						return bindErr
+					}).Times(bindCalls)
+				if bindingFails {
+					mockBinder.EXPECT().Rollback(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(bindCalls)
+				}
+				reconciler.binder = mockBinder
+				req := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(bindRequest)}
+
+				result, err := reconciler.Reconcile(ctx, req)
+				if writeFailure != "none" {
 					Expect(err).To(MatchError(statusErr))
 					Expect(errors.Is(err, reconcile.TerminalError(nil))).To(BeFalse())
+					Expect(result).To(Equal(ctrl.Result{}))
+				} else if bindingFails {
+					Expect(err).To(MatchError(bindErr))
+					Expect(errors.Is(err, reconcile.TerminalError(nil))).To(Equal(!withBackoff))
 				} else {
 					Expect(err).NotTo(HaveOccurred())
 				}
-				if statusOutcome != "removed" {
+				stored := &schedulingv1alpha2.BindRequest{}
+				Expect(fakeClient.Get(ctx, req.NamespacedName, stored)).To(Succeed())
+				if writeFailure == "before commit" {
 					Expect(stored.Status).To(Equal(bindRequest.Status))
+				} else {
+					Expect(stored.Status.Phase).To(Equal(phase))
 				}
-				if statusOutcome == "replaced" {
-					Expect(stored.Spec.SelectedNode).To(Equal("replacement-node"))
+				Expect(shouldEnqueueBindRequestUpdate(bindRequest, stored)).To(BeFalse())
+				storedPod := &v1.Pod{}
+				Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(pod), storedPod)).To(Succeed())
+				Expect(storedPod.Status.Conditions).To(ContainElement(And(
+					HaveField("Type", v1.PodConditionType(podBoundCondition)),
+					HaveField("Status", conditionStatus),
+				)))
+				Expect(fakeEventRecorder.Events).To(Receive(ContainSubstring(eventReason)))
+
+				// Once the bound Pod is observed, a status retry must not bind or roll back again.
+				_, err = reconciler.Reconcile(ctx, req)
+				if bindCalls == 2 {
+					Expect(err).To(MatchError(bindErr))
+					Expect(errors.Is(err, reconcile.TerminalError(nil))).To(Equal(!withBackoff))
+				} else {
+					Expect(err).NotTo(HaveOccurred())
 				}
-				Expect(storedPod.Status.Conditions).To(BeEmpty())
+				Expect(fakeClient.Get(ctx, req.NamespacedName, stored)).To(Succeed())
+				Expect(stored.Status.Phase).To(Equal(phase))
+				if bindingFails && withBackoff {
+					expectedAttempts := int32(2)
+					if writeFailure == "before commit" {
+						expectedAttempts = 1
+					}
+					Expect(stored.Status.FailedAttempts).To(Equal(expectedAttempts))
+				}
+				if writeFailure == "before commit" || bindCalls == 2 {
+					Expect(statusPatches).To(Equal(2))
+					Expect(fakeEventRecorder.Events).To(Receive(ContainSubstring(eventReason)))
+				} else {
+					Expect(statusPatches).To(Equal(1))
+				}
 				Expect(fakeEventRecorder.Events).To(BeEmpty())
-				return
-			}
-
-			Expect(storedPod.Status.Conditions).To(HaveLen(1))
-			Expect(fakeEventRecorder.Events).To(HaveLen(1))
-			if bindingFails {
-				Expect(err).To(MatchError(bindErr))
-				Expect(stored.Status.Phase).To(Equal(schedulingv1alpha2.BindRequestPhaseFailed))
-				Expect(stored.Status.FailedAttempts).To(Equal(int32(1)))
-				Expect(storedPod.Status.Conditions[0].Status).To(Equal(v1.ConditionFalse))
-				Expect(<-fakeEventRecorder.Events).To(ContainSubstring("BindingError"))
-			} else {
-				Expect(err).NotTo(HaveOccurred())
-				Expect(result).To(Equal(ctrl.Result{}))
-				Expect(stored.Status.Phase).To(Equal(schedulingv1alpha2.BindRequestPhaseSucceeded))
-				Expect(storedPod.Status.Conditions[0].Status).To(Equal(v1.ConditionTrue))
-				Expect(<-fakeEventRecorder.Events).To(ContainSubstring("Normal Bound"))
-			}
-		},
-			Entry("successful bind with rejected stale status", "replaced", false, true),
-			Entry("failed bind with rejected stale status", "replaced", true, true),
-			Entry("successful bind with a metadata-only conflict", "metadata", false, true),
-			Entry("failed bind with a metadata-only conflict", "metadata", true, true),
-			Entry("successful bind without backoff with a metadata-only conflict", "metadata", false, false),
-			Entry("failed bind without backoff with a metadata-only conflict", "metadata", true, false),
-			Entry("successful bind with a removed request", "removed", false, true),
-			Entry("failed bind with a removed request", "removed", true, true),
-			Entry("successful bind with a status API timeout", "timeout", false, true),
-			Entry("failed bind with a status API timeout", "timeout", true, true),
-			Entry("successful bind without backoff with a status API timeout", "timeout", false, false),
-			Entry("failed bind without backoff with a status API timeout", "timeout", true, false),
-			Entry("successful bind with accepted status", "accepted", false, true),
-			Entry("failed bind with accepted status", "accepted", true, true),
+			},
+			Entry("successful binding, write rejected", "before commit", false, false),
+			Entry("failed binding without retry budget, write rejected", "before commit", true, false),
+			Entry("failed binding with retry budget, write rejected", "before commit", true, true),
+			Entry("successful binding, response lost after write", "after commit", false, false),
+			Entry("failed binding without retry budget, response lost after write", "after commit", true, false),
+			Entry("failed binding with retry budget, response lost after write", "after commit", true, true),
+			Entry("successful binding, ordinary write", "none", false, false),
+			Entry("failed binding without retry budget, ordinary write", "none", true, false),
+			Entry("failed binding with retry budget, ordinary write", "none", true, true),
 		)
-
-		It("keeps a failed retry actionable after a metadata-only status conflict", func() {
-			ctx := context.Background()
-			pod := &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "metadata-retry-pod", Namespace: "default"}}
-			node := &v1.Node{ObjectMeta: metav1.ObjectMeta{Name: "metadata-retry-node"}}
-			Expect(fakeClient.Create(ctx, pod)).To(Succeed())
-			Expect(fakeClient.Create(ctx, node)).To(Succeed())
-			bindRequest := baseRequest.DeepCopy()
-			bindRequest.Spec.PodName = pod.Name
-			bindRequest.Spec.SelectedNode = node.Name
-			bindRequest.Spec.BackoffLimit = ptr.To(int32(3))
-			bindRequest.Status = schedulingv1alpha2.BindRequestStatus{
-				Phase: schedulingv1alpha2.BindRequestPhaseFailed, FailedAttempts: 1, Reason: "first failure",
-			}
-			Expect(fakeClient.Create(ctx, bindRequest)).To(Succeed())
-			bindErr := errors.New("another temporary binding failure")
-			mockBinder := mock_binder.NewMockInterface(gomock.NewController(GinkgoT()))
-			gomock.InOrder(
-				mockBinder.EXPECT().Bind(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-					DoAndReturn(func(ctx context.Context, _ *v1.Pod, _ *v1.Node, request *schedulingv1alpha2.BindRequest) error {
-						newer := request.DeepCopy()
-						newer.Annotations = map[string]string{"test-metadata": "changed"}
-						Expect(fakeClient.Update(ctx, newer)).To(Succeed())
-						Expect(shouldEnqueueBindRequestUpdate(request, newer)).To(BeFalse())
-						return bindErr
-					}),
-				mockBinder.EXPECT().Rollback(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil),
-				mockBinder.EXPECT().Bind(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(bindErr),
-				mockBinder.EXPECT().Rollback(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil),
-			)
-			reconciler.binder = mockBinder
-			req := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(bindRequest)}
-			result, err := reconciler.Reconcile(ctx, req)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.RequeueAfter).To(BeNumerically(">", 0))
-			stored := &schedulingv1alpha2.BindRequest{}
-			Expect(fakeClient.Get(ctx, req.NamespacedName, stored)).To(Succeed())
-			Expect(stored.Status).To(Equal(bindRequest.Status))
-			Expect(fakeEventRecorder.Events).To(BeEmpty())
-
-			result, err = reconciler.Reconcile(ctx, req)
-			Expect(err).To(MatchError(bindErr))
-			Expect(result.RequeueAfter).To(BeNumerically(">", 0))
-			Expect(fakeClient.Get(ctx, req.NamespacedName, stored)).To(Succeed())
-			Expect(stored.Status.FailedAttempts).To(Equal(int32(2)))
-			Expect(stored.Status.Reason).To(Equal(bindErr.Error()))
-			Expect(fakeEventRecorder.Events).To(HaveLen(1))
-		})
 
 		var (
 			pod = &v1.Pod{
