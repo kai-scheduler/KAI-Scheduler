@@ -17,6 +17,10 @@ import (
 // resources error if configured to.
 func NewVolumeBindingFilter(ssn *framework.Session, plugin ksf.Plugin, ignoreInsufficientResources bool) k8s_internal.FitPredicateFilter {
 	filterFunc := k8s_internal.FitPredicateConverter(ssn, plugin.(*volumebinding.VolumeBinding))
+	return ignoreVolumeCapacity(filterFunc, ignoreInsufficientResources)
+}
+
+func ignoreVolumeCapacity(filterFunc k8s_internal.FitPredicateFilter, ignoreInsufficientResources bool) k8s_internal.FitPredicateFilter {
 	return func(pod *v1.Pod, nodeInfo *k8sframework.NodeInfo) (bool, []string, error) {
 		success, reasons, err := filterFunc(pod, nodeInfo)
 		if ignoreInsufficientResources && err != nil {

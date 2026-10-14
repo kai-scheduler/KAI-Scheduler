@@ -232,7 +232,9 @@ func (ssn *Session) sortGPUs(filteredGPUs []string, pod *pod_info.PodInfo, node 
 	return sortedGPUs
 }
 
-func (ssn *Session) FittingNode(task *pod_info.PodInfo, node *node_info.NodeInfo, writeFittingDelta bool) bool {
+func (ssn *Session) FittingNode(task *pod_info.PodInfo, node *node_info.NodeInfo, isPipelineOnly bool) bool {
+	writeFittingDelta := !isPipelineOnly
+
 	var fitErrors *common_info.TasksFitErrors
 	if writeFittingDelta {
 		fitErrors = common_info.NewFitErrors()
@@ -257,7 +259,7 @@ func (ssn *Session) FittingNode(task *pod_info.PodInfo, node *node_info.NodeInfo
 		log.InfraLogger.Infof("Running predicates for task <%v/%v> on node <%v>",
 			task.Namespace, task.Name, node.Name)
 	})
-	if err := ssn.PredicateFn(task, job, node); err != nil {
+	if err := ssn.PredicateFn(task, job, node, isPipelineOnly); err != nil {
 		log.InfraLogger.V(6).Do(func() {
 			log.InfraLogger.Infof("Predicates failed for task <%s/%s> on node <%s>: %v",
 				task.Namespace, task.Name, node.Name, err)
@@ -352,6 +354,7 @@ func (ssn *Session) RecomputeDetailedFitErrors(
 		return nil, nil
 	}
 
+	isPipeline := false // the fit error should be calculated only according to idle resources
 	nodeErrors := make([]*common_info.TasksFitError, 0)
 	for _, node := range ssn.ClusterInfo.Nodes {
 		allocatable, fitError := ssn.isTaskAllocatableOnNode(task, job, node, true)
@@ -361,7 +364,7 @@ func (ssn *Session) RecomputeDetailedFitErrors(
 			}
 			continue
 		}
-		if err := ssn.PredicateFn(task, job, node); err != nil {
+		if err := ssn.PredicateFn(task, job, node, isPipeline); err != nil {
 			if fitError := taskFitErrorFromError(task, node, err); fitError != nil {
 				nodeErrors = append(nodeErrors, fitError)
 			}

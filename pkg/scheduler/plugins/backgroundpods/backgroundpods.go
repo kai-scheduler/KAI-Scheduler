@@ -152,7 +152,8 @@ func (p *backgroundPodsPlugin) canRestore(
 		return false
 	}
 
-	if err := ssn.PredicateFn(podInfo, job, node); err != nil {
+	isPipeline := false // restore the pod only when it is an actual allocation, not pipeline
+	if err := ssn.PredicateFn(podInfo, job, node, isPipeline); err != nil {
 		log.InfraLogger.V(5).Infof("Background pod <%s/%s> no longer fits node <%s>, not restoring: %v",
 			podInfo.Namespace, podInfo.Name, node.Name, err)
 		return false
