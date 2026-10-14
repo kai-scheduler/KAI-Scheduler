@@ -28,6 +28,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/utils"
 	kubeaischedfake "github.com/kai-scheduler/api/client/clientset/versioned/fake"
 	fakeschedulingv2alpha2 "github.com/kai-scheduler/api/client/clientset/versioned/typed/scheduling/v2alpha2/fake"
+	commonconstants "github.com/kai-scheduler/api/constants"
 	schedulingv2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
 )
 
@@ -306,5 +307,21 @@ var _ = Describe("Status Updater - Pod Groups Syncing", func() {
 			return true
 		})
 		Expect(appliedPodGroupUpdatesCount).To(Equal(0))
+	})
+})
+
+var _ = Describe("syncPodGroup annotations", func() {
+	It("removes annotations missing from the in-flight pod group instead of blanking them", func() {
+		su := &defaultStatusUpdater{}
+		snapshot := &schedulingv2alpha2.PodGroup{ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{
+			commonconstants.StalePodgroupTimeStamp: "2025-01-01T00:00:00Z",
+			commonconstants.LastStartTimeStamp:     "2025-01-01T00:00:00Z",
+		}}}
+		inFlight := &schedulingv2alpha2.PodGroup{}
+
+		su.syncPodGroup(inFlight, snapshot)
+
+		Expect(snapshot.Annotations).ToNot(HaveKey(commonconstants.StalePodgroupTimeStamp))
+		Expect(snapshot.Annotations).ToNot(HaveKey(commonconstants.LastStartTimeStamp))
 	})
 })
