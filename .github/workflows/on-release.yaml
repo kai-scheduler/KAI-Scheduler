@@ -25,8 +25,9 @@ jobs:
         id: package_version
         run: |
           if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
-            GIT_REV=$(git rev-parse --short HEAD | sed 's/^0*//')
-            PACKAGE_VERSION=0.0.0-$GIT_REV
+            # Must match push-artifacts.yaml exactly: the chart e2e installs is the one that
+            # workflow published under this version.
+            PACKAGE_VERSION=0.0.0-$(git rev-parse --short HEAD)
           else
             PACKAGE_VERSION=${GITHUB_REF_NAME}
           fi
@@ -49,7 +50,7 @@ jobs:
           sudo mkdir -p /mnt/images
           sudo chown -R $USER:$USER /mnt/images
 
-      - name: Cache for docker images and helm chart
+      - name: Cache for docker images
         uses: actions/cache@v6
         with:
           path: /mnt/images
@@ -59,15 +60,6 @@ jobs:
         run: |
           make build DOCKER_BUILDX_ADDITIONAL_ARGS="--load --cache-from type=gha --cache-to type=gha,mode=max" VERSION=$PACKAGE_VERSION
           docker save $(docker images --format '{{.Repository}}:{{.Tag}}' | grep $PACKAGE_VERSION) | gzip > /mnt/images/docker_images.tgz
-
-      # Consumed by the e2e matrix below, not published: push-artifacts.yaml builds the chart
-      # that ships and attaches it to the release, so only one build is ever handed out.
-      - name: Build helm chart
-        run: |
-          sed -i 's#registry/local/kai-scheduler#${{ env.DOCKER_REGISTRY }}#' deployments/kai-scheduler/values.yaml
-          helm dependency build ./deployments/kai-scheduler
-          helm package ./deployments/kai-scheduler -d ./charts --app-version $PACKAGE_VERSION --version $PACKAGE_VERSION
-          cp charts/kai-scheduler-$PACKAGE_VERSION.tgz /mnt/images/
 
 
   e2e-matrix:
@@ -115,11 +107,20 @@ jobs:
           k8s_version: ${{ matrix.k8s_version }}
           feature_config: ${{ matrix.feature_config }}
 
+      # Installs the chart push-artifacts.yaml published, so e2e exercises the artifact the
+      # release ships rather than a rebuild of it. That workflow runs concurrently, so wait
+      # for the chart rather than assume it is already there.
       - name: Install KAI-scheduler
         env:
           PACKAGE_VERSION: ${{ needs.build-and-push.outputs.package_version }}
+          CHART: oci://${{ env.DOCKER_REGISTRY }}/kai-scheduler
         run: |
-          helm upgrade -i kai-scheduler /mnt/images/kai-scheduler-$PACKAGE_VERSION.tgz -n kai-scheduler --create-namespace \
+          for attempt in $(seq 10); do
+            helm show chart "$CHART" --version "$PACKAGE_VERSION" >/dev/null 2>&1 && break
+            echo "Chart $PACKAGE_VERSION not published yet; retrying in 30s ($attempt/10)"
+            sleep 30
+          done
+          helm upgrade -i kai-scheduler "$CHART" --version "$PACKAGE_VERSION" -n kai-scheduler --create-namespace \
             --values ./hack/kai-scheduler-fake-npe-values.yaml \
             --set "global.gpuSharing=true" --set "global.registry=localhost:30100" --set "prometheus.enabled=true" --debug --wait
           kubectl create clusterrole pods-patcher --verb=patch --resource=pods
