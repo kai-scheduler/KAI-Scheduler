@@ -20,6 +20,10 @@ jobs:
   build-and-push:
     name: Build & Push
     runs-on: ubuntu-latest
+    # Job-level permissions replace the workflow's, so packages: write is repeated here.
+    permissions:
+      contents: write
+      packages: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -85,6 +89,24 @@ jobs:
         if: startsWith(env.PACKAGE_VERSION, 'v')
         run: |
           oras tag ${{ env.DOCKER_REGISTRY }}/kai-scheduler:$PACKAGE_VERSION ${PACKAGE_VERSION#v}
+
+      # The same package already pushed to GHCR, so the two can never disagree. Uploads only
+      # into an existing release: release-publish.yaml owns creating it, and pushes the tag
+      # just before, so wait briefly rather than skip a release that is seconds away.
+      - name: Attach Helm chart to the GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          for _ in $(seq 12); do
+            if gh release view "$PACKAGE_VERSION" >/dev/null 2>&1; then
+              gh release upload "$PACKAGE_VERSION" ./charts/kai-scheduler-$PACKAGE_VERSION.tgz --clobber
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::warning::No GitHub Release for $PACKAGE_VERSION after 2m; chart not attached."
 
   build-and-push-fips:
     name: Build & Push FIPS
