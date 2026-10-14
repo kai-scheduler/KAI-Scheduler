@@ -114,9 +114,8 @@ func (r *BindRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			err = fmt.Errorf("Internal Error: %v", r)
 		}
 
-		var outcomeAccepted bool
-		result, outcomeAccepted, err = r.updateStatus(ctx, bindRequest, result, err)
-		if pod != nil && outcomeAccepted {
+		result, err = r.UpdateStatus(ctx, bindRequest, result, err)
+		if pod != nil {
 			r.updatePodCondition(ctx, bindRequest, pod)
 		}
 
@@ -236,13 +235,6 @@ func (r *BindRequestReconciler) deleteHandler(ctx context.Context, event event.T
 func (r *BindRequestReconciler) UpdateStatus(
 	ctx context.Context, bindRequest *schedulingv1alpha2.BindRequest, result ctrl.Result, err error,
 ) (ctrl.Result, error) {
-	result, _, err = r.updateStatus(ctx, bindRequest, result, err)
-	return result, err
-}
-
-func (r *BindRequestReconciler) updateStatus(
-	ctx context.Context, bindRequest *schedulingv1alpha2.BindRequest, result ctrl.Result, err error,
-) (ctrl.Result, bool, error) {
 	logger := log.FromContext(ctx)
 	originalBindRequest := &schedulingv1alpha2.BindRequest{}
 	bindRequest.DeepCopyInto(originalBindRequest)
@@ -259,7 +251,7 @@ func (r *BindRequestReconciler) updateStatus(
 	}
 
 	if reflect.DeepEqual(originalBindRequest.Status, bindRequest.Status) {
-		return result, true, nil
+		return result, nil
 	}
 
 	// The patch is addressed by name, and the scheduler may replace a BindRequest under the
@@ -269,30 +261,26 @@ func (r *BindRequestReconciler) updateStatus(
 		client.MergeFromWithOptions(originalBindRequest, client.MergeFromWithOptimisticLock{}))
 	if patchErr != nil {
 		if kerrors.IsConflict(patchErr) || kerrors.IsNotFound(patchErr) {
-			logger.Info("BindRequest changed or was removed before its outcome could be recorded.",
+			logger.Info("BindRequest was replaced or removed during reconcile, discarding outcome.",
 				"Namespace", bindRequest.Namespace, "Name", bindRequest.Name,
 				"phase", bindRequest.Status.Phase)
 			if bindRequest.Status.Phase == schedulingv1alpha2.BindRequestPhaseSucceeded {
-				logger.Error(patchErr, "Pod binding succeeded, but the BindRequest outcome could not be recorded.")
+				logger.Error(patchErr,
+					"The binder made a successful binding based on the older bindingRequest.",
+					"If this point has been reached, a bug has occurred ",
+					"(a bindingRequest was replaced by a newer one while the binder was binding the pod).")
 			}
-			if kerrors.IsConflict(patchErr) {
-				// Metadata-only changes do not enqueue another reconcile.
-				if result.RequeueAfter == 0 {
-					result.Requeue = true
-				}
-				return result, false, nil
-			}
-			return ctrl.Result{}, false, nil
+			return result, nil
 		}
 		logger.Error(patchErr, "Failed to patch status for BindRequest",
 			"Namespace", bindRequest.Namespace, "Name", bindRequest.Name)
-		return ctrl.Result{}, false, patchErr
+		return ctrl.Result{}, patchErr
 	}
 
 	if err != nil && result.RequeueAfter == 0 {
-		return result, true, reconcile.TerminalError(err)
+		return result, reconcile.TerminalError(err)
 	}
-	return result, true, err
+	return result, err
 }
 
 func (r *BindRequestReconciler) updatePodCondition(
