@@ -1,6 +1,0 @@
-kind: Changed
-body: |-
-  Speed up reclaim job ordering by avoiding map iteration over pod sets and pods
-custom:
-  Author: "theminjunchoi"
-  Issue: "2419"
