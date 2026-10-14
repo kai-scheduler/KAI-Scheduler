@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"runtime/debug"
 	"time"
 
@@ -249,7 +250,7 @@ func (r *BindRequestReconciler) UpdateStatus(
 		bindRequest.Status.Phase = schedulingv1alpha2.BindRequestPhaseSucceeded
 	}
 
-	if originalBindRequest.Status == bindRequest.Status {
+	if reflect.DeepEqual(originalBindRequest.Status, bindRequest.Status) {
 		return result, nil
 	}
 
