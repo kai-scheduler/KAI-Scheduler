@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"maps"
 	"math"
+	"slices"
 	"strings"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
@@ -247,8 +248,10 @@ func (r *Reclaimable) getLeveledQueues(
 	reclaimerQueueID common_info.QueueID,
 	reclaimeeQueueID common_info.QueueID,
 ) (*rs.QueueAttributes, *rs.QueueAttributes) {
-	reclaimers := r.getHierarchyPath(queues, reclaimerQueueID)
-	reclaimees := r.getHierarchyPath(queues, reclaimeeQueueID)
+	// Queue trees are shallow, so both paths usually fit on the stack.
+	var reclaimersBuf, reclaimeesBuf [8]*rs.QueueAttributes
+	reclaimers := appendHierarchyPath(reclaimersBuf[:0], queues, reclaimerQueueID)
+	reclaimees := appendHierarchyPath(reclaimeesBuf[:0], queues, reclaimeeQueueID)
 
 	minLength := int(math.Min(float64(len(reclaimers)), float64(len(reclaimees))))
 	var reclaimerQueue, reclaimeeQueue *rs.QueueAttributes
@@ -262,15 +265,16 @@ func (r *Reclaimable) getLeveledQueues(
 	return reclaimerQueue, reclaimeeQueue
 }
 
-func (r *Reclaimable) getHierarchyPath(
+// appendHierarchyPath appends the path from the root queue down to queueId.
+func appendHierarchyPath(path []*rs.QueueAttributes,
 	queues map[common_info.QueueID]*rs.QueueAttributes, queueId common_info.QueueID) []*rs.QueueAttributes {
-	var hierarchyPath []*rs.QueueAttributes
 	queue, found := queues[queueId]
 	for found {
-		hierarchyPath = append([]*rs.QueueAttributes{queue}, hierarchyPath...)
+		path = append(path, queue)
 		queue, found = queues[queue.ParentQueue]
 	}
-	return hierarchyPath
+	slices.Reverse(path)
+	return path
 }
 
 func getInvolvedResourcesNames(resources []resource_info.ResourceVector, vectorMap *resource_info.ResourceVectorMap) map[rs.ResourceName]any {
