@@ -183,7 +183,7 @@ make changelog-preview VERSION=v0.17.0
 Two things follow:
 
 - **A leftover local `Chart.lock` freezes you.** Once a build writes one, later builds install that version and never re-check the registry. Run `rm -f deployments/kai-scheduler/Chart.lock` to pick up a newer gpu-fractioning. CI is unaffected — a fresh checkout never has one.
-- **Which version shipped is recorded on the release**, not in git: a `subcharts.yaml` asset on the GitHub Release, plus a `Bundle gpu-fractioning <version>` changelog entry that **Release — Prepare Changelog** adds by itself when the resolved version moves.
+- **Which version shipped is recorded on the release**, not in git: the `subcharts.yaml` asset on the GitHub Release. **Release — Prepare Changelog** also adds a changelog entry by itself when the version moves, but that entry names no version — the changelog is written before the chart is built, so any version in it could be stale by then. `subcharts.yaml` is the only authoritative record.
 
 ### CI Checks (on-pr.yaml)
 PRs trigger: `make validate` → `make test` → `make build` → E2E tests
