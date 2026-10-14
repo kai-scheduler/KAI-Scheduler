@@ -46,7 +46,10 @@ Tests are organized into contexts:
     allocation time (last BindRequest created), scheduling time (last pod bound), bind lag and achieved GPU utilization.
     It verifies scheduler/binder decisions only: no GPU group exceeds one GPU's memory and reservation pods match the
     GPU groups in use. KWOK nodes are stamped with the `nvidia.com/gpu.memory` label and the
-    `gpu-fractioning.nvidia.com/Ready` condition; no gpu-fractioning operator is involved.
+    `gpu-fractioning.nvidia.com/Ready` condition, and a KWOK stage writes the reserved GPU index annotation on the
+    binder's reservation pods (in a real cluster the reservation container does this). No gpu-fractioning operator
+    is involved, and the reservation flow does not depend on the fake-gpu-operator; node GPU capacity still comes
+    from the suite's shared setup.
 
 
 ## Environment Setup
