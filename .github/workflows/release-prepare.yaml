@@ -10,13 +10,13 @@
 # A maintainer reviews and merges that PR. Merging it triggers release-publish.yaml (step 2),
 # which tags the version and creates the GitHub Release.
 
-name: Release — Prepare Changelog
+name: Start Release Process
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to release, e.g. v0.17.0 (minors/majors from main, patches from a v*.* branch)'
+        description: 'Cuts a release: folds changelog fragments into CHANGELOG.md and opens a PR. Merging it auto-tags & publishes. Version e.g. v0.17.0 (minors/majors from main, patches from a v*.* branch)'
         required: true
         type: string
 
@@ -64,7 +64,7 @@ jobs:
 
           BODY="${RUNNER_TEMP:-/tmp}/pr-body.md"
           {
-            echo "Automated by the **Release — Prepare Changelog** workflow."
+            echo "Automated by the **Start Release Process** workflow."
             echo
             echo "Folds the pending \`.changes/unreleased/\` fragments into \`CHANGELOG.md\` as \`## [$VERSION]\` and clears them. \`CHANGELOG.md\` is the source of truth."
             echo
