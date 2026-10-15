@@ -52,8 +52,6 @@ func JobOrderFn(l, r interface{}) int {
 }
 
 func minAvailableState(pgi *podgroup_info.PodGroupInfo) (bool, bool, bool) {
-	// This runs on every job comparison; walking the subgroup tree's slices is much
-	// cheaper than ranging over the PodSets map.
 	belowMinAvailable, aboveMinAvailable := subGroupSetState(pgi.RootSubGroupSet)
 	if belowMinAvailable {
 		return true, false, false
