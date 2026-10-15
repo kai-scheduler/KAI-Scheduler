@@ -69,8 +69,8 @@ func newBaseScenario(
 		if index < len(recordedVictimsRepresentatives) {
 			representative = recordedVictimsRepresentatives[index]
 		}
-		s.recordedVictimsRepresentatives = append(s.recordedVictimsRepresentatives,
-			s.appendVictimJob(tasks, representative))
+		victimJob := s.appendTasksAsVictimJob(tasks, representative)
+		s.recordedVictimsRepresentatives = append(s.recordedVictimsRepresentatives, victimJob)
 	}
 	s.recordedVictimsTasks = s.RecordedVictimsTasks()
 
@@ -118,7 +118,7 @@ func (s *BaseScenario) AddPotentialVictimsTasks(tasks []*pod_info.PodInfo) {
 	}
 
 	s.potentialVictimsTasks = append(s.potentialVictimsTasks, tasks...)
-	s.appendVictimJob(tasks, nil)
+	s.appendTasksAsVictimJob(tasks, nil)
 }
 
 // AddPotentialVictimsTasksWithRepresentative reuses a representative another scenario built from the same tasks.
@@ -130,11 +130,11 @@ func (s *BaseScenario) AddPotentialVictimsTasksWithRepresentative(
 	}
 
 	s.potentialVictimsTasks = append(s.potentialVictimsTasks, tasks...)
-	s.appendVictimJob(tasks, representative)
+	s.appendTasksAsVictimJob(tasks, representative)
 }
 
-// appendVictimJob clones the representative from tasks unless a matching one is given.
-func (s *BaseScenario) appendVictimJob(
+// appendTasksAsVictimJob clones the representative from tasks unless a matching one is given.
+func (s *BaseScenario) appendTasksAsVictimJob(
 	tasks []*pod_info.PodInfo, representative *podgroup_info.PodGroupInfo,
 ) *podgroup_info.PodGroupInfo {
 	originalJob := s.getJobForTask(tasks[0])

@@ -1,6 +1,0 @@
-kind: Changed
-body: |-
-  Reduce reclaim simulation memory by sharing pod requests and reusing victim job copies
-custom:
-  Author: "theminjunchoi"
-  Issue: "1826"
