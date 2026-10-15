@@ -80,16 +80,20 @@ vet-go:
 	go vet ./...
 .PHONY: vet-go
 
-build-go: builder build-go-amd build-go-arm
+# Compile only the architectures the image build packages (DOCKER_BUILD_PLATFORM).
+comma := ,
+GO_BUILD_ARCHS ?= $(sort $(patsubst linux/%,%,$(subst $(comma), ,$(DOCKER_BUILD_PLATFORM))))
 
-build-go-amd: gocache
+build-go: builder $(addprefix build-go-,$(GO_BUILD_ARCHS))
+
+build-go-amd64: gocache
 	@ ${ECHO_COMMAND} ${GREEN_CONSOLE} "${CONSOLE_PREFIX} Building ${SERVICE_NAME}, GOOS: ${OS}, GOARCH amd64" ${BASE_CONSOLE}
 	${DOCKER_GO_COMMAND_AMD} go build -buildvcs=false -ldflags "$(LDFLAGS)" ${GO_BUILD_ADDITIONAL_FLAGS} -o ${BUILD_OUT_PATH_AMD} ${BUILD_IN_PATH} || ${FAILURE_MESSAGE_HANDLER}
 	${SUCCESS_MESSAGE_HANDLER}
-.PHONY: build-go-amd
+.PHONY: build-go-amd64
 
-build-go-arm: gocache
+build-go-arm64: gocache
 	@ ${ECHO_COMMAND} ${GREEN_CONSOLE} "${CONSOLE_PREFIX} Building ${SERVICE_NAME}, GOOS: ${OS}, GOARCH arm64" ${BASE_CONSOLE}
 	${DOCKER_GO_COMMAND_ARM} go build -buildvcs=false -ldflags "$(LDFLAGS)" ${GO_BUILD_ADDITIONAL_FLAGS} -o ${BUILD_OUT_PATH_ARM} ${BUILD_IN_PATH} || ${FAILURE_MESSAGE_HANDLER}
 	${SUCCESS_MESSAGE_HANDLER}
-.PHONY: build-go-arm
+.PHONY: build-go-arm64

@@ -76,7 +76,7 @@ runs:
         PACKAGE_VERSION: ${{ inputs.package_version }}
       run: |
         kubectl port-forward -n kube-registry deploy/registry 5000:5000 &
-        docker load < /mnt/images/docker_images.tgz
+        docker load -i /mnt/images/docker_images.tar
         for image in $(docker images --format '{{.Repository}}:{{.Tag}}' | grep $PACKAGE_VERSION); do
           new_image=$(echo "$image" | sed -E 's|.*/([^/]+:[^/]+)$|localhost:5000/\1|')
           docker tag $image $new_image
@@ -126,4 +126,4 @@ runs:
         PACKAGE_VERSION: ${{ inputs.package_version }}
       run: |
         docker images --format '{{.Repository}}:{{.Tag}}' | grep $PACKAGE_VERSION | xargs docker rmi -f
-        sudo rm -rf /mnt/images/docker_images.tgz
+        sudo rm -rf /mnt/images/docker_images.tar
