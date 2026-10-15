@@ -9,6 +9,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	"github.com/kai-scheduler/KAI-scheduler/cmd/operator/app"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/memorylimit"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/controller"
 )
 
@@ -17,6 +18,10 @@ var (
 )
 
 func main() {
+	memorylimit.RunMain(runMain)
+}
+
+func runMain() {
 	app, err := app.New()
 	if err != nil {
 		setupLog.Error(err, "failed to create app")

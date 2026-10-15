@@ -187,7 +187,7 @@ func getCacheOptions(configs controllers.Configs) cache.Options {
 		podByObject.Label = labels.Set(configs.PodLabelSelector).AsSelector()
 	}
 
-	cacheOptions := cache.Options{}
+	cacheOptions := cache.Options{DefaultTransform: cache.TransformStripManagedFields()}
 	cacheOptions.ByObject = map[client.Object]cache.ByObject{
 		&corev1.Pod{}: podByObject,
 	}

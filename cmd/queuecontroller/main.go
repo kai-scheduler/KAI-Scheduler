@@ -11,12 +11,17 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/kai-scheduler/KAI-scheduler/cmd/queuecontroller/app"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/memorylimit"
 	"go.uber.org/zap/zapcore"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
 func main() {
+	memorylimit.RunMain(runMain)
+}
+
+func runMain() {
 	logOptions := bindLoggerFlags(flag.CommandLine)
 	opts := app.InitOptions(flag.CommandLine)
 
