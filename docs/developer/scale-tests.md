@@ -40,6 +40,16 @@ Tests are organized into contexts:
   - Whole GPU allocation tests
   - Distributed job scheduling
   - Reclaim scenarios
+  - Mixed fraction saturation (NvFractions mode): two queues of equal priority, one requesting 0.5 GPU per pod and one
+    0.125 GPU per pod, each sized to half of the cluster's GPUs so the combined demand equals capacity. The test waits
+    until the scheduler decided on every pod (allocated or unschedulable) and every allocated pod is bound, and reports
+    allocation time (last BindRequest created), scheduling time (last pod bound), bind lag and achieved GPU utilization.
+    It verifies scheduler/binder decisions only: no GPU group exceeds one GPU's memory and reservation pods match the
+    GPU groups in use. KWOK nodes are stamped with the `nvidia.com/gpu.memory` label and the
+    `gpu-fractioning.nvidia.com/Ready` condition, and a KWOK stage writes the reserved GPU index annotation on the
+    binder's reservation pods (in a real cluster the reservation container does this). No gpu-fractioning operator
+    is involved, and the reservation flow does not depend on the fake-gpu-operator; node GPU capacity still comes
+    from the suite's shared setup.
 
 
 ## Environment Setup

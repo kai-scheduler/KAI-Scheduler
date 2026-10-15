@@ -20,6 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/ptr"
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
@@ -36,6 +37,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait/watcher"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/scale/topology"
 	"github.com/kai-scheduler/api/constants"
+	"github.com/kai-scheduler/api/kai/v1/common"
 	kaiv1alpha1 "github.com/kai-scheduler/api/kai/v1alpha1"
 	v2 "github.com/kai-scheduler/api/scheduling/v2"
 	"github.com/kai-scheduler/api/scheduling/v2alpha2"
@@ -616,6 +618,51 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 
 			It("workload scale scenario: elastic distributed job reclaim", func(ctx context.Context) {
 				elasticJobReclaim(ctx, testCtx, elasticVictimQueue, elasticReclaimQueue, numberOfNodes)
+			}, SpecTimeout(maxFlowTimeoutMinutes*time.Minute))
+		})
+
+		Context("Fraction scale scenarios", Ordered, func() {
+			var (
+				fractionTiers       []fractionTier
+				originalSharingMode *common.GpuSharingMode
+				gpuMemoryMiB        int64
+			)
+
+			BeforeAll(func(ctx context.Context) {
+				originalSharingMode = currentGpuSharingMode(ctx, testCtx)
+				setGpuSharingMode(ctx, testCtx, ptr.To(common.GpuSharingModeNvFractions))
+				gpuMemoryMiB = stampNvFractionsNodes(ctx, testCtx)
+
+				fractionTiers = []fractionTier{{fractionsPerGPU: 2}, {fractionsPerGPU: 8}}
+				fractionQueues := make([]*v2.Queue, 0, len(fractionTiers))
+				for i := range fractionTiers {
+					fractionTiers[i].queue = queue.CreateQueueObject(
+						fmt.Sprintf("fractions-1-of-%d-%s", fractionTiers[i].fractionsPerGPU, utils.GenerateRandomK8sName(10)),
+						parentQueue.Name)
+					fractionTiers[i].queue.Spec.Resources.GPU.Quota = float64(numberOfNodes * gpusPerNode / len(fractionTiers))
+					fractionQueues = append(fractionQueues, fractionTiers[i].queue)
+				}
+				testCtx.AddQueues(ctx, fractionQueues)
+
+				Expect(createReservationGpuIndexStage(ctx, testCtx.ControllerClient)).To(Succeed())
+			})
+
+			AfterAll(func(ctx context.Context) {
+				setGpuSharingMode(ctx, testCtx, originalSharingMode)
+				Expect(runtimeClient.IgnoreNotFound(deleteReservationGpuIndexStage(ctx, testCtx.ControllerClient))).To(Succeed())
+			})
+
+			AfterEach(func(ctx context.Context) {
+				if CurrentSpecReport().Failed() {
+					return
+				}
+				for _, tier := range fractionTiers {
+					cleanupTestQueue(ctx, testCtx, tier.queue)
+				}
+			})
+
+			It("fraction scale scenario: mixed saturation", func(ctx context.Context) {
+				fractionsSaturation(ctx, testCtx, fractionTiers, numberOfNodes, gpuMemoryMiB)
 			}, SpecTimeout(maxFlowTimeoutMinutes*time.Minute))
 		})
 	})

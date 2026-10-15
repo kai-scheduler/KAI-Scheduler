@@ -24,6 +24,13 @@
     { id: 'inference-reclaim', title: 'Disaggregated Inference Reclaim', label: 'Duration' },
     { id: 'hero-job-reclaim', title: 'Zone-Constrained Hero Job Reclaim', label: 'Duration' },
     { id: 'elastic-job-reclaim', title: 'Elastic Distributed Job Reclaim', label: 'Duration' },
+    { id: 'fractions-saturation-allocation', title: 'Mixed Fraction Saturation: Allocation Time', label: 'Duration' },
+    { id: 'fractions-saturation-scheduling', title: 'Mixed Fraction Saturation: Scheduling Time', label: 'Duration' },
+  ];
+
+  const SATURATION_DERIVED_FIELDS = [
+    'pods', 'allocated_pods', 'unschedulable_pods', 'gpu_utilization_pct', 'allocation_seconds', 'scheduling_seconds',
+    'bind_lag_p50_seconds', 'bind_lag_p95_seconds', 'bind_lag_max_seconds',
   ];
 
   const TEST_CASES = [
@@ -115,6 +122,18 @@
     {
       id: 'elastic-job-reclaim', chartId: 'elastic-job-reclaim', timingField: 'duration_seconds',
       scale: name => name === 'Elastic distributed job reclaim',
+      legacy: () => false,
+    },
+    {
+      id: 'fractions-saturation-allocation', chartId: 'fractions-saturation-allocation',
+      timingField: 'allocation_seconds', ignoredSeriesFields: SATURATION_DERIVED_FIELDS,
+      scale: name => name === 'Mixed fractions saturation - allocation',
+      legacy: () => false,
+    },
+    {
+      id: 'fractions-saturation-scheduling', chartId: 'fractions-saturation-scheduling',
+      timingField: 'scheduling_seconds', ignoredSeriesFields: SATURATION_DERIVED_FIELDS,
+      scale: name => name === 'Mixed fractions saturation - scheduling',
       legacy: () => false,
     },
   ];
