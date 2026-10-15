@@ -23,6 +23,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -309,6 +310,92 @@ var _ = Describe("BindRequest Controller", func() {
 		})
 
 		Context("repeated bind failure", func() {
+			It("persists consecutive failures and stops binding at the backoff limit", func() {
+				ctx := context.Background()
+				retryPod := &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "retry-pod", Namespace: "default"}}
+				retryNode := &v1.Node{ObjectMeta: metav1.ObjectMeta{Name: "retry-node"}}
+				Expect(fakeClient.Create(ctx, retryPod)).To(Succeed())
+				Expect(fakeClient.Create(ctx, retryNode)).To(Succeed())
+
+				bindRequest := baseRequest.DeepCopy()
+				bindRequest.Spec.PodName = retryPod.Name
+				bindRequest.Spec.SelectedNode = retryNode.Name
+				bindRequest.Spec.BackoffLimit = ptr.To(int32(2))
+				Expect(fakeClient.Create(ctx, bindRequest)).To(Succeed())
+
+				bindErr := errors.New("temporary binding failure")
+				mockBinder := mock_binder.NewMockInterface(gomock.NewController(GinkgoT()))
+				mockBinder.EXPECT().Bind(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+					Return(bindErr).Times(2)
+				mockBinder.EXPECT().Rollback(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+					Return(nil).Times(2)
+				reconciler.binder = mockBinder
+
+				req := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(bindRequest)}
+				for attempt := int32(1); attempt <= 2; attempt++ {
+					result, err := reconciler.Reconcile(ctx, req)
+					stored := &schedulingv1alpha2.BindRequest{}
+					Expect(fakeClient.Get(ctx, req.NamespacedName, stored)).To(Succeed())
+					Expect(stored.Status.Phase).To(Equal(schedulingv1alpha2.BindRequestPhaseFailed))
+					Expect(stored.Status.FailedAttempts).To(Equal(attempt))
+					Expect(stored.Status.Reason).To(Equal(bindErr.Error()))
+					Expect(err).To(MatchError(bindErr))
+					Expect(result.RequeueAfter).To(Equal((1 << (attempt - 1)) * time.Second))
+				}
+
+				result, err := reconciler.Reconcile(ctx, req)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).To(Equal(ctrl.Result{}))
+				Expect(fakeEventRecorder.Events).To(HaveLen(2))
+				for range 2 {
+					event := <-fakeEventRecorder.Events
+					Expect(event).To(ContainSubstring("BindingError"))
+					Expect(event).NotTo(ContainSubstring("bound successfully"))
+				}
+			})
+
+			It("stops retrying after a successful bind without repeating the Bound event", func() {
+				ctx := context.Background()
+				retryPod := &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "retry-pod", Namespace: "default"}}
+				retryNode := &v1.Node{ObjectMeta: metav1.ObjectMeta{Name: "retry-node"}}
+				Expect(fakeClient.Create(ctx, retryPod)).To(Succeed())
+				Expect(fakeClient.Create(ctx, retryNode)).To(Succeed())
+
+				bindRequest := baseRequest.DeepCopy()
+				bindRequest.Spec.PodName = retryPod.Name
+				bindRequest.Spec.SelectedNode = retryNode.Name
+				bindRequest.Spec.BackoffLimit = ptr.To(int32(2))
+				Expect(fakeClient.Create(ctx, bindRequest)).To(Succeed())
+
+				bindErr := errors.New("temporary binding failure")
+				mockBinder := mock_binder.NewMockInterface(gomock.NewController(GinkgoT()))
+				gomock.InOrder(
+					mockBinder.EXPECT().Bind(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(bindErr),
+					mockBinder.EXPECT().Rollback(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil),
+					mockBinder.EXPECT().Bind(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil),
+				)
+				reconciler.binder = mockBinder
+
+				req := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(bindRequest)}
+				_, err := reconciler.Reconcile(ctx, req)
+				Expect(err).To(MatchError(bindErr))
+
+				result, err := reconciler.Reconcile(ctx, req)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).To(Equal(ctrl.Result{}))
+				stored := &schedulingv1alpha2.BindRequest{}
+				Expect(fakeClient.Get(ctx, req.NamespacedName, stored)).To(Succeed())
+				Expect(stored.Status.Phase).To(Equal(schedulingv1alpha2.BindRequestPhaseSucceeded))
+				Expect(stored.Status.FailedAttempts).To(Equal(int32(1)))
+
+				result, err = reconciler.Reconcile(ctx, req)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).To(Equal(ctrl.Result{}))
+				Expect(fakeEventRecorder.Events).To(HaveLen(2))
+				Expect(<-fakeEventRecorder.Events).To(ContainSubstring("BindingError"))
+				Expect(<-fakeEventRecorder.Events).To(ContainSubstring("Normal Bound Pod bound successfully"))
+			})
+
 			It("report BindingError num of FailedAttempts 1 in this case) and stop reconciling the bindingrequest", func() {
 				repeatFailurePod := &v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
@@ -447,9 +534,51 @@ var _ = Describe("BindRequest Controller", func() {
 			}, queue)
 			Expect(queue.Len()).To(Equal(1))
 		})
+
+		It("does not enqueue status-only retry updates", func() {
+			oldBindRequest := baseRequest.DeepCopy()
+			oldBindRequest.Spec.BackoffLimit = ptr.To(int32(3))
+			oldBindRequest.Status.Phase = schedulingv1alpha2.BindRequestPhaseFailed
+			oldBindRequest.Status.FailedAttempts = 1
+			updatedBindRequest := oldBindRequest.DeepCopy()
+			updatedBindRequest.Status.FailedAttempts = 2
+			updatedBindRequest.Status.Reason = "another temporary binding failure"
+
+			reconciler.eventHandlers().UpdateFunc(context.Background(), event.UpdateEvent{
+				ObjectOld: oldBindRequest,
+				ObjectNew: updatedBindRequest,
+			}, queue)
+			Expect(queue.Len()).To(Equal(0))
+		})
 	})
 
 	Describe("UpdateStatus", func() {
+		DescribeTable("does not patch unchanged status", func(phase string, outcome error) {
+			ctx := context.Background()
+			bindRequest := baseRequest.DeepCopy()
+			bindRequest.Status.Phase = phase
+			if outcome != nil {
+				bindRequest.Status.Reason = outcome.Error()
+			}
+			Expect(fakeClient.Create(ctx, bindRequest)).To(Succeed())
+
+			patchCalls := 0
+			reconciler.Client = interceptor.NewClient(fakeClient, interceptor.Funcs{
+				SubResourcePatch: func(context.Context, client.Client, string, client.Object, client.Patch, ...client.SubResourcePatchOption) error {
+					patchCalls++
+					return nil
+				},
+			})
+
+			result, err := reconciler.UpdateStatus(ctx, bindRequest, ctrl.Result{}, outcome)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(Equal(ctrl.Result{}))
+			Expect(patchCalls).To(Equal(0))
+		},
+			Entry("succeeded", schedulingv1alpha2.BindRequestPhaseSucceeded, nil),
+			Entry("failed without retries", schedulingv1alpha2.BindRequestPhaseFailed, errors.New("binding failure")),
+		)
+
 		Context("no error", func() {
 			It("Leavs FailedAttempts unchanged", func() {
 				bindRequest := baseRequest.DeepCopy()
@@ -479,6 +608,27 @@ var _ = Describe("BindRequest Controller", func() {
 			})
 
 			Context("Backoff Limit set", func() {
+				It("persists the latest retry failure and returns its error when the phase is unchanged", func() {
+					ctx := context.Background()
+					bindRequest := baseRequest.DeepCopy()
+					bindRequest.Spec.BackoffLimit = ptr.To(int32(3))
+					bindRequest.Status.Phase = schedulingv1alpha2.BindRequestPhaseFailed
+					bindRequest.Status.FailedAttempts = 1
+					bindRequest.Status.Reason = "first binding failure"
+					Expect(fakeClient.Create(ctx, bindRequest)).To(Succeed())
+
+					bindErr := errors.New("another temporary binding failure")
+					result, err := reconciler.UpdateStatus(ctx, bindRequest, ctrl.Result{}, bindErr)
+					Expect(err).To(MatchError(bindErr))
+					Expect(errors.Is(err, reconcile.TerminalError(nil))).To(BeFalse())
+					Expect(result.RequeueAfter).To(Equal(2 * time.Second))
+
+					stored := &schedulingv1alpha2.BindRequest{}
+					Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(bindRequest), stored)).To(Succeed())
+					Expect(stored.Status.Phase).To(Equal(schedulingv1alpha2.BindRequestPhaseFailed))
+					Expect(stored.Status.FailedAttempts).To(Equal(int32(2)))
+					Expect(stored.Status.Reason).To(Equal(bindErr.Error()))
+				})
 
 				It("Increments FailedAttempts if less than BackoffLimit", func() {
 					bindRequest := baseRequest.DeepCopy()
@@ -505,6 +655,30 @@ var _ = Describe("BindRequest Controller", func() {
 		})
 
 		Context("BindRequest changed during the reconcile", func() {
+			It("discards retry progress when a newer resource version is present", func() {
+				ctx := context.Background()
+				original := baseRequest.DeepCopy()
+				original.Spec.SelectedNode = "stale-node"
+				original.Spec.BackoffLimit = ptr.To(int32(3))
+				original.Status.Phase = schedulingv1alpha2.BindRequestPhaseFailed
+				original.Status.FailedAttempts = 1
+				original.Status.Reason = "first binding failure"
+				Expect(fakeClient.Create(ctx, original)).To(Succeed())
+				stale := original.DeepCopy()
+
+				newer := original.DeepCopy()
+				newer.Spec.SelectedNode = "replacement-node"
+				Expect(fakeClient.Update(ctx, newer)).To(Succeed())
+
+				_, err := reconciler.UpdateStatus(ctx, stale, ctrl.Result{}, errors.New("stale retry failure"))
+				Expect(err).NotTo(HaveOccurred())
+
+				stored := &schedulingv1alpha2.BindRequest{}
+				Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(original), stored)).To(Succeed())
+				Expect(stored.Spec.SelectedNode).To(Equal(newer.Spec.SelectedNode))
+				Expect(stored.Status).To(Equal(newer.Status))
+			})
+
 			// A reconcile holds its own copy for the length of the bind, during which the
 			// scheduler may delete the BindRequest and create a replacement under the same
 			// name. The outcome must not land on an object it does not describe. The fake
