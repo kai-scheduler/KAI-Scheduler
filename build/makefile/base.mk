@@ -44,6 +44,8 @@ DOCKER_BUILD_ADDITIONAL_ARGS=--target ${PROD_TARGET}
 endif
 
 DOCKER_BUILDX_ADDITIONAL_ARGS?=
+DOCKER_PUSH_ATTEMPTS?=3
+DOCKER_PUSH_RETRY_DELAY?=5
 
 ################### OS DEPENDENCY ##########################
 # Build the project
@@ -72,5 +74,16 @@ builder:
 .PHONY: builder
 
 docker-build-generic:
-	DOCKER_BUILDKIT=1 docker buildx build ${DOCKER_BUILD_ADDITIONAL_ARGS} --build-arg SERVICE_NAME=${SERVICE_NAME} -f ${DOCKERFILE_PATH} -t ${DOCKER_IMAGE_NAME} ${DOCKER_BUILDX_ADDITIONAL_ARGS} --platform ${DOCKER_BUILD_PLATFORM} .
+	@attempt=1; max_attempts=1; \
+	if [ -n "$(filter --push --push=true,$(DOCKER_BUILDX_ADDITIONAL_ARGS))" ]; then \
+		max_attempts=$(DOCKER_PUSH_ATTEMPTS); \
+	fi; \
+	while true; do \
+		DOCKER_BUILDKIT=1 docker buildx build ${DOCKER_BUILD_ADDITIONAL_ARGS} --build-arg SERVICE_NAME=${SERVICE_NAME} -f ${DOCKERFILE_PATH} -t ${DOCKER_IMAGE_NAME} ${DOCKER_BUILDX_ADDITIONAL_ARGS} --platform ${DOCKER_BUILD_PLATFORM} . && break; \
+		status=$$?; \
+		if [ $$attempt -ge $$max_attempts ]; then exit $$status; fi; \
+		echo "Image build/push failed for ${DOCKER_IMAGE_NAME} (attempt $$attempt/$$max_attempts); retrying in $(DOCKER_PUSH_RETRY_DELAY)s..." >&2; \
+		sleep $(DOCKER_PUSH_RETRY_DELAY); \
+		attempt=$$((attempt + 1)); \
+	done
 .PHONY: docker-build-generic
