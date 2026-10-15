@@ -380,6 +380,6 @@ var _ = Describe("Status Updater - annotation removal across cycles", func() {
 		job.PodGroup = informerPodGroup
 		patch, err := su.updatePodGroupAnnotations(job)
 		Expect(err).To(Succeed())
-		Expect(string(patch)).ToNot(ContainSubstring("remove"))
+		Expect(patch).To(BeEmpty())
 	})
 })
