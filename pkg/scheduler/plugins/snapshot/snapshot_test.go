@@ -176,6 +176,12 @@ func TestSnapshotPlugin(t *testing.T) {
 
 	_, err := fakeKubeClient.CoreV1().Pods("default").Create(ctx, testPod, metav1.CreateOptions{})
 	assert.NoError(t, err)
+	_, err = fakeKubeClient.CoreV1().ConfigMaps("default").Create(ctx, &v1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-config", Namespace: "default"},
+		Data:       map[string]string{"payload": "unused"},
+		BinaryData: map[string][]byte{"payload": []byte("unused")},
+	}, metav1.CreateOptions{})
+	assert.NoError(t, err)
 
 	for _, node := range testNodes {
 		_, err = fakeKubeClient.CoreV1().Nodes().Create(ctx, node, metav1.CreateOptions{})
@@ -238,6 +244,13 @@ func TestSnapshotPlugin(t *testing.T) {
 	assert.Equal(t, schedulerParams.PartitionParams.NodePoolLabelValue, snapshot.SchedulerParams.PartitionParams.NodePoolLabelValue)
 
 	assert.NotNil(t, snapshot.RawObjects)
+	if assert.Len(t, snapshot.RawObjects.ConfigMaps, 1) {
+		configMap := snapshot.RawObjects.ConfigMaps[0]
+		assert.Equal(t, "test-config", configMap.Name)
+		assert.Equal(t, "default", configMap.Namespace)
+		assert.Nil(t, configMap.Data)
+		assert.Nil(t, configMap.BinaryData)
+	}
 
 	assert.Len(t, snapshot.RawObjects.Pods, 1)
 	assert.Equal(t, testPod.Name, snapshot.RawObjects.Pods[0].Name)

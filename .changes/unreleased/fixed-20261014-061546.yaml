@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Scheduler no longer writes empty stale/last-start PodGroup annotations that made JSON patches fail repeatedly
+custom:
+  Author: "pujitha24"
+  Issue: "2428"
