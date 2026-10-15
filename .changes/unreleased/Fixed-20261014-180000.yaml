@@ -1,0 +1,5 @@
+kind: Fixed
+body: |-
+  podgrouper no longer builds a cluster-wide informer for the top owner's kind: the top-owner fetch uses the uncached client, and cached objects drop managedFields
+custom:
+  Author: tiffany-yu-ai
