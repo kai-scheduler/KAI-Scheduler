@@ -136,9 +136,9 @@ func (pp *predicatesPlugin) OnSessionOpen(ssn *framework.Session) {
 		return pp.evaluateTaskOnVictimInvariantPrePredicates(task, k8sPredicates)
 	})
 
-	ssn.AddPredicateFn(func(task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo) error {
+	ssn.AddPredicateFn(func(task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo, isPipeline bool) error {
 		return pp.evaluateTaskOnPredicates(task, job, node, k8sPredicates,
-			ssn.IsTaskAllocationOnNodeOverCapacityFn, ssn.IsRestrictNodeSchedulingEnabled, pp.skipPredicates)
+			ssn.IsTaskAllocationOnNodeOverCapacityFn, ssn.IsRestrictNodeSchedulingEnabled, pp.skipPredicates, isPipeline)
 	})
 }
 
@@ -304,6 +304,7 @@ func (pp *predicatesPlugin) evaluateTaskOnPredicates(
 	isTaskAllocationOnNodeOverCapacityFn api.IsTaskAllocationOverCapacityFn,
 	isRestrictNodeSchedulingEnabled func() bool,
 	skipPredicates SkipPredicates,
+	isPipeline bool,
 ) error {
 	originalPodInfoNodeName := task.NodeName
 	originalPodNodeName := task.Pod.Spec.NodeName
@@ -363,11 +364,17 @@ func (pp *predicatesPlugin) evaluateTaskOnPredicates(
 			continue
 		}
 
-		fit, reasons, err := predicate.Filter(task.Pod, k8sNodeInfo)
+		var fit bool
+		var reasons []string
+		var err error
+		if isPipeline {
+			fit, reasons, err = predicate.IsPipelineable(task.Pod, k8sNodeInfo)
+		} else {
+			fit, reasons, err = predicate.IsAllocatable(task.Pod, k8sNodeInfo)
+		}
 		if err != nil {
 			return err
 		}
-
 		if !fit {
 			return common_info.NewFitErrorByReasons(task.Name, task.Namespace, node.Name, err, reasons...)
 		}

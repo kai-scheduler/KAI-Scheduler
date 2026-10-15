@@ -256,7 +256,7 @@ func TestMemoryGroupAnnotationsDoNotChangeLegacyAdmission(t *testing.T) {
 			defer plugin.OnSessionClose(session)
 			probe := makeGuaranteedTask("probe", map[string]string{"memory": "120Gi"})
 			assert.True(t, plugin.shouldFilter(probe, topology))
-			assert.NoError(t, plugin.predicate(probe, nil, node))
+			assert.NoError(t, plugin.predicate(probe, nil, node, false))
 			placement, err := plugin.placement(probe, node)
 			assert.NoError(t, err)
 			assert.Equal(t, []int{0, 1}, placement.ZoneIndices())
