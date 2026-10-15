@@ -19,6 +19,10 @@ import (
 	commonconstants "github.com/kai-scheduler/api/constants"
 )
 
+// queuePathStackSize is how many queues a hierarchy path holds before it
+// moves to the heap. Queue trees are usually two or three levels deep.
+const queuePathStackSize = 8
+
 type Reclaimable struct {
 	saturationMultiplier        float64
 	queuePriorityInQuotaReclaim bool
@@ -248,8 +252,7 @@ func (r *Reclaimable) getLeveledQueues(
 	reclaimerQueueID common_info.QueueID,
 	reclaimeeQueueID common_info.QueueID,
 ) (*rs.QueueAttributes, *rs.QueueAttributes) {
-	// Queue trees are shallow, so both paths usually fit on the stack.
-	var reclaimersBuf, reclaimeesBuf [8]*rs.QueueAttributes
+	var reclaimersBuf, reclaimeesBuf [queuePathStackSize]*rs.QueueAttributes
 	reclaimers := appendHierarchyPath(reclaimersBuf[:0], queues, reclaimerQueueID)
 	reclaimees := appendHierarchyPath(reclaimeesBuf[:0], queues, reclaimeeQueueID)
 
