@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Prevent repeated reclaim evictions and defer binding until conflicting releasing pods disappear
+custom:
+  Author: "enoodle"
+  Issue: "2296"

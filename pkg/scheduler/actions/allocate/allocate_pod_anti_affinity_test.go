@@ -4,6 +4,7 @@
 package allocate_test
 
 import (
+	"fmt"
 	"testing"
 
 	. "go.uber.org/mock/gomock"
@@ -20,20 +21,27 @@ import (
 
 const hostnameTopologyKey = "kubernetes.io/hostname"
 
-// A pod that is terminating independently in the cluster (Releasing, not evicted by this
-// session) stays in the inter-pod affinity index, exactly like upstream kube-scheduler:
-// allocate neither binds beside it nor pipelines onto its resources while a required
-// anti-affinity involves it. Only session-selected victims leave the index (see reclaim).
 func TestAllocateWithRequiredAntiAffinityAgainstReleasingPods(t *testing.T) {
 	test_utils.InitTestingInfrastructure()
-	controller := NewController(t)
-	defer controller.Finish()
-	for testNumber, testMetadata := range getAllocatePodAntiAffinityTestsMetadata() {
-		t.Logf("Running test number: %v, test name: %v,", testNumber, testMetadata.TestTopologyBasic.Name)
-		ssn := test_utils.BuildSession(testMetadata.TestTopologyBasic, controller)
-		allocateAction := allocate.New()
-		allocateAction.Execute(ssn)
-		test_utils.MatchExpectedAndRealTasks(t, testNumber, testMetadata.TestTopologyBasic, ssn)
+	for _, gpus := range []float64{1, 0.5} {
+		t.Run(fmt.Sprintf("%g-gpus", gpus), func(t *testing.T) {
+			controller := NewController(t)
+			for testNumber, testMetadata := range getAllocatePodAntiAffinityTestsMetadata() {
+				for _, job := range testMetadata.Jobs {
+					if job.Name == "pending_job0" {
+						job.RequiredGPUsPerTask = gpus
+					}
+				}
+				expected := testMetadata.JobExpectedResults["pending_job0"]
+				expected.GPUsRequired = gpus
+				expected.DontValidateGPUGroup = gpus < 1
+				testMetadata.JobExpectedResults["pending_job0"] = expected
+				t.Logf("Running test number: %v, test name: %v", testNumber, testMetadata.Name)
+				ssn := test_utils.BuildSession(testMetadata.TestTopologyBasic, controller)
+				allocate.New().Execute(ssn)
+				test_utils.MatchExpectedAndRealTasks(t, testNumber, testMetadata.TestTopologyBasic, ssn)
+			}
+		})
 	}
 }
 
@@ -75,8 +83,7 @@ func getAllocatePodAntiAffinityTestsMetadata() []integration_tests_utils.TestTop
 			PodAntiAffinityTopologyKey: hostnameTopologyKey,
 		}
 	}
-	// Labelled tier=preprocess and carrying its own required anti-affinity against
-	// tier=train, so the check is the symmetric "existing pod's anti-affinity" one.
+	// Cover the terminating pod's own anti-affinity against the pending pod.
 	preprocessAntiAffineToTrain := func() *tasks_fake.TestTaskBasic {
 		return &tasks_fake.TestTaskBasic{
 			PodAffinityLabels:          preprocessLabels,
@@ -88,70 +95,69 @@ func getAllocatePodAntiAffinityTestsMetadata() []integration_tests_utils.TestTop
 	return []integration_tests_utils.TestTopologyMetadata{
 		{
 			TestTopologyBasic: test_utils.TestTopologyBasic{
-				Name: "Idle GPU next to a releasing pod the pending pod is anti-affine to: stay pending, do not bind",
+				Name: "Idle GPU next to an anti-affine releasing pod: pipeline",
 				Jobs: []*jobs_fake.TestJobBasic{
 					releasingJob(&tasks_fake.TestTaskBasic{PodAffinityLabels: preprocessLabels}),
 					pendingJob(antiAffineToPreprocess()),
 				},
 				Nodes:  node(2),
 				Queues: queues,
-				Mocks:  &test_utils.TestMock{CacheRequirements: &test_utils.CacheMocking{}},
+				Mocks:  &test_utils.TestMock{CacheRequirements: &test_utils.CacheMocking{NumberOfPipelineActions: 1}},
 				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
 					"releasing_job0": {GPUsRequired: 1, Status: pod_status.Releasing, NodeName: "node0"},
-					"pending_job0":   {GPUsRequired: 1, Status: pod_status.Pending},
+					"pending_job0":   {GPUsRequired: 1, Status: pod_status.Pipelined, NodeName: "node0"},
 				},
 			},
 		},
 		{
 			TestTopologyBasic: test_utils.TestTopologyBasic{
-				Name: "Only an independently terminating anti-affine pod blocks the node: stay pending (not a session victim)",
+				Name: "Releasing anti-affine pod fills the node: pipeline",
 				Jobs: []*jobs_fake.TestJobBasic{
 					releasingJob(&tasks_fake.TestTaskBasic{PodAffinityLabels: preprocessLabels}),
 					pendingJob(antiAffineToPreprocess()),
 				},
 				Nodes:  node(1),
 				Queues: queues,
-				Mocks:  &test_utils.TestMock{CacheRequirements: &test_utils.CacheMocking{}},
+				Mocks:  &test_utils.TestMock{CacheRequirements: &test_utils.CacheMocking{NumberOfPipelineActions: 1}},
 				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
 					"releasing_job0": {GPUsRequired: 1, Status: pod_status.Releasing, NodeName: "node0"},
-					"pending_job0":   {GPUsRequired: 1, Status: pod_status.Pending},
+					"pending_job0":   {GPUsRequired: 1, Status: pod_status.Pipelined, NodeName: "node0"},
 				},
 			},
 		},
 		{
 			TestTopologyBasic: test_utils.TestTopologyBasic{
-				Name: "Idle GPU next to a releasing pod whose own anti-affinity excludes the pending pod: stay pending",
+				Name: "Idle GPU next to a releasing pod with symmetric anti-affinity: pipeline",
 				Jobs: []*jobs_fake.TestJobBasic{
 					releasingJob(preprocessAntiAffineToTrain()),
 					pendingJob(&tasks_fake.TestTaskBasic{PodAffinityLabels: trainLabels}),
 				},
 				Nodes:  node(2),
 				Queues: queues,
-				Mocks:  &test_utils.TestMock{CacheRequirements: &test_utils.CacheMocking{}},
+				Mocks:  &test_utils.TestMock{CacheRequirements: &test_utils.CacheMocking{NumberOfPipelineActions: 1}},
 				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
 					"releasing_job0": {GPUsRequired: 1, Status: pod_status.Releasing, NodeName: "node0"},
-					"pending_job0":   {GPUsRequired: 1, Status: pod_status.Pending},
+					"pending_job0":   {GPUsRequired: 1, Status: pod_status.Pipelined, NodeName: "node0"},
 				},
 			},
 		},
 		{
 			TestTopologyBasic: test_utils.TestTopologyBasic{
-				Name: "Only an independently terminating pod whose own anti-affinity excludes the pending pod blocks the node: stay pending",
+				Name: "Releasing pod with symmetric anti-affinity fills the node: pipeline",
 				Jobs: []*jobs_fake.TestJobBasic{
 					releasingJob(preprocessAntiAffineToTrain()),
 					pendingJob(&tasks_fake.TestTaskBasic{PodAffinityLabels: trainLabels}),
 				},
 				Nodes:  node(1),
 				Queues: queues,
-				Mocks:  &test_utils.TestMock{CacheRequirements: &test_utils.CacheMocking{}},
+				Mocks:  &test_utils.TestMock{CacheRequirements: &test_utils.CacheMocking{NumberOfPipelineActions: 1}},
 				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
 					"releasing_job0": {GPUsRequired: 1, Status: pod_status.Releasing, NodeName: "node0"},
-					"pending_job0":   {GPUsRequired: 1, Status: pod_status.Pending},
+					"pending_job0":   {GPUsRequired: 1, Status: pod_status.Pipelined, NodeName: "node0"},
 				},
 			},
 		},
 		{
-			// Control: without anti-affinity the idle GPU is bound immediately.
 			TestTopologyBasic: test_utils.TestTopologyBasic{
 				Name: "Idle GPU next to a releasing pod with no anti-affinity involved: bind",
 				Jobs: []*jobs_fake.TestJobBasic{
