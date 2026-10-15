@@ -30,6 +30,7 @@ type JobSolver struct {
 	actionType           framework.ActionType
 	actionBudget         *ActionSearchBudget
 	failedScenarios      sets.Set[scenarioFingerprint]
+	pinnedFeasibleNodes  bool
 }
 
 type solvingState struct {
@@ -55,6 +56,13 @@ func NewJobsSolver(
 		actionType:           action,
 		actionBudget:         budget,
 	}
+}
+
+// PinFeasibleNodes keeps the pending job on the given feasible nodes; nodes of victims are not
+// added as placement candidates.
+func (s *JobSolver) PinFeasibleNodes() *JobSolver {
+	s.pinnedFeasibleNodes = true
+	return s
 }
 
 func newUnlimitedActionSearchBudget(action framework.ActionType) *ActionSearchBudget {
@@ -96,10 +104,30 @@ func (s *JobSolver) SolveWithResult(
 		}
 	}()
 
-	originalNumActiveTasks := pendingJob.GetNumActiveUsedTasks()
-
 	tasksToAllocate := podgroup_info.GetTasksToAllocate(pendingJob, ssn.SubGroupOrderFn, ssn.TaskOrderFn,
 		podgroup_info.SimulatedTaskAllocation)
+	return s.solveTasks(ssn, pendingJob, tasksToAllocate)
+}
+
+// SolveTasksWithResult solves for the given tasks of pendingJob instead of the tasks selected by
+// gang admission, e.g. for tasks virtually evicted in the session that gang admission skips.
+func (s *JobSolver) SolveTasksWithResult(
+	ssn *framework.Session, pendingJob *podgroup_info.PodGroupInfo, tasksToAllocate []*pod_info.PodInfo,
+) (solved bool, statement *framework.Statement, victimTaskNames []string, searchResult *SearchResult) {
+	defer func() {
+		if searchResult != nil {
+			metrics.IncScenarioSearchJobs(
+				s.actionType, searchResult.scenarioSearchMetricResult(), searchResult.ReducedBudget(),
+			)
+		}
+	}()
+	return s.solveTasks(ssn, pendingJob, tasksToAllocate)
+}
+
+func (s *JobSolver) solveTasks(
+	ssn *framework.Session, pendingJob *podgroup_info.PodGroupInfo, tasksToAllocate []*pod_info.PodInfo,
+) (bool, *framework.Statement, []string, *SearchResult) {
+	originalNumActiveTasks := pendingJob.GetNumActiveUsedTasks()
 	n := len(tasksToAllocate)
 	if n == 0 {
 		searchResult := terminalSearchResult(SearchResultGeneratorsExhausted, false)
@@ -310,14 +338,7 @@ func (s *JobSolver) solvePartialJob(
 		jobBudget = newUnlimitedActionSearchBudget(s.actionType).BeginJob()
 	}
 
-	feasibleNodeMap := map[string]*node_info.NodeInfo{}
-	for _, node := range s.feasibleNodes {
-		feasibleNodeMap[node.Name] = node
-	}
-	for _, task := range state.recordedVictimsTasks {
-		node := ssn.ClusterInfo.Nodes[task.NodeName]
-		feasibleNodeMap[task.NodeName] = node
-	}
+	feasibleNodeMap := s.probeFeasibleNodes(ssn, state)
 
 	solveCtx := &SolveContext{
 		Session:              ssn,
@@ -356,6 +377,7 @@ func (s *JobSolver) solvePartialJob(
 		scenarioSolver := newByPodSolver(feasibleNodeMap, s.solutionValidatorWithMetrics(generatorName, &validatorRejected),
 			ssn.AllowConsolidatingReclaim(),
 			s.actionType)
+		scenarioSolver.pinnedFeasibleNodes = s.pinnedFeasibleNodes
 
 		log.InfraLogger.V(5).Do(func() {
 			log.InfraLogger.Infof("Trying to solve scenario: %s", scenarioToSolve)
@@ -379,6 +401,20 @@ func (s *JobSolver) solvePartialJob(
 	}
 
 	return terminalSearchResult(portfolio.StopReason(), jobBudget.ReducedBudget())
+}
+
+// probeFeasibleNodes returns the solver's nodes plus, unless pinned, the nodes of recorded victims.
+func (s *JobSolver) probeFeasibleNodes(ssn *framework.Session, state *solvingState) map[string]*node_info.NodeInfo {
+	feasibleNodeMap := map[string]*node_info.NodeInfo{}
+	for _, node := range s.feasibleNodes {
+		feasibleNodeMap[node.Name] = node
+	}
+	if !s.pinnedFeasibleNodes {
+		for _, task := range state.recordedVictimsTasks {
+			feasibleNodeMap[task.NodeName] = ssn.ClusterInfo.Nodes[task.NodeName]
+		}
+	}
+	return feasibleNodeMap
 }
 
 func (s *JobSolver) observeActionBudgetExhausted() {

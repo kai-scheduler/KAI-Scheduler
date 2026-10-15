@@ -66,6 +66,7 @@ type ServerOption struct {
 	UpdatePodEvictionCondition        bool
 	ScheduleCSIStorage                bool
 	UseSchedulingSignatures           bool
+	DeferredResizePreemption          bool
 	FullHierarchyFairness             bool
 	AllowConsolidatingReclaim         bool
 	NumOfStatusRecordingWorkers       int
@@ -124,6 +125,7 @@ func (s *ServerOption) AddFlags(fs *pflag.FlagSet) {
 	fs.BoolVar(&s.UpdatePodEvictionCondition, "update-pod-eviction-condition", false, "Update pod eviction condition to reflect the pod's eviction status")
 	fs.BoolVar(&s.ScheduleCSIStorage, "schedule-csi-storage", false, "Enables advanced scheduling (preempt, reclaim) for csi storage objects")
 	fs.BoolVar(&s.UseSchedulingSignatures, "use-scheduling-signatures", true, "Use scheduling signatures to avoid duplicate scheduling attempts for identical jobs")
+	fs.BoolVar(&s.DeferredResizePreemption, "deferred-resize-preemption", false, "Preempt or reclaim on a pod's node to make room for an in-place resize the kubelet marked as Deferred")
 	fs.BoolVar(&s.FullHierarchyFairness, "full-hierarchy-fairness", true, "Fairness across project and department levels")
 	fs.BoolVar(&s.AllowConsolidatingReclaim, "allow-consolidating-reclaim", true, "Do not count pipelined pods towards 'reclaimed' resources")
 	fs.IntVar(&s.NumOfStatusRecordingWorkers, "num-of-status-recording-workers", defaultNumOfStatusRecordingWorkers, "specifies the max number of go routines spawned to update pod and podgroups conditions and events. Defaults to 5")

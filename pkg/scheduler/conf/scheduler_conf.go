@@ -38,6 +38,7 @@ type SchedulerParams struct {
 	MaxNumberConsolidationPreemptees  int                         `json:"maxNumberConsolidationPreemptees,omitempty"`
 	ScheduleCSIStorage                bool                        `json:"scheduleCSIStorage,omitempty"`
 	UseSchedulingSignatures           bool                        `json:"useSchedulingSignatures,omitempty"`
+	DeferredResizePreemption          bool                        `json:"deferredResizePreemption,omitempty"`
 	FullHierarchyFairness             bool                        `json:"fullHierarchyFairness,omitempty"`
 	AllowConsolidatingReclaim         bool                        `json:"allowConsolidatingReclaim,omitempty"`
 	NumOfStatusRecordingWorkers       int                         `json:"numOfStatusRecordingWorkers,omitempty"`

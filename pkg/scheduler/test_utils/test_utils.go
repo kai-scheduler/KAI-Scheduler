@@ -59,6 +59,8 @@ type TestTopologyBasic struct {
 
 	dra_fake.TestDRAObjects
 	Topologies []*kaiv1alpha1.Topology
+
+	DeferredResizePreemption bool
 }
 
 type TestMock struct {

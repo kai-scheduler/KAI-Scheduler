@@ -148,5 +148,24 @@ var _ = Describe("compactSchedulerPod", func() {
 			Expect(compact.Annotations).To(HaveLen(2))
 			Expect(compact.ManagedFields).To(BeNil())
 		})
+
+		It("keeps only the in-place resize conditions", func() {
+			pod := succeededPod()
+			pod.Status.Phase = v1.PodRunning
+			pod.Status.Conditions = []v1.PodCondition{
+				{Type: v1.PodReady, Status: v1.ConditionTrue},
+				{Type: v1.PodResizePending, Status: v1.ConditionTrue, Reason: v1.PodReasonDeferred},
+				{Type: pod_info.PodResizePreemptionDisabled, Status: v1.ConditionTrue},
+			}
+
+			transformed, err := compactSchedulerPod(pod)
+			Expect(err).NotTo(HaveOccurred())
+
+			compact := transformed.(*v1.Pod)
+			Expect(compact.Status.Conditions).To(HaveLen(2))
+			Expect(compact.Status.Conditions[0].Type).To(Equal(v1.PodResizePending))
+			Expect(compact.Status.Conditions[0].Reason).To(Equal(v1.PodReasonDeferred))
+			Expect(compact.Status.Conditions[1].Type).To(Equal(pod_info.PodResizePreemptionDisabled))
+		})
 	})
 })

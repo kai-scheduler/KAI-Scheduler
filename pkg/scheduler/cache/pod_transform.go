@@ -9,6 +9,8 @@ import (
 	"k8s.io/client-go/tools/cache"
 
 	commonconstants "github.com/kai-scheduler/api/constants"
+
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 )
 
 func setSchedulerPodTransform(informer cache.SharedIndexInformer) error {
@@ -75,13 +77,15 @@ func compactContainerStatuses(statuses []v1.ContainerStatus) []v1.ContainerStatu
 	return compact
 }
 
+// compactConditions retains only the in-place resize conditions read by the scheduler.
 func compactConditions(conditions []v1.PodCondition) []v1.PodCondition {
+	var compact []v1.PodCondition
 	for _, c := range conditions {
-		if c.Type == v1.PodResizePending {
-			return []v1.PodCondition{c}
+		if c.Type == v1.PodResizePending || c.Type == pod_info.PodResizePreemptionDisabled {
+			compact = append(compact, c)
 		}
 	}
-	return nil
+	return compact
 }
 
 func compactContainers(containers []v1.Container) []v1.Container {

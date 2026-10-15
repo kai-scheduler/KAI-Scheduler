@@ -1611,3 +1611,117 @@ func TestStatement_Pipeline_TaskNotInJob(t *testing.T) {
 	assert.NotContains(t, nodesInfoMap["node0"].PodInfos, pod_info.PodKey(staleTask.Pod), "task must not be added to the node")
 	assert.Equal(t, nodeBefore, extractNodeAssertedInfo(nodesInfoMap["node0"]), "node accounting must not change")
 }
+
+func TestStatement_EvictedTasks(t *testing.T) {
+	vectorMap := resource_info.NewResourceVectorMap()
+	jobs, tasksToNodes, _ := jobs_fake.BuildJobsAndTasksMaps([]*jobs_fake.TestJobBasic{
+		{
+			Name:      "job0",
+			QueueName: "queue0",
+			Tasks: []*tasks_fake.TestTaskBasic{
+				{State: pod_status.Running, NodeName: "node0"},
+				{State: pod_status.Running, NodeName: "node0"},
+				{State: pod_status.Running, NodeName: "node0"},
+			},
+		},
+	}, vectorMap)
+	nodes := nodes_fake.BuildNodesInfoMap(map[string]nodes_fake.TestNodeBasic{
+		"node0": {CPUMillis: 10000},
+	}, tasksToNodes, nil, vectorMap)
+	session := &Session{ClusterInfo: &api.ClusterInfo{PodGroupInfos: jobs, Nodes: nodes}}
+	pods := jobs["job0"].GetAllPodsMap()
+	task0, task1, task2 := pods["job0-0"], pods["job0-1"], pods["job0-2"]
+
+	evictedNames := func(stmt *Statement) []string {
+		var names []string
+		for _, task := range stmt.EvictedTasks() {
+			names = append(names, task.Name)
+		}
+		return names
+	}
+
+	stmt := session.Statement()
+	assert.Empty(t, stmt.EvictedTasks())
+
+	require.NoError(t, stmt.Evict(task0, "", eviction_info.EvictionMetadata{}))
+	require.NoError(t, stmt.Evict(task1, "", eviction_info.EvictionMetadata{}))
+	assert.Equal(t, []string{"job0-0", "job0-1"}, evictedNames(stmt))
+
+	require.NoError(t, stmt.Unevict(task0))
+	assert.Equal(t, []string{"job0-1"}, evictedNames(stmt))
+	assert.Equal(t, pod_status.Running, task0.Status)
+
+	cp := stmt.Checkpoint()
+	require.NoError(t, stmt.Evict(task2, "", eviction_info.EvictionMetadata{}))
+	assert.Equal(t, []string{"job0-1", "job0-2"}, evictedNames(stmt))
+
+	require.NoError(t, stmt.Rollback(cp))
+	assert.Equal(t, []string{"job0-1"}, evictedNames(stmt))
+
+	stmt.Discard()
+	assert.Empty(t, stmt.EvictedTasks())
+	assert.Equal(t, pod_status.Running, task1.Status)
+}
+
+func TestStatement_PipelineTaskEvictedByEnclosingStatement(t *testing.T) {
+	vectorMap := resource_info.NewResourceVectorMap()
+	jobs, tasksToNodes, _ := jobs_fake.BuildJobsAndTasksMaps([]*jobs_fake.TestJobBasic{
+		{
+			Name:                "job0",
+			QueueName:           "queue0",
+			RequiredCPUsPerTask: 2,
+			Tasks:               []*tasks_fake.TestTaskBasic{{State: pod_status.Running, NodeName: "node0"}},
+		},
+	}, vectorMap)
+	nodes := nodes_fake.BuildNodesInfoMap(map[string]nodes_fake.TestNodeBasic{
+		"node0": {CPUMillis: 4},
+	}, tasksToNodes, nil, vectorMap)
+	session := &Session{ClusterInfo: &api.ClusterInfo{PodGroupInfos: jobs, Nodes: nodes}}
+	node := nodes["node0"]
+	task := jobs["job0"].GetAllPodsMap()["job0-0"]
+	idleBefore := node.IdleVector.Clone()
+	releasingBefore := node.ReleasingVector.Clone()
+
+	outer := session.Statement()
+	require.NoError(t, outer.Evict(task, "", eviction_info.EvictionMetadata{}))
+
+	inner := session.Statement()
+	require.NoError(t, inner.Pipeline(task, "node0", false))
+	assert.Equal(t, pod_status.Pipelined, task.Status)
+	assert.Equal(t, "node0", task.NodeName)
+
+	inner.Discard()
+	assert.Equal(t, pod_status.Releasing, task.Status)
+
+	outer.Discard()
+	assert.Equal(t, pod_status.Running, task.Status)
+	assert.Equal(t, idleBefore, node.IdleVector)
+	assert.Equal(t, releasingBefore, node.ReleasingVector)
+}
+
+func TestStatement_PipelineTaskEvictedBySameStatementUnevicts(t *testing.T) {
+	vectorMap := resource_info.NewResourceVectorMap()
+	jobs, tasksToNodes, _ := jobs_fake.BuildJobsAndTasksMaps([]*jobs_fake.TestJobBasic{
+		{
+			Name:                "job0",
+			QueueName:           "queue0",
+			RequiredCPUsPerTask: 2,
+			Tasks:               []*tasks_fake.TestTaskBasic{{State: pod_status.Running, NodeName: "node0"}},
+		},
+	}, vectorMap)
+	nodes := nodes_fake.BuildNodesInfoMap(map[string]nodes_fake.TestNodeBasic{
+		"node0": {CPUMillis: 4},
+	}, tasksToNodes, nil, vectorMap)
+	session := &Session{ClusterInfo: &api.ClusterInfo{PodGroupInfos: jobs, Nodes: nodes}}
+	task := jobs["job0"].GetAllPodsMap()["job0-0"]
+
+	stmt := session.Statement()
+	require.NoError(t, stmt.Evict(task, "", eviction_info.EvictionMetadata{}))
+	require.NoError(t, stmt.Pipeline(task, "node0", false))
+	assert.Equal(t, pod_status.Running, task.Status, "pipelining back in the same statement unevicts")
+	assert.Empty(t, stmt.EvictedTasks())
+
+	// Once the eviction is undone, a later pipeline in place is a regular pipeline.
+	stmt.Discard()
+	assert.Equal(t, pod_status.Running, task.Status)
+}

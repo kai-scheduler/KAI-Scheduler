@@ -44,6 +44,7 @@ type byPodSolver struct {
 	solutionValidator        SolutionValidator
 	allowVictimConsolidation bool
 	actionType               framework.ActionType
+	pinnedFeasibleNodes      bool
 }
 
 func newByPodSolver(
@@ -121,6 +122,9 @@ func (s *byPodSolver) feasibleNodesRollback(newFeasibleNodes map[string]bool) {
 
 func (s *byPodSolver) updateFeasibleNodes(ssn *framework.Session, victimTasks []*pod_info.PodInfo) map[string]bool {
 	newFeasibleNodes := map[string]bool{}
+	if s.pinnedFeasibleNodes {
+		return newFeasibleNodes
+	}
 	for _, potentialVictimTasks := range victimTasks {
 		_, found := s.feasibleNodes[potentialVictimTasks.NodeName]
 		if !found {

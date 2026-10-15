@@ -558,6 +558,15 @@ func (ssn *Session) UseSchedulingSignatures() bool {
 	return ssn.SchedulerParams.UseSchedulingSignatures
 }
 
+func (ssn *Session) DeferredResizePreemptionEnabled() bool {
+	return ssn.SchedulerParams.DeferredResizePreemption
+}
+
+// OverrideDeferredResizePreemption overrides the value returned by DeferredResizePreemptionEnabled. Use for testing purposes.
+func (ssn *Session) OverrideDeferredResizePreemption(enabled bool) {
+	ssn.SchedulerParams.DeferredResizePreemption = enabled
+}
+
 func (ssn *Session) GetJobsDepth(action ActionType) int {
 	maxJobs, foundForAction := ssn.Config.QueueDepthPerAction[string(action)]
 	if !foundForAction {

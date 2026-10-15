@@ -21,11 +21,15 @@ package preempt
 
 import (
 	"golang.org/x/exp/maps"
+	"k8s.io/apimachinery/pkg/util/sets"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/deferredresize"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
@@ -53,11 +57,13 @@ func (alloc *preemptAction) Execute(ssn *framework.Session) {
 		return
 	}
 
+	resizeJobs := deferredresize.Jobs(ssn)
 	jobsOrderByQueues := utils.NewJobsOrderByQueues(ssn, utils.JobsOrderInitOptions{
 		FilterNonPending:            true,
 		FilterUnready:               true,
 		FilterWithinPreemptionDelay: true,
 		MaxJobsQueueDepth:           ssn.GetJobsDepth(framework.Preempt),
+		NonPendingJobsToInclude:     sets.KeySet(resizeJobs),
 	})
 	jobsOrderByQueues.InitializeWithJobs(ssn.ClusterInfo.PodGroupInfos)
 
@@ -69,45 +75,91 @@ func (alloc *preemptAction) Execute(ssn *framework.Session) {
 	for !jobsOrderByQueues.IsEmpty() {
 		job := jobsOrderByQueues.PopNextJob()
 
-		smallestFailedJobs, found := smallestFailedJobsByQueue[job.Queue]
-		if !found {
-			smallestFailedJobsByQueue[job.Queue] = common.NewMinimalJobRepresentatives()
-			smallestFailedJobs = smallestFailedJobsByQueue[job.Queue]
-		}
-		if ssn.UseSchedulingSignatures() {
-			easier, otherJob := smallestFailedJobs.IsEasierToSchedule(job)
-			if !easier {
-				log.InfraLogger.V(3).Infof(
-					"Skipping preemption for job: <%v/%v> - is not easier to preempt for than: <%v/%v>",
-					job.Namespace, job.Name, otherJob.Namespace, otherJob.Name)
-				continue
+		if job.GetNumPendingTasks() > 0 {
+			if shouldStop := preemptForPendingTasks(ssn, job, actionBudget, smallestFailedJobsByQueue); shouldStop {
+				return
 			}
-		}
-		tasks := podgroup_info.GetTasksToAllocate(job, ssn.SubGroupOrderFn, ssn.TaskOrderFn,
-			podgroup_info.SimulatedTaskAllocation)
-		if task, failure := common.VictimInvariantPrePredicateFailureForTasks(ssn, tasks); failure != nil {
-			common.RecordVictimInvariantPrePredicateFailure(job, task, failure)
-			continue
 		}
 
-		metrics.IncPodgroupsConsideredByAction()
-		succeeded, statement, preemptedTasksNames, searchResult := attemptToPreemptForPreemptor(ssn, job, actionBudget)
-		if succeeded {
-			metrics.RegisterPreemptionAttempts()
-			metrics.IncPodgroupScheduledByAction()
-			log.InfraLogger.V(3).Infof(
-				"Successfully preempted for job <%s/%s>, preempted tasks: <%v>",
-				job.Namespace, job.Name, preemptedTasksNames)
-			if err := statement.Commit(); err != nil {
-				log.InfraLogger.Errorf("Failed to commit preemption statement: %v", err)
+		// Pending pods get the first pick of victims; the resize is tried afterwards either way.
+		if nodeTasks, found := resizeJobs[job.UID]; found {
+			if shouldStop := deferredresize.AttemptForJob(ssn, job, nodeTasks, framework.Preempt,
+				isEligibleForDeferredResize(ssn), newDeferredResizeSolver(ssn, job, actionBudget),
+				shouldStopActionForSearchResult); shouldStop {
+				return
 			}
-		} else if shouldStopActionForSearchResult(searchResult) {
-			return
-		} else {
-			log.InfraLogger.V(3).Infof("Didn't find a preemption strategy for job <%s/%s>",
-				job.Namespace, job.Name)
-			smallestFailedJobs.UpdateRepresentative(job)
 		}
+	}
+}
+
+func preemptForPendingTasks(
+	ssn *framework.Session, job *podgroup_info.PodGroupInfo, actionBudget *solvers.ActionSearchBudget,
+	smallestFailedJobsByQueue map[common_info.QueueID]*common.MinimalJobRepresentatives,
+) (shouldStop bool) {
+	smallestFailedJobs, found := smallestFailedJobsByQueue[job.Queue]
+	if !found {
+		smallestFailedJobsByQueue[job.Queue] = common.NewMinimalJobRepresentatives()
+		smallestFailedJobs = smallestFailedJobsByQueue[job.Queue]
+	}
+	if ssn.UseSchedulingSignatures() {
+		easier, otherJob := smallestFailedJobs.IsEasierToSchedule(job)
+		if !easier {
+			log.InfraLogger.V(3).Infof(
+				"Skipping preemption for job: <%v/%v> - is not easier to preempt for than: <%v/%v>",
+				job.Namespace, job.Name, otherJob.Namespace, otherJob.Name)
+			return false
+		}
+	}
+	tasks := podgroup_info.GetTasksToAllocate(job, ssn.SubGroupOrderFn, ssn.TaskOrderFn,
+		podgroup_info.SimulatedTaskAllocation)
+	if task, failure := common.VictimInvariantPrePredicateFailureForTasks(ssn, tasks); failure != nil {
+		common.RecordVictimInvariantPrePredicateFailure(job, task, failure)
+		return false
+	}
+
+	metrics.IncPodgroupsConsideredByAction()
+	succeeded, statement, preemptedTasksNames, searchResult := attemptToPreemptForPreemptor(ssn, job, actionBudget)
+	if succeeded {
+		metrics.RegisterPreemptionAttempts()
+		metrics.IncPodgroupScheduledByAction()
+		log.InfraLogger.V(3).Infof(
+			"Successfully preempted for job <%s/%s>, preempted tasks: <%v>",
+			job.Namespace, job.Name, preemptedTasksNames)
+		if err := statement.Commit(); err != nil {
+			log.InfraLogger.Errorf("Failed to commit preemption statement: %v", err)
+		}
+	} else if shouldStopActionForSearchResult(searchResult) {
+		return true
+	} else {
+		log.InfraLogger.V(3).Infof("Didn't find a preemption strategy for job <%s/%s>",
+			job.Namespace, job.Name)
+		smallestFailedJobs.UpdateRepresentative(job)
+	}
+	return false
+}
+
+func isEligibleForDeferredResize(ssn *framework.Session) deferredresize.Eligibility {
+	return func(job *podgroup_info.PodGroupInfo, tasks []*pod_info.PodInfo) bool {
+		if result := ssn.IsNonPreemptibleJobOverQueueQuotaFn(job, tasks); !result.IsSchedulable {
+			log.InfraLogger.V(3).Infof("Deferred resize of job <%v/%v> would place the queue over quota",
+				job.Namespace, job.Name)
+			return false
+		}
+		return true
+	}
+}
+
+func newDeferredResizeSolver(
+	ssn *framework.Session, job *podgroup_info.PodGroupInfo, actionBudget *solvers.ActionSearchBudget,
+) deferredresize.SolverFactory {
+	return func(node *node_info.NodeInfo) *solvers.JobSolver {
+		return solvers.NewJobsSolver(
+			[]*node_info.NodeInfo{node},
+			ssn.PreemptScenarioValidator,
+			getOrderedVictimsQueueOnNode(ssn, job, node.Name),
+			framework.Preempt,
+			actionBudget,
+		).PinFeasibleNodes()
 	}
 }
 
@@ -180,10 +232,25 @@ func buildFilterFuncForPreempt(ssn *framework.Session, preemptor *podgroup_info.
 }
 
 func getOrderedVictimsQueue(ssn *framework.Session, preemptor *podgroup_info.PodGroupInfo) solvers.GenerateVictimsQueue {
+	return newVictimsQueueGenerator(ssn, buildFilterFuncForPreempt(ssn, preemptor))
+}
+
+func getOrderedVictimsQueueOnNode(
+	ssn *framework.Session, preemptor *podgroup_info.PodGroupInfo, nodeName string,
+) solvers.GenerateVictimsQueue {
+	filter := buildFilterFuncForPreempt(ssn, preemptor)
+	return newVictimsQueueGenerator(ssn, func(job *podgroup_info.PodGroupInfo) bool {
+		return deferredresize.HasActiveAllocatedTaskOnNode(job, nodeName) && filter(job)
+	})
+}
+
+func newVictimsQueueGenerator(
+	ssn *framework.Session, filter func(*podgroup_info.PodGroupInfo) bool,
+) solvers.GenerateVictimsQueue {
 	return utils.NewCachedVictimsQueueGenerator(
 		ssn,
 		func() map[common_info.PodGroupID]*podgroup_info.PodGroupInfo {
-			return utils.GetVictimCandidates(ssn, buildFilterFuncForPreempt(ssn, preemptor))
+			return utils.GetVictimCandidates(ssn, filter)
 		},
 		utils.JobsOrderInitOptions{
 			FilterNonPreemptible:     true,

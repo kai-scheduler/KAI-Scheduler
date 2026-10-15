@@ -453,3 +453,38 @@ func scenarioSearchMetricHasLabels(metric *dto.Metric, labels map[string]string)
 	}
 	return true
 }
+
+func TestSolveTasksWithResultSolvesOnlyGivenTasks(t *testing.T) {
+	ssn, pendingJob := newJobSolverResultTestSession(t, 2)
+	solver := NewJobsSolver(nil, nil, nil, framework.Reclaim, nil)
+
+	_, statement, _, result := solver.SolveTasksWithResult(ssn, pendingJob, nil)
+	require.Nil(t, statement)
+	require.Equal(t, SearchResultGeneratorsExhausted, result.Reason(), "no tasks means nothing to solve")
+
+	var oneTask []*pod_info.PodInfo
+	for _, task := range pendingJob.GetAllPodsMap() {
+		oneTask = append(oneTask, task)
+		break
+	}
+	_, statement, _, result = solver.SolveTasksWithResult(ssn, pendingJob, oneTask)
+	require.Nil(t, statement)
+	require.Equal(t, SearchResultNoGenerator, result.Reason(), "given tasks reach the search")
+}
+
+func TestPinFeasibleNodesExcludesRecordedVictimNodes(t *testing.T) {
+	vectorMap := resource_info.NewResourceVectorMap()
+	node0 := node_info.NewNodeInfo(common_info.BuildNode("node-0", common_info.BuildResourceList("4", "16Gi")), nil, vectorMap)
+	node1 := node_info.NewNodeInfo(common_info.BuildNode("node-1", common_info.BuildResourceList("4", "16Gi")), nil, vectorMap)
+	ssn := &framework.Session{ClusterInfo: &api.ClusterInfo{
+		Nodes: map[string]*node_info.NodeInfo{node0.Name: node0, node1.Name: node1},
+	}}
+	state := &solvingState{recordedVictimsTasks: []*pod_info.PodInfo{{NodeName: node1.Name}}}
+
+	solver := NewJobsSolver([]*node_info.NodeInfo{node0}, nil, nil, framework.Reclaim, nil)
+	require.Equal(t, map[string]*node_info.NodeInfo{node0.Name: node0, node1.Name: node1},
+		solver.probeFeasibleNodes(ssn, state))
+
+	require.Same(t, solver, solver.PinFeasibleNodes())
+	require.Equal(t, map[string]*node_info.NodeInfo{node0.Name: node0}, solver.probeFeasibleNodes(ssn, state))
+}

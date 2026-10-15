@@ -411,6 +411,33 @@ func TestBuildArgsList(t *testing.T) {
 			notExpected: []string{"leader-elect"},
 		},
 		{
+			name: "with deferred resize preemption from shard args",
+			config: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Global: &kaiv1.GlobalConfig{
+						SchedulerName: ptr.To("test-scheduler"),
+					},
+					Namespace: "kai-system",
+					Scheduler: &kaiv1scheduler.Scheduler{
+						Replicas: ptr.To(int32(1)),
+					},
+				},
+			},
+			shard: &kaiv1.SchedulingShard{
+				Spec: kaiv1.SchedulingShardSpec{
+					Args: map[string]string{
+						"deferred-resize-preemption": "true",
+					},
+				},
+			},
+			expected: map[string]string{
+				"scheduler-conf":             "config.yaml",
+				"scheduler-name":             "test-scheduler",
+				"namespace":                  "kai-system",
+				"deferred-resize-preemption": "true",
+			},
+		},
+		{
 			name: "with json logging",
 			config: &kaiv1.Config{
 				Spec: kaiv1.ConfigSpec{
