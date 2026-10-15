@@ -396,7 +396,7 @@ func TestUnifiedSolverUnknownMemoryState(t *testing.T) {
 					_, err := plugin.evaluate(task, node)
 					require.ErrorIs(t, err, errMemoryStateUnknown)
 					require.ErrorIs(t, plugin.predicate(task, nil, node), errMemoryStateUnknown)
-					_, err = plugin.placement(task, node)
+					_, err = plugin.evaluate(task, node)
 					require.ErrorIs(t, err, errMemoryStateUnknown)
 				})
 			}
@@ -633,7 +633,7 @@ func TestNonePolicySkipsEvaluation(t *testing.T) {
 				require.NoError(t, err)
 				require.True(t, placement.IsEmpty())
 				require.NoError(t, plugin.predicate(task, nil, node))
-				placement, err = plugin.placement(task, node)
+				placement, err = plugin.evaluate(task, node)
 				require.NoError(t, err)
 				require.True(t, placement.IsEmpty())
 				require.Equal(t, beforeTopology, topology)

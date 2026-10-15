@@ -461,7 +461,7 @@ func TestInCycleReservation(t *testing.T) {
 
 	first := makeGuaranteedTask("first", map[string]string{"cpu": "3"})
 	var err error
-	first.NUMAPlacement, err = pp.placement(first, node)
+	first.NUMAPlacement, err = pp.evaluate(first, node)
 	assert.NoError(t, err)
 	pp.allocate(&framework.Event{Task: first})
 	assert.Equal(t, int64(1), avail(), "zone charged by the first pod")

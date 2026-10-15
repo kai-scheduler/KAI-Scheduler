@@ -98,7 +98,7 @@ func TestDelayedBindMemoryGroupRestrictsNextPod(t *testing.T) {
 	pp, session, node := memoryTestPlugin()
 	pp.seedMemoryGroups(session)
 	first := memoryTestTask("first", "120Gi")
-	placement, err := pp.placement(first, node)
+	placement, err := pp.evaluate(first, node)
 	require.NoError(t, err)
 	require.Len(t, placement.MemoryGroups, 1)
 	assert.Equal(t, pod_info.NUMAMask(3), placement.MemoryGroups[0].Mask)

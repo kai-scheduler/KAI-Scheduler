@@ -95,7 +95,7 @@ func (pp *numaPlugin) OnSessionOpen(ssn *framework.Session) {
 
 	ssn.AddPrePredicateFn(pp.prePredicate)
 	ssn.AddPredicateFn(pp.predicate)
-	ssn.AddNumaPlacementFn(pp.placement)
+	ssn.AddNumaPlacementFn(pp.evaluate)
 	ssn.AddNodePreOrderFn(pp.nodePreOrder)
 	ssn.AddNodeOrderFn(pp.nodeScore)
 	ssn.AddEventHandler(&framework.EventHandler{
@@ -231,11 +231,6 @@ func (pp *numaPlugin) wantsNuma(task *pod_info.PodInfo) bool {
 		}
 	}
 	return false
-}
-
-// placement re-solves after node selection so a changed ledger cannot commit a stale prediction.
-func (pp *numaPlugin) placement(task *pod_info.PodInfo, node *node_info.NodeInfo) (pod_info.NUMAPlacement, error) {
-	return pp.evaluate(task, node)
 }
 
 func (pp *numaPlugin) predicate(task *pod_info.PodInfo, _ *podgroup_info.PodGroupInfo, node *node_info.NodeInfo) error {
