@@ -463,7 +463,7 @@ func TestDependsOnRootMinSubGroupCollapsed(t *testing.T) {
 	meta, err := newJobSetGrouper(t).GetPodGroupMetadata(js, pod)
 	require.NoError(t, err)
 	require.NotNil(t, meta.MinSubGroup)
-	assert.Equal(t, int32(1), *meta.MinSubGroup, "dependsOn should collapse root MinSubGroup like InOrder")
+	assert.Equal(t, int32(1), *meta.MinSubGroup, "workers + gated launcher: initial wave is 1")
 
 	// Sub-groups still exist for both replicated jobs.
 	require.NotNil(t, findSubGroup(meta, "node"))
@@ -474,7 +474,7 @@ func TestDependsOnRootMinSubGroupCollapsed(t *testing.T) {
 
 func TestDependsOnWithoutStartupPolicy(t *testing.T) {
 	// dependsOn JobSets must not carry startupPolicy; ensure we do not rely
-	// on it being present and still collapse MinSubGroup.
+	// on it being present. a and b are ungated, so root MinSubGroup is 2.
 	js := baseJobSet("js", "default", "uid", []map[string]interface{}{
 		replicatedJob("a", 1, 1),
 		replicatedJob("b", 1, 1),
@@ -491,7 +491,28 @@ func TestDependsOnWithoutStartupPolicy(t *testing.T) {
 	meta, err := newJobSetGrouper(t).GetPodGroupMetadata(js, pod)
 	require.NoError(t, err)
 	require.NotNil(t, meta.MinSubGroup)
-	assert.Equal(t, int32(1), *meta.MinSubGroup)
+	assert.Equal(t, int32(2), *meta.MinSubGroup)
+}
+
+func TestDependsOnRootMinSubGroupCountsInitialWave(t *testing.T) {
+	// driver, workers and ps start together; launcher is gated on all three.
+	// Root MinSubGroup must keep the whole initial wave all-or-nothing.
+	js := baseJobSet("js", "default", "uid", []map[string]interface{}{
+		replicatedJob("driver", 1, 1),
+		replicatedJob("workers", 1, 4),
+		replicatedJob("ps", 1, 1),
+		replicatedJobWithDependsOn("launcher", 1, 1, []map[string]interface{}{
+			{"name": "driver", "status": "Ready"},
+			{"name": "workers", "status": "Ready"},
+			{"name": "ps", "status": "Ready"},
+		}),
+	})
+	pod := podWithJobSetLabels("p", "default", "workers", "0")
+
+	meta, err := newJobSetGrouper(t).GetPodGroupMetadata(js, pod)
+	require.NoError(t, err)
+	require.NotNil(t, meta.MinSubGroup)
+	assert.Equal(t, int32(3), *meta.MinSubGroup, "three ungated roles: initial wave is 3")
 }
 
 func TestJobSetAnnotationWinsOverDependsOn(t *testing.T) {
