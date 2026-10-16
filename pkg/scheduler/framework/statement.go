@@ -539,6 +539,15 @@ func (s *Statement) Unevict(taskToUnevict *pod_info.PodInfo) error {
 	return s.undoEarliestValidOperation(taskToUnevict, evict)
 }
 
+// Unpipeline reverses the earliest valid pipeline operation for task. Call this
+// before Unevict when a victim was both evicted and pipelined to another node.
+func (s *Statement) Unpipeline(task *pod_info.PodInfo) error {
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("Unpipelining task: %v", task.Name)
+	})
+	return s.undoEarliestValidOperation(task, pipeline)
+}
+
 func (s *Statement) ConvertAllAllocatedToPipelined(jobID common_info.PodGroupID) error {
 	for _, op := range s.operations {
 		currentTaskInOperations := op.TaskInfo()

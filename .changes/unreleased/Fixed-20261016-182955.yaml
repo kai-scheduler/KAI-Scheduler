@@ -1,0 +1,6 @@
+kind: Fixed
+body: 'Preempt and reclaim no longer evict victims that only fit back on another node when the preemptor never uses that node'
+time: 2026-10-16T18:29:55.977725802+01:00
+custom:
+    Author: dttung2905
+    Issue: "2426"

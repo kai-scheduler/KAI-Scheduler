@@ -105,10 +105,15 @@ func (s *byPodSolver) solve(session *framework.Session, scenario *scenario.ByNod
 func (s *byPodSolver) runSimulation(
 	session *framework.Session, scenario *scenario.ByNodeScenario, statement *framework.Statement,
 	victimTasks []*pod_info.PodInfo, nodes []*node_info.NodeInfo) *solutionResult {
+	originalVictimNodes := map[common_info.PodID]string{}
+	for _, victim := range victimTasks {
+		originalVictimNodes[victim.UID] = victim.NodeName
+	}
+
 	successfulSimulation, solutionVictims :=
 		s.tryScenarioWithEvictedVictims(session, scenario, statement, victimTasks, nodes)
 	if successfulSimulation {
-		return s.handleScenarioSolution(scenario, statement, solutionVictims)
+		return s.handleScenarioSolution(scenario, statement, solutionVictims, originalVictimNodes)
 	}
 	return nil
 }
@@ -133,11 +138,21 @@ func (s *byPodSolver) updateFeasibleNodes(ssn *framework.Session, victimTasks []
 
 func (s *byPodSolver) handleScenarioSolution(
 	scenario *scenario.ByNodeScenario, statement *framework.Statement, solutionVictims *simulationVictims,
+	originalVictimNodes map[common_info.PodID]string,
 ) *solutionResult {
 	victimsTasks := make([]*pod_info.PodInfo, len(solutionVictims.preemptedVictims))
 	copy(victimsTasks, solutionVictims.preemptedVictims)
 	if !s.allowVictimConsolidation {
-		victimsTasks = append(victimsTasks, solutionVictims.pipelinedVictims...)
+		kept, err := restoreVictimsOutsidePreemptorNodes(
+			statement, scenario.GetPreemptor(), solutionVictims, originalVictimNodes)
+		if err != nil {
+			log.InfraLogger.Errorf(
+				"Failed to restore victims outside preemptor nodes for <%s/%s>: %v",
+				scenario.GetPreemptor().Namespace, scenario.GetPreemptor().Name, err)
+			statement.Discard()
+			return &solutionResult{false, nil, nil, nil}
+		}
+		victimsTasks = kept
 	}
 	actualVictimJobs := getVictimJobsFromVictimTasks(victimsTasks, scenario)
 
@@ -179,6 +194,68 @@ func (s *byPodSolver) tryScenarioWithEvictedVictims(ssn *framework.Session, scen
 		}
 	}
 	return isSuccessfulAllocations, actualVictims
+}
+
+// restoreVictimsOutsidePreemptorNodes undoes eviction (and any cross-node pipeline)
+// for victims whose original node is not one the preemptor was placed on. Returns
+// the victims that still free capacity for the preemptor.
+func restoreVictimsOutsidePreemptorNodes(
+	statement *framework.Statement,
+	preemptor *podgroup_info.PodGroupInfo,
+	solutionVictims *simulationVictims,
+	originalVictimNodes map[common_info.PodID]string,
+) ([]*pod_info.PodInfo, error) {
+	preemptorNodes := preemptorPlacementNodes(preemptor)
+	candidates := make([]*pod_info.PodInfo, 0,
+		len(solutionVictims.preemptedVictims)+len(solutionVictims.pipelinedVictims))
+	candidates = append(candidates, solutionVictims.preemptedVictims...)
+	candidates = append(candidates, solutionVictims.pipelinedVictims...)
+
+	kept := make([]*pod_info.PodInfo, 0, len(candidates))
+	for _, victim := range candidates {
+		originalNode := originalVictimNodes[victim.UID]
+		if originalNode == "" {
+			originalNode = victim.NodeName
+		}
+		if _, needed := preemptorNodes[originalNode]; needed {
+			// Preempt/reclaim commits eviction only. Simulation may have
+			// pipelined the victim elsewhere to prove feasibility; that
+			// placement is not a real move, so drop the pipeline op and
+			// leave the task Releasing on its original node.
+			if victim.Status == pod_status.Pipelined {
+				if err := statement.Unpipeline(victim); err != nil {
+					return nil, err
+				}
+			}
+			kept = append(kept, victim)
+			continue
+		}
+		if victim.Status == pod_status.Pipelined {
+			if err := statement.Unpipeline(victim); err != nil {
+				return nil, err
+			}
+		}
+		if err := statement.Unevict(victim); err != nil {
+			return nil, err
+		}
+	}
+	return kept, nil
+}
+
+func preemptorPlacementNodes(preemptor *podgroup_info.PodGroupInfo) map[string]struct{} {
+	nodes := map[string]struct{}{}
+	if preemptor == nil {
+		return nodes
+	}
+	for _, task := range preemptor.GetAllPodsMap() {
+		if task.NodeName == "" {
+			continue
+		}
+		if pod_status.IsActiveAllocatedStatus(task.Status) {
+			nodes[task.NodeName] = struct{}{}
+		}
+	}
+	return nodes
 }
 
 func getVictimJobsFromVictimTasks(
