@@ -91,7 +91,9 @@ func (sp *snapshotPlugin) Name() string {
 func (sp *snapshotPlugin) OnSessionOpen(ssn *framework.Session) {
 	sp.session = ssn
 	sp.config = ssn.Config
-	log.InfraLogger.V(3).Info("Snapshot plugin registering get-snapshot")
+	log.InfraLogger.V(5).Do(func() {
+		log.InfraLogger.Infof("Snapshot plugin registering get-snapshot")
+	})
 	ssn.AddHttpHandler("/get-snapshot", sp.serveSnapshot)
 }
 
