@@ -471,3 +471,39 @@ func metricHasLabels(metric *dto.Metric, labels map[string]string) bool {
 	}
 	return true
 }
+
+func TestIncEvictedPodsByActionCountsEachEvictingAction(t *testing.T) {
+	counters := map[string]prometheus.Counter{
+		"preempt":       preemptionEvictions,
+		"reclaim":       reclaimEvictions,
+		"consolidation": consolidationEvictions,
+	}
+	before := map[string]float64{}
+	for action, counter := range counters {
+		before[action] = testutil.ToFloat64(counter)
+	}
+
+	IncEvictedPodsByAction("preempt")
+	IncEvictedPodsByAction("preempt")
+	IncEvictedPodsByAction("reclaim")
+	IncEvictedPodsByAction("consolidation")
+	IncEvictedPodsByAction("allocate")
+	IncEvictedPodsByAction("stalegangeviction")
+
+	expected := map[string]float64{"preempt": 2, "reclaim": 1, "consolidation": 1}
+	for action, counter := range counters {
+		require.Equal(t, expected[action], testutil.ToFloat64(counter)-before[action], action)
+	}
+}
+
+func TestEvictionCountersAreExportedBeforeFirstEviction(t *testing.T) {
+	for _, name := range []string{
+		"total_preemption_evictions",
+		"total_reclaim_evictions",
+		"total_consolidation_evictions",
+	} {
+		family := findMetricFamily(t, name)
+		require.Len(t, family.GetMetric(), 1, name)
+		require.NotNil(t, family.GetMetric()[0].GetCounter(), name)
+	}
+}
