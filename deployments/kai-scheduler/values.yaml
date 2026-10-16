@@ -326,6 +326,20 @@ kaiConfigDeployer:
     limits:
       memory: 256Mi
 
+gpuSharingConfigMapMigration:
+  # Scan before rollout and again after all old binder pods are gone.
+  enabled: true
+  image:
+    name: helm-hooks
+    pullPolicy: IfNotPresent
+    # tag: ""  # Optional: Override global.tag or Chart.AppVersion
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
+
 topologyMigration:
   # Enable migration of Kueue Topology CRs to KAI Topology CRs
   # When enabled, a pre-install/pre-upgrade hook will:

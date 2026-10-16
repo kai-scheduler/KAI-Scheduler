@@ -32,6 +32,8 @@ func TestFlagValidationHappensBeforeConnecting(t *testing.T) {
 		{name: "apply-crds rejects positional args", run: applyCRDs, flags: []string{"extra"}, wantErr: "unexpected arguments"},
 		{name: "apply-config requires file", run: applyConfig, flags: nil, wantErr: "--file is required"},
 		{name: "migrate-topologies rejects unknown flag", run: migrateTopologies, flags: []string{"--bogus"}, wantErr: "flag provided but not defined"},
+		{name: "GPU migration requires namespace when waiting", run: migrateGPUSharing, flags: []string{"--binder-image=new"}, wantErr: "--namespace is required"},
+		{name: "GPU migration rejects unknown flag", run: migrateGPUSharing, flags: []string{"--bogus"}, wantErr: "flag provided but not defined"},
 		{name: "cleanup requires namespace", run: cleanup, flags: []string{"--delete-config=kai-config"}, wantErr: "--namespace is required"},
 	}
 	for _, tt := range tests {

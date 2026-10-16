@@ -20,6 +20,8 @@ import (
 )
 
 const (
+	// GPUSharingConfigMapLabel identifies ConfigMaps retained in the binder cache.
+	GPUSharingConfigMapLabel      = "kai.scheduler/gpu-sharing-configmap"
 	gpuSharingConfigMapAnnotation = "runai/shared-gpu-configmap"
 	gpuSharingConfigMap           = "shared-gpu"
 	maxVolumeNameLength           = 63
@@ -38,6 +40,7 @@ func UpsertJobConfigMap(ctx context.Context,
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      configMapName,
 			Namespace: pod.Namespace,
+			Labels:    map[string]string{GPUSharingConfigMapLabel: "true"},
 			OwnerReferences: []metav1.OwnerReference{
 				{
 					APIVersion: "v1",
@@ -91,6 +94,10 @@ func patchConfigMap(
 			"namespace", desiredConfigMap.Namespace, "name", desiredConfigMap.Name)
 
 		updatedConfigMap := existingConfigMap.DeepCopy()
+		if updatedConfigMap.Labels == nil {
+			updatedConfigMap.Labels = map[string]string{}
+		}
+		updatedConfigMap.Labels[GPUSharingConfigMapLabel] = "true"
 		for k, v := range desiredConfigMap.Data {
 			if len(v) != 0 {
 				updatedConfigMap.Data[k] = v

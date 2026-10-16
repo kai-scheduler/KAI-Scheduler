@@ -137,6 +137,9 @@ subjects:
     name: kai-topology-migration
     namespace: {{ .Release.Namespace }}
   - kind: ServiceAccount
+    name: kai-gpu-sharing-configmap-migration
+    namespace: {{ .Release.Namespace }}
+  - kind: ServiceAccount
     name: {{ .Values.postCleanup.serviceAccountName }}
     namespace: {{ .Release.Namespace }}
   - kind: ServiceAccount
