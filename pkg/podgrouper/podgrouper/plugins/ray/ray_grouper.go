@@ -202,6 +202,11 @@ func calcJobNumOfPodsAndSubGroups(topOwner *unstructured.Unstructured) (int32, [
 		return minReplicas, subGroups, nil
 	}
 
+	autoscaling, _, err := unstructured.NestedBool(topOwner.Object, "spec", "enableInTreeAutoscaling")
+	if err != nil {
+		return 0, nil, err
+	}
+
 	for groupIndex, groupSpec := range workerGroupSpecs {
 		groupMinReplicas, groupDesiredReplicas, err := getReplicaCountersForWorkerGroup(groupSpec, groupIndex)
 		if err != nil {
@@ -217,8 +222,9 @@ func calcJobNumOfPodsAndSubGroups(topOwner *unstructured.Unstructured) (int32, [
 		}
 
 		workerGroupMinReplicas := int32(groupDesiredReplicas * numOfHosts)
-		if groupMinReplicas > 0 {
-			// if minReplicas is set, use it to calculate the min number for workload scheduling
+		if autoscaling || groupMinReplicas > 0 {
+			// Autoscaling clusters may start with no workers, including when
+			// minReplicas is omitted and defaults to zero.
 			workerGroupMinReplicas = int32(groupMinReplicas * numOfHosts)
 		}
 		minReplicas += workerGroupMinReplicas
