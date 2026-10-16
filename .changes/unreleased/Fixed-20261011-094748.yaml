@@ -1,0 +1,3 @@
+kind: Fixed
+body: |-
+  Queue-controller metrics listener binds the Service target port, so setting controllerService.metrics.port or targetPort no longer leaves the metrics Service and its ServiceMonitor pointing at a closed port
