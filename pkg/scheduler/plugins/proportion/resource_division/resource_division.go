@@ -24,10 +24,16 @@ type remainingRequestedResource struct {
 }
 
 func SetResourcesShare(totalResource rs.ResourceQuantities, kValue float64, queues map[common_info.QueueID]*rs.QueueAttributes) {
+	DivideResources(totalResource, kValue, queues)
+	reportDivisionResult(queues)
+}
+
+// DivideResources sets the queues' fair shares as SetResourcesShare does, without logging the result
+// or updating the fair-share metrics.
+func DivideResources(totalResource rs.ResourceQuantities, kValue float64, queues map[common_info.QueueID]*rs.QueueAttributes) {
 	for _, resource := range rs.AllResources {
 		setResourceShare(totalResource[resource], kValue, resource, queues)
 	}
-	reportDivisionResult(queues)
 }
 
 func setResourceShare(totalAmount, kValue float64, resourceName rs.ResourceName, queues map[common_info.QueueID]*rs.QueueAttributes) float64 {
