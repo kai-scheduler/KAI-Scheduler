@@ -134,6 +134,10 @@ images-manifest: ## Generate images.yaml for a release. Usage: make images-manif
 	@test -n "$(VERSION)" || { echo "VERSION is required, e.g. make images-manifest VERSION=v0.17.0"; exit 1; }
 	bash hack/generate-images-manifest.sh "$(VERSION)" "$(DOCKER_REPO_BASE)" "$(SERVICE_NAMES)" > images.yaml
 
+.PHONY: subcharts-manifest
+subcharts-manifest: ## Generate subcharts.yaml, the sub-chart versions in the chart just built.
+	bash hack/subchart-versions.sh locked > subcharts.yaml
+
 
 
 KUSTOMIZE_INSTALL_SCRIPT ?= "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"
