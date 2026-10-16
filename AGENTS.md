@@ -185,6 +185,15 @@ PRs trigger: `make validate` → `make test` → `make build` → E2E tests
 - Docs-only changes (`.md` files, `docs/`) skip build/test
 - E2E tests run with Ginkgo: `ginkgo -r --randomize-all ./test/e2e/suites`
 
+## Cursor Cloud specific instructions
+
+Cloud Agent bootstrap uses `hack/cloud-agent/install.sh` and `hack/cloud-agent/start.sh` (saved in the Cloud Agent environment panel as `install` / `start`).
+
+- **`start`** brings up the Docker daemon (`dockerd`) when it is not already running; `make build`, `make test`, and `make lint-go` expect Docker.
+- **`install`** runs `go mod download`, `make envtest`, builds the `builder:1.26.8-bookworm` image when Docker registry access is available, and `make chart-deps` (Helm OCI pull from `ghcr.io`).
+- When Docker Hub or `ghcr.io` egress is blocked, use host Go for fast checks: `make fmt-go vet-go`, `make envtest-go`, and `go build ./cmd/<service>/main.go`. Fairshare dry-run: build `cmd/fairshare-simulator` and `POST` to `/simulate`.
+- Full CI parity locally: `make validate test` (after chart dependencies and the builder image are present).
+
 ## General Rules
 - Use `git mv` when moving files to preserve history
 - DO NOT add obvious comments that duplicate the code.
