@@ -29,7 +29,7 @@ COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certifica
 
 WORKDIR /workspace
 COPY --chmod=0755 --chown=65532:0 bin/$SERVICE_NAME-$TARGETARCH app
-COPY --chmod=0644 --chown=65532:0 NOTICE .
+COPY --chmod=0644 --chown=65532:0 NOTICE COPYRIGHT ./
 
 USER 65532:65532
 
@@ -43,7 +43,7 @@ ENV SERVICE_NAME=$SERVICE_NAME
 
 WORKDIR /workspace
 COPY --chmod=0755 --chown=65532:0 bin/$SERVICE_NAME-$TARGETARCH app
-COPY --chmod=0644 --chown=65532:0 NOTICE .
+COPY --chmod=0644 --chown=65532:0 NOTICE COPYRIGHT ./
 
 USER 65532:65532
 
