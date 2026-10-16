@@ -1,0 +1,72 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+name: Require Linked Issue
+
+on:
+  # pull_request_target: token can comment on fork PRs. Safe because no PR code is checked out.
+  pull_request_target:
+    types: [opened, edited, reopened, synchronize, labeled, unlabeled]
+    branches:
+      - main
+  merge_group:
+    types: [checks_requested]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: require-linked-issue-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  require-linked-issue:
+    name: Require Linked Issue
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Skip validation for merge queue
+        if: github.event_name == 'merge_group'
+        run: echo "Linked issue was already validated before entering merge queue"
+
+      # Exempt: bots and PRs a maintainer labels `skip-issue`.
+      - name: Check PR closes an issue
+        if: >-
+          github.event_name == 'pull_request_target' &&
+          !contains(github.event.pull_request.labels.*.name, 'skip-issue') &&
+          !contains(github.event.pull_request.labels.*.name, 'dependencies') &&
+          !contains(github.event.pull_request.labels.*.name, 'bot') &&
+          github.event.pull_request.user.login != 'dependabot[bot]' &&
+          github.event.pull_request.user.login != 'KaiPilotBot'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          marker='<!-- require-linked-issue -->'
+          comment_id=$(gh api "repos/$OWNER/$REPO/issues/$PR_NUMBER/comments" --paginate \
+            --jq "[.[] | select(.body | contains(\"$marker\")) | .id] | first // empty")
+
+          count=$(gh api graphql -f owner="$OWNER" -f repo="$REPO" -F pr="$PR_NUMBER" -f query='
+            query($owner: String!, $repo: String!, $pr: Int!) {
+              repository(owner: $owner, name: $repo) {
+                pullRequest(number: $pr) { closingIssuesReferences(first: 1) { totalCount } }
+              }
+            }' --jq '.data.repository.pullRequest.closingIssuesReferences.totalCount')
+
+          if [ "$count" -gt 0 ]; then
+            echo "Linked issue found."
+            [ -n "$comment_id" ] && gh api -X DELETE "repos/$OWNER/$REPO/issues/comments/$comment_id"
+            exit 0
+          fi
+
+          msg="No linked issue. Open an issue first, then add \`Fixes #<number>\` to the PR description (or link it from the Development sidebar). A maintainer can apply the \`skip-issue\` label to opt out."
+          if [ -z "$comment_id" ]; then
+            gh pr comment "$PR_NUMBER" --repo "$OWNER/$REPO" --body "$marker
+          @$PR_AUTHOR $msg"
+          fi
+          echo "::error::$msg"
+          exit 1
