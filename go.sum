@@ -211,6 +211,8 @@ github.com/json-iterator/go v1.1.12 h1:PV8peI4a0ysnczrg+LtxykD8LfKY9ML6u2jnxaEnr
 github.com/json-iterator/go v1.1.12/go.mod h1:e30LSqwooZae/UwlEbR2852Gd8hjQvJoHmT4TnhNGBo=
 github.com/k8stopologyawareschedwg/noderesourcetopology-api v0.1.2 h1:uAwqOtyrFYggq3pVf3hs1XKkBxrQ8dkgjWz3LCLJsiY=
 github.com/k8stopologyawareschedwg/noderesourcetopology-api v0.1.2/go.mod h1:LBzS4n6GX1C69tzSd5EibZ9cGOXFuHP7GxEMDYVe1sM=
+github.com/kai-scheduler/api v0.2.0 h1:B4BanE1zlW6PggIiSeIZCOIQj2Ml1IpOlUYrymnOOBo=
+github.com/kai-scheduler/api v0.2.0/go.mod h1:I3AqrOQVknNc3ZfLQkUpfWlQLIDqgg3dVGzsmVJhdTw=
 github.com/kisielk/errcheck v1.5.0/go.mod h1:pFxgyoBC7bSaBwPgfKdkLd5X25qrDl4LWUI2bnpBCr8=
 github.com/kisielk/gotool v1.0.0/go.mod h1:XhKaO+MFFWcvkIS/tQcRk01m1F5IRFswLeQ+oQHNcck=
 github.com/klauspost/compress v1.18.2 h1:iiPHWW0YrcFgpBYhsA6D1+fqHssJscY/Tm/y2Uqnapk=
@@ -306,8 +308,6 @@ github.com/run-ai/karta v0.1.1-0.20260708043952-998140308a96/go.mod h1:uBm6rW6DT
 github.com/run-ai/kwok-operator v0.0.0-20240926063032-05b6364bc7c7 h1:7sUlviMShcd8g6sf2Q93ix+geV0staOMk42Rs0rAJqA=
 github.com/run-ai/kwok-operator v0.0.0-20240926063032-05b6364bc7c7/go.mod h1:vih5aAo7hS8Mt6NXsIUI8SYW+WfB4GhZOuLZzLjZWcc=
 github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=
-github.com/sam-huang1223/api v0.2.1-0.20261012191035-37783f039ca8 h1:Mppbd6pi+U0IXXnhKgeRKQsIp9hg90H2IgUMZoxluE8=
-github.com/sam-huang1223/api v0.2.1-0.20261012191035-37783f039ca8/go.mod h1:I3AqrOQVknNc3ZfLQkUpfWlQLIDqgg3dVGzsmVJhdTw=
 github.com/samber/lo v1.53.0 h1:t975lj2py4kJPQ6haz1QMgtId2gtmfktACxIXArw3HM=
 github.com/samber/lo v1.53.0/go.mod h1:4+MXEGsJzbKGaUEQFKBq2xtfuznW9oz/WrgyzMzRoM0=
 github.com/sirupsen/logrus v1.9.4 h1:TsZE7l11zFCLZnZ+teH4Umoq5BhEIfIzfRDZ1Uzql2w=

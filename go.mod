@@ -231,4 +231,3 @@ tool (
 	golang.org/x/perf/cmd/benchstat
 )
 
-replace github.com/kai-scheduler/api => github.com/sam-huang1223/api v0.2.1-0.20261012191035-37783f039ca8
