@@ -35,6 +35,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding"
 	mock_binder "github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding/mock"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding/resourcereservation"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/common"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins"
 	mockplugins "github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/mock"
 )
@@ -225,6 +226,221 @@ var _ = Describe("BindRequest Controller", func() {
 			Entry("failed binding with retry budget, ordinary write", "none", true, true),
 		)
 
+		DescribeTable("rejects a bound Pod on another node without changing the Pod",
+			func(withBackoff bool) {
+				ctx := context.Background()
+				pod := &v1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "bound-pod", Namespace: "default", UID: "current-pod",
+						Labels: map[string]string{"runai-gpu-group": "actual-group"},
+					},
+					Spec: v1.PodSpec{NodeName: "actual-node"},
+					Status: v1.PodStatus{
+						Phase: v1.PodRunning,
+						Conditions: []v1.PodCondition{
+							{Type: podBoundCondition, Status: v1.ConditionTrue, Reason: "Bound"},
+							{Type: v1.PodReady, Status: v1.ConditionTrue},
+						},
+					},
+				}
+				Expect(fakeClient.Create(ctx, pod)).To(Succeed())
+				originalPod := &v1.Pod{}
+				Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(pod), originalPod)).To(Succeed())
+				bindRequest := baseRequest.DeepCopy()
+				bindRequest.Spec.PodName = pod.Name
+				bindRequest.Spec.SelectedNode = "selected-node"
+				attempts := int32(1)
+				if withBackoff {
+					attempts = 2
+					bindRequest.Spec.BackoffLimit = ptr.To(attempts)
+				}
+				Expect(fakeClient.Create(ctx, bindRequest)).To(Succeed())
+				reconciler.binder = mock_binder.NewMockInterface(gomock.NewController(GinkgoT()))
+				podStatusPatches := 0
+				reconciler.Client = interceptor.NewClient(fakeClient, interceptor.Funcs{
+					SubResourcePatch: func(ctx context.Context, c client.Client, subResource string,
+						obj client.Object, patch client.Patch, opts ...client.SubResourcePatchOption) error {
+						if _, ok := obj.(*v1.Pod); ok {
+							podStatusPatches++
+						}
+						return c.SubResource(subResource).Patch(ctx, obj, patch, opts...)
+					},
+				})
+				req := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(bindRequest)}
+				for attempt := int32(1); attempt <= attempts; attempt++ {
+					result, err := reconciler.Reconcile(ctx, req)
+					Expect(err).To(MatchError(ContainSubstring("already bound to node actual-node")))
+					Expect(errors.Is(err, reconcile.TerminalError(nil))).To(Equal(!withBackoff))
+					stored := &schedulingv1alpha2.BindRequest{}
+					Expect(fakeClient.Get(ctx, req.NamespacedName, stored)).To(Succeed())
+					Expect(stored.Status.Phase).To(Equal(schedulingv1alpha2.BindRequestPhaseFailed))
+					Expect(stored.Status.Reason).To(ContainSubstring("BindRequest selected node selected-node"))
+					if withBackoff {
+						Expect(stored.Status.FailedAttempts).To(Equal(attempt))
+						Expect(result.RequeueAfter).To(Equal((1 << (attempt - 1)) * time.Second))
+					} else {
+						Expect(stored.Status.FailedAttempts).To(BeZero())
+						Expect(result).To(Equal(ctrl.Result{}))
+					}
+				}
+				result, err := reconciler.Reconcile(ctx, req)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).To(Equal(ctrl.Result{}))
+				storedPod := &v1.Pod{}
+				Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(pod), storedPod)).To(Succeed())
+				Expect(storedPod).To(Equal(originalPod))
+				Expect(podStatusPatches).To(BeZero())
+				Expect(fakeEventRecorder.Events).To(BeEmpty())
+			},
+			Entry("without a retry budget", false),
+			Entry("with multiple retries until exhaustion", true),
+		)
+
+		It("rejects a conflicting non-controller Pod owner without changing the bound Pod", func() {
+			ctx := context.Background()
+			pod := &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "replaced-pod", Namespace: "default", UID: "current-pod"},
+				Spec:       v1.PodSpec{NodeName: "selected-node"},
+				Status: v1.PodStatus{Conditions: []v1.PodCondition{
+					{Type: podBoundCondition, Status: v1.ConditionTrue, Reason: "Bound"},
+				}},
+			}
+			Expect(fakeClient.Create(ctx, pod)).To(Succeed())
+			originalPod := &v1.Pod{}
+			Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(pod), originalPod)).To(Succeed())
+			bindRequest := baseRequest.DeepCopy()
+			bindRequest.Spec.PodName = pod.Name
+			bindRequest.Spec.SelectedNode = pod.Spec.NodeName
+			bindRequest.OwnerReferences = []metav1.OwnerReference{{
+				APIVersion: "v1", Kind: "Pod", Name: pod.Name, UID: "deleted-pod",
+			}}
+			Expect(fakeClient.Create(ctx, bindRequest)).To(Succeed())
+			reconciler.binder = mock_binder.NewMockInterface(gomock.NewController(GinkgoT()))
+
+			_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(bindRequest)})
+			Expect(err).To(MatchError(ContainSubstring("with UID deleted-pod, but the current pod has UID current-pod")))
+			stored := &schedulingv1alpha2.BindRequest{}
+			Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(bindRequest), stored)).To(Succeed())
+			Expect(stored.Status.Phase).To(Equal(schedulingv1alpha2.BindRequestPhaseFailed))
+			storedPod := &v1.Pod{}
+			Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(pod), storedPod)).To(Succeed())
+			Expect(storedPod).To(Equal(originalPod))
+			Expect(fakeEventRecorder.Events).To(BeEmpty())
+		})
+
+		DescribeTable("validates already-bound allocation intent without ConfigMaps",
+			func(spec schedulingv1alpha2.BindRequestSpec, labels, annotations map[string]string, expectedError string) {
+				ctx := context.Background()
+				pod := &v1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "allocation-pod", Namespace: "default", UID: "current-pod",
+						Labels: labels, Annotations: annotations,
+					},
+					Spec: v1.PodSpec{NodeName: "selected-node"},
+					Status: v1.PodStatus{Conditions: []v1.PodCondition{
+						{Type: podBoundCondition, Status: v1.ConditionTrue, Reason: "Bound"},
+					}},
+				}
+				Expect(fakeClient.Create(ctx, pod)).To(Succeed())
+				originalPod := &v1.Pod{}
+				Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(pod), originalPod)).To(Succeed())
+				bindRequest := baseRequest.DeepCopy()
+				bindRequest.Spec = spec
+				bindRequest.Spec.PodName = pod.Name
+				bindRequest.Spec.SelectedNode = pod.Spec.NodeName
+				bindRequest.OwnerReferences = []metav1.OwnerReference{{
+					APIVersion: "v1", Kind: "Pod", Name: pod.Name, UID: pod.UID,
+				}}
+				Expect(fakeClient.Create(ctx, bindRequest)).To(Succeed())
+				reconciler.binder = mock_binder.NewMockInterface(gomock.NewController(GinkgoT()))
+				req := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(bindRequest)}
+				result, err := reconciler.Reconcile(ctx, req)
+				Expect(result).To(Equal(ctrl.Result{}))
+				stored := &schedulingv1alpha2.BindRequest{}
+				Expect(fakeClient.Get(ctx, req.NamespacedName, stored)).To(Succeed())
+				storedPod := &v1.Pod{}
+				Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(pod), storedPod)).To(Succeed())
+				if expectedError != "" {
+					Expect(err).To(MatchError(ContainSubstring(expectedError)))
+					Expect(stored.Status.Phase).To(Equal(schedulingv1alpha2.BindRequestPhaseFailed))
+					Expect(storedPod).To(Equal(originalPod))
+					Expect(fakeEventRecorder.Events).To(BeEmpty())
+				} else {
+					Expect(err).NotTo(HaveOccurred())
+					Expect(stored.Status.Phase).To(Equal(schedulingv1alpha2.BindRequestPhaseSucceeded))
+					Expect(storedPod.Spec).To(Equal(originalPod.Spec))
+					Expect(storedPod.Labels).To(Equal(originalPod.Labels))
+					Expect(storedPod.Annotations).To(Equal(originalPod.Annotations))
+					Expect(fakeEventRecorder.Events).To(Receive(ContainSubstring("Normal Bound")))
+					_, err = reconciler.Reconcile(ctx, req)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(fakeEventRecorder.Events).To(BeEmpty())
+				}
+			},
+			Entry("different single group on the selected node",
+				schedulingv1alpha2.BindRequestSpec{ReceivedResourceType: common.ReceivedTypeFraction, SelectedGPUGroups: []string{"group-b"}},
+				map[string]string{"runai-gpu-group": "group-a"}, nil,
+				"already bound with GPU groups [group-a], but BindRequest selected GPU groups [group-b]"),
+			Entry("missing Pod groups",
+				schedulingv1alpha2.BindRequestSpec{ReceivedResourceType: common.ReceivedTypeFraction, SelectedGPUGroups: []string{"group-a"}},
+				nil, nil, "already bound with GPU groups []"),
+			Entry("a subset of the expected groups",
+				schedulingv1alpha2.BindRequestSpec{ReceivedResourceType: common.ReceivedTypeFraction, SelectedGPUGroups: []string{"group-b", "group-a"}},
+				map[string]string{"runai-gpu-group": "group-a"}, nil,
+				"BindRequest selected GPU groups [group-a group-b]"),
+			Entry("an unexpected extra group",
+				schedulingv1alpha2.BindRequestSpec{ReceivedResourceType: common.ReceivedTypeFraction, SelectedGPUGroups: []string{"group-a"}},
+				map[string]string{"runai-gpu-group/group-a": "group-a", "runai-gpu-group/group-b": "group-b"}, nil,
+				"already bound with GPU groups [group-a group-b]"),
+			Entry("an empty primary label",
+				schedulingv1alpha2.BindRequestSpec{ReceivedResourceType: common.ReceivedTypeFraction, SelectedGPUGroups: []string{"group-a"}},
+				map[string]string{"runai-gpu-group": "", "runai-gpu-group/group-a": "group-a"}, nil,
+				"invalid GPU group labels [runai-gpu-group=\"\"]"),
+			Entry("a noncanonical multi-group label",
+				schedulingv1alpha2.BindRequestSpec{ReceivedResourceType: common.ReceivedTypeFraction, SelectedGPUGroups: []string{"group-a"}},
+				map[string]string{"runai-gpu-group/wrong": "group-a"}, nil,
+				"invalid GPU group labels [runai-gpu-group/wrong=\"group-a\"]"),
+			Entry("an empty multi-group value",
+				schedulingv1alpha2.BindRequestSpec{ReceivedResourceType: common.ReceivedTypeFraction, SelectedGPUGroups: []string{"group-a"}},
+				map[string]string{"runai-gpu-group/group-a": ""}, nil, "invalid GPU group labels"),
+			Entry("absent expected fractional groups",
+				schedulingv1alpha2.BindRequestSpec{ReceivedResourceType: common.ReceivedTypeFraction},
+				map[string]string{"runai-gpu-group": "group-a"}, nil, "missing or empty fractional GPU group IDs"),
+			Entry("an empty expected fractional group",
+				schedulingv1alpha2.BindRequestSpec{ReceivedResourceType: common.ReceivedTypeFraction, SelectedGPUGroups: []string{""}},
+				map[string]string{"runai-gpu-group": "group-a"}, nil, "missing or empty fractional GPU group IDs"),
+			Entry("a matching legacy group",
+				schedulingv1alpha2.BindRequestSpec{ReceivedResourceType: common.ReceivedTypeFraction, SelectedGPUGroups: []string{"group-a"}},
+				map[string]string{"runai-gpu-group": "group-a"}, nil, ""),
+			Entry("structured groups take precedence over legacy groups",
+				schedulingv1alpha2.BindRequestSpec{
+					ReceivedResourceType: common.ReceivedTypeFraction, SelectedGPUGroups: []string{"old-group"},
+					SelectedFractionalGpuGroups: []schedulingv1alpha2.FractionalGpuGroup{{ID: "group-a"}},
+				},
+				map[string]string{"runai-gpu-group": "group-a"}, nil, ""),
+			Entry("reversed multi-only groups",
+				schedulingv1alpha2.BindRequestSpec{ReceivedResourceType: common.ReceivedTypeFraction, SelectedGPUGroups: []string{"group-b", "group-a"}},
+				map[string]string{"runai-gpu-group/group-a": "group-a", "runai-gpu-group/group-b": "group-b"}, nil, ""),
+			Entry("mixed primary and multi labels deduplicate groups",
+				schedulingv1alpha2.BindRequestSpec{ReceivedResourceType: common.ReceivedTypeFraction, SelectedGPUGroups: []string{"group-b", "group-a", "group-a"}},
+				map[string]string{"runai-gpu-group": "group-a", "runai-gpu-group/group-a": "group-a", "runai-gpu-group/group-b": "group-b"}, nil, ""),
+			Entry("NvFractions with no ConfigMaps",
+				schedulingv1alpha2.BindRequestSpec{ReceivedResourceType: common.ReceivedTypeFraction, SelectedGPUGroups: []string{"group-a"}},
+				map[string]string{"runai-gpu-group": "group-a"},
+				map[string]string{"nvidia.com/container.workload.gpus.devices": "GPU-0"}, ""),
+			Entry("NRI fractional allocation with no ConfigMaps",
+				schedulingv1alpha2.BindRequestSpec{ReceivedResourceType: common.ReceivedTypeFraction, SelectedGPUGroups: []string{"group-a"}},
+				map[string]string{"runai-gpu-group": "group-a"}, nil, ""),
+			Entry("CPU-only without groups", schedulingv1alpha2.BindRequestSpec{}, nil, nil, ""),
+			Entry("whole GPU without groups",
+				schedulingv1alpha2.BindRequestSpec{ReceivedResourceType: common.ReceivedTypeRegular, ReceivedGPU: &schedulingv1alpha2.ReceivedGPU{Count: 1, Portion: "1"}},
+				nil, nil, ""),
+			Entry("MIG without groups", schedulingv1alpha2.BindRequestSpec{ReceivedResourceType: common.ReceivedTypeRegular}, nil, nil, ""),
+			Entry("DRA-only without groups",
+				schedulingv1alpha2.BindRequestSpec{ResourceClaimAllocations: []schedulingv1alpha2.ResourceClaimAllocation{{Name: "gpu-claim"}}},
+				nil, nil, ""),
+		)
+
 		var (
 			pod = &v1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
@@ -336,7 +552,7 @@ var _ = Describe("BindRequest Controller", func() {
 					bindRequest.Spec.SelectedNode = node.Name
 					return bindRequest
 				}(),
-				false, false, false,
+				true, false, false,
 			),
 			Entry(
 				"missing node but backoff limit not reached",
