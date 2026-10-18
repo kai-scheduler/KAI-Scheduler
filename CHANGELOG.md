@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v0.16.12] - 2026-10-18
+
+### Added
+- Helm chart OCI tags without v prefix, enabling semver ranges like ~0.18.0 [#2393](https://github.com/kai-scheduler/KAI-Scheduler/issues/2393) [gshaibi](https://github.com/gshaibi)
+
+### Fixed
+- Allow the post-delete cleanup job to run on OpenShift
+- Scheduler deletes only failed BindRequests; binder skips terminal ones, drops duplicate reconcile events, keeps reservations during retries [#2343](https://github.com/kai-scheduler/KAI-Scheduler/issues/2343) [davidLif](https://github.com/davidLif)
+- Allow the kai-config-deployer hook job to run on OpenShift [#2441](https://github.com/kai-scheduler/KAI-Scheduler/issues/2441) [gshaibi](https://github.com/gshaibi)
+
 ## [v0.16.11] - 2026-10-11
 
 ### Fixed
