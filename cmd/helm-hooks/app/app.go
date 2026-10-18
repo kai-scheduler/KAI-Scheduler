@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"time"
 
 	"go.uber.org/zap/zapcore"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -28,6 +29,7 @@ const (
 	applyCRDsCommand         = "apply-crds"
 	applyConfigCommand       = "apply-config"
 	migrateTopologiesCommand = "migrate-topologies"
+	migrateGPUSharingCommand = "migrate-gpu-sharing-configmaps"
 	cleanupCommand           = "cleanup"
 )
 
@@ -61,6 +63,8 @@ func Run(args []string) error {
 		return applyConfig(ctx, newClusterClient, flags)
 	case migrateTopologiesCommand:
 		return migrateTopologies(ctx, newClusterClient, flags)
+	case migrateGPUSharingCommand:
+		return migrateGPUSharing(ctx, newClusterClient, flags)
 	case cleanupCommand:
 		return cleanup(ctx, newClusterClient, flags)
 	default:
@@ -132,6 +136,31 @@ func cleanup(ctx context.Context, newClient clientFactory, flags []string) error
 	return helmhooks.Cleanup(ctx, c, *namespace, *deleteConfig)
 }
 
+func migrateGPUSharing(ctx context.Context, newClient clientFactory, flags []string) error {
+	fs := flag.NewFlagSet(migrateGPUSharingCommand, flag.ContinueOnError)
+	namespace := fs.String("namespace", "", "wait for the binder rollout in this namespace before scanning")
+	image := fs.String("binder-image", "", "expected binder image; empty for a disabled binder")
+	timeout := fs.Duration("timeout", 10*time.Minute, "maximum time to wait for the binder rollout")
+	if err := parseFlags(fs, flags); err != nil {
+		return err
+	}
+	if *image != "" && *namespace == "" {
+		return missingFlagError(migrateGPUSharingCommand, "namespace")
+	}
+	c, err := newClient()
+	if err != nil {
+		return err
+	}
+	if *namespace != "" {
+		waitCtx, cancel := context.WithTimeout(ctx, *timeout)
+		defer cancel()
+		if err := helmhooks.WaitForBinderUpgrade(waitCtx, c, *namespace, *image); err != nil {
+			return fmt.Errorf("wait for binder upgrade: %w", err)
+		}
+	}
+	return helmhooks.MigrateGPUSharingConfigMaps(ctx, c)
+}
+
 // parseFlags also rejects leftover positional arguments, which the flag package otherwise ignores.
 func parseFlags(fs *flag.FlagSet, flags []string) error {
 	if err := fs.Parse(flags); err != nil {
@@ -154,7 +183,9 @@ Subcommands:
   %s                      server-side apply the KAI CRDs bundled in this binary
   %s --file=<path>      server-side apply the Config manifest at <path>
   %s              copy Kueue Topologies into KAI Topologies
+  %s [--namespace=<ns> --binder-image=<image>]
+                                  label existing GPU-sharing ConfigMaps
   %s --namespace=<ns> [--delete-config=<name>]
                                   delete operator-managed deployments and optionally a Config
-`, applyCRDsCommand, applyConfigCommand, migrateTopologiesCommand, cleanupCommand)
+`, applyCRDsCommand, applyConfigCommand, migrateTopologiesCommand, migrateGPUSharingCommand, cleanupCommand)
 }

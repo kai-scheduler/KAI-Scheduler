@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Limit binder ConfigMap caching to GPU-sharing maps and migrate legacy maps during Helm upgrades
+custom:
+  Author: "enoodle"
+  Issue: "2377"

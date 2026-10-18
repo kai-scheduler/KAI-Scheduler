@@ -1,0 +1,72 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+suite: GPU-sharing ConfigMap migration hooks
+templates:
+  - hooks/pre/gpu-sharing-configmap-migration/job.yaml
+  - hooks/post/gpu-sharing-configmap-migration/job.yaml
+tests:
+  - it: scans before rollout and fences the final scan behind the target binder image
+    set:
+      global.registry: registry.example/kai
+      binder.image.tag: candidate
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: pre-install,pre-upgrade
+        template: hooks/pre/gpu-sharing-configmap-migration/job.yaml
+      - equal:
+          path: spec.template.spec.containers[0].args
+          value: [migrate-gpu-sharing-configmaps]
+        template: hooks/pre/gpu-sharing-configmap-migration/job.yaml
+      - equal:
+          path: metadata.annotations["helm.sh/hook-weight"]
+          value: "3"
+        template: hooks/post/gpu-sharing-configmap-migration/job.yaml
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: post-install,post-upgrade
+        template: hooks/post/gpu-sharing-configmap-migration/job.yaml
+      - equal:
+          path: spec.template.spec.containers[0].args
+          value: [migrate-gpu-sharing-configmaps, --namespace=NAMESPACE, --binder-image=registry.example/kai/binder:candidate]
+        template: hooks/post/gpu-sharing-configmap-migration/job.yaml
+
+  - it: waits for deletion when binder is disabled
+    set:
+      binder.enabled: false
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].args
+          value: [migrate-gpu-sharing-configmaps, --namespace=NAMESPACE]
+        template: hooks/post/gpu-sharing-configmap-migration/job.yaml
+
+  - it: supports disabling migration
+    set:
+      gpuSharingConfigMapMigration.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: uses FIPS hook images and environment
+    set:
+      global.fipsMode: only
+      global.tag: candidate
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.containers[0].image
+          pattern: helm-hooks:candidate-fips$
+      - equal:
+          path: spec.template.spec.containers[0].env[0].name
+          value: GODEBUG
+
+  - it: uses the OpenShift security convention
+    set:
+      openshift: true
+    asserts:
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: kai-gpu-sharing-configmap-migration
+      - equal:
+          path: spec.template.metadata.annotations["openshift.io/scc"]
+          value: kai-system
