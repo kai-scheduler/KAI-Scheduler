@@ -36,3 +36,17 @@ tests:
             name: custom-cleanup-sa
             namespace: custom-ns
         documentIndex: 2
+
+  - it: should grant the kai-config-deployer ServiceAccount access to the SCC
+    asserts:
+      - contains:
+          path: users
+          content: system:serviceaccount:custom-ns:kai-config-deployer
+        documentIndex: 0
+      - contains:
+          path: subjects
+          content:
+            kind: ServiceAccount
+            name: kai-config-deployer
+            namespace: custom-ns
+        documentIndex: 2
