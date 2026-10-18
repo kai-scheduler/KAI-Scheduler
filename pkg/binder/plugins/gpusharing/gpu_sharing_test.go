@@ -327,6 +327,10 @@ func TestGPUSharingRollback(t *testing.T) {
 				clientBuilder.WithObjects(tt.pod)
 			}
 			for _, cm := range tt.existingConfigMaps {
+				cm.UID = types.UID(cm.Name + "-uid")
+				cm.OwnerReferences = []metav1.OwnerReference{{
+					APIVersion: "v1", Kind: "Pod", Name: tt.pod.Name, UID: tt.pod.UID,
+				}}
 				clientBuilder.WithObjects(cm)
 			}
 			kubeClient := clientBuilder.Build()
@@ -356,71 +360,12 @@ func TestGPUSharingRollback(t *testing.T) {
 	}
 }
 
-func TestGPUSharingRollbackDeleteConfigMap(t *testing.T) {
-	tests := []struct {
-		name        string
-		namespace   string
-		cmName      string
-		existingCM  *v1.ConfigMap
-		expectError bool
-	}{
-		{
-			name:      "successfully deletes existing configmap",
-			namespace: "test-ns",
-			cmName:    "test-cm",
-			existingCM: &v1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-cm",
-					Namespace: "test-ns",
-				},
-			},
-			expectError: false,
-		},
-		{
-			name:        "succeeds when configmap does not exist (IgnoreNotFound)",
-			namespace:   "test-ns",
-			cmName:      "non-existent-cm",
-			existingCM:  nil,
-			expectError: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			scheme := runtime.NewScheme()
-			_ = v1.AddToScheme(scheme)
-
-			clientBuilder := fake.NewClientBuilder().WithScheme(scheme)
-			if tt.existingCM != nil {
-				clientBuilder.WithObjects(tt.existingCM)
-			}
-			kubeClient := clientBuilder.Build()
-
-			plugin := New(kubeClient, false, false)
-			err := plugin.deleteConfigMap(context.Background(), tt.namespace, tt.cmName)
-
-			if tt.expectError {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-			}
-
-			// Verify configmap is gone
-			cm := &v1.ConfigMap{}
-			err = kubeClient.Get(context.Background(), types.NamespacedName{
-				Namespace: tt.namespace,
-				Name:      tt.cmName,
-			}, cm)
-			assert.True(t, client.IgnoreNotFound(err) == nil, "ConfigMap should not exist after deletion")
-		})
-	}
-}
-
 func TestGPUSharingPreBindUsesCDIAnnotationWhenNRIPluginEnabled(t *testing.T) {
 	pod := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-pod",
 			Namespace: "test-ns",
+			UID:       "test-pod-uid",
 			Annotations: map[string]string{
 				constants.GpuFractionContainerName:                               "gpu-container",
 				constants.GpuSharingConfigMapAnnotation:                          "test-shared-gpu",
