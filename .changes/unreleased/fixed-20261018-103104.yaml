@@ -3,4 +3,4 @@ body: |-
   Allow the kai-config-deployer hook job to run on OpenShift
 custom:
   Author: "gshaibi"
-  Issue: ""
+  Issue: "2441"
