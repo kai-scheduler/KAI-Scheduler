@@ -11,10 +11,13 @@ import (
 	"sort"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -38,7 +41,14 @@ const (
 	fractionDefaultGPUMemory  = 81920
 	fractionContainerName     = "ubuntu-container"
 	fractionCreateConcurrency = 100
+	fractionCreateBatchSize   = 1000
+	fractionCreateRetries     = 10
 	fractionConfigTimeout     = 5 * time.Minute
+
+	fractionCreateBackoffStart = time.Second
+	fractionCreateBackoffMax   = 30 * time.Second
+	fractionBatchPauseStart    = 2 * time.Second
+	fractionBatchPauseMax      = time.Minute
 
 	saturationAllocationScenarioName = "Mixed fractions saturation - allocation"
 	saturationSchedulingScenarioName = "Mixed fractions saturation - scheduling"
@@ -198,9 +208,39 @@ func newFractionPod(testQueue *v2.Queue, memoryMiB int) *v1.Pod {
 	return pod
 }
 
+// createFractionPods creates the pods in batches. Tens of thousands of pod creates, plus the PodGroups the pod-grouper
+// writes for them, can exceed the API server's etcd write budget (HTTP 429 "etcdserver: throttle"). That is a limit of
+// the hosting cluster, not something this test measures, so throttled creates are retried with backoff and a batch that
+// saw throttling delays the next one, doubling the pause until a batch goes through cleanly.
 func createFractionPods(
 	ctx context.Context, testCtx *testcontext.TestContext, testQueue *v2.Queue, podCount, memoryMiB int,
 ) {
+	var throttled atomic.Int64
+	pause := time.Duration(0)
+	for created := 0; created < podCount; created += fractionCreateBatchSize {
+		batch := min(fractionCreateBatchSize, podCount-created)
+		throttledBefore := throttled.Load()
+		Expect(createFractionPodBatch(ctx, testCtx, testQueue, batch, memoryMiB, &throttled)).
+			To(Succeed(), "failed to create fraction pods")
+
+		if throttled.Load() == throttledBefore {
+			pause = 0
+			continue
+		}
+		pause = min(max(2*pause, fractionBatchPauseStart), fractionBatchPauseMax)
+		GinkgoLogr.Info("Pod creation was throttled by the API server, pausing before the next batch",
+			"created", created+batch, "total", podCount, "throttledCreates", throttled.Load(), "pause", pause.String())
+		sleepOrDone(ctx, pause)
+	}
+	if throttled.Load() > 0 {
+		GinkgoLogr.Info("Pod creation finished after API server throttling", "throttledCreates", throttled.Load())
+	}
+}
+
+func createFractionPodBatch(
+	ctx context.Context, testCtx *testcontext.TestContext, testQueue *v2.Queue, podCount, memoryMiB int,
+	throttled *atomic.Int64,
+) error {
 	semaphore := make(chan struct{}, fractionCreateConcurrency)
 	var wg sync.WaitGroup
 	var lock sync.Mutex
@@ -211,7 +251,7 @@ func createFractionPods(
 		go func() {
 			defer wg.Done()
 			defer func() { <-semaphore }()
-			if err := rd.CreateObjectWithRetries(ctx, testCtx.ControllerClient, newFractionPod(testQueue, memoryMiB)); err != nil {
+			if err := createWithBackoff(ctx, testCtx.ControllerClient, newFractionPod(testQueue, memoryMiB), throttled); err != nil {
 				lock.Lock()
 				creationError = errors.Join(creationError, err)
 				lock.Unlock()
@@ -219,7 +259,34 @@ func createFractionPods(
 		}()
 	}
 	wg.Wait()
-	Expect(creationError).NotTo(HaveOccurred(), "failed to create fraction pods")
+	return creationError
+}
+
+func createWithBackoff(
+	ctx context.Context, client runtimeClient.Client, pod *v1.Pod, throttled *atomic.Int64,
+) error {
+	delay := fractionCreateBackoffStart
+	for attempt := 0; ; attempt++ {
+		err := client.Create(ctx, pod)
+		if err == nil || apierrors.IsAlreadyExists(err) {
+			return nil
+		}
+		if attempt == fractionCreateRetries || ctx.Err() != nil {
+			return err
+		}
+		if apierrors.IsTooManyRequests(err) {
+			throttled.Add(1)
+		}
+		sleepOrDone(ctx, delay)
+		delay = min(2*delay, fractionCreateBackoffMax)
+	}
+}
+
+func sleepOrDone(ctx context.Context, d time.Duration) {
+	select {
+	case <-ctx.Done():
+	case <-time.After(d):
+	}
 }
 
 func reservationPodCount(ctx context.Context, testCtx *testcontext.TestContext) int {

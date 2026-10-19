@@ -49,6 +49,9 @@ Tests are organized into contexts:
     `gpu-fractioning.nvidia.com/Ready` condition, and the fake-gpu-operator's status-updater writes the reserved GPU
     index annotation on the binder's reservation pods. This is a simulation: real NvFractions requires its own
     operator, [gpu-fractioning](https://github.com/kai-scheduler/gpu-fractioning), which is not deployed here.
+    Pods are created in batches of 1000. At 40000 pods (1000 nodes) the cluster's etcd can answer with HTTP 429
+    (`etcdserver: throttle: too many requests`); the hosting cluster's write budget is not what this test measures, so
+    throttled creates are retried with backoff and a throttled batch delays the next one (the log reports how often).
 
 
 ## Environment Setup
