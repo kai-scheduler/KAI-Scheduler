@@ -66,9 +66,11 @@ func (alloc *consolidationAction) Execute(ssn *framework.Session) {
 		job := jobsOrderByQueues.PopNextJob()
 
 		if isWithinConsolidationCooldown(job, ssn.GetConsolidationCooldown(), now) {
-			log.InfraLogger.V(3).Infof(
-				"Skipping consolidation for job: <%v/%v> - evicted at %v, within the consolidation cooldown",
-				job.Namespace, job.Name, job.LastEvictionTimestamp.UTC().Format(time.RFC3339))
+			log.InfraLogger.V(5).Do(func() {
+				log.InfraLogger.Infof(
+					"Skipping consolidation for job: <%v/%v> - evicted at %v, within the consolidation cooldown",
+					job.Namespace, job.Name, job.LastEvictionTimestamp.UTC().Format(time.RFC3339))
+			})
 			continue
 		}
 
