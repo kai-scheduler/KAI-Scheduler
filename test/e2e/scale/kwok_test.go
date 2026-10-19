@@ -643,10 +643,13 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 					fractionQueues = append(fractionQueues, fractionTiers[i].queue)
 				}
 				testCtx.AddQueues(ctx, fractionQueues)
+
+				Expect(createReservationGpuIndexStage(ctx, testCtx.ControllerClient)).To(Succeed())
 			})
 
 			AfterAll(func(ctx context.Context) {
 				setGpuSharingMode(ctx, testCtx, originalSharingMode)
+				Expect(runtimeClient.IgnoreNotFound(deleteReservationGpuIndexStage(ctx, testCtx.ControllerClient))).To(Succeed())
 			})
 
 			AfterEach(func(ctx context.Context) {
