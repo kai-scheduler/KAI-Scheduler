@@ -231,7 +231,7 @@ func (s *Statement) Pipeline(task *pod_info.PodInfo, hostname string, updateTask
 		taskOnNodeGPUGroups := taskOnNode.GPUGroupIDs()
 		gpuPlacementChanged = len(taskGPUGroups) > 0 && task.IsSharedGPUAllocation() &&
 			!slices.Equal(taskGPUGroups, []string{"-1"}) && !slices.Equal(taskGPUGroups, taskOnNodeGPUGroups)
-		numaPlacementChanged = len(task.NUMAPlacement) > 0 &&
+		numaPlacementChanged = !task.NUMAPlacement.IsEmpty() &&
 			!task.NUMAPlacement.Equal(taskOnNode.NUMAPlacement)
 	}
 
@@ -724,7 +724,7 @@ func (s *Statement) cleanupFailedAllocation(task *pod_info.PodInfo, node *node_i
 		task.Namespace, task.Name, node.Name)
 
 	// Failed allocation: clear the placement so a retry re-evaluates.
-	_ = s.unallocate(task, node.Name, nil, false)
+	_ = s.unallocate(task, node.Name, pod_info.NUMAPlacement{}, false)
 }
 
 func (s *Statement) operationValid(i int) bool {

@@ -42,14 +42,7 @@ func (jobsOrder *JobsOrderByQueues) InitializeWithJobs(
 			continue
 		}
 
-		isJobActive := false
-		for _, task := range job.GetAllPodsMap() {
-			if pod_status.IsActiveAllocatedStatus(task.Status) {
-				isJobActive = true
-				break
-			}
-		}
-		if jobsOrder.options.FilterNonActiveAllocated && !isJobActive {
+		if jobsOrder.options.FilterNonActiveAllocated && job.GetActiveAllocatedTasksCount() == 0 {
 			continue
 		}
 

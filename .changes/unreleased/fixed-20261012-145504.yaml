@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Preserve GPU reservations while binding requests remain retryable
+custom:
+  Author: "NVGreg"
+  Issue: "2358"

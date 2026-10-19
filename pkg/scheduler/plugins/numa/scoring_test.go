@@ -51,7 +51,7 @@ func TestBestEffortEvaluatorSpan(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			placement, ok := evalPlacement(node, noIgnoreList, []v1.ResourceList{req(gpu, test.gpus)})
 			assert.Equal(t, test.wantAdmit, ok)
-			assert.Len(t, placement, test.wantSpan)
+			assert.Len(t, placement.Zones, test.wantSpan)
 		})
 	}
 }
@@ -66,7 +66,7 @@ func TestBestEffortEvaluatorMoreThanStackZones(t *testing.T) {
 	placement, ok := evalPlacement(node, noIgnoreList, []v1.ResourceList{req(gpu, fmt.Sprintf("%d", len(zones)))})
 
 	assert.True(t, ok)
-	assert.Len(t, placement, len(zones))
+	assert.Len(t, placement.Zones, len(zones))
 }
 
 func TestNodeScoreTiers(t *testing.T) {

@@ -25,10 +25,10 @@ import (
 	podresourcesv1 "k8s.io/kubelet/pkg/apis/podresources/v1"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/npe/consts"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/npe/cputopology"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/npe/placement"
+	"github.com/kai-scheduler/api/constants"
 )
 
 // +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch;patch
