@@ -103,6 +103,145 @@ var _ = Describe("BindRequest Controller", func() {
 	})
 
 	Describe("Reconcile", func() {
+		DescribeTable("recovers a status retry while the cached Pod remains unbound",
+			func(initiallyFailed bool) {
+				ctx := context.Background()
+				pod := &v1.Pod{ObjectMeta: metav1.ObjectMeta{
+					Name: "stale-status-pod", Namespace: "default", UID: "stale-status-pod-uid",
+				}}
+				node := &v1.Node{ObjectMeta: metav1.ObjectMeta{Name: "stale-status-node"}}
+				Expect(fakeClient.Create(ctx, pod)).To(Succeed())
+				Expect(fakeClient.Create(ctx, node)).To(Succeed())
+				stalePod := pod.DeepCopy()
+				bindRequest := baseRequest.DeepCopy()
+				bindRequest.Spec.PodName = pod.Name
+				bindRequest.Spec.SelectedNode = node.Name
+				bindRequest.Spec.BackoffLimit = ptr.To(int32(3))
+				if initiallyFailed {
+					bindRequest.Status.Phase = schedulingv1alpha2.BindRequestPhaseFailed
+					bindRequest.Status.FailedAttempts = 1
+					bindRequest.Status.Reason = "previous binding failure"
+				}
+				Expect(fakeClient.Create(ctx, bindRequest)).To(Succeed())
+				initialStatus := bindRequest.Status
+
+				statusErr := kerrors.NewServerTimeout(schema.GroupResource{
+					Group: schedulingv1alpha2.GroupVersion.Group, Resource: "bindrequests",
+				}, "patch", 1)
+				readErr := errors.New("temporary Pod API read failure")
+				statusPatches, podStatusPatches, cachedPodReads, freshPodReads := 0, 0, 0, 0
+				readFails := false
+				reconciler.Client = interceptor.NewClient(fakeClient, interceptor.Funcs{
+					Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey,
+						obj client.Object, opts ...client.GetOption) error {
+						if cached, ok := obj.(*v1.Pod); ok {
+							cachedPodReads++
+							stalePod.DeepCopyInto(cached)
+							return nil
+						}
+						return c.Get(ctx, key, obj, opts...)
+					},
+					SubResourcePatch: func(ctx context.Context, c client.Client, subResource string,
+						obj client.Object, patch client.Patch, opts ...client.SubResourcePatchOption) error {
+						switch obj.(type) {
+						case *schedulingv1alpha2.BindRequest:
+							statusPatches++
+							if statusPatches == 1 {
+								return statusErr
+							}
+						case *v1.Pod:
+							podStatusPatches++
+						}
+						return c.SubResource(subResource).Patch(ctx, obj, patch, opts...)
+					},
+				})
+				reconciler.apiReader = interceptor.NewClient(fakeClient, interceptor.Funcs{
+					Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey,
+						obj client.Object, opts ...client.GetOption) error {
+						freshPodReads++
+						if readFails {
+							return readErr
+						}
+						return c.Get(ctx, key, obj, opts...)
+					},
+				})
+				mockBinder := mock_binder.NewMockInterface(gomock.NewController(GinkgoT()))
+				bindCalls, rollbackCalls := 0, 0
+				mockBinder.EXPECT().Bind(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+					DoAndReturn(func(ctx context.Context, pod *v1.Pod, node *v1.Node, _ *schedulingv1alpha2.BindRequest) error {
+						bindCalls++
+						if bindCalls > 1 {
+							return kerrors.NewBadRequest("pod is already assigned to a node")
+						}
+						pod.Spec.NodeName = node.Name
+						return fakeClient.Update(ctx, pod)
+					}).AnyTimes()
+				mockBinder.EXPECT().Rollback(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+					DoAndReturn(func(context.Context, *v1.Pod, *v1.Node, *schedulingv1alpha2.BindRequest) error {
+						rollbackCalls++
+						return nil
+					}).AnyTimes()
+				reconciler.binder = mockBinder
+				req := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(bindRequest)}
+
+				result, err := reconciler.Reconcile(ctx, req)
+				Expect(err).To(MatchError(statusErr))
+				Expect(result).To(Equal(ctrl.Result{}))
+				Expect(statusPatches).To(Equal(1))
+				Expect(fakeEventRecorder.Events).To(Receive(ContainSubstring("Normal Bound")))
+				Expect(fakeEventRecorder.Events).To(BeEmpty())
+				stored := &schedulingv1alpha2.BindRequest{}
+				Expect(fakeClient.Get(ctx, req.NamespacedName, stored)).To(Succeed())
+				Expect(stored.Status).To(Equal(initialStatus))
+				boundPod := &v1.Pod{}
+				Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(pod), boundPod)).To(Succeed())
+				Expect(boundPod.Spec.NodeName).To(Equal(node.Name))
+				Expect(boundPod.Status.Conditions).To(ContainElement(And(
+					HaveField("Type", v1.PodConditionType(podBoundCondition)),
+					HaveField("Status", v1.ConditionTrue),
+				)))
+
+				cachedPod := &v1.Pod{}
+				Expect(reconciler.Client.Get(ctx, client.ObjectKeyFromObject(pod), cachedPod)).To(Succeed())
+				Expect(cachedPod.Spec.NodeName).To(BeEmpty())
+				readFails = true
+				previousPodStatusPatches := podStatusPatches
+				result, err = reconciler.Reconcile(ctx, req)
+				Expect([]int{bindCalls, rollbackCalls}).To(Equal([]int{1, 0}))
+				Expect(err).To(MatchError(readErr))
+				Expect(errors.Is(err, reconcile.TerminalError(nil))).To(BeFalse())
+				Expect(result).To(Equal(ctrl.Result{}))
+				Expect(cachedPodReads).To(Equal(1))
+				Expect(freshPodReads).To(Equal(2))
+				Expect(statusPatches).To(Equal(1))
+				Expect(podStatusPatches).To(Equal(previousPodStatusPatches))
+				Expect(fakeClient.Get(ctx, req.NamespacedName, stored)).To(Succeed())
+				Expect(stored.Status).To(Equal(initialStatus))
+				unchangedPod := &v1.Pod{}
+				Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(pod), unchangedPod)).To(Succeed())
+				Expect(unchangedPod.Status).To(Equal(boundPod.Status))
+				Expect(fakeEventRecorder.Events).To(BeEmpty())
+
+				readFails = false
+				result, err = reconciler.Reconcile(ctx, req)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).To(Equal(ctrl.Result{}))
+				Expect([]int{bindCalls, rollbackCalls}).To(Equal([]int{1, 0}))
+				Expect(cachedPodReads).To(Equal(1))
+				Expect(freshPodReads).To(Equal(3))
+				Expect(statusPatches).To(Equal(2))
+				Expect(fakeClient.Get(ctx, req.NamespacedName, stored)).To(Succeed())
+				Expect(stored.Status.Phase).To(Equal(schedulingv1alpha2.BindRequestPhaseSucceeded))
+				Expect(stored.Status.FailedAttempts).To(Equal(initialStatus.FailedAttempts))
+				Expect(fakeEventRecorder.Events).To(Receive(ContainSubstring("Normal Bound")))
+				Expect(fakeEventRecorder.Events).To(BeEmpty())
+				Expect(reconciler.Client.Get(ctx, client.ObjectKeyFromObject(pod), cachedPod)).To(Succeed())
+				Expect(cachedPod.Spec.NodeName).To(BeEmpty())
+			},
+			Entry("initially Pending", false),
+			Entry("initially retryable Failed", true),
+		)
+
 		DescribeTable("retries status write errors without losing Pod reports",
 			func(writeFailure string, bindingFails, withBackoff bool) {
 				ctx := context.Background()

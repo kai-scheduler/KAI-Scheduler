@@ -43,6 +43,7 @@ const (
 type BindRequestReconciler struct {
 	Client              client.Client
 	Scheme              *runtime.Scheme
+	apiReader           client.Reader
 	binder              binding.Interface
 	resourceReservation resourcereservation.Interface
 	eventRecorder       record.EventRecorder
@@ -60,6 +61,7 @@ func NewBindRequestReconciler(
 	return &BindRequestReconciler{
 		Client:              client,
 		Scheme:              scheme,
+		apiReader:           client,
 		binder:              binder,
 		resourceReservation: resourceReservation,
 		eventRecorder:       eventRecorder,
@@ -107,6 +109,17 @@ func (r *BindRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return result, nil
 	}
 
+	pod = &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      bindRequest.Spec.PodName,
+			Namespace: bindRequest.Namespace,
+		},
+	}
+	// A status retry must observe a completed binding before preparing another attempt.
+	if err = r.apiReader.Get(ctx, client.ObjectKeyFromObject(pod), pod); err != nil && !kerrors.IsNotFound(err) {
+		return result, err
+	}
+
 	defer func() {
 		var finalError error
 		if r := recover(); r != nil {
@@ -124,13 +137,7 @@ func (r *BindRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		}
 	}()
 
-	pod = &v1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      bindRequest.Spec.PodName,
-			Namespace: bindRequest.Namespace,
-		},
-	}
-	if err = r.Client.Get(ctx, client.ObjectKeyFromObject(pod), pod); err != nil {
+	if err != nil {
 		return result, err
 	}
 	if pod.Spec.NodeName != "" {
@@ -172,6 +179,7 @@ func (r *BindRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *BindRequestReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	r.apiReader = mgr.GetAPIReader()
 	return ctrl.NewControllerManagedBy(mgr).
 		Named("bindrequest").
 		Watches(&schedulingv1alpha2.BindRequest{}, r.eventHandlers()).
