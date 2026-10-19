@@ -4,6 +4,8 @@
 package consolidation
 
 import (
+	"time"
+
 	"golang.org/x/exp/maps"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common"
@@ -58,9 +60,17 @@ func (alloc *consolidationAction) Execute(ssn *framework.Session) {
 		jobsOrderByQueues.Len(), ssn.CountLeafQueues())
 
 	smallestFailedJobs := common.NewMinimalJobRepresentatives()
+	now := time.Now()
 
 	for !jobsOrderByQueues.IsEmpty() {
 		job := jobsOrderByQueues.PopNextJob()
+
+		if isWithinConsolidationCooldown(job, ssn.GetConsolidationCooldown(), now) {
+			log.InfraLogger.V(3).Infof(
+				"Skipping consolidation for job: <%v/%v> - evicted at %v, within the consolidation cooldown",
+				job.Namespace, job.Name, job.LastEvictionTimestamp.UTC().Format(time.RFC3339))
+			continue
+		}
 
 		if ssn.UseSchedulingSignatures() {
 			easier, otherJob := smallestFailedJobs.IsEasierToSchedule(job)
@@ -91,6 +101,14 @@ func (alloc *consolidationAction) Execute(ssn *framework.Session) {
 			smallestFailedJobs.UpdateRepresentative(job)
 		}
 	}
+}
+
+// isWithinConsolidationCooldown reports whether the job was evicted too recently to trigger consolidation.
+// Consolidation moves a victim by evicting it; its controller recreates the pod, which has no claim on the
+// planned placement and may stay pending. Letting that pod consolidate in turn evicts another workload, and
+// so on, without reducing the number of pending workloads.
+func isWithinConsolidationCooldown(job *podgroup_info.PodGroupInfo, cooldown time.Duration, now time.Time) bool {
+	return cooldown > 0 && job.LastEvictionTimestamp != nil && now.Before(job.LastEvictionTimestamp.Add(cooldown))
 }
 
 func attemptToConsolidateForPreemptor(
