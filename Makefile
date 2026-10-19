@@ -40,8 +40,9 @@ test: test-chart envtest-docker-go
 .PHONY: build
 build: $(SERVICE_NAMES)
 
-$(SERVICE_NAMES):
-	$(MAKE) build-go SERVICE_NAME=$@
+# builder is a shared prerequisite so a parallel build (make -j) builds it once.
+$(SERVICE_NAMES): builder
+	$(MAKE) $(addprefix build-go-,$(GO_BUILD_ARCHS)) SERVICE_NAME=$@
 	$(MAKE) docker-build-generic SERVICE_NAME=$@
 
 .PHONY: push
