@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v0.18.6] - 2026-10-15
+
+### Changed
+- Score and sort nodes for a task without per-worker score maps [#2409](https://github.com/kai-scheduler/KAI-Scheduler/issues/2409) [theminjunchoi](https://github.com/theminjunchoi)
+
+### Fixed
+- Keep replacement subgroups in the job's required topology domain [#2318](https://github.com/kai-scheduler/KAI-Scheduler/issues/2318) [1fanwang](https://github.com/1fanwang)
+- Scheduler deletes only failed BindRequests; binder skips terminal ones, drops duplicate reconcile events, keeps reservations during retries [#2343](https://github.com/kai-scheduler/KAI-Scheduler/issues/2343) [davidLif](https://github.com/davidLif)
+
 ## [v0.18.5] - 2026-10-11
 
 ### Added

@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Allow the kai-config-deployer hook job to run on OpenShift
+custom:
+  Author: "gshaibi"
+  Issue: "2441"
