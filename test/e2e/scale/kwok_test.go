@@ -658,6 +658,11 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 				}
 			})
 
+			// Two equal-priority queues, one requesting 0.5 GPU per pod and one 0.125, together filling the cluster.
+			// Reports allocation time, scheduling time, bind lag and GPU utilization, and checks that no GPU is
+			// over-committed. Pods are created in batches that back off if the API server throttles.
+			// Simulation: the fake-gpu-operator stands in for the reservation container. Real NvFractions requires its own
+			// operator, https://github.com/kai-scheduler/gpu-fractioning.
 			It("fraction scale scenario: mixed saturation", func(ctx context.Context) {
 				fractionsSaturation(ctx, testCtx, fractionTiers, numberOfNodes, gpuMemoryMiB)
 			}, SpecTimeout(maxFlowTimeoutMinutes*time.Minute))

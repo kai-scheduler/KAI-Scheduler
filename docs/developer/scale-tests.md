@@ -40,18 +40,7 @@ Tests are organized into contexts:
   - Whole GPU allocation tests
   - Distributed job scheduling
   - Reclaim scenarios
-  - Mixed fraction saturation (NvFractions mode): two queues of equal priority, one requesting 0.5 GPU per pod and one
-    0.125 GPU per pod, each sized to half of the cluster's GPUs so the combined demand equals capacity. The test waits
-    until the scheduler decided on every pod (allocated or unschedulable) and every allocated pod is bound, and reports
-    allocation time (last BindRequest created), scheduling time (last pod bound), bind lag and achieved GPU utilization.
-    It verifies scheduler/binder decisions only: no GPU group exceeds one GPU's memory and reservation pods match the
-    GPU groups in use. KWOK nodes are stamped with the `nvidia.com/gpu.memory` label and the
-    `gpu-fractioning.nvidia.com/Ready` condition, and the fake-gpu-operator's status-updater writes the reserved GPU
-    index annotation on the binder's reservation pods. This is a simulation: real NvFractions requires its own
-    operator, [gpu-fractioning](https://github.com/kai-scheduler/gpu-fractioning), which is not deployed here.
-    Pods are created in batches of 1000. At 40000 pods (1000 nodes) the cluster's etcd can answer with HTTP 429
-    (`etcdserver: throttle: too many requests`); the hosting cluster's write budget is not what this test measures, so
-    throttled creates are retried with backoff and a throttled batch delays the next one (the log reports how often).
+  - Mixed NVfractions saturation
 
 
 ## Environment Setup
