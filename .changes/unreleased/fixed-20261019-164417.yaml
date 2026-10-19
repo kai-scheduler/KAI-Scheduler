@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Scheduler and pod-group-controller charge pod-level resources (KEP-2837) like kubelet admission, preventing OutOfcpu over-commit
+custom:
+  Author: "liuxu623"
+  Issue: "2456"

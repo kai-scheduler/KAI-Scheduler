@@ -444,8 +444,9 @@ func getPodGroupID(pod *v1.Pod) common_info.PodGroupID {
 }
 
 func getPodResourceRequest(pod *v1.Pod) *resource_info.ResourceRequirements {
-	reqs := resourcehelpers.AggregateContainerRequests(pod, resourcehelpers.PodResourcesOptions{
+	reqs := resourcehelpers.PodRequests(pod, resourcehelpers.PodResourcesOptions{
 		UseStatusResources: true,
+		ExcludeOverhead:    true,
 	})
 	result := resource_info.RequirementsFromResourceList(reqs)
 
