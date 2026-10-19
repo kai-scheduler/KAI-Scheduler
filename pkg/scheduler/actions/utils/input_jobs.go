@@ -74,8 +74,10 @@ func (jobsOrder *JobsOrderByQueues) InitializeWithJobs(
 
 		if jobsOrder.options.FilterWithinPreemptionDelay && job.IsWithinPreemptionDelay(now) {
 			recordPreemptionDelayFitError(job)
-			log.InfraLogger.V(3).Infof("Job <%s> is within its preemption delay window, skipping as eviction trigger",
-				job.NamespacedName)
+			log.InfraLogger.V(5).Do(func() {
+				log.InfraLogger.Infof("Job <%s> is within its preemption delay window, skipping as eviction trigger",
+					job.NamespacedName)
+			})
 			continue
 		}
 
