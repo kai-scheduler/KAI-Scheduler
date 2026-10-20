@@ -298,16 +298,15 @@ func getReplicatedJobs(jobSet *unstructured.Unstructured) ([]map[string]any, err
 }
 
 // countUngatedReplicatedJobs returns the number of replicatedJobs without
-// dependsOn (the initial wave), with a floor of 1.
+// dependsOn (the initial wave). JobSet validation rejects dependsOn on the
+// first replicatedJob, so it is always ungated and counted up front.
+// Callers must pass a non-empty slice.
 func countUngatedReplicatedJobs(replicatedJobs []map[string]any) int32 {
-	var n int32
-	for _, rj := range replicatedJobs {
+	n := int32(1)
+	for _, rj := range replicatedJobs[1:] {
 		if !replicatedJobHasDependsOn(rj) {
 			n++
 		}
-	}
-	if n < 1 {
-		return 1
 	}
 	return n
 }
