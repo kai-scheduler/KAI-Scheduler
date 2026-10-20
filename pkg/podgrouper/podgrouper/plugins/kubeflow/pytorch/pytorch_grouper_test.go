@@ -578,6 +578,33 @@ func TestGetPodGroupMetadata_Segments_MalformedAnnotation(t *testing.T) {
 	assert.Contains(t, err.Error(), "invalid segment size")
 }
 
+func TestGetPodGroupMetadata_Segments_NonPositiveAnnotation(t *testing.T) {
+	for _, segmentSize := range []string{"0", "-2"} {
+		t.Run(segmentSize, func(t *testing.T) {
+			pytorchJob := getPytorchJobWithSegments(1, 4, segmentSize)
+			grouper := newTestPyTorchGrouper()
+
+			workerPod := &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-job-worker-0",
+					Namespace: "test_namespace",
+					Labels: map[string]string{
+						replicaTypeLabel:                      "worker",
+						"training.kubeflow.org/replica-index": "0",
+					},
+					Annotations: map[string]string{
+						"kai.scheduler/segment-size": segmentSize,
+					},
+				},
+			}
+
+			_, err := grouper.GetPodGroupMetadata(pytorchJob, workerPod)
+			assert.NotNil(t, err)
+			assert.Contains(t, err.Error(), "needs to be a positive integer")
+		})
+	}
+}
+
 func TestGetPodGroupMetadata_Segments_MalformedAnnotationInTemplate(t *testing.T) {
 	pytorchJob := getPytorchJobWithSegments(1, 4, "invalid-size")
 	grouper := newTestPyTorchGrouper()
