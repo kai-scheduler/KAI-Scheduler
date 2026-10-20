@@ -159,7 +159,7 @@ func (pg *podGrouper) getTopOwnerInstance(ctx context.Context, topOwner *metav1.
 		Namespace: topOwner.GetNamespace(),
 		Name:      topOwner.GetName(),
 	}
-	err := pg.client.Get(ctx, key, topOwnerInstance)
+	err := pg.clientWithoutCache.Get(ctx, key, topOwnerInstance)
 	return topOwnerInstance, err
 }
 
