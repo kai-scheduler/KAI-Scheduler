@@ -220,3 +220,10 @@ table := supportedTypes{
     ...
 }
 ```
+
+
+## Go memory budget
+
+The executable applies a cgroup-derived Go memory budget before constructing
+its manager and caches. See [Go memory budgets](../operator/go-memory-budget.md)
+for defaults, overrides, refresh behavior, and limitations.

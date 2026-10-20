@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/memorylimit"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_division"
 	rs "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
@@ -76,6 +77,10 @@ func (s *server) simulateHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	memorylimit.RunMain(runMain)
+}
+
+func runMain() {
 	var port = flag.Int("port", 8080, "Port to listen on")
 	var enableCors = flag.Bool("enable-cors", false, "Enable CORS headers for cross-origin requests")
 	flag.Parse()

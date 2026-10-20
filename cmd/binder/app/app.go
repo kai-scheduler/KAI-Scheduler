@@ -20,6 +20,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -64,6 +65,7 @@ func New(options *Options, config *rest.Config) (*App, error) {
 
 	mgr, err := ctrl.NewManager(config, ctrl.Options{
 		Scheme: scheme,
+		Cache:  cache.Options{DefaultTransform: cache.TransformStripManagedFields()},
 		Metrics: server.Options{
 			BindAddress: options.MetricsAddr,
 		},
