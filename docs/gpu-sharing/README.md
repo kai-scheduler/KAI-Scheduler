@@ -33,11 +33,12 @@ Administrators choose one GPU-sharing mode for the cluster. The mode configures 
 
 Set the mode with `global.gpuSharingMode`. The legacy `global.gpuSharing` value is deprecated and should only be used for upgrades that still rely on the old boolean value.
 
-### Device plugin time-slicing and MPS
+### Device plugin GPU sharing
 
-KAI Scheduler does not currently support GPU sharing configured in the NVIDIA device plugin, either [time-slicing](https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/latest/gpu-sharing.html) or MPS (the `replicas` setting).
+KAI Scheduler does not currently support GPU sharing through the NVIDIA device plugin `replicas` setting, using either [time-slicing](https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/latest/gpu-sharing.html) or MPS.
 On these nodes, each physical GPU is advertised as several `nvidia.com/gpu` units, and KAI may place workloads incorrectly.
 Use the GPU-sharing modes above instead.
+To share a GPU with MPS, run the MPS server on the node and request KAI fractions, as described in [GPU Sharing with MPS](mps/README.md).
 
 ### Install without GPU memory enforcement
 
