@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Reclaim evictions record events and metrics even when the preemptee PodGroup is missing from the snapshot
+custom:
+  Author: "pujitha24"
+  Issue: "2466"

@@ -95,7 +95,7 @@ func GetMessageOfEviction(ssn *framework.Session, actionType framework.ActionTyp
 		if !found {
 			log.InfraLogger.Errorf(
 				"Failed to get preemptee job for task: <%s/%s>", preempteeTask.Namespace, preempteeTask.Name)
-			return ""
+			return api.GetReclaimMessage(preempteeTask, preemptorJob)
 		}
 		reclaimerQueue, reclaimerFound := ssn.ClusterInfo.Queues[preemptorJob.Queue]
 		reclaimeeQueue, reclaimeeFound := ssn.ClusterInfo.Queues[preempteeJob.Queue]
