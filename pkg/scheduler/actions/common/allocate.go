@@ -10,6 +10,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
@@ -174,6 +175,15 @@ func allocateTask(ssn *framework.Session, stmt *framework.Statement, nodes []*no
 	})
 
 	orderedNodes := ssn.OrderedNodesByTask(nodes, task)
+	if isPipelineOnly && task.Status == pod_status.Releasing && task.NodeName != "" {
+		for index, node := range orderedNodes {
+			if node.Name == task.NodeName {
+				copy(orderedNodes[1:index+1], orderedNodes[:index])
+				orderedNodes[0] = node
+				break
+			}
+		}
+	}
 	for _, node := range orderedNodes {
 		if !ssn.FittingNode(task, node, !isPipelineOnly) {
 			continue
