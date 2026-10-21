@@ -85,6 +85,20 @@ jobs:
           VERSION: ${{ steps.notes.outputs.version }}
         run: |
           set -euo pipefail
+
+          # gh marks every new release as latest by default, so a patch on an older v*.* branch
+          # would take the flag from a newer minor. Compare against published releases, not tags:
+          # retracted tags (e.g. v0.20.1) have no release.
+          HIGHEST="$({ gh release list --limit 1000 --exclude-drafts --exclude-pre-releases \
+            --json tagName -q '.[].tagName'; echo "$VERSION"; } \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)"
+          MAKE_LATEST=false
+          if [ "$VERSION" = "$HIGHEST" ]; then
+            MAKE_LATEST=true
+          fi
+          echo "Highest published release: $HIGHEST; marking $VERSION as latest: $MAKE_LATEST"
+
           gh release create "$VERSION" \
             --title "$VERSION" \
-            --notes-file "${RUNNER_TEMP:-/tmp}/notes.md"
+            --notes-file "${RUNNER_TEMP:-/tmp}/notes.md" \
+            --latest="$MAKE_LATEST"
