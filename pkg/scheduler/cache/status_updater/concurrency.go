@@ -5,6 +5,8 @@ package status_updater
 
 import (
 	"context"
+	"errors"
+	"slices"
 
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -95,6 +97,7 @@ func (su *defaultStatusUpdater) updatePodGroup(
 	ctx context.Context, key updatePayloadKey, updateData *inflightUpdate,
 ) {
 	podGroup := updateData.object.(*enginev2alpha2.PodGroup)
+	appliedUpdate := updateData
 
 	var statusErr, patchErr error
 	if updateData.updateStatus {
@@ -104,6 +107,16 @@ func (su *defaultStatusUpdater) updatePodGroup(
 		)
 		if statusErr == nil {
 			updateData.writtenResourceVersions = append(updateData.writtenResourceVersions, updated.ResourceVersion)
+		} else if apierrors.IsConflict(statusErr) && updateData.statusIntent != nil {
+			var resourceVersions []string
+			updated, resourceVersions, statusErr = su.retryPodGroupStatusOnConflict(ctx, key, updateData)
+			if statusErr == nil {
+				appliedUpdate = &inflightUpdate{
+					object: updated,
+					writtenResourceVersions: append(
+						slices.Clone(updateData.writtenResourceVersions), resourceVersions...),
+				}
+			}
 		}
 	}
 
@@ -113,7 +126,7 @@ func (su *defaultStatusUpdater) updatePodGroup(
 			ctx, podGroup.Name, types.JSONPatchType, updateData.patchData, metav1.PatchOptions{}, updateData.subResources...,
 		)
 		if patchErr == nil {
-			updateData.writtenResourceVersions = append(updateData.writtenResourceVersions, patched.ResourceVersion)
+			appliedUpdate.writtenResourceVersions = append(appliedUpdate.writtenResourceVersions, patched.ResourceVersion)
 		}
 	}
 
@@ -132,7 +145,7 @@ func (su *defaultStatusUpdater) updatePodGroup(
 				log.StatusUpdaterLogger.V(5).Infof("Dropping non-retryable pod group patch %s/%s: %v",
 					podGroup.Namespace, podGroup.Name, patchErr)
 			}
-			su.inFlightPodGroups.Delete(key)
+			su.inFlightPodGroups.CompareAndDelete(key, updateData)
 			return
 		}
 
@@ -157,16 +170,15 @@ func (su *defaultStatusUpdater) updatePodGroup(
 	}
 
 	// Move the update to the applied cache
-	su.appliedPodGroupUpdates.Store(key, updateData)
-	_, loaded := su.inFlightPodGroups.LoadAndDelete(key)
-	if !loaded {
+	su.appliedPodGroupUpdates.Store(key, appliedUpdate)
+	if !su.inFlightPodGroups.CompareAndDelete(key, updateData) {
 		su.appliedPodGroupUpdates.Delete(key)
 	}
 }
 
 // isTerminalUpdateError reports whether an update error can never succeed on retry.
 func isTerminalUpdateError(err error) bool {
-	return apierrors.IsNotFound(err) || apierrors.IsConflict(err)
+	return apierrors.IsNotFound(err) || apierrors.IsConflict(err) || errors.Is(err, errStatusIntentStale)
 }
 
 func (su *defaultStatusUpdater) updateInFlightObject(key updatePayloadKey, objectType string, object *inflightUpdate) {

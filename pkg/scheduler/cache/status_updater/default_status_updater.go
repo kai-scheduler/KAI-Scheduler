@@ -57,6 +57,9 @@ type inflightUpdate struct {
 	updateStatus bool
 	subResources []string
 
+	// replayed onto the latest pod group if UpdateStatus conflicts
+	statusIntent *podGroupStatusIntent
+
 	writtenResourceVersions []string
 }
 
@@ -222,24 +225,54 @@ func (su *defaultStatusUpdater) RecordJobStatusEvent(
 		return err
 	}
 
-	updatePodgroupStatus := updateCorePods(job)
+	corePodsChanged := updateCorePods(job)
 	if job.GetNumPendingTasks() > 0 || job.GetNumGatedTasks() > 0 {
 		if !job.IsReadyForScheduling() {
 			su.recordJobNotReadyEvent(job)
-			su.pushPodGroupUpdate(job, patchData, updatePodgroupStatus)
+			su.pushPodGroupUpdate(job, patchData, corePodsChanged, su.newStatusIntent(job, corePodsChanged, false))
 			return nil
 		}
 		if err := su.recordUnschedulablePodsEvents(job, resolveDetailedFitErrors); err != nil {
 			return err
 		}
-		updatePodgroupStatus = su.recordUnschedulablePodGroup(job) || updatePodgroupStatus
-	} else {
-		updatePodgroupStatus = su.clearPodGroupSchedulingCondition(job) || updatePodgroupStatus
+		conditionSet := su.recordUnschedulablePodGroup(job)
+		su.pushPodGroupUpdate(job, patchData, corePodsChanged || conditionSet,
+			su.newStatusIntent(job, corePodsChanged, conditionSet))
+		return nil
 	}
 
-	su.pushPodGroupUpdate(job, patchData, updatePodgroupStatus)
+	// A clear removes every node pool's conditions, so it's not replayed on conflict.
+	conditionCleared := su.clearPodGroupSchedulingCondition(job)
+	var statusIntent *podGroupStatusIntent
+	if !conditionCleared {
+		statusIntent = su.newStatusIntent(job, corePodsChanged, false)
+	}
+	su.pushPodGroupUpdate(job, patchData, corePodsChanged || conditionCleared, statusIntent)
 
 	return nil
+}
+
+func (su *defaultStatusUpdater) newStatusIntent(
+	job *podgroup_info.PodGroupInfo, corePodsChanged, conditionSet bool,
+) *podGroupStatusIntent {
+	if !corePodsChanged && !conditionSet {
+		return nil
+	}
+	nodePool := utils.GetNodePoolNameFromLabels(job.PodGroup.Labels, su.nodePoolLabelKey)
+	intent := &podGroupStatusIntent{
+		uid:        job.PodGroup.UID,
+		generation: job.PodGroup.Generation,
+		nodePool:   nodePool,
+	}
+	if corePodsChanged {
+		intent.schedulingState = job.PodGroup.Status.SchedulingState.DeepCopy()
+	}
+	if conditionSet {
+		if index := utils.GetSchedulingConditionIndex(job.PodGroup, nodePool); index >= 0 {
+			intent.condition = job.PodGroup.Status.SchedulingConditions[index].DeepCopy()
+		}
+	}
+	return intent
 }
 
 // updateCorePods writes the scheduler-owned core pod set onto the pod group status for
@@ -258,7 +291,7 @@ func updateCorePods(job *podgroup_info.PodGroupInfo) bool {
 }
 
 func (su *defaultStatusUpdater) pushPodGroupUpdate(
-	job *podgroup_info.PodGroupInfo, patchData []byte, updateStatus bool,
+	job *podgroup_info.PodGroupInfo, patchData []byte, updateStatus bool, statusIntent *podGroupStatusIntent,
 ) {
 	if len(patchData) == 0 && !updateStatus {
 		return
@@ -272,6 +305,7 @@ func (su *defaultStatusUpdater) pushPodGroupUpdate(
 			object:       job.PodGroup,
 			patchData:    patchData,
 			updateStatus: updateStatus,
+			statusIntent: statusIntent,
 		},
 	)
 }
@@ -665,6 +699,7 @@ func setPodGroupSchedulingCondition(podGroup *enginev2alpha2.PodGroup, schedulin
 
 	// BC: older versions of pod group assigner rely on the most recent condition to be the last in the list.
 	// We want to squash all conditions of the same node pool and append ours to the end.
+	schedulingCondition.LastTransitionTime = metav1.Now()
 	squashAndAppendConditionsForNodepool(podGroup, schedulingCondition)
 	return true
 }
@@ -740,7 +775,6 @@ func squashAndAppendConditionsForNodepool(podGroup *enginev2alpha2.PodGroup, sch
 			squashedConditions = append(squashedConditions, condition)
 		}
 	}
-	schedulingCondition.LastTransitionTime = metav1.Now()
 	squashedConditions = append(squashedConditions, *schedulingCondition)
 	podGroup.Status.SchedulingConditions = squashedConditions
 }
