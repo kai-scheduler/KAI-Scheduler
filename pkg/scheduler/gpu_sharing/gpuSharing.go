@@ -106,6 +106,15 @@ func findGpuForSharingOnNode(task *pod_info.PodInfo, node *node_info.NodeInfo, i
 
 func allocateSharedGPUTask(ssn *framework.Session, stmt *framework.Statement, node *node_info.NodeInfo,
 	task *pod_info.PodInfo, isPipelineOnly bool) bool {
+	updateTasksIfExistsOnNode := !isPipelineOnly
+	if !isPipelineOnly {
+		ready, err := ssn.IsTaskReadyForBinding(task, node)
+		if err != nil {
+			log.InfraLogger.Errorf("Failed to evaluate binding readiness for task %v on %v: %v", task.UID, node.Name, err)
+			return false
+		}
+		isPipelineOnly = !ready
+	}
 	if isPipelineOnly {
 		log.InfraLogger.V(6).Do(func() {
 			log.InfraLogger.Infof(
@@ -113,7 +122,7 @@ func allocateSharedGPUTask(ssn *framework.Session, stmt *framework.Statement, no
 				task.Namespace, task.Name, node.Name,
 				task.GPUGroupIDs(), task.GpuRequirement.GPUs(), task.GpuRequirement.GpuMemory())
 		})
-		if err := stmt.Pipeline(task, node.Name, !isPipelineOnly); err != nil {
+		if err := stmt.Pipeline(task, node.Name, updateTasksIfExistsOnNode); err != nil {
 			log.InfraLogger.V(6).Do(func() {
 				log.InfraLogger.Infof("Failed to pipeline Task: <%s/%s> on Node: <%s>, due to an error: %v",
 					task.Namespace, task.Name, node.Name, err)
@@ -125,7 +134,7 @@ func allocateSharedGPUTask(ssn *framework.Session, stmt *framework.Statement, no
 	}
 
 	if err := stmt.Allocate(task, node.Name); err != nil {
-		log.InfraLogger.Errorf("Failed to bind Task <%v> on <%v> in Session <%v>, err: <%v>",
+		log.InfraLogger.Errorf("Failed to place Task <%v> on <%v> in Session <%v>, err: <%v>",
 			task.UID, node.Name, ssn.ID, err)
 		return false
 	}

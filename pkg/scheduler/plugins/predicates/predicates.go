@@ -39,6 +39,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal/predicates"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/gpusharingnodevalidation"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/predicates/antiaffinity"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/scheduler_util"
 )
 
@@ -110,6 +111,7 @@ type predicatesPlugin struct {
 	skipPredicates    SkipPredicates
 	prePredicateCache map[prePredicateCacheKey]cachedPrePredicateResult
 	ssn               *framework.Session
+	bindReadiness     antiaffinity.BindReadiness
 }
 
 func New(_ framework.PluginArguments) framework.Plugin {
@@ -128,6 +130,7 @@ func (pp *predicatesPlugin) OnSessionOpen(ssn *framework.Session) {
 	pp.skipPredicates = SkipPredicates{}
 	pp.resetPrePredicateCache()
 	pp.ssn = ssn
+	pp.initializeBindReadiness()
 
 	ssn.AddPrePredicateFn(func(task *pod_info.PodInfo, _ *podgroup_info.PodGroupInfo) error {
 		return pp.evaluateTaskOnPrePredicate(task, k8sPredicates)
@@ -398,4 +401,18 @@ func (pp *predicatesPlugin) evaluateTaskOnPredicates(
 	return nil
 }
 
-func (pp *predicatesPlugin) OnSessionClose(_ *framework.Session) {}
+func (pp *predicatesPlugin) OnSessionClose(_ *framework.Session) {
+	pp.bindReadiness = nil
+	pp.ssn = nil
+}
+
+func (pp *predicatesPlugin) initializeBindReadiness() {
+	plugin := pp.ssn.InternalK8sPlugins().PodAffinity
+	if plugin == nil {
+		return
+	}
+	internal := pp.ssn.InternalK8sPlugins()
+	pp.bindReadiness = antiaffinity.New(pp.ssn.ClusterInfo.Nodes, internal.FrameworkHandle, internal.Features)
+	pp.ssn.AddNodePreOrderFn(pp.bindReadiness.Prepare)
+	pp.ssn.AddBindReadyFn(pp.bindReadiness.IsReadyForBinding)
+}
