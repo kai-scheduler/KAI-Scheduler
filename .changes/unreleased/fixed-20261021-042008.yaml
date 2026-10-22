@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Retry PodGroup status updates on resourceVersion conflicts against the latest PodGroup, so an unrelated status write no longer delays an Unschedulable verdict until the next scheduling cycle
+custom:
+  Author: "Thezone-1"
+  Issue: "2374"
