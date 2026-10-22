@@ -159,6 +159,8 @@ test('renders both result formats and fifteen unified charts', async () => {
   assert.match(browser.elements.get('main').innerHTML, /total requested gpus/);
   assert.match(browser.elements.get('main').innerHTML, /kai_scheduler_ref/);
   assert.match(browser.elements.get('main').innerHTML, /service_resources/);
+  assert.match(browser.elements.get('main').innerHTML, /service_client_config/);
+  assert.match(browser.elements.get('main').innerHTML, /maxConcurrentReconciles/);
   assert.doesNotMatch(browser.elements.get('main').innerHTML, /kai_commit_hash/);
   assert.doesNotMatch(browser.elements.get('main').innerHTML, /test_focus/);
 
