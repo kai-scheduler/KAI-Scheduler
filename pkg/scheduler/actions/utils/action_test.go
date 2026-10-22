@@ -10,6 +10,7 @@ import (
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
@@ -43,4 +44,19 @@ func TestNewCachedVictimsQueueGenerator(t *testing.T) {
 	require.NotSame(t, firstQueue, secondQueue)
 	require.Same(t, job, firstQueue.PopNextJob())
 	require.Same(t, job, secondQueue.PopNextJob())
+}
+
+func TestGetMessageOfEviction_ReclaimMissingPreempteeJob(t *testing.T) {
+	ssn := &framework.Session{
+		ClusterInfo: &api.ClusterInfo{
+			PodGroupInfos: map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{},
+		},
+	}
+	preemptee := &pod_info.PodInfo{Job: "missing", Name: "victim-pod", Namespace: "ns"}
+	reclaimer := &podgroup_info.PodGroupInfo{Name: "reclaimer", Namespace: "ns"}
+
+	msg := GetMessageOfEviction(ssn, framework.Reclaim, preemptee, reclaimer)
+
+	require.Equal(t, api.GetReclaimMessage(preemptee, reclaimer), msg)
+	require.NotEmpty(t, msg)
 }
