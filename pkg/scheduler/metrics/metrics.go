@@ -167,7 +167,7 @@ func InitMetrics(namespace string) {
 		prometheus.CounterOpts{
 			Namespace: namespace,
 			Name:      "total_preemption_attempts",
-			Help:      "Total preemption attempts in the cluster till now",
+			Help:      "Total preemptions started by the scheduler: victims evicted and the preemptor pipelined, counted once per preemptor pod group",
 		},
 	)
 
@@ -381,7 +381,8 @@ func UpdateUsageQueryLatency(latency time.Duration) {
 	usageQueryLatency.WithLabelValues().Observe(float64(latency.Milliseconds()))
 }
 
-// RegisterPreemptionAttempts records number of attempts for preemption
+// RegisterPreemptionAttempts records a preemption the scheduler started. The preemptor
+// is pipelined and not running yet, so the preemption may still not complete.
 func RegisterPreemptionAttempts() {
 	preemptionAttempts.Inc()
 }
