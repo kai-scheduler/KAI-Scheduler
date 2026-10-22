@@ -10,6 +10,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
@@ -21,11 +22,24 @@ func AllocateJob(ssn *framework.Session, stmt *framework.Statement, nodes []*nod
 	job *podgroup_info.PodGroupInfo, allocationMode podgroup_info.TaskAllocationMode) bool {
 	ssn.PreJobAllocation(job)
 
+	isPipelineOnly := allocationMode != podgroup_info.RealTaskAllocation
+
+	// For preempt/reclaim victim reallocation, prefer each evicted task's
+	// original node before any cross-node packing (#2426). Try every Releasing
+	// task (not only GetTasksToAllocate's subset), then keep the restores only
+	// if the job's min requirement is still satisfied — otherwise roll back so
+	// gangs/complete-eviction scenarios stay fully Releasing.
+	if allocationMode == podgroup_info.VictimReallocation {
+		// On failure, victims remain Releasing so gang complete-eviction is preserved.
+		_ = tryRestoreVictimsOnOriginalNodes(ssn, stmt, nodes, job, isPipelineOnly)
+	}
+
 	tasksToAllocate := podgroup_info.GetTasksToAllocate(job, ssn.SubGroupOrderFn, ssn.TaskOrderFn, allocationMode)
 	if len(tasksToAllocate) == 0 {
-		return false
+		// Victim reallocation can finish with an empty set when every task that
+		// still fits was already unevicted onto its original node.
+		return allocationMode == podgroup_info.VictimReallocation
 	}
-	isPipelineOnly := allocationMode != podgroup_info.RealTaskAllocation
 
 	result := ssn.IsJobOverQueueCapacityFn(job, tasksToAllocate)
 	if !result.IsSchedulable {
@@ -174,6 +188,12 @@ func allocateTask(ssn *framework.Session, stmt *framework.Statement, nodes []*no
 	})
 
 	orderedNodes := ssn.OrderedNodesByTask(nodes, task)
+	// Evicted victims keep their original NodeName while Releasing. Prefer that
+	// node first so a victim that still fits at home is unevicted instead of
+	// being pipelined elsewhere and then deleted on preempt/reclaim commit (#2426).
+	if task.Status == pod_status.Releasing && task.NodeName != "" {
+		orderedNodes = preferNodeFirst(orderedNodes, task.NodeName)
+	}
 	for _, node := range orderedNodes {
 		if !ssn.FittingNode(task, node, !isPipelineOnly) {
 			continue
@@ -320,4 +340,77 @@ func orderedMembers(ssn *framework.Session, subGroupMembers []subgroup_info.SubG
 		return ssn.SubGroupOrderFn(subGroupMembers[i], subGroupMembers[j])
 	})
 	return subGroupMembers
+}
+
+// preferNodeFirst moves the named node to the front of the list when present.
+// Other nodes keep their relative order.
+func preferNodeFirst(nodes []*node_info.NodeInfo, nodeName string) []*node_info.NodeInfo {
+	if nodeName == "" || len(nodes) == 0 {
+		return nodes
+	}
+	preferred := make([]*node_info.NodeInfo, 0, 1)
+	rest := make([]*node_info.NodeInfo, 0, len(nodes))
+	for _, node := range nodes {
+		if node != nil && node.Name == nodeName {
+			preferred = append(preferred, node)
+			continue
+		}
+		rest = append(rest, node)
+	}
+	if len(preferred) == 0 {
+		return nodes
+	}
+	return append(preferred, rest...)
+}
+
+// tryRestoreVictimsOnOriginalNodes tries every Releasing task of the job only
+// on its original node. If the job's min requirement is satisfied afterwards,
+// the unevicts are kept so later packing cannot steal those home nodes.
+// Otherwise the attempt is rolled back and the caller continues with the
+// previous Releasing state (complete gang eviction).
+func tryRestoreVictimsOnOriginalNodes(
+	ssn *framework.Session, stmt *framework.Statement, nodes []*node_info.NodeInfo,
+	job *podgroup_info.PodGroupInfo, isPipelineOnly bool,
+) bool {
+	tasks := releasingTasksOfJob(job)
+	if len(tasks) == 0 {
+		return podgroup_info.IsMinRequirementSatisfied(job)
+	}
+
+	cp := stmt.Checkpoint()
+	for _, task := range tasks {
+		original := nodeByName(nodes, task.NodeName)
+		if original == nil {
+			continue
+		}
+		_ = allocateTask(ssn, stmt, []*node_info.NodeInfo{original}, task, isPipelineOnly)
+	}
+
+	if podgroup_info.IsMinRequirementSatisfied(job) {
+		return true
+	}
+	if err := stmt.Rollback(cp); err != nil {
+		log.InfraLogger.Errorf("Failed to rollback original-node victim restore in session %v, err: %v",
+			ssn.ID, err)
+	}
+	return false
+}
+
+func releasingTasksOfJob(job *podgroup_info.PodGroupInfo) []*pod_info.PodInfo {
+	var tasks []*pod_info.PodInfo
+	for _, task := range job.GetAllPodsMap() {
+		if task.Status == pod_status.Releasing && task.NodeName != "" {
+			tasks = append(tasks, task)
+		}
+	}
+	return tasks
+}
+
+func nodeByName(nodes []*node_info.NodeInfo, name string) *node_info.NodeInfo {
+	for _, node := range nodes {
+		if node != nil && node.Name == name {
+			return node
+		}
+	}
+	return nil
 }

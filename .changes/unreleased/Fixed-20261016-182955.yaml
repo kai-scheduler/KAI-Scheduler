@@ -1,0 +1,6 @@
+kind: Fixed
+body: 'Preempt and reclaim reallocation prefers a victim''s original node so pods that still fit there are unevicted instead of being deleted after a cross-node simulation pipeline'
+time: 2026-10-16T18:29:55.977725802+01:00
+custom:
+    Author: dttung2905
+    Issue: "2426"
