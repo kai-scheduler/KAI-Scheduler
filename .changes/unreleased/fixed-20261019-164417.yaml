@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Scheduler, pod-group-controller and resize webhook charge pod-level resources (KEP-2837) like kubelet admission, preventing OutOfcpu over-commit
+custom:
+  Author: "liuxu623"
+  Issue: "2456"

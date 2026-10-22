@@ -551,6 +551,9 @@ func (c *ClusterInfo) getNodeToPodInfosMap(allPods []*v1.Pod, bindRequests bindr
 		for _, container := range append(pod.Spec.InitContainers, pod.Spec.Containers...) {
 			vectorMap.AddResourceList(container.Resources.Requests)
 		}
+		if pod.Spec.Resources != nil {
+			vectorMap.AddResourceList(pod.Spec.Resources.Requests)
+		}
 
 		podBindRequest := bindRequests.GetBindRequestForPod(pod)
 		draPodClaims := resource_info.GetDraPodClaims(pod, draClaimMap, podsToClaimsMap)
