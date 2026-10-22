@@ -57,6 +57,7 @@ func (alloc *preemptAction) Execute(ssn *framework.Session) {
 		FilterNonPending:            true,
 		FilterUnready:               true,
 		FilterWithinPreemptionDelay: true,
+		FilterWaitingForVictims:     true,
 		MaxJobsQueueDepth:           ssn.GetJobsDepth(framework.Preempt),
 	})
 	jobsOrderByQueues.InitializeWithJobs(ssn.ClusterInfo.PodGroupInfos)

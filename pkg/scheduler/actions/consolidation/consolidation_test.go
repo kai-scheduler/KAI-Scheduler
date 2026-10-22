@@ -137,6 +137,85 @@ func getTestsMetadata() []integration_tests_utils.TestTopologyMetadata {
 		},
 		{
 			TestTopologyBasic: test_utils.TestTopologyBasic{
+				Name: "pending job waiting for the pods evicted for it to terminate - don't consolidate",
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:                "running_job0",
+						RequiredGPUsPerTask: 2,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "queue0",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								NodeName: "node0",
+								State:    pod_status.Running,
+							},
+						},
+					},
+					{
+						Name:                "running_job1",
+						RequiredGPUsPerTask: 2,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "queue0",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								State:    pod_status.Running,
+								NodeName: "node1",
+							},
+						},
+					},
+					{
+						Name:                  "pending_job0",
+						RequiredGPUsPerTask:   3,
+						Priority:              constants.PriorityTrainNumber,
+						QueueName:             "queue0",
+						HasTerminatingVictims: true,
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								State: pod_status.Pending,
+							},
+						},
+					},
+				},
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node0": {
+						GPUs: 4,
+					},
+					"node1": {
+						GPUs: 4,
+					},
+				},
+				Queues: []test_utils.TestQueueBasic{
+					{
+						Name:         "queue0",
+						DeservedGPUs: 2,
+					},
+				},
+				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"running_job0": {
+						NodeName:     "node0",
+						GPUsRequired: 2,
+						Status:       pod_status.Running,
+					},
+					"running_job1": {
+						NodeName:     "node1",
+						GPUsRequired: 2,
+						Status:       pod_status.Running,
+					},
+					"pending_job0": {
+						GPUsRequired: 3,
+						Status:       pod_status.Pending,
+					},
+				},
+				Mocks: &test_utils.TestMock{
+					CacheRequirements: &test_utils.CacheMocking{
+						NumberOfCacheEvictions:  0,
+						NumberOfPipelineActions: 0,
+					},
+				},
+			},
+		},
+		{
+			TestTopologyBasic: test_utils.TestTopologyBasic{
 				Name: "2 jobs of 2 & 1 GPUs running, two pending jobs, only second can be consolidated",
 				Jobs: []*jobs_fake.TestJobBasic{
 					{

@@ -76,6 +76,8 @@ type PodGroupInfo struct {
 	CreationTimestamp     metav1.Time
 	LastStartTimestamp    *time.Time
 	LastEvictionTimestamp *time.Time
+	// HasTerminatingVictims is set while pods this scheduler evicted for the job are terminating.
+	HasTerminatingVictims bool
 	PodGroup              *enginev2alpha2.PodGroup
 	PodGroupUID           types.UID
 
