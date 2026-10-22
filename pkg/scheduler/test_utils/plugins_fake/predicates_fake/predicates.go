@@ -89,7 +89,8 @@ func EmptyPredicate(predicateName string) k8s_internal.SessionPredicate {
 		IsPreFilterRequired: predicateRequired,
 		PreFilter:           emptyPredicatePreFilter(predicateName),
 		IsFilterRequired:    predicateRequired,
-		Filter:              emptyPredicateFilter(predicateName),
+		IsAllocatable:       emptyPredicateFilter(predicateName),
+		IsPipelineable:      emptyPredicateFilter(predicateName),
 	}
 	return predicate
 }
@@ -99,7 +100,8 @@ func FailingPrePredicate(predicateName string) k8s_internal.SessionPredicate {
 		IsPreFilterRequired: predicateRequired,
 		PreFilter:           failingPredicatePreFilter(predicateName),
 		IsFilterRequired:    predicateRequired,
-		Filter:              emptyPredicateFilter(predicateName),
+		IsAllocatable:       emptyPredicateFilter(predicateName),
+		IsPipelineable:      emptyPredicateFilter(predicateName),
 	}
 	return predicate
 }
@@ -109,7 +111,8 @@ func FailingPrePredicateReasonSameAsError(predicateName string) k8s_internal.Ses
 		IsPreFilterRequired: predicateRequired,
 		PreFilter:           failingPredicatePreFilterReasonSameAsError(predicateName),
 		IsFilterRequired:    predicateRequired,
-		Filter:              emptyPredicateFilter(predicateName),
+		IsAllocatable:       emptyPredicateFilter(predicateName),
+		IsPipelineable:      emptyPredicateFilter(predicateName),
 	}
 	return predicate
 }
@@ -119,7 +122,8 @@ func FailingPrePredicateNoReason(predicateName string) k8s_internal.SessionPredi
 		IsPreFilterRequired: predicateRequired,
 		PreFilter:           failingPredicatePreFilterNoReason(predicateName),
 		IsFilterRequired:    predicateRequired,
-		Filter:              emptyPredicateFilter(predicateName),
+		IsAllocatable:       emptyPredicateFilter(predicateName),
+		IsPipelineable:      emptyPredicateFilter(predicateName),
 	}
 	return predicate
 }
@@ -129,7 +133,8 @@ func FailingPredicate(predicateName string) k8s_internal.SessionPredicate {
 		IsPreFilterRequired: predicateRequired,
 		PreFilter:           emptyPredicatePreFilter(predicateName),
 		IsFilterRequired:    predicateRequired,
-		Filter:              failingPredicateFilter(predicateName),
+		IsAllocatable:       failingPredicateFilter(predicateName),
+		IsPipelineable:      failingPredicateFilter(predicateName),
 	}
 	return predicate
 }
@@ -139,7 +144,8 @@ func FailingPredicateWithError(predicateName string) k8s_internal.SessionPredica
 		IsPreFilterRequired: predicateRequired,
 		PreFilter:           emptyPredicatePreFilter(predicateName),
 		IsFilterRequired:    predicateRequired,
-		Filter:              failingPredicateFilterWithError(predicateName),
+		IsAllocatable:       failingPredicateFilterWithError(predicateName),
+		IsPipelineable:      failingPredicateFilterWithError(predicateName),
 	}
 	return predicate
 }

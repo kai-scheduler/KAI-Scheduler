@@ -451,11 +451,11 @@ func TestPredicate(t *testing.T) {
 		numaZone("node-1", map[string]string{"cpu": "4"}),
 	))
 
-	assert.NoError(t, pp.predicate(makeGuaranteedTask("fits", map[string]string{"cpu": "3"}), nil, node))
-	assert.Error(t, pp.predicate(makeGuaranteedTask("too-big", map[string]string{"cpu": "5"}), nil, node),
+	assert.NoError(t, pp.predicate(makeGuaranteedTask("fits", map[string]string{"cpu": "3"}), nil, node, false))
+	assert.Error(t, pp.predicate(makeGuaranteedTask("too-big", map[string]string{"cpu": "5"}), nil, node, false),
 		"5 cpu cannot fit a single 4-cpu NUMA zone under single-numa-node")
 
-	assert.NoError(t, pp.predicate(makeGuaranteedTask("nonode", map[string]string{"cpu": "5"}), nil, &node_info.NodeInfo{Name: "no-topology"}),
+	assert.NoError(t, pp.predicate(makeGuaranteedTask("nonode", map[string]string{"cpu": "5"}), nil, &node_info.NodeInfo{Name: "no-topology"}, false),
 		"nodes without NRT pass through")
 }
 
@@ -474,11 +474,11 @@ func TestInCycleReservation(t *testing.T) {
 	assert.Equal(t, []int{0}, first.NUMAPlacement.ZoneIndices(), "placement recorded on the task (zone 0)")
 
 	second := makeGuaranteedTask("second", map[string]string{"cpu": "3"})
-	assert.Error(t, pp.predicate(second, nil, node), "only 1 cpu left in the single zone")
+	assert.Error(t, pp.predicate(second, nil, node, false), "only 1 cpu left in the single zone")
 
 	pp.deallocate(&framework.Event{Task: first})
 	assert.Equal(t, int64(4), avail(), "zone credited back exactly on rollback")
-	assert.NoError(t, pp.predicate(second, nil, node), "zone freed, second pod now fits")
+	assert.NoError(t, pp.predicate(second, nil, node, false), "zone freed, second pod now fits")
 }
 
 func TestAllocateReusesExistingPlacement(t *testing.T) {

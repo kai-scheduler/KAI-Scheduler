@@ -1,0 +1,6 @@
+kind: Added
+body: |-
+  Separate Kubernetes predicate allocation and pipeline checks, removing terminating pods for pipeline evaluation
+custom:
+  Author: "davidLif"
+  Issue: "2412"

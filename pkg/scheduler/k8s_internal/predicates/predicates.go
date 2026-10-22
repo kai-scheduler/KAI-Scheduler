@@ -64,7 +64,8 @@ func emptyPredicate(predicateName string) k8s_internal.SessionPredicate {
 		IsPreFilterRequired: predicateRequired,
 		PreFilter:           emptyPredicatePreFilter(predicateName),
 		IsFilterRequired:    predicateRequired,
-		Filter:              emptyPredicateFilter(predicateName),
+		IsAllocatable:       emptyPredicateFilter(predicateName),
+		IsPipelineable:      emptyPredicateFilter(predicateName),
 		Name:                predicateName,
 	}
 	return predicate
@@ -82,7 +83,8 @@ func NewSessionPredicates(ssn *framework.Session) k8s_internal.SessionPredicates
 			IsPreFilterRequired: predicateRequired,
 			PreFilter:           k8s_internal.FitPrePredicateConverter(ssn, ssn, plugin.(*nodeports.NodePorts)),
 			IsFilterRequired:    predicateRequired,
-			Filter:              k8s_internal.FitPredicateConverter(ssn, plugin.(*nodeports.NodePorts)),
+			IsAllocatable:       k8s_internal.FitPredicateConverter(ssn, plugin.(*nodeports.NodePorts)),
+			IsPipelineable:      k8s_internal.FitPipelinePredicateConverter(ssn, plugin.(*nodeports.NodePorts)),
 		}
 	}
 
@@ -94,7 +96,8 @@ func NewSessionPredicates(ssn *framework.Session) k8s_internal.SessionPredicates
 			IsPreFilterRequired: predicateNotRequired,
 			PreFilter:           nil,
 			IsFilterRequired:    predicateRequired,
-			Filter:              k8s_internal.FitPredicateConverter(ssn, plugin.(*tainttoleration.TaintToleration)),
+			IsAllocatable:       k8s_internal.FitPredicateConverter(ssn, plugin.(*tainttoleration.TaintToleration)),
+			IsPipelineable:      k8s_internal.FitPipelinePredicateConverter(ssn, plugin.(*tainttoleration.TaintToleration)),
 		}
 	}
 
@@ -106,7 +109,8 @@ func NewSessionPredicates(ssn *framework.Session) k8s_internal.SessionPredicates
 			IsPreFilterRequired: predicateRequired,
 			PreFilter:           k8s_internal.FitPrePredicateConverter(ssn, ssn, plugin.(*nodeaffinity.NodeAffinity)),
 			IsFilterRequired:    predicateRequired,
-			Filter:              k8s_internal.FitPredicateConverter(ssn, plugin.(*nodeaffinity.NodeAffinity)),
+			IsAllocatable:       k8s_internal.FitPredicateConverter(ssn, plugin.(*nodeaffinity.NodeAffinity)),
+			IsPipelineable:      k8s_internal.FitPipelinePredicateConverter(ssn, plugin.(*nodeaffinity.NodeAffinity)),
 		}
 	}
 
@@ -118,7 +122,8 @@ func NewSessionPredicates(ssn *framework.Session) k8s_internal.SessionPredicates
 			IsPreFilterRequired: predicateRequired,
 			PreFilter:           k8s_internal.FitPrePredicateConverter(ssn, ssn, plugin.(*interpodaffinity.InterPodAffinity)),
 			IsFilterRequired:    predicateRequired,
-			Filter:              k8s_internal.FitPredicateConverter(ssn, plugin.(*interpodaffinity.InterPodAffinity)),
+			IsAllocatable:       k8s_internal.FitPredicateConverter(ssn, plugin.(*interpodaffinity.InterPodAffinity)),
+			IsPipelineable:      k8s_internal.FitPipelinePredicateConverter(ssn, plugin.(*interpodaffinity.InterPodAffinity)),
 		}
 	}
 
@@ -130,7 +135,8 @@ func NewSessionPredicates(ssn *framework.Session) k8s_internal.SessionPredicates
 			IsPreFilterRequired: predicateRequired,
 			PreFilter:           k8s_internal.FitPrePredicateConverter(ssn, ssn, plugin.(*volumebinding.VolumeBinding)),
 			IsFilterRequired:    predicateRequired,
-			Filter:              NewVolumeBindingFilter(ssn, plugin, ssn.ScheduleCSIStorage()),
+			IsAllocatable:       NewVolumeBindingFilter(ssn, plugin, ssn.ScheduleCSIStorage()),
+			IsPipelineable:      ignoreVolumeCapacity(k8s_internal.FitPipelinePredicateConverter(ssn, plugin.(*volumebinding.VolumeBinding)), ssn.ScheduleCSIStorage()),
 		}
 	}
 
@@ -140,7 +146,7 @@ func NewSessionPredicates(ssn *framework.Session) k8s_internal.SessionPredicates
 		IsPreFilterRequired: mnrPredicate.isPreFilterRequired,
 		PreFilter:           k8s_internal.FitPrePredicateConverter(ssn, ssn, mnrPredicate),
 		IsFilterRequired:    mnrPredicate.isFilterRequired,
-		Filter:              nil,
+		IsAllocatable:       nil,
 	}
 
 	cmPredicate := NewConfigMapPredicate(ssn.ClusterInfo.ConfigMaps)
@@ -149,7 +155,7 @@ func NewSessionPredicates(ssn *framework.Session) k8s_internal.SessionPredicates
 		IsPreFilterRequired: cmPredicate.isPreFilterRequired,
 		PreFilter:           k8s_internal.FitPrePredicateConverter(ssn, ssn, cmPredicate),
 		IsFilterRequired:    cmPredicate.isFilterRequired,
-		Filter:              nil,
+		IsAllocatable:       nil,
 	}
 
 	return predicates

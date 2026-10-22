@@ -239,7 +239,7 @@ func (pp *numaPlugin) placement(task *pod_info.PodInfo, node *node_info.NodeInfo
 	return placementFromAllocation(allocation, node.NumaTopology), nil
 }
 
-func (pp *numaPlugin) predicate(task *pod_info.PodInfo, _ *podgroup_info.PodGroupInfo, node *node_info.NodeInfo) error {
+func (pp *numaPlugin) predicate(task *pod_info.PodInfo, _ *podgroup_info.PodGroupInfo, node *node_info.NodeInfo, isPipeline bool) error {
 	if !pp.allocatable(task, node) {
 		// FittingNode already logs this failure at V(6); the shared sentinel keeps the reject path
 		// allocation-free (see errNotNumaAligned).

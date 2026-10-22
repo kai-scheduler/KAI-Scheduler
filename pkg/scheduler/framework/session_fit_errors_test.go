@@ -30,6 +30,7 @@ func TestFittingNodeAggregatesCompactReasonCounts(t *testing.T) {
 		task *pod_info.PodInfo,
 		_ *podgroup_info.PodGroupInfo,
 		node *node_info.NodeInfo,
+		isPipeline bool,
 	) error {
 		if node.Name == "node-a" {
 			return common_info.NewFitError(task.Name, task.Namespace, node.Name, "NodeAffinityMismatch")
@@ -38,7 +39,7 @@ func TestFittingNodeAggregatesCompactReasonCounts(t *testing.T) {
 	})
 
 	for _, nodeName := range []string{"node-a", "node-b"} {
-		require.False(t, ssn.FittingNode(task, ssn.ClusterInfo.Nodes[nodeName], true))
+		require.False(t, ssn.FittingNode(task, ssn.ClusterInfo.Nodes[nodeName], false))
 	}
 
 	fitErrors := job.TasksFitErrors[task.UID]
@@ -54,6 +55,7 @@ func TestRecomputeDetailedFitErrorsRunsPredicatesForEveryNode(t *testing.T) {
 		task *pod_info.PodInfo,
 		_ *podgroup_info.PodGroupInfo,
 		node *node_info.NodeInfo,
+		isPipeline bool,
 	) error {
 		if node.Name == "node-a" {
 			return common_info.NewFitErrorWithDetailedMessage(
@@ -83,7 +85,7 @@ func TestRecomputeDetailedFitErrorsStopsAtPrePredicate(t *testing.T) {
 		return &common_info.NotFoundError{Name: "missing-pvc"}
 	})
 	predicateCalls := 0
-	ssn.AddPredicateFn(func(*pod_info.PodInfo, *podgroup_info.PodGroupInfo, *node_info.NodeInfo) error {
+	ssn.AddPredicateFn(func(*pod_info.PodInfo, *podgroup_info.PodGroupInfo, *node_info.NodeInfo, bool) error {
 		predicateCalls++
 		return nil
 	})
@@ -99,7 +101,7 @@ func TestRecomputeDetailedFitErrorsBuildsCurrentResourceDetails(t *testing.T) {
 	for _, node := range ssn.ClusterInfo.Nodes {
 		node.IdleVector.Set(resource_info.GPUIndex, 0)
 		node.UsedVector.Set(resource_info.GPUIndex, 1)
-		require.False(t, ssn.FittingNode(task, node, true))
+		require.False(t, ssn.FittingNode(task, node, false))
 
 		node.IdleVector.Set(resource_info.GPUIndex, 0.5)
 		node.UsedVector.Set(resource_info.GPUIndex, 0.5)
@@ -123,6 +125,7 @@ func TestRecomputeDetailedFitErrorsSkipsTypedNilFitError(t *testing.T) {
 		task *pod_info.PodInfo,
 		_ *podgroup_info.PodGroupInfo,
 		node *node_info.NodeInfo,
+		isPipeline bool,
 	) error {
 		if node.Name == "node-a" {
 			return common_info.NewFitError(task.Name, task.Namespace, node.Name, "NodeAffinityMismatch")

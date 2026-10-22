@@ -45,6 +45,7 @@ type TestTaskBasic struct {
 	ResourceClaimTemplates     map[string]string
 	ResourceClaimNames         []string
 	PersistentVolumeClaimNames []string
+	DeletionTimestamp          *metav1.Time
 }
 
 func BuildPod(
@@ -93,6 +94,7 @@ func BuildPod(
 		},
 	}
 	maps.Copy(pod.Annotations, task.Annotations)
+	pod.DeletionTimestamp = task.DeletionTimestamp
 	if gpuMemoryMiB > 0 {
 		pod.Annotations[resources.CalcGpuFractionAnnotationForContainer("main")] = resources.GpuMemoryAnnotationToNvFractionsMemoryRequest(gpuMemoryMiB).String()
 	}
