@@ -18,6 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	kaiv1 "github.com/kai-scheduler/api/kai/v1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 )
 
 func TestKnownTypes(t *testing.T) {
@@ -182,6 +183,31 @@ var _ = Describe("PodDisruptionBudget collection", func() {
 	)
 })
 
+var _ = Describe("HorizontalPodAutoscaler collection", func() {
+	It("indexes HPAs controlled by KAI resources", func() {
+		hpa := &autoscalingv2.HorizontalPodAutoscaler{
+			ObjectMeta: metav1.ObjectMeta{
+				OwnerReferences: []metav1.OwnerReference{{
+					APIVersion: kaiv1.GroupVersion.String(),
+					Kind:       "Config",
+					Name:       SingletonInstanceName,
+					Controller: ptrBool(true),
+				}},
+			},
+		}
+
+		Expect(horizontalPodAutoscalerIndexer(hpa)).To(Equal([]string{
+			GetKey(kaiv1.GroupVersion.WithKind("Config"), "", SingletonInstanceName),
+		}))
+	})
+
+	It("does not index unowned HPAs", func() {
+		Expect(horizontalPodAutoscalerIndexer(
+			&autoscalingv2.HorizontalPodAutoscaler{},
+		)).To(BeNil())
+	})
+})
+
 var _ = Describe("VPAFieldInherit", func() {
 	It("should be a no-op when current is nil", func() {
 		desired := &vpav1.VerticalPodAutoscaler{
@@ -219,6 +245,37 @@ var _ = Describe("VPAFieldInherit", func() {
 		Expect(desired.GetAnnotations()).To(HaveKeyWithValue("user-set", "keep"))
 		Expect(desired.GetAnnotations()).To(HaveKeyWithValue("server-added", "val"))
 		Expect(desired.Status.Recommendation).ToNot(BeNil())
+	})
+})
+
+var _ = Describe("HPAFieldInherit", func() {
+	It("preserves status and server-managed metadata", func() {
+		current := &autoscalingv2.HorizontalPodAutoscaler{
+			ObjectMeta: metav1.ObjectMeta{
+				ResourceVersion: "10",
+				UID:             types.UID("uid-123"),
+			},
+			Status: autoscalingv2.HorizontalPodAutoscalerStatus{
+				CurrentReplicas: 5,
+				DesiredReplicas: 5,
+			},
+		}
+
+		desired := &autoscalingv2.HorizontalPodAutoscaler{
+			Spec: autoscalingv2.HorizontalPodAutoscalerSpec{
+				MaxReplicas: 10,
+			},
+		}
+
+		HPAFieldInherit(current, desired)
+
+		Expect(desired.ResourceVersion).To(Equal("10"))
+		Expect(desired.UID).To(Equal(types.UID("uid-123")))
+		Expect(desired.Status.CurrentReplicas).To(Equal(int32(5)))
+		Expect(desired.Status.DesiredReplicas).To(Equal(int32(5)))
+
+		// Desired spec must remain controlled by KAI.
+		Expect(desired.Spec.MaxReplicas).To(Equal(int32(10)))
 	})
 })
 

@@ -18,6 +18,7 @@ import (
 	nvidiav1 "github.com/kai-scheduler/KAI-scheduler/third_party/nvidia/gpu-operator/api/nvidia/v1"
 
 	appsv1 "k8s.io/api/apps/v1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	policyv1 "k8s.io/api/policy/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -195,6 +196,71 @@ var _ = Describe("KAIConfigController", Ordered, func() {
 			updateAdmissionPDBConfig(ctx, 2, false)
 			Eventually(func() bool {
 				_, err := getPDB(ctx)
+				return apierrors.IsNotFound(err)
+			}, "10s", "200ms").Should(BeTrue())
+		})
+	})
+
+	Context("Reconciling the admission HorizontalPodAutoscaler", Ordered, func() {
+		const hpaName = "admission"
+
+		updateAdmissionAutoscalingConfig := func(
+			ctx context.Context,
+			enabled bool,
+			maxReplicas int32,
+			targetCPU *int32,
+		) {
+			Eventually(func() error {
+				if err := k8sClient.Get(ctx, types.NamespacedName{
+					Name: constants.DefaultKAIConfigSingeltonInstanceName,
+				}, kaiConfig); err != nil {
+					return err
+				}
+				kaiConfig.Spec.Admission.Replicas = ptr.To(int32(2))
+				kaiConfig.Spec.Admission.Autoscaling = &kaiv1admission.Autoscaling{
+					Enabled:                        ptr.To(enabled),
+					MaxReplicas:                    ptr.To(maxReplicas),
+					TargetCPUUtilizationPercentage: targetCPU,
+				}
+				return k8sClient.Update(ctx, kaiConfig)
+			}, "10s", "200ms").Should(Succeed())
+		}
+
+		getHPA := func(ctx context.Context) (*autoscalingv2.HorizontalPodAutoscaler, error) {
+			hpa := &autoscalingv2.HorizontalPodAutoscaler{}
+			err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      hpaName,
+				Namespace: kaiConfig.Spec.Namespace,
+			}, hpa)
+			return hpa, err
+		}
+
+		It("creates and watches the HPA when enabled", func(ctx context.Context) {
+			updateAdmissionAutoscalingConfig(ctx, true, 10, ptr.To(int32(80)))
+
+			Eventually(func(g Gomega) {
+				hpa, err := getHPA(ctx)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(metav1.GetControllerOf(hpa)).NotTo(BeNil())
+				g.Expect(metav1.GetControllerOf(hpa).Kind).To(Equal("Config"))
+				g.Expect(hpa.Spec.MaxReplicas).To(Equal(int32(10)))
+			}, "10s", "200ms").Should(Succeed())
+
+			hpa, err := getHPA(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(k8sClient.Delete(ctx, hpa)).To(Succeed())
+
+			Eventually(func() error {
+				_, err := getHPA(ctx)
+				return err
+			}, "10s", "200ms").Should(Succeed())
+		})
+
+		It("removes the HPA when autoscaling is disabled", func(ctx context.Context) {
+			updateAdmissionAutoscalingConfig(ctx, false, 10, ptr.To(int32(80)))
+
+			Eventually(func() bool {
+				_, err := getHPA(ctx)
 				return apierrors.IsNotFound(err)
 			}, "10s", "200ms").Should(BeTrue())
 		})
