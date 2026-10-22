@@ -64,6 +64,12 @@ runs:
         config: /tmp/kind-config.yaml
         node_image: kindest/node:${{ inputs.k8s_version }}
 
+    - name: Keep kindnet Burstable for simulated NUMA nodes
+      shell: bash
+      run: |
+        kubectl -n kube-system set resources daemonset/kindnet --containers=kindnet-cni --limits=cpu=200m
+        kubectl -n kube-system rollout status daemonset/kindnet --timeout=180s
+
     - name: Deploy image registry
       shell: bash
       run: |
