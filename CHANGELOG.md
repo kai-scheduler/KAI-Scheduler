@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v0.16.13] - 2026-10-22
+
+### Fixed
+- Keep replacement subgroups in the job's required topology domain [#2318](https://github.com/kai-scheduler/KAI-Scheduler/issues/2318) [1fanwang](https://github.com/1fanwang)
+- Preserve GPU reservations while binding requests remain retryable [#2358](https://github.com/kai-scheduler/KAI-Scheduler/issues/2358) [NVGreg](https://github.com/NVGreg)
+
 ## [v0.16.12] - 2026-10-18
 
 ### Added
