@@ -91,12 +91,7 @@ func New(options *Options, config *rest.Config) (*App, error) {
 		return nil, err
 	}
 
-	clientWithWatch, err := client.NewWithWatch(mgr.GetConfig(), client.Options{
-		Scheme: scheme,
-		Cache: &client.CacheOptions{
-			Reader: mgr.GetCache(),
-		},
-	})
+	clientWithWatch, err := newClientWithWatch(mgr.GetConfig(), mgr.GetCache())
 	if err != nil {
 		setupLog.Error(err, "unable to create client with watch")
 		return nil, err
@@ -137,6 +132,17 @@ func New(options *Options, config *rest.Config) (*App, error) {
 	return app, nil
 }
 
+func newClientWithWatch(config *rest.Config, cacheReader client.Reader) (client.WithWatch, error) {
+	return client.NewWithWatch(config, client.Options{
+		Scheme: scheme,
+		Cache: &client.CacheOptions{
+			Reader: cacheReader,
+			// Plugins read ConfigMaps immediately after creating or patching them.
+			DisableFor: []client.Object{&corev1.ConfigMap{}},
+		},
+	})
+}
+
 func (app *App) RegisterPlugins(plugins *plugins.BinderPlugins) {
 	app.plugins = plugins
 }
@@ -167,7 +173,7 @@ func (app *App) Run(ctx context.Context) error {
 		return err
 	}
 
-	binder := binding.NewBinder(app.Client, app.rrs, app.plugins)
+	binder := binding.NewBinder(app.Client, app.manager.GetAPIReader(), app.rrs, app.plugins)
 
 	app.InformerFactory.Start(ctx.Done())
 	app.InformerFactory.WaitForCacheSync(ctx.Done())
