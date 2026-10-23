@@ -11,6 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/sets"
 
+	schedapi "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
@@ -256,7 +257,7 @@ func TestMemoryGroupAnnotationsDoNotChangeLegacyAdmission(t *testing.T) {
 			defer plugin.OnSessionClose(session)
 			probe := makeGuaranteedTask("probe", map[string]string{"memory": "120Gi"})
 			assert.True(t, plugin.shouldFilter(probe, topology))
-			assert.NoError(t, plugin.predicate(probe, nil, node))
+			assert.NoError(t, plugin.predicate(probe, nil, node, schedapi.StrictPredicate))
 			placement, err := plugin.placement(probe, node)
 			assert.NoError(t, err)
 			assert.Equal(t, []int{0, 1}, placement.ZoneIndices())

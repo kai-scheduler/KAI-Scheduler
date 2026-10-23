@@ -10,6 +10,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -239,7 +240,9 @@ func (pp *numaPlugin) placement(task *pod_info.PodInfo, node *node_info.NodeInfo
 	return placementFromAllocation(allocation, node.NumaTopology), nil
 }
 
-func (pp *numaPlugin) predicate(task *pod_info.PodInfo, _ *podgroup_info.PodGroupInfo, node *node_info.NodeInfo) error {
+func (pp *numaPlugin) predicate(
+	task *pod_info.PodInfo, _ *podgroup_info.PodGroupInfo, node *node_info.NodeInfo, _ api.PredicateMode,
+) error {
 	if !pp.allocatable(task, node) {
 		// FittingNode already logs this failure at V(6); the shared sentinel keeps the reject path
 		// allocation-free (see errNotNumaAligned).

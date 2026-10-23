@@ -33,8 +33,18 @@ import (
 type SubsetNodesFn func(podGroup *podgroup_info.PodGroupInfo, subGroup *subgroup_info.SubGroupInfo,
 	podSets map[string]*subgroup_info.PodSet, tasks []*pod_info.PodInfo, nodeSet node_info.NodeSet) ([]node_info.NodeSet, error)
 
+// PredicateMode selects the node state a predicate is evaluated against.
+type PredicateMode int
+
+const (
+	// StrictPredicate checks the node as it is now, terminating pods included.
+	StrictPredicate PredicateMode = iota
+	// PipelinePredicate checks the node as it will be once its terminating (Releasing) pods are gone.
+	PipelinePredicate
+)
+
 // PredicateFn is used to predicate node for task.
-type PredicateFn func(*pod_info.PodInfo, *podgroup_info.PodGroupInfo, *node_info.NodeInfo) error
+type PredicateFn func(*pod_info.PodInfo, *podgroup_info.PodGroupInfo, *node_info.NodeInfo, PredicateMode) error
 
 // PrePredicateFn is used to prepare for predicate on pod.
 type PrePredicateFn func(*pod_info.PodInfo, *podgroup_info.PodGroupInfo) error
