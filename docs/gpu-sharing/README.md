@@ -16,7 +16,7 @@ Make sure the following conditions are met:
 - KAI Scheduler is installed or ready to be installed.
 - NVIDIA GPU Operator is installed.
 
-For NvFractions, also make sure the cluster can run the `gpu-sharing` operator and that NVIDIA CDI/NRI support is configured when runtime memory enforcement is required.
+For NvFractions, also make sure the cluster can run the `gpu-fractioning` operator and that NVIDIA CDI/NRI support is configured when runtime memory enforcement is required.
 
 ## Admins
 
@@ -73,15 +73,15 @@ helm upgrade -i kai-scheduler oci://ghcr.io/kai-scheduler/kai-scheduler/kai-sche
   --set global.nvFractions.set=true
 ```
 
-Setting `global.nvFractions.set=true` installs the `gpu-sharing` Helm dependency from `oci://ghcr.io/kai-scheduler/gpu-sharing` and renders KAI with `global.gpuSharingMode=NvFractions`.
+Setting `global.nvFractions.set=true` installs the `gpu-fractioning` Helm dependency from `oci://ghcr.io/kai-scheduler/gpu-fractioning` and renders KAI with `global.gpuSharingMode=NvFractions`.
 
-When managing the `gpu-sharing` operator separately, install it before KAI.
+When managing the `gpu-fractioning` operator separately, install it before KAI.
 The KAI operator registers its `GpuSharingConfig` watch only when the CRD exists
-at startup. If `gpu-sharing` is installed after KAI, restart the KAI operator so
+at startup. If `gpu-fractioning` is installed after KAI, restart the KAI operator so
 it discovers the CRD; otherwise, `GpuSharingConfig` changes do not trigger KAI
 reconciliation.
 
-If the `gpu-sharing` operator is already installed and managed separately, do not install the subchart from KAI. Set `global.gpuSharingMode=NvFractions` and keep `global.nvFractions.set=false`:
+If the `gpu-fractioning` operator is already installed and managed separately, do not install the subchart from KAI. Set `global.gpuSharingMode=NvFractions` and keep `global.nvFractions.set=false`:
 
 ```bash
 helm upgrade -i kai-scheduler oci://ghcr.io/kai-scheduler/kai-scheduler/kai-scheduler \
@@ -101,9 +101,9 @@ helm upgrade -i kai-scheduler oci://ghcr.io/kai-scheduler/kai-scheduler/kai-sche
 
 The chart rejects `global.nvFractions.set=true` when `global.gpuSharingMode` is set to another mode.
 
-### Configure the gpu-sharing subchart
+### Configure the gpu-fractioning subchart
 
-KAI's global scheduling placement values are not propagated into the `gpu-sharing` subchart. Configure the subchart under the top-level `gpu-sharing` key:
+KAI's global scheduling placement values are not propagated into the `gpu-fractioning` subchart. Configure the subchart under the top-level `gpu-fractioning` key:
 
 ```yaml
 global:
