@@ -36,6 +36,7 @@ type SchedulerParams struct {
 	PartitionParams                   *SchedulingNodePoolParams   `json:"partitionParams,omitempty"`
 	GpuSharingMode                    *kaiv1common.GpuSharingMode `json:"gpuSharingMode,omitempty"`
 	MaxNumberConsolidationPreemptees  int                         `json:"maxNumberConsolidationPreemptees,omitempty"`
+	ConsolidationCooldown             time.Duration               `json:"consolidationCooldown,omitempty"`
 	ScheduleCSIStorage                bool                        `json:"scheduleCSIStorage,omitempty"`
 	UseSchedulingSignatures           bool                        `json:"useSchedulingSignatures,omitempty"`
 	FullHierarchyFairness             bool                        `json:"fullHierarchyFairness,omitempty"`

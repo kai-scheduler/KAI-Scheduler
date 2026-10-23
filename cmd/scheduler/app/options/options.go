@@ -62,6 +62,7 @@ type ServerOption struct {
 	PyroscopeBlockProfilerRate        int
 	Verbosity                         int
 	MaxNumberConsolidationPreemptees  int
+	ConsolidationCooldown             time.Duration
 	DetailedFitErrors                 bool
 	UpdatePodEvictionCondition        bool
 	ScheduleCSIStorage                bool
@@ -118,6 +119,7 @@ func (s *ServerOption) AddFlags(fs *pflag.FlagSet) {
 	fs.IntVar(&s.Verbosity, "v", defaultVerbosityLevel, "Verbosity level")
 	fs.BoolVar(&s.JSONLog, "log-json", false, "Output logs without ANSI color codes for log aggregation platforms")
 	fs.IntVar(&s.MaxNumberConsolidationPreemptees, "max-consolidation-preemptees", defaultMaxConsolidationPreemptees, "Maximum number of consolidation preemptees. Defaults to 16")
+	fs.DurationVar(&s.ConsolidationCooldown, "consolidation-cooldown", 0, "Duration after a workload's last eviction before it may trigger consolidation. 0 disables the cooldown")
 	fs.IntVar(&s.QPS, "qps", 50, "Queries per second to the K8s API server")
 	fs.IntVar(&s.Burst, "burst", 300, "Burst to the K8s API server")
 	fs.BoolVar(&s.DetailedFitErrors, "detailed-fit-errors", defaultDetailedFitError, "Write detailed fit errors for every node on every podgroup")

@@ -1,0 +1,6 @@
+kind: Added
+body: |-
+  Scheduler flag --consolidation-cooldown stops just-evicted workloads from triggering consolidation
+custom:
+  Author: "sam-huang1223"
+  Issue: "2458"
