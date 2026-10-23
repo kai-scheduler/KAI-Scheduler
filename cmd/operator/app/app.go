@@ -113,6 +113,7 @@ func (app *App) InitOperands(configOperands []operands.Operand, shardOperandsFor
 }
 
 // +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=events,verbs=create;patch;update
 
 func (app *App) Run() error {
 
