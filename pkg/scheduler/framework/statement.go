@@ -238,7 +238,9 @@ func (s *Statement) Pipeline(task *pod_info.PodInfo, hostname string, updateTask
 	// If the task already exist on the node, we assume it was evicted before.
 	// If task already exist on the node, and we didn't ask to update if on the node,
 	// and there is no special reason we should update on the node, then we need to unevict instead of pipelining it.
-	if foundOnNode && !updateTaskIfExistsOnNode && !gpuPlacementChanged && !numaPlacementChanged {
+	// A task evicted by an enclosing statement is pipelined in place instead.
+	if foundOnNode && !updateTaskIfExistsOnNode && !gpuPlacementChanged && !numaPlacementChanged &&
+		s.hasValidOperation(task, evict) {
 		task.FractionalGpuGroups = cloneFractionalGpuGroups(taskOnNode.FractionalGpuGroups)
 		task.NUMAPlacement = taskOnNode.NUMAPlacement.Clone()
 		log.InfraLogger.V(6).Do(func() {
@@ -539,6 +541,13 @@ func (s *Statement) Unevict(taskToUnevict *pod_info.PodInfo) error {
 	return s.undoEarliestValidOperation(taskToUnevict, evict)
 }
 
+func (s *Statement) Unpipeline(taskToUnpipeline *pod_info.PodInfo) error {
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("Unpipelining task: %v", taskToUnpipeline.Name)
+	})
+	return s.undoEarliestValidOperation(taskToUnpipeline, pipeline)
+}
+
 func (s *Statement) ConvertAllAllocatedToPipelined(jobID common_info.PodGroupID) error {
 	for _, op := range s.operations {
 		currentTaskInOperations := op.TaskInfo()
@@ -574,6 +583,27 @@ func (s *Statement) ConvertAllAllocatedToPipelined(jobID common_info.PodGroupID)
 	s.operations = newOperations
 
 	return nil
+}
+
+func (s *Statement) hasValidOperation(task *pod_info.PodInfo, opName string) bool {
+	for i, op := range s.operations {
+		if op.Name() == opName && op.TaskInfo().UID == task.UID && s.operationValid(i) {
+			return true
+		}
+	}
+	return false
+}
+
+// EvictedTasks returns the tasks whose eviction in this statement has not been undone.
+func (s *Statement) EvictedTasks() []*pod_info.PodInfo {
+	var tasks []*pod_info.PodInfo
+	for i, op := range s.operations {
+		if op.Name() != evict || !s.operationValid(i) {
+			continue
+		}
+		tasks = append(tasks, op.TaskInfo())
+	}
+	return tasks
 }
 
 func (s *Statement) clearOperations() {

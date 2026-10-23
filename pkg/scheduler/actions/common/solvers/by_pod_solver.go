@@ -44,6 +44,7 @@ type byPodSolver struct {
 	solutionValidator        SolutionValidator
 	allowVictimConsolidation bool
 	actionType               framework.ActionType
+	pinnedFeasibleNodes      bool
 }
 
 func newByPodSolver(
@@ -83,7 +84,8 @@ func (s *byPodSolver) solve(session *framework.Session, scenario *scenario.ByNod
 	}
 	newFeasibleNodes := s.updateFeasibleNodes(session, allVictims)
 
-	result := s.runSimulation(session, scenario, statement, allVictims, maps.Values(s.feasibleNodes))
+	nodes := maps.Values(s.feasibleNodes)
+	result := s.runSimulation(session, scenario, statement, allVictims, nodes, s.victimNodes(session, nodes))
 	if result != nil {
 		// Roll back on validator-rejected and error results too: the map is
 		// shared across the probe's scenarios and must stay derived from the
@@ -104,9 +106,9 @@ func (s *byPodSolver) solve(session *framework.Session, scenario *scenario.ByNod
 
 func (s *byPodSolver) runSimulation(
 	session *framework.Session, scenario *scenario.ByNodeScenario, statement *framework.Statement,
-	victimTasks []*pod_info.PodInfo, nodes []*node_info.NodeInfo) *solutionResult {
+	victimTasks []*pod_info.PodInfo, nodes, victimNodes []*node_info.NodeInfo) *solutionResult {
 	successfulSimulation, solutionVictims :=
-		s.tryScenarioWithEvictedVictims(session, scenario, statement, victimTasks, nodes)
+		s.tryScenarioWithEvictedVictims(session, scenario, statement, victimTasks, nodes, victimNodes)
 	if successfulSimulation {
 		return s.handleScenarioSolution(scenario, statement, solutionVictims)
 	}
@@ -119,8 +121,20 @@ func (s *byPodSolver) feasibleNodesRollback(newFeasibleNodes map[string]bool) {
 	}
 }
 
+// victimNodes returns where victims may be placed back. Pinned feasible nodes bind only the pending
+// job; victims may still be placed back or moved to any node, as in an unpinned solve.
+func (s *byPodSolver) victimNodes(ssn *framework.Session, nodes []*node_info.NodeInfo) []*node_info.NodeInfo {
+	if !s.pinnedFeasibleNodes {
+		return nodes
+	}
+	return maps.Values(ssn.ClusterInfo.Nodes)
+}
+
 func (s *byPodSolver) updateFeasibleNodes(ssn *framework.Session, victimTasks []*pod_info.PodInfo) map[string]bool {
 	newFeasibleNodes := map[string]bool{}
+	if s.pinnedFeasibleNodes {
+		return newFeasibleNodes
+	}
 	for _, potentialVictimTasks := range victimTasks {
 		_, found := s.feasibleNodes[potentialVictimTasks.NodeName]
 		if !found {
@@ -158,12 +172,13 @@ func (s *byPodSolver) handleScenarioSolution(
 }
 
 func (s *byPodSolver) tryScenarioWithEvictedVictims(ssn *framework.Session, scenario *scenario.ByNodeScenario,
-	statement *framework.Statement, victimTasks []*pod_info.PodInfo, nodes []*node_info.NodeInfo) (bool, *simulationVictims) {
+	statement *framework.Statement, victimTasks []*pod_info.PodInfo, nodes, victimNodes []*node_info.NodeInfo,
+) (bool, *simulationVictims) {
 	pendingJob := scenario.GetPreemptor()
 
 	jobsToAllocate := common.GetJobsToAllocate(ssn, victimTasks, pendingJob)
 	isSuccessfulAllocations, _ :=
-		common.TryToVirtuallyAllocatePreemptorAndGetVictims(ssn, statement, nodes, pendingJob,
+		common.TryToVirtuallyAllocatePreemptorAndGetVictims(ssn, statement, nodes, victimNodes, pendingJob,
 			jobsToAllocate, victimTasks, podgroup_info.PartialTaskAllocation)
 
 	if !isSuccessfulAllocations {

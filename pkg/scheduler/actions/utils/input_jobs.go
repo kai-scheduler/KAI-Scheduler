@@ -24,6 +24,9 @@ type JobsOrderInitOptions struct {
 	FilterWithinPreemptionDelay bool
 	VictimQueue                 bool
 	MaxJobsQueueDepth           int
+	// NonPendingJobFilter keeps a job without pending tasks despite FilterNonPending when it
+	// returns true. Nil drops all such jobs.
+	NonPendingJobFilter func(*podgroup_info.PodGroupInfo) bool
 }
 
 func (jobsOrder *JobsOrderByQueues) InitializeWithJobs(
@@ -34,7 +37,8 @@ func (jobsOrder *JobsOrderByQueues) InitializeWithJobs(
 			continue
 		}
 
-		if jobsOrder.options.FilterNonPending && len(job.PodStatusIndex[pod_status.Pending]) == 0 {
+		if jobsOrder.options.FilterNonPending && len(job.PodStatusIndex[pod_status.Pending]) == 0 &&
+			(jobsOrder.options.NonPendingJobFilter == nil || !jobsOrder.options.NonPendingJobFilter(job)) {
 			continue
 		}
 
@@ -66,7 +70,10 @@ func (jobsOrder *JobsOrderByQueues) InitializeWithJobs(
 		}
 
 		if jobsOrder.options.FilterWithinPreemptionDelay && job.IsWithinPreemptionDelay(now) {
-			recordPreemptionDelayFitError(job)
+			// A running job included only for a deferred resize is not unschedulable.
+			if len(job.PodStatusIndex[pod_status.Pending]) > 0 {
+				recordPreemptionDelayFitError(job)
+			}
 			log.InfraLogger.V(3).Infof("Job <%s> is within its preemption delay window, skipping as eviction trigger",
 				job.NamespacedName)
 			continue

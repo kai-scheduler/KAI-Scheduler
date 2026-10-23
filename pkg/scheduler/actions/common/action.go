@@ -75,7 +75,7 @@ func GetJobsToAllocate(ssn *framework.Session, preempteeTasks []*pod_info.PodInf
 
 func TryToVirtuallyAllocatePreemptorAndGetVictims(
 	ssn *framework.Session, stmt *framework.Statement,
-	nodes []*node_info.NodeInfo,
+	nodes, victimNodes []*node_info.NodeInfo,
 	preemptor *podgroup_info.PodGroupInfo,
 	jobsToAllocate *utils.JobsOrderByQueues,
 	preempteeTasks []*pod_info.PodInfo,
@@ -105,7 +105,7 @@ func TryToVirtuallyAllocatePreemptorAndGetVictims(
 		})
 
 		if jobToAllocate.UID != preemptor.UID {
-			if !AllocateJob(ssn, stmt, nodes, jobToAllocate, allocationMode) {
+			if !AllocateJob(ssn, stmt, victimNodes, jobToAllocate, allocationMode) {
 				tasksToAllocate := podgroup_info.GetTasksToAllocate(jobToAllocate, ssn.SubGroupOrderFn,
 					ssn.TaskOrderFn, allocationMode)
 				newVictims = append(newVictims, tasksToAllocate...)

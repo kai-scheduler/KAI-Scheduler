@@ -1,0 +1,6 @@
+kind: Added
+body: |-
+  Opt-in preempt/reclaim for kubelet-deferred in-place pod resizes
+custom:
+  Author: "gshaibi"
+  Issue: "1872"
