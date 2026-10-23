@@ -1,0 +1,6 @@
+kind: Added
+body: |-
+  Add min-member annotation support for gang scheduling on Parallel StatefulSets
+custom:
+  Author: "karangupta982"
+  Issue: "2098"

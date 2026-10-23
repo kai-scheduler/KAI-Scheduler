@@ -94,6 +94,27 @@ For Job resources, the Pod Grouper:
 - Sets MinMember to 1 by default - native k8s batch jobs usually do not require gang scheduling
 - Sets the priority class of the PodGroup to "Train", to allow it to go over-quota
 
+### StatefulSet Grouping
+
+For `apps/v1` StatefulSet resources, the Pod Grouper:
+
+- Creates a PodGroup for the StatefulSet with `MinMember` set to 1 by default.
+- Allows overriding `MinMember` with the `kai.scheduler/min-member` annotation.
+- Requires `spec.podManagementPolicy: Parallel` when `kai.scheduler/min-member` is set. The annotation is rejected for `OrderedReady` (including the default policy) because StatefulSet pods are created sequentially under that policy — the gang cannot form while KAI waits for the required gang members to appear
+
+Example:
+
+```yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  annotations:
+    kai.scheduler/min-member: "4"
+spec:
+  podManagementPolicy: Parallel
+  replicas: 8
+```
+
 ### Deployment Grouping
 For Deployment resources, the Pod Grouper:
 - Creates a single PodGroup per deployment, named `pg-<deployment-name>-<deployment-uid>`, with MinMember 1
