@@ -15,14 +15,17 @@ import (
 	. "github.com/onsi/gomega"
 	"go.uber.org/mock/gomock"
 	v1 "k8s.io/api/core/v1"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -32,6 +35,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding"
 	mock_binder "github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding/mock"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding/resourcereservation"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/common"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins"
 	mockplugins "github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/mock"
 )
@@ -99,6 +103,344 @@ var _ = Describe("BindRequest Controller", func() {
 	})
 
 	Describe("Reconcile", func() {
+		DescribeTable("retries status write errors without losing Pod reports",
+			func(writeFailure string, bindingFails, withBackoff bool) {
+				ctx := context.Background()
+				pod := &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "status-pod", Namespace: "default"}}
+				node := &v1.Node{ObjectMeta: metav1.ObjectMeta{Name: "status-node"}}
+				Expect(fakeClient.Create(ctx, pod)).To(Succeed())
+				Expect(fakeClient.Create(ctx, node)).To(Succeed())
+				bindRequest := baseRequest.DeepCopy()
+				bindRequest.Spec.PodName = pod.Name
+				bindRequest.Spec.SelectedNode = node.Name
+				if withBackoff {
+					bindRequest.Spec.BackoffLimit = ptr.To(int32(3))
+				}
+				Expect(fakeClient.Create(ctx, bindRequest)).To(Succeed())
+
+				statusErr := kerrors.NewServerTimeout(schema.GroupResource{
+					Group: schedulingv1alpha2.GroupVersion.Group, Resource: "bindrequests",
+				}, "patch", 1)
+				statusPatches := 0
+				reconciler.Client = interceptor.NewClient(fakeClient, interceptor.Funcs{
+					SubResourcePatch: func(ctx context.Context, c client.Client, subResource string,
+						obj client.Object, patch client.Patch, opts ...client.SubResourcePatchOption) error {
+						if _, ok := obj.(*schedulingv1alpha2.BindRequest); ok {
+							statusPatches++
+							if statusPatches == 1 && writeFailure != "none" {
+								if writeFailure == "after commit" {
+									Expect(c.SubResource(subResource).Patch(ctx, obj, patch, opts...)).To(Succeed())
+								}
+								return statusErr
+							}
+						}
+						return c.SubResource(subResource).Patch(ctx, obj, patch, opts...)
+					},
+				})
+
+				var bindErr error
+				phase, conditionStatus, eventReason := schedulingv1alpha2.BindRequestPhaseSucceeded, v1.ConditionTrue, "Normal Bound"
+				bindCalls := 1
+				if bindingFails {
+					bindErr = errors.New("temporary binding failure")
+					phase, conditionStatus, eventReason = schedulingv1alpha2.BindRequestPhaseFailed, v1.ConditionFalse, "Warning BindingError"
+					if writeFailure == "before commit" || withBackoff {
+						bindCalls++
+					}
+				}
+				mockBinder := mock_binder.NewMockInterface(gomock.NewController(GinkgoT()))
+				mockBinder.EXPECT().Bind(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+					DoAndReturn(func(ctx context.Context, pod *v1.Pod, node *v1.Node, _ *schedulingv1alpha2.BindRequest) error {
+						if bindErr == nil {
+							pod.Spec.NodeName = node.Name
+							return fakeClient.Update(ctx, pod)
+						}
+						return bindErr
+					}).Times(bindCalls)
+				if bindingFails {
+					mockBinder.EXPECT().Rollback(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(bindCalls)
+				}
+				reconciler.binder = mockBinder
+				req := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(bindRequest)}
+
+				result, err := reconciler.Reconcile(ctx, req)
+				if writeFailure != "none" {
+					Expect(err).To(MatchError(statusErr))
+					Expect(errors.Is(err, reconcile.TerminalError(nil))).To(BeFalse())
+					Expect(result).To(Equal(ctrl.Result{}))
+				} else if bindingFails {
+					Expect(err).To(MatchError(bindErr))
+					Expect(errors.Is(err, reconcile.TerminalError(nil))).To(Equal(!withBackoff))
+				} else {
+					Expect(err).NotTo(HaveOccurred())
+				}
+				stored := &schedulingv1alpha2.BindRequest{}
+				Expect(fakeClient.Get(ctx, req.NamespacedName, stored)).To(Succeed())
+				if writeFailure == "before commit" {
+					Expect(stored.Status).To(Equal(bindRequest.Status))
+				} else {
+					Expect(stored.Status.Phase).To(Equal(phase))
+				}
+				Expect(shouldEnqueueBindRequestUpdate(bindRequest, stored)).To(BeFalse())
+				storedPod := &v1.Pod{}
+				Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(pod), storedPod)).To(Succeed())
+				Expect(storedPod.Status.Conditions).To(ContainElement(And(
+					HaveField("Type", v1.PodConditionType(podBoundCondition)),
+					HaveField("Status", conditionStatus),
+				)))
+				Expect(fakeEventRecorder.Events).To(Receive(ContainSubstring(eventReason)))
+
+				// Once the bound Pod is observed, a status retry must not bind or roll back again.
+				_, err = reconciler.Reconcile(ctx, req)
+				if bindCalls == 2 {
+					Expect(err).To(MatchError(bindErr))
+					Expect(errors.Is(err, reconcile.TerminalError(nil))).To(Equal(!withBackoff))
+				} else {
+					Expect(err).NotTo(HaveOccurred())
+				}
+				Expect(fakeClient.Get(ctx, req.NamespacedName, stored)).To(Succeed())
+				Expect(stored.Status.Phase).To(Equal(phase))
+				if bindingFails && withBackoff {
+					expectedAttempts := int32(2)
+					if writeFailure == "before commit" {
+						expectedAttempts = 1
+					}
+					Expect(stored.Status.FailedAttempts).To(Equal(expectedAttempts))
+				}
+				if writeFailure == "before commit" || bindCalls == 2 {
+					Expect(statusPatches).To(Equal(2))
+					Expect(fakeEventRecorder.Events).To(Receive(ContainSubstring(eventReason)))
+				} else {
+					Expect(statusPatches).To(Equal(1))
+				}
+				Expect(fakeEventRecorder.Events).To(BeEmpty())
+			},
+			Entry("successful binding, write rejected", "before commit", false, false),
+			Entry("failed binding without retry budget, write rejected", "before commit", true, false),
+			Entry("failed binding with retry budget, write rejected", "before commit", true, true),
+			Entry("successful binding, response lost after write", "after commit", false, false),
+			Entry("failed binding without retry budget, response lost after write", "after commit", true, false),
+			Entry("failed binding with retry budget, response lost after write", "after commit", true, true),
+			Entry("successful binding, ordinary write", "none", false, false),
+			Entry("failed binding without retry budget, ordinary write", "none", true, false),
+			Entry("failed binding with retry budget, ordinary write", "none", true, true),
+		)
+
+		DescribeTable("rejects a bound Pod on another node without changing the Pod",
+			func(withBackoff bool) {
+				ctx := context.Background()
+				pod := &v1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "bound-pod", Namespace: "default", UID: "current-pod",
+						Labels: map[string]string{"runai-gpu-group": "actual-group"},
+					},
+					Spec: v1.PodSpec{NodeName: "actual-node"},
+					Status: v1.PodStatus{
+						Phase: v1.PodRunning,
+						Conditions: []v1.PodCondition{
+							{Type: podBoundCondition, Status: v1.ConditionTrue, Reason: "Bound"},
+							{Type: v1.PodReady, Status: v1.ConditionTrue},
+						},
+					},
+				}
+				Expect(fakeClient.Create(ctx, pod)).To(Succeed())
+				originalPod := &v1.Pod{}
+				Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(pod), originalPod)).To(Succeed())
+				bindRequest := baseRequest.DeepCopy()
+				bindRequest.Spec.PodName = pod.Name
+				bindRequest.Spec.SelectedNode = "selected-node"
+				attempts := int32(1)
+				if withBackoff {
+					attempts = 2
+					bindRequest.Spec.BackoffLimit = ptr.To(attempts)
+				}
+				Expect(fakeClient.Create(ctx, bindRequest)).To(Succeed())
+				reconciler.binder = mock_binder.NewMockInterface(gomock.NewController(GinkgoT()))
+				podStatusPatches := 0
+				reconciler.Client = interceptor.NewClient(fakeClient, interceptor.Funcs{
+					SubResourcePatch: func(ctx context.Context, c client.Client, subResource string,
+						obj client.Object, patch client.Patch, opts ...client.SubResourcePatchOption) error {
+						if _, ok := obj.(*v1.Pod); ok {
+							podStatusPatches++
+						}
+						return c.SubResource(subResource).Patch(ctx, obj, patch, opts...)
+					},
+				})
+				req := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(bindRequest)}
+				for attempt := int32(1); attempt <= attempts; attempt++ {
+					result, err := reconciler.Reconcile(ctx, req)
+					Expect(err).To(MatchError(ContainSubstring("already bound to node actual-node")))
+					Expect(errors.Is(err, reconcile.TerminalError(nil))).To(Equal(!withBackoff))
+					stored := &schedulingv1alpha2.BindRequest{}
+					Expect(fakeClient.Get(ctx, req.NamespacedName, stored)).To(Succeed())
+					Expect(stored.Status.Phase).To(Equal(schedulingv1alpha2.BindRequestPhaseFailed))
+					Expect(stored.Status.Reason).To(ContainSubstring("BindRequest selected node selected-node"))
+					if withBackoff {
+						Expect(stored.Status.FailedAttempts).To(Equal(attempt))
+						Expect(result.RequeueAfter).To(Equal((1 << (attempt - 1)) * time.Second))
+					} else {
+						Expect(stored.Status.FailedAttempts).To(BeZero())
+						Expect(result).To(Equal(ctrl.Result{}))
+					}
+				}
+				result, err := reconciler.Reconcile(ctx, req)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).To(Equal(ctrl.Result{}))
+				storedPod := &v1.Pod{}
+				Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(pod), storedPod)).To(Succeed())
+				Expect(storedPod).To(Equal(originalPod))
+				Expect(podStatusPatches).To(BeZero())
+				Expect(fakeEventRecorder.Events).To(BeEmpty())
+			},
+			Entry("without a retry budget", false),
+			Entry("with multiple retries until exhaustion", true),
+		)
+
+		It("rejects a conflicting non-controller Pod owner without changing the bound Pod", func() {
+			ctx := context.Background()
+			pod := &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "replaced-pod", Namespace: "default", UID: "current-pod"},
+				Spec:       v1.PodSpec{NodeName: "selected-node"},
+				Status: v1.PodStatus{Conditions: []v1.PodCondition{
+					{Type: podBoundCondition, Status: v1.ConditionTrue, Reason: "Bound"},
+				}},
+			}
+			Expect(fakeClient.Create(ctx, pod)).To(Succeed())
+			originalPod := &v1.Pod{}
+			Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(pod), originalPod)).To(Succeed())
+			bindRequest := baseRequest.DeepCopy()
+			bindRequest.Spec.PodName = pod.Name
+			bindRequest.Spec.SelectedNode = pod.Spec.NodeName
+			bindRequest.OwnerReferences = []metav1.OwnerReference{{
+				APIVersion: "v1", Kind: "Pod", Name: pod.Name, UID: "deleted-pod",
+			}}
+			Expect(fakeClient.Create(ctx, bindRequest)).To(Succeed())
+			reconciler.binder = mock_binder.NewMockInterface(gomock.NewController(GinkgoT()))
+
+			_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(bindRequest)})
+			Expect(err).To(MatchError(ContainSubstring("with UID deleted-pod, but the current pod has UID current-pod")))
+			stored := &schedulingv1alpha2.BindRequest{}
+			Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(bindRequest), stored)).To(Succeed())
+			Expect(stored.Status.Phase).To(Equal(schedulingv1alpha2.BindRequestPhaseFailed))
+			storedPod := &v1.Pod{}
+			Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(pod), storedPod)).To(Succeed())
+			Expect(storedPod).To(Equal(originalPod))
+			Expect(fakeEventRecorder.Events).To(BeEmpty())
+		})
+
+		DescribeTable("validates already-bound allocation intent without ConfigMaps",
+			func(spec schedulingv1alpha2.BindRequestSpec, labels, annotations map[string]string, expectedError string) {
+				ctx := context.Background()
+				pod := &v1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "allocation-pod", Namespace: "default", UID: "current-pod",
+						Labels: labels, Annotations: annotations,
+					},
+					Spec: v1.PodSpec{NodeName: "selected-node"},
+					Status: v1.PodStatus{Conditions: []v1.PodCondition{
+						{Type: podBoundCondition, Status: v1.ConditionTrue, Reason: "Bound"},
+					}},
+				}
+				Expect(fakeClient.Create(ctx, pod)).To(Succeed())
+				originalPod := &v1.Pod{}
+				Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(pod), originalPod)).To(Succeed())
+				bindRequest := baseRequest.DeepCopy()
+				bindRequest.Spec = spec
+				bindRequest.Spec.PodName = pod.Name
+				bindRequest.Spec.SelectedNode = pod.Spec.NodeName
+				bindRequest.OwnerReferences = []metav1.OwnerReference{{
+					APIVersion: "v1", Kind: "Pod", Name: pod.Name, UID: pod.UID,
+				}}
+				Expect(fakeClient.Create(ctx, bindRequest)).To(Succeed())
+				reconciler.binder = mock_binder.NewMockInterface(gomock.NewController(GinkgoT()))
+				req := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(bindRequest)}
+				result, err := reconciler.Reconcile(ctx, req)
+				Expect(result).To(Equal(ctrl.Result{}))
+				stored := &schedulingv1alpha2.BindRequest{}
+				Expect(fakeClient.Get(ctx, req.NamespacedName, stored)).To(Succeed())
+				storedPod := &v1.Pod{}
+				Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(pod), storedPod)).To(Succeed())
+				if expectedError != "" {
+					Expect(err).To(MatchError(ContainSubstring(expectedError)))
+					Expect(stored.Status.Phase).To(Equal(schedulingv1alpha2.BindRequestPhaseFailed))
+					Expect(storedPod).To(Equal(originalPod))
+					Expect(fakeEventRecorder.Events).To(BeEmpty())
+				} else {
+					Expect(err).NotTo(HaveOccurred())
+					Expect(stored.Status.Phase).To(Equal(schedulingv1alpha2.BindRequestPhaseSucceeded))
+					Expect(storedPod.Spec).To(Equal(originalPod.Spec))
+					Expect(storedPod.Labels).To(Equal(originalPod.Labels))
+					Expect(storedPod.Annotations).To(Equal(originalPod.Annotations))
+					Expect(fakeEventRecorder.Events).To(Receive(ContainSubstring("Normal Bound")))
+					_, err = reconciler.Reconcile(ctx, req)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(fakeEventRecorder.Events).To(BeEmpty())
+				}
+			},
+			Entry("different single group on the selected node",
+				schedulingv1alpha2.BindRequestSpec{ReceivedResourceType: common.ReceivedTypeFraction, SelectedGPUGroups: []string{"group-b"}},
+				map[string]string{"runai-gpu-group": "group-a"}, nil,
+				"already bound with GPU groups [group-a], but BindRequest selected GPU groups [group-b]"),
+			Entry("missing Pod groups",
+				schedulingv1alpha2.BindRequestSpec{ReceivedResourceType: common.ReceivedTypeFraction, SelectedGPUGroups: []string{"group-a"}},
+				nil, nil, "already bound with GPU groups []"),
+			Entry("a subset of the expected groups",
+				schedulingv1alpha2.BindRequestSpec{ReceivedResourceType: common.ReceivedTypeFraction, SelectedGPUGroups: []string{"group-b", "group-a"}},
+				map[string]string{"runai-gpu-group": "group-a"}, nil,
+				"BindRequest selected GPU groups [group-a group-b]"),
+			Entry("an unexpected extra group",
+				schedulingv1alpha2.BindRequestSpec{ReceivedResourceType: common.ReceivedTypeFraction, SelectedGPUGroups: []string{"group-a"}},
+				map[string]string{"runai-gpu-group/group-a": "group-a", "runai-gpu-group/group-b": "group-b"}, nil,
+				"already bound with GPU groups [group-a group-b]"),
+			Entry("an empty primary label",
+				schedulingv1alpha2.BindRequestSpec{ReceivedResourceType: common.ReceivedTypeFraction, SelectedGPUGroups: []string{"group-a"}},
+				map[string]string{"runai-gpu-group": "", "runai-gpu-group/group-a": "group-a"}, nil,
+				"invalid GPU group labels [runai-gpu-group=\"\"]"),
+			Entry("a noncanonical multi-group label",
+				schedulingv1alpha2.BindRequestSpec{ReceivedResourceType: common.ReceivedTypeFraction, SelectedGPUGroups: []string{"group-a"}},
+				map[string]string{"runai-gpu-group/wrong": "group-a"}, nil,
+				"invalid GPU group labels [runai-gpu-group/wrong=\"group-a\"]"),
+			Entry("an empty multi-group value",
+				schedulingv1alpha2.BindRequestSpec{ReceivedResourceType: common.ReceivedTypeFraction, SelectedGPUGroups: []string{"group-a"}},
+				map[string]string{"runai-gpu-group/group-a": ""}, nil, "invalid GPU group labels"),
+			Entry("absent expected fractional groups",
+				schedulingv1alpha2.BindRequestSpec{ReceivedResourceType: common.ReceivedTypeFraction},
+				map[string]string{"runai-gpu-group": "group-a"}, nil, "missing or empty fractional GPU group IDs"),
+			Entry("an empty expected fractional group",
+				schedulingv1alpha2.BindRequestSpec{ReceivedResourceType: common.ReceivedTypeFraction, SelectedGPUGroups: []string{""}},
+				map[string]string{"runai-gpu-group": "group-a"}, nil, "missing or empty fractional GPU group IDs"),
+			Entry("a matching legacy group",
+				schedulingv1alpha2.BindRequestSpec{ReceivedResourceType: common.ReceivedTypeFraction, SelectedGPUGroups: []string{"group-a"}},
+				map[string]string{"runai-gpu-group": "group-a"}, nil, ""),
+			Entry("structured groups take precedence over legacy groups",
+				schedulingv1alpha2.BindRequestSpec{
+					ReceivedResourceType: common.ReceivedTypeFraction, SelectedGPUGroups: []string{"old-group"},
+					SelectedFractionalGpuGroups: []schedulingv1alpha2.FractionalGpuGroup{{ID: "group-a"}},
+				},
+				map[string]string{"runai-gpu-group": "group-a"}, nil, ""),
+			Entry("reversed multi-only groups",
+				schedulingv1alpha2.BindRequestSpec{ReceivedResourceType: common.ReceivedTypeFraction, SelectedGPUGroups: []string{"group-b", "group-a"}},
+				map[string]string{"runai-gpu-group/group-a": "group-a", "runai-gpu-group/group-b": "group-b"}, nil, ""),
+			Entry("mixed primary and multi labels deduplicate groups",
+				schedulingv1alpha2.BindRequestSpec{ReceivedResourceType: common.ReceivedTypeFraction, SelectedGPUGroups: []string{"group-b", "group-a", "group-a"}},
+				map[string]string{"runai-gpu-group": "group-a", "runai-gpu-group/group-a": "group-a", "runai-gpu-group/group-b": "group-b"}, nil, ""),
+			Entry("NvFractions with no ConfigMaps",
+				schedulingv1alpha2.BindRequestSpec{ReceivedResourceType: common.ReceivedTypeFraction, SelectedGPUGroups: []string{"group-a"}},
+				map[string]string{"runai-gpu-group": "group-a"},
+				map[string]string{"nvidia.com/container.workload.gpus.devices": "GPU-0"}, ""),
+			Entry("NRI fractional allocation with no ConfigMaps",
+				schedulingv1alpha2.BindRequestSpec{ReceivedResourceType: common.ReceivedTypeFraction, SelectedGPUGroups: []string{"group-a"}},
+				map[string]string{"runai-gpu-group": "group-a"}, nil, ""),
+			Entry("CPU-only without groups", schedulingv1alpha2.BindRequestSpec{}, nil, nil, ""),
+			Entry("whole GPU without groups",
+				schedulingv1alpha2.BindRequestSpec{ReceivedResourceType: common.ReceivedTypeRegular, ReceivedGPU: &schedulingv1alpha2.ReceivedGPU{Count: 1, Portion: "1"}},
+				nil, nil, ""),
+			Entry("MIG without groups", schedulingv1alpha2.BindRequestSpec{ReceivedResourceType: common.ReceivedTypeRegular}, nil, nil, ""),
+			Entry("DRA-only without groups",
+				schedulingv1alpha2.BindRequestSpec{ResourceClaimAllocations: []schedulingv1alpha2.ResourceClaimAllocation{{Name: "gpu-claim"}}},
+				nil, nil, ""),
+		)
+
 		var (
 			pod = &v1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
@@ -210,7 +552,7 @@ var _ = Describe("BindRequest Controller", func() {
 					bindRequest.Spec.SelectedNode = node.Name
 					return bindRequest
 				}(),
-				false, false, false,
+				true, false, false,
 			),
 			Entry(
 				"missing node but backoff limit not reached",
@@ -309,6 +651,92 @@ var _ = Describe("BindRequest Controller", func() {
 		})
 
 		Context("repeated bind failure", func() {
+			It("persists consecutive failures and stops binding at the backoff limit", func() {
+				ctx := context.Background()
+				retryPod := &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "retry-pod", Namespace: "default"}}
+				retryNode := &v1.Node{ObjectMeta: metav1.ObjectMeta{Name: "retry-node"}}
+				Expect(fakeClient.Create(ctx, retryPod)).To(Succeed())
+				Expect(fakeClient.Create(ctx, retryNode)).To(Succeed())
+
+				bindRequest := baseRequest.DeepCopy()
+				bindRequest.Spec.PodName = retryPod.Name
+				bindRequest.Spec.SelectedNode = retryNode.Name
+				bindRequest.Spec.BackoffLimit = ptr.To(int32(2))
+				Expect(fakeClient.Create(ctx, bindRequest)).To(Succeed())
+
+				bindErr := errors.New("temporary binding failure")
+				mockBinder := mock_binder.NewMockInterface(gomock.NewController(GinkgoT()))
+				mockBinder.EXPECT().Bind(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+					Return(bindErr).Times(2)
+				mockBinder.EXPECT().Rollback(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+					Return(nil).Times(2)
+				reconciler.binder = mockBinder
+
+				req := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(bindRequest)}
+				for attempt := int32(1); attempt <= 2; attempt++ {
+					result, err := reconciler.Reconcile(ctx, req)
+					stored := &schedulingv1alpha2.BindRequest{}
+					Expect(fakeClient.Get(ctx, req.NamespacedName, stored)).To(Succeed())
+					Expect(stored.Status.Phase).To(Equal(schedulingv1alpha2.BindRequestPhaseFailed))
+					Expect(stored.Status.FailedAttempts).To(Equal(attempt))
+					Expect(stored.Status.Reason).To(Equal(bindErr.Error()))
+					Expect(err).To(MatchError(bindErr))
+					Expect(result.RequeueAfter).To(Equal((1 << (attempt - 1)) * time.Second))
+				}
+
+				result, err := reconciler.Reconcile(ctx, req)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).To(Equal(ctrl.Result{}))
+				Expect(fakeEventRecorder.Events).To(HaveLen(2))
+				for range 2 {
+					event := <-fakeEventRecorder.Events
+					Expect(event).To(ContainSubstring("BindingError"))
+					Expect(event).NotTo(ContainSubstring("bound successfully"))
+				}
+			})
+
+			It("stops retrying after a successful bind without repeating the Bound event", func() {
+				ctx := context.Background()
+				retryPod := &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "retry-pod", Namespace: "default"}}
+				retryNode := &v1.Node{ObjectMeta: metav1.ObjectMeta{Name: "retry-node"}}
+				Expect(fakeClient.Create(ctx, retryPod)).To(Succeed())
+				Expect(fakeClient.Create(ctx, retryNode)).To(Succeed())
+
+				bindRequest := baseRequest.DeepCopy()
+				bindRequest.Spec.PodName = retryPod.Name
+				bindRequest.Spec.SelectedNode = retryNode.Name
+				bindRequest.Spec.BackoffLimit = ptr.To(int32(2))
+				Expect(fakeClient.Create(ctx, bindRequest)).To(Succeed())
+
+				bindErr := errors.New("temporary binding failure")
+				mockBinder := mock_binder.NewMockInterface(gomock.NewController(GinkgoT()))
+				gomock.InOrder(
+					mockBinder.EXPECT().Bind(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(bindErr),
+					mockBinder.EXPECT().Rollback(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil),
+					mockBinder.EXPECT().Bind(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil),
+				)
+				reconciler.binder = mockBinder
+
+				req := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(bindRequest)}
+				_, err := reconciler.Reconcile(ctx, req)
+				Expect(err).To(MatchError(bindErr))
+
+				result, err := reconciler.Reconcile(ctx, req)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).To(Equal(ctrl.Result{}))
+				stored := &schedulingv1alpha2.BindRequest{}
+				Expect(fakeClient.Get(ctx, req.NamespacedName, stored)).To(Succeed())
+				Expect(stored.Status.Phase).To(Equal(schedulingv1alpha2.BindRequestPhaseSucceeded))
+				Expect(stored.Status.FailedAttempts).To(Equal(int32(1)))
+
+				result, err = reconciler.Reconcile(ctx, req)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).To(Equal(ctrl.Result{}))
+				Expect(fakeEventRecorder.Events).To(HaveLen(2))
+				Expect(<-fakeEventRecorder.Events).To(ContainSubstring("BindingError"))
+				Expect(<-fakeEventRecorder.Events).To(ContainSubstring("Normal Bound Pod bound successfully"))
+			})
+
 			It("report BindingError num of FailedAttempts 1 in this case) and stop reconciling the bindingrequest", func() {
 				repeatFailurePod := &v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
@@ -447,9 +875,51 @@ var _ = Describe("BindRequest Controller", func() {
 			}, queue)
 			Expect(queue.Len()).To(Equal(1))
 		})
+
+		It("does not enqueue status-only retry updates", func() {
+			oldBindRequest := baseRequest.DeepCopy()
+			oldBindRequest.Spec.BackoffLimit = ptr.To(int32(3))
+			oldBindRequest.Status.Phase = schedulingv1alpha2.BindRequestPhaseFailed
+			oldBindRequest.Status.FailedAttempts = 1
+			updatedBindRequest := oldBindRequest.DeepCopy()
+			updatedBindRequest.Status.FailedAttempts = 2
+			updatedBindRequest.Status.Reason = "another temporary binding failure"
+
+			reconciler.eventHandlers().UpdateFunc(context.Background(), event.UpdateEvent{
+				ObjectOld: oldBindRequest,
+				ObjectNew: updatedBindRequest,
+			}, queue)
+			Expect(queue.Len()).To(Equal(0))
+		})
 	})
 
 	Describe("UpdateStatus", func() {
+		DescribeTable("does not patch unchanged status", func(phase string, outcome error) {
+			ctx := context.Background()
+			bindRequest := baseRequest.DeepCopy()
+			bindRequest.Status.Phase = phase
+			if outcome != nil {
+				bindRequest.Status.Reason = outcome.Error()
+			}
+			Expect(fakeClient.Create(ctx, bindRequest)).To(Succeed())
+
+			patchCalls := 0
+			reconciler.Client = interceptor.NewClient(fakeClient, interceptor.Funcs{
+				SubResourcePatch: func(context.Context, client.Client, string, client.Object, client.Patch, ...client.SubResourcePatchOption) error {
+					patchCalls++
+					return nil
+				},
+			})
+
+			result, err := reconciler.UpdateStatus(ctx, bindRequest, ctrl.Result{}, outcome)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(Equal(ctrl.Result{}))
+			Expect(patchCalls).To(Equal(0))
+		},
+			Entry("succeeded", schedulingv1alpha2.BindRequestPhaseSucceeded, nil),
+			Entry("failed without retries", schedulingv1alpha2.BindRequestPhaseFailed, errors.New("binding failure")),
+		)
+
 		Context("no error", func() {
 			It("Leavs FailedAttempts unchanged", func() {
 				bindRequest := baseRequest.DeepCopy()
@@ -479,6 +949,27 @@ var _ = Describe("BindRequest Controller", func() {
 			})
 
 			Context("Backoff Limit set", func() {
+				It("persists the latest retry failure and returns its error when the phase is unchanged", func() {
+					ctx := context.Background()
+					bindRequest := baseRequest.DeepCopy()
+					bindRequest.Spec.BackoffLimit = ptr.To(int32(3))
+					bindRequest.Status.Phase = schedulingv1alpha2.BindRequestPhaseFailed
+					bindRequest.Status.FailedAttempts = 1
+					bindRequest.Status.Reason = "first binding failure"
+					Expect(fakeClient.Create(ctx, bindRequest)).To(Succeed())
+
+					bindErr := errors.New("another temporary binding failure")
+					result, err := reconciler.UpdateStatus(ctx, bindRequest, ctrl.Result{}, bindErr)
+					Expect(err).To(MatchError(bindErr))
+					Expect(errors.Is(err, reconcile.TerminalError(nil))).To(BeFalse())
+					Expect(result.RequeueAfter).To(Equal(2 * time.Second))
+
+					stored := &schedulingv1alpha2.BindRequest{}
+					Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(bindRequest), stored)).To(Succeed())
+					Expect(stored.Status.Phase).To(Equal(schedulingv1alpha2.BindRequestPhaseFailed))
+					Expect(stored.Status.FailedAttempts).To(Equal(int32(2)))
+					Expect(stored.Status.Reason).To(Equal(bindErr.Error()))
+				})
 
 				It("Increments FailedAttempts if less than BackoffLimit", func() {
 					bindRequest := baseRequest.DeepCopy()
@@ -505,6 +996,30 @@ var _ = Describe("BindRequest Controller", func() {
 		})
 
 		Context("BindRequest changed during the reconcile", func() {
+			It("discards retry progress when a newer resource version is present", func() {
+				ctx := context.Background()
+				original := baseRequest.DeepCopy()
+				original.Spec.SelectedNode = "stale-node"
+				original.Spec.BackoffLimit = ptr.To(int32(3))
+				original.Status.Phase = schedulingv1alpha2.BindRequestPhaseFailed
+				original.Status.FailedAttempts = 1
+				original.Status.Reason = "first binding failure"
+				Expect(fakeClient.Create(ctx, original)).To(Succeed())
+				stale := original.DeepCopy()
+
+				newer := original.DeepCopy()
+				newer.Spec.SelectedNode = "replacement-node"
+				Expect(fakeClient.Update(ctx, newer)).To(Succeed())
+
+				_, err := reconciler.UpdateStatus(ctx, stale, ctrl.Result{}, errors.New("stale retry failure"))
+				Expect(err).NotTo(HaveOccurred())
+
+				stored := &schedulingv1alpha2.BindRequest{}
+				Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(original), stored)).To(Succeed())
+				Expect(stored.Spec.SelectedNode).To(Equal(newer.Spec.SelectedNode))
+				Expect(stored.Status).To(Equal(newer.Status))
+			})
+
 			// A reconcile holds its own copy for the length of the bind, during which the
 			// scheduler may delete the BindRequest and create a replacement under the same
 			// name. The outcome must not land on an object it does not describe. The fake
