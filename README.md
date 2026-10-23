@@ -39,6 +39,7 @@ It can run alongside other schedulers installed on the cluster.
 - [Hierarchical Queues](docs/queues/README.md): Apply quotas, limits, priorities, and fairness policies across multi-level queue hierarchies for flexible organizational control.
 - [Resource distribution](docs/fairness/README.md#resource-division-algorithm): Customize quotas, over-quota weights, limits, and priorities per queue.
 - [Fairness Policies](docs/fairness/README.md#reclaim-strategies): Ensure equitable resource distribution using Dominant Resource Fairness (DRF) and resource reclamation across queues.
+- [Kueue Admission with KAI Placement](docs/kueue-integration/README.md): Keep Kueue as the sole admission/quota authority while using KAI purely for pod placement.
 - [Time-based Fairshare](https://github.com/kai-scheduler/KAI-scheduler/tree/main/docs/time-based-fairshare): Over-time fair usage of resources, considering historical usage, time decay, and other parameters for fine-tuning.
 - [Min-guaranteed-runtime](https://github.com/kai-scheduler/KAI-scheduler/tree/main/docs/developer/designs/min-runtime): ensures a time period in which the scheduler must not preempt or reclaim a running workload, even if preemptible.
 - Workload Consolidation: Reallocate running workloads intelligently to reduce fragmentation and increase cluster utilization.
