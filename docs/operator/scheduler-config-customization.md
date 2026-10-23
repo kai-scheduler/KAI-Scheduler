@@ -126,6 +126,24 @@ spec:
       enabled: false
 ```
 
+### Fully disable consolidation
+
+Disabling the `consolidation` action does not stop the scheduler from relocating running workloads.
+The `reclaim` action can also move running pods to other nodes to make room for a pending workload, controlled by the scheduler flag `allow-consolidating-reclaim` (default `true`).
+When enabled, pods that reclaim relocates (evicted and re-placed on another node within the same simulation) are not counted as resources reclaimed from their queue, so reclaim may move workloads from any queue, including queues within their quota.
+When disabled, relocated pods count as reclaimed resources, so reclaim can only move pods that it would also be allowed to evict.
+
+To fully disable consolidation, disable the action and set the flag to `false` through the shard `args`:
+
+```yaml
+spec:
+  actions:
+    consolidation:
+      enabled: false
+  args:
+    allow-consolidating-reclaim: "false"
+```
+
 ### Independent node-level and device-level placement
 
 Spread across nodes but pack within each node's GPUs:
