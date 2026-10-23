@@ -79,7 +79,7 @@ func TestGPUGroupMatcher(t *testing.T) {
 			},
 		},
 		{
-			name: "group count differs from label count",
+			name: "task holds more GPU groups than labels",
 			assignments: []assignment{
 				{node: "node0", actual: []string{"g0", "g1"}, expected: []string{"0"}},
 			},
