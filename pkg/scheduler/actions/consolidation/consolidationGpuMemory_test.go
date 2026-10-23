@@ -98,13 +98,13 @@ func getConsolidationGpuMemoryTestsMetadata() []integration_tests_utils.TestTopo
 					},
 					"running_job1": {
 						NodeName:     "node0",
-						GPUGroups:    []string{"1"},
+						GPUGroups:    []string{"0"},
 						Status:       pod_status.Pipelined,
 						GPUsRequired: 0,
 					},
 					"pending_job": {
 						NodeName:     "node0",
-						GPUGroups:    []string{"0"},
+						GPUGroups:    []string{"1"},
 						Status:       pod_status.Pipelined,
 						GPUsRequired: 0,
 					},

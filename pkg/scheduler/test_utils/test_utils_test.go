@@ -36,3 +36,68 @@ func TestMatchExpectedAndRealTasksWithSameNamedJobsInDifferentNamespaces(t *test
 
 	MatchExpectedAndRealTasks(t, 0, metadata, session)
 }
+
+func TestGPUGroupMatcher(t *testing.T) {
+	type assignment struct {
+		node     string
+		actual   []string
+		expected []string
+	}
+	tests := []struct {
+		name        string
+		assignments []assignment
+		wantErr     bool
+	}{
+		{
+			name: "same label on the same group",
+			assignments: []assignment{
+				{node: "node0", actual: []string{"g0"}, expected: []string{"0"}},
+				{node: "node0", actual: []string{"g0"}, expected: []string{"0"}},
+			},
+		},
+		{
+			name: "same label split across groups",
+			assignments: []assignment{
+				{node: "node0", actual: []string{"g0"}, expected: []string{"0"}},
+				{node: "node0", actual: []string{"g1"}, expected: []string{"0"}},
+			},
+			wantErr: true,
+		},
+		{
+			name: "different labels merged onto one group",
+			assignments: []assignment{
+				{node: "node0", actual: []string{"g0"}, expected: []string{"0"}},
+				{node: "node0", actual: []string{"g0"}, expected: []string{"1"}},
+			},
+			wantErr: true,
+		},
+		{
+			name: "labels are scoped per node",
+			assignments: []assignment{
+				{node: "node0", actual: []string{"g0"}, expected: []string{"0"}},
+				{node: "node1", actual: []string{"g1"}, expected: []string{"0"}},
+			},
+		},
+		{
+			name: "group count differs from label count",
+			assignments: []assignment{
+				{node: "node0", actual: []string{"g0", "g1"}, expected: []string{"0"}},
+			},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			matcher := newGPUGroupMatcher()
+			var err error
+			for _, a := range tt.assignments {
+				if matchErr := matcher.match(a.node, a.actual, a.expected); matchErr != nil {
+					err = matchErr
+				}
+			}
+			if (err != nil) != tt.wantErr {
+				t.Errorf("match() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
