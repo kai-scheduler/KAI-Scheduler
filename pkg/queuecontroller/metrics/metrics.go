@@ -40,6 +40,16 @@ var (
 	queueAllocatedCpus   *prometheus.GaugeVec
 	queueAllocatedMemory *prometheus.GaugeVec
 
+	queueAllocatedNonPreemptibleGpus   *prometheus.GaugeVec
+	queueAllocatedNonPreemptibleCpus   *prometheus.GaugeVec
+	queueAllocatedNonPreemptibleMemory *prometheus.GaugeVec
+	queueRequestedGpus                 *prometheus.GaugeVec
+	queueRequestedCpus                 *prometheus.GaugeVec
+	queueRequestedMemory               *prometheus.GaugeVec
+	queueLimitGpus                     *prometheus.GaugeVec
+	queueLimitCpus                     *prometheus.GaugeVec
+	queueLimitMemory                   *prometheus.GaugeVec
+
 	additionalQueueLabelKeys       []string
 	additionalMetricLabelKeys      []string
 	queueLabelToDefaultMetricValue map[string]string
@@ -141,8 +151,83 @@ func InitMetrics(namespace string, queueLabelToMetricLabelMap, queueLabelToDefau
 		}, queueMetricsLabels,
 	)
 
+	queueAllocatedNonPreemptibleGpus = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "queue_allocated_non_preemptible_gpus",
+			Help:      "Queue allocated GPUs of non-preemptible workloads",
+		}, queueMetricsLabels,
+	)
+
+	queueAllocatedNonPreemptibleCpus = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "queue_allocated_non_preemptible_cpu_cores",
+			Help:      "Queue allocated CPUs of non-preemptible workloads",
+		}, queueMetricsLabels,
+	)
+
+	queueAllocatedNonPreemptibleMemory = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "queue_allocated_non_preemptible_memory_bytes",
+			Help:      "Queue allocated memory of non-preemptible workloads",
+		}, queueMetricsLabels,
+	)
+
+	queueRequestedGpus = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "queue_requested_gpus",
+			Help:      "Queue requested GPUs of running and pending workloads",
+		}, queueMetricsLabels,
+	)
+
+	queueRequestedCpus = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "queue_requested_cpu_cores",
+			Help:      "Queue requested CPUs of running and pending workloads",
+		}, queueMetricsLabels,
+	)
+
+	queueRequestedMemory = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "queue_requested_memory_bytes",
+			Help:      "Queue requested memory of running and pending workloads",
+		}, queueMetricsLabels,
+	)
+
+	queueLimitGpus = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "queue_limit_gpus",
+			Help:      "Queue limit GPUs",
+		}, queueMetricsLabels,
+	)
+
+	queueLimitCpus = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "queue_limit_cpu_cores",
+			Help:      "Queue limit CPU",
+		}, queueMetricsLabels,
+	)
+
+	queueLimitMemory = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "queue_limit_memory_bytes",
+			Help:      "Queue limit memory",
+		}, queueMetricsLabels,
+	)
+
 	metrics.Registry.MustRegister(queueInfo, queueDeservedGPUs, queueQuotaCPU, queueQuotaMemory,
-		queueAllocatedGpus, queueAllocatedCpus, queueAllocatedMemory)
+		queueAllocatedGpus, queueAllocatedCpus, queueAllocatedMemory,
+		queueAllocatedNonPreemptibleGpus, queueAllocatedNonPreemptibleCpus, queueAllocatedNonPreemptibleMemory,
+		queueRequestedGpus, queueRequestedCpus, queueRequestedMemory,
+		queueLimitGpus, queueLimitCpus, queueLimitMemory)
 }
 
 func SetQueueMetrics(queue *v2.Queue) {
@@ -157,9 +242,9 @@ func SetQueueMetrics(queue *v2.Queue) {
 	gpuQuota := getGpuQuota(queue.Spec.Resources)
 	cpuQuota := getCpuQuotaCores(queue.Spec.Resources)
 	memoryQuota := getMemoryQuotaBytes(queue.Spec.Resources)
-	allocatedGpus := getAllocatedGpus(queue.Status)
-	allocatedCpus := getAllocatedCpuCores(queue.Status)
-	allocatedMemory := getAllocatedMemoryBytes(queue.Status)
+	gpuLimit := getGpuLimit(queue.Spec.Resources)
+	cpuLimit := getCpuLimitCores(queue.Spec.Resources)
+	memoryLimit := getMemoryLimitBytes(queue.Spec.Resources)
 
 	queueLabels := prometheus.Labels{
 		queueNameLabel:         queueName,
@@ -174,9 +259,18 @@ func SetQueueMetrics(queue *v2.Queue) {
 	queueDeservedGPUs.With(queueLabels).Set(gpuQuota)
 	queueQuotaCPU.With(queueLabels).Set(cpuQuota)
 	queueQuotaMemory.With(queueLabels).Set(memoryQuota)
-	queueAllocatedGpus.With(queueLabels).Set(allocatedGpus)
-	queueAllocatedCpus.With(queueLabels).Set(allocatedCpus)
-	queueAllocatedMemory.With(queueLabels).Set(allocatedMemory)
+	queueAllocatedGpus.With(queueLabels).Set(getGpus(queue.Status.Allocated))
+	queueAllocatedCpus.With(queueLabels).Set(getCpuCores(queue.Status.Allocated))
+	queueAllocatedMemory.With(queueLabels).Set(getMemoryBytes(queue.Status.Allocated))
+	queueAllocatedNonPreemptibleGpus.With(queueLabels).Set(getGpus(queue.Status.AllocatedNonPreemptible))
+	queueAllocatedNonPreemptibleCpus.With(queueLabels).Set(getCpuCores(queue.Status.AllocatedNonPreemptible))
+	queueAllocatedNonPreemptibleMemory.With(queueLabels).Set(getMemoryBytes(queue.Status.AllocatedNonPreemptible))
+	queueRequestedGpus.With(queueLabels).Set(getGpus(queue.Status.Requested))
+	queueRequestedCpus.With(queueLabels).Set(getCpuCores(queue.Status.Requested))
+	queueRequestedMemory.With(queueLabels).Set(getMemoryBytes(queue.Status.Requested))
+	queueLimitGpus.With(queueLabels).Set(gpuLimit)
+	queueLimitCpus.With(queueLabels).Set(cpuLimit)
+	queueLimitMemory.With(queueLabels).Set(memoryLimit)
 }
 
 func ResetQueueMetrics(queueName string) {
@@ -188,6 +282,15 @@ func ResetQueueMetrics(queueName string) {
 	queueAllocatedGpus.DeletePartialMatch(queueLabelIdentifier)
 	queueAllocatedCpus.DeletePartialMatch(queueLabelIdentifier)
 	queueAllocatedMemory.DeletePartialMatch(queueLabelIdentifier)
+	queueAllocatedNonPreemptibleGpus.DeletePartialMatch(queueLabelIdentifier)
+	queueAllocatedNonPreemptibleCpus.DeletePartialMatch(queueLabelIdentifier)
+	queueAllocatedNonPreemptibleMemory.DeletePartialMatch(queueLabelIdentifier)
+	queueRequestedGpus.DeletePartialMatch(queueLabelIdentifier)
+	queueRequestedCpus.DeletePartialMatch(queueLabelIdentifier)
+	queueRequestedMemory.DeletePartialMatch(queueLabelIdentifier)
+	queueLimitGpus.DeletePartialMatch(queueLabelIdentifier)
+	queueLimitCpus.DeletePartialMatch(queueLabelIdentifier)
+	queueLimitMemory.DeletePartialMatch(queueLabelIdentifier)
 }
 
 func getGpuQuota(queueSpecResources *v2.QueueResources) float64 {
@@ -201,26 +304,53 @@ func getCpuQuotaCores(queueSpecResources *v2.QueueResources) float64 {
 	if queueSpecResources == nil {
 		return float64(0)
 	}
-	cpuQuota := queueSpecResources.CPU.Quota
-	if cpuQuota == unlimitedQuota {
-		return unlimitedQuota
-	}
-	return queueSpecResources.CPU.Quota / milliCpuToCpuDivider
+	return milliCpuToCores(queueSpecResources.CPU.Quota)
 }
 
 func getMemoryQuotaBytes(queueSpecResources *v2.QueueResources) float64 {
 	if queueSpecResources == nil {
 		return float64(0)
 	}
-	memoryQuota := queueSpecResources.Memory.Quota
-	if memoryQuota == unlimitedQuota {
-		return unlimitedQuota
-	}
-	return memoryQuota * megabytesToBytesMultiplier
+	return megabytesToBytes(queueSpecResources.Memory.Quota)
 }
 
-func getAllocatedGpus(queueStatus v2.QueueStatus) float64 {
-	for resourceName, quantity := range queueStatus.Allocated {
+func getGpuLimit(queueSpecResources *v2.QueueResources) float64 {
+	if queueSpecResources == nil {
+		return float64(0)
+	}
+	return queueSpecResources.GPU.Limit
+}
+
+func getCpuLimitCores(queueSpecResources *v2.QueueResources) float64 {
+	if queueSpecResources == nil {
+		return float64(0)
+	}
+	return milliCpuToCores(queueSpecResources.CPU.Limit)
+}
+
+func getMemoryLimitBytes(queueSpecResources *v2.QueueResources) float64 {
+	if queueSpecResources == nil {
+		return float64(0)
+	}
+	return megabytesToBytes(queueSpecResources.Memory.Limit)
+}
+
+func milliCpuToCores(milliCpu float64) float64 {
+	if milliCpu == unlimitedQuota {
+		return unlimitedQuota
+	}
+	return milliCpu / milliCpuToCpuDivider
+}
+
+func megabytesToBytes(megabytes float64) float64 {
+	if megabytes == unlimitedQuota {
+		return unlimitedQuota
+	}
+	return megabytes * megabytesToBytesMultiplier
+}
+
+func getGpus(resources v1.ResourceList) float64 {
+	for resourceName, quantity := range resources {
 		if strings.HasSuffix(string(resourceName), gpuResourceNameSuffix) {
 			return roundResourceQuantity(quantity)
 		}
@@ -228,20 +358,20 @@ func getAllocatedGpus(queueStatus v2.QueueStatus) float64 {
 	return 0
 }
 
-func getAllocatedCpuCores(queueStatus v2.QueueStatus) float64 {
-	allocated, ok := queueStatus.Allocated[v1.ResourceCPU]
+func getCpuCores(resources v1.ResourceList) float64 {
+	quantity, ok := resources[v1.ResourceCPU]
 	if !ok {
 		return 0
 	}
-	return roundResourceQuantity(allocated)
+	return roundResourceQuantity(quantity)
 }
 
-func getAllocatedMemoryBytes(queueStatus v2.QueueStatus) float64 {
-	allocated, ok := queueStatus.Allocated[v1.ResourceMemory]
+func getMemoryBytes(resources v1.ResourceList) float64 {
+	quantity, ok := resources[v1.ResourceMemory]
 	if !ok {
 		return 0
 	}
-	return roundResourceQuantity(allocated)
+	return roundResourceQuantity(quantity)
 }
 
 func roundResourceQuantity(quantity resource.Quantity) float64 {
@@ -290,4 +420,28 @@ func GetQueueAllocatedCPUMetric() *prometheus.GaugeVec {
 
 func GetQueueAllocatedMemoryMetric() *prometheus.GaugeVec {
 	return queueAllocatedMemory
+}
+
+func GetQueueAllocatedNonPreemptibleGPUsMetric() *prometheus.GaugeVec {
+	return queueAllocatedNonPreemptibleGpus
+}
+
+func GetQueueAllocatedNonPreemptibleCPUMetric() *prometheus.GaugeVec {
+	return queueAllocatedNonPreemptibleCpus
+}
+
+func GetQueueAllocatedNonPreemptibleMemoryMetric() *prometheus.GaugeVec {
+	return queueAllocatedNonPreemptibleMemory
+}
+
+func GetQueueRequestedGPUsMetric() *prometheus.GaugeVec {
+	return queueRequestedGpus
+}
+
+func GetQueueRequestedCPUMetric() *prometheus.GaugeVec {
+	return queueRequestedCpus
+}
+
+func GetQueueRequestedMemoryMetric() *prometheus.GaugeVec {
+	return queueRequestedMemory
 }

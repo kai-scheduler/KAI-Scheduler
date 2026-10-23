@@ -64,6 +64,9 @@ func (alloc *allocateAction) Execute(ssn *framework.Session) {
 			metrics.IncPodgroupScheduledByAction()
 			err := stmt.Commit()
 			if err == nil && !pipelined && !alreadyAllocated {
+				if job.LastStartTimestamp == nil {
+					observeFirstStartWait(ssn, job)
+				}
 				setLastStartTimestamp(job)
 			}
 			if err == nil && podgroup_info.HasTasksToAllocate(job, podgroup_info.RealTaskAllocation) {
@@ -110,6 +113,15 @@ func attemptToAllocateJob(ssn *framework.Session, stmt *framework.Statement, job
 	}
 
 	return true, pipelined
+}
+
+func observeFirstStartWait(ssn *framework.Session, job *podgroup_info.PodGroupInfo) {
+	queue, found := ssn.ClusterInfo.Queues[job.Queue]
+	if !found || job.CreationTimestamp.IsZero() {
+		return
+	}
+	metrics.ObservePodGroupFirstStartWait(queue.Name, string(queue.UID), queue.DisplayName,
+		time.Since(job.CreationTimestamp.Time))
 }
 
 func setLastStartTimestamp(job *podgroup_info.PodGroupInfo) {
