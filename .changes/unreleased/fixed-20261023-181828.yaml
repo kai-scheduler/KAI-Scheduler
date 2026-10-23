@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Keep NodeLocalGreedy elastic victims node-local
+custom:
+  Author: "parthivsaikia"
+  Issue: "2427"
