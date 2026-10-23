@@ -324,10 +324,8 @@ func MatchExpectedAndRealTasks(t *testing.T, testNumber int, testMetadata TestTo
 	}
 }
 
-// gpuGroupMatcher checks expected GPU group labels against the GPU group IDs the scheduler
-// assigned. Labels are placeholders: newly allocated groups get generated IDs, so a label
-// asserts which tasks share a GPU on a node, not the literal ID. A task with no expected labels
-// is not checked.
+// gpuGroupMatcher checks which tasks share a GPU on each node. Labels are placeholders, since new
+// groups get generated IDs; tasks without labels are skipped.
 type gpuGroupMatcher struct {
 	labelToGroup map[string]map[string]string
 	groupToLabel map[string]map[string]string
