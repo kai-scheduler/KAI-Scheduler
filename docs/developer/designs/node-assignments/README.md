@@ -48,7 +48,7 @@ Link to code or upstream docs instead of restating them at length.
 
 ## Design
 
-Provide a new API: a node label `kai.scheduler/queue` (key is configurable) that assigns a node to a queue. We will refer to this as a queue "owning" a node or a node being "assigned" to a queue. In the context of a owned node, we will refer to pods from its owner queue as "native" and to pods from other queues as "foreign".
+Provide a new API: a node label `kai.scheduler/assigned-queue` (key is configurable) that assigns a node to a queue. We will refer to this as a queue "owning" a node or a node being "assigned" to a queue. In the context of a owned node, we will refer to pods from its owner queue as "native" and to pods from other queues as "foreign".
 
 Native pods will score owned nodes higher than others, and will score foreign nodes lower. Non-preemptible pods will not be allowed to run on foreign nodes at all ("squat").
 
@@ -70,7 +70,7 @@ In large-scale clusters, it could make sense to implement a Scenario Generator t
 
 ### API
 
-The only new API surface is the assignment label: `kai.scheduler/queue` on nodes. At this stage, nodes can only be assigned to leaf queues.
+The only new API surface is the assignment label: `kai.scheduler/assigned-queue` on nodes. At this stage, nodes can only be assigned to leaf queues.
 
 ### Observability
 
@@ -95,7 +95,7 @@ Some designs list these as "Design Decisions" with the reasoning for each choice
 - Due to the lack of safeguards, it's the admin's responsibility to configure the cluster "correctly", and avoid misconfigurations, for example - not leaving enough unassigned nodes to handle the over-quota resources in the cluster
 - Misconfigurations should be indicated clearly to the admin when possible - for example, alerting on non-preemptible squatter pods
 - Semi-preemptible jobs will be considered non-preemptible for the purposes of this feature, since the "core pods" set can change and cause squatter pods
-
+- The owner queue can still fragment its own nodes with non-preemptible native pods - the node assignment does not attempt to prevent this kind of fragmentation
 
 ## Test Plan
 
@@ -115,6 +115,8 @@ As described in the doc:
 
 - Do we want to allow non-preemptible squatter pods to be evicted, even when non-preemptible?
 - Do we want preemptible squatter pods to be evicted, even when in-quota?
+- What about min-runtime guarantees? Do we consider protected pods as non-preemptible?
+- How significant should the node scoring be compared to other plugins? 
 
 ## Future Work
 
