@@ -1,0 +1,6 @@
+kind: Fixed
+body: Binder no longer panics on nil data when updating an existing GPU-sharing ConfigMap
+time: 2026-10-25T11:25:09.904609+02:00
+custom:
+    Author: SiorMeir
+    Issue: "2505"
