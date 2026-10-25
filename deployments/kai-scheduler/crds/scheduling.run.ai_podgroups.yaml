@@ -115,6 +115,12 @@ spec:
                   the PodGroup with individual scheduling constraints
                 items:
                   properties:
+                    core:
+                      description: |-
+                        Core marks this SubGroup as part of its parent's core (minimal satisfying set).
+                        Only meaningful when the PodGroup is semi-preemptible.
+                        The number of core SubGroups under one parent must not exceed that parent's effective minSubGroup.
+                      type: boolean
                     minMember:
                       description: |-
                         MinMember defines the minimal number of members to run this SubGroup;
