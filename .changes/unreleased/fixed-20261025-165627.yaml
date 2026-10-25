@@ -1,6 +1,0 @@
-kind: Fixed
-body: |-
-  Bump mongo-driver to v2.9.2 and klauspost/compress to v1.20.3 to fix CVEs
-custom:
-  Author: "SiorMeir"
-  Issue: "2509"
