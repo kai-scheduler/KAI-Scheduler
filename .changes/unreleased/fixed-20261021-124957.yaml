@@ -1,6 +1,0 @@
-kind: Fixed
-body: |-
-  Clarified the `total_preemption_attempts` metric description: it counts preemptions the scheduler started (victims evicted, preemptor pipelined), not failed attempts
-custom:
-  Author: "Thezone-1"
-  Issue: "2053"
