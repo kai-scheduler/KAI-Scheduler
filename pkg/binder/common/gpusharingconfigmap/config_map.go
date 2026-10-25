@@ -97,6 +97,9 @@ func patchConfigMap(
 		updatedConfigMap := existingConfigMap.DeepCopy()
 		for k, v := range desiredConfigMap.Data {
 			if len(v) != 0 {
+				if updatedConfigMap.Data == nil {
+					updatedConfigMap.Data = map[string]string{}
+				}
 				updatedConfigMap.Data[k] = v
 			}
 		}
