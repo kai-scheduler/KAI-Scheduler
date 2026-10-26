@@ -113,6 +113,7 @@ type Session struct {
 	mux             *http.ServeMux
 
 	k8sResourceStateCache  sync.Map
+	views                  clusterViews
 	nodeScoringPool        *ants.Pool
 	scoringPoolWorkerCount int
 }
@@ -232,7 +233,15 @@ func (ssn *Session) sortGPUs(filteredGPUs []string, pod *pod_info.PodInfo, node 
 	return sortedGPUs
 }
 
-func (ssn *Session) FittingNode(task *pod_info.PodInfo, node *node_info.NodeInfo, writeFittingDelta bool) bool {
+// FittingNode reports whether the task fits the node, and whether it fits only once the cluster's
+// terminating pods are gone, in which case the task must be pipelined rather than bound.
+// A pipeline-only allocation evaluates predicates against the future view. A real allocation
+// evaluates them against the current view first, and falls back to the future view only where
+// terminating pods can change the result.
+func (ssn *Session) FittingNode(
+	task *pod_info.PodInfo, node *node_info.NodeInfo, isPipelineOnly bool,
+) (fits bool, pipelineOnly bool) {
+	writeFittingDelta := !isPipelineOnly
 	var fitErrors *common_info.TasksFitErrors
 	if writeFittingDelta {
 		fitErrors = common_info.NewFitErrors()
@@ -250,25 +259,43 @@ func (ssn *Session) FittingNode(task *pod_info.PodInfo, node *node_info.NodeInfo
 			fitErrors.AddNodeError(fitError)
 			job.AddTaskFitErrors(task, fitErrors)
 		}
-		return false
+		return false, false
 	}
 
 	log.InfraLogger.V(6).Do(func() {
 		log.InfraLogger.Infof("Running predicates for task <%v/%v> on node <%v>",
 			task.Namespace, task.Name, node.Name)
 	})
-	if err := ssn.PredicateFn(task, job, node); err != nil {
-		log.InfraLogger.V(6).Do(func() {
-			log.InfraLogger.Infof("Predicates failed for task <%s/%s> on node <%s>: %v",
-				task.Namespace, task.Name, node.Name, err)
-		})
-		if writeFittingDelta {
-			fitErrors.AddNodeError(err)
-			job.AddTaskFitErrors(task, fitErrors)
+	if isPipelineOnly {
+		if err := ssn.PredicateFn(task, job, node, ssn.FutureClusterView()); err != nil {
+			logPredicateFailure(task, node, err)
+			return false, false
 		}
-		return false
+		return true, true
 	}
-	return true
+
+	err := ssn.PredicateFn(task, job, node, ssn.CurrentClusterView())
+	if err == nil {
+		return true, false
+	}
+	logPredicateFailure(task, node, err)
+	if ssn.futureMayDiffer(task, node) && ssn.PredicateFn(task, job, node, ssn.FutureClusterView()) == nil {
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof("Task <%s/%s> fits node <%s> once the terminating pods are gone",
+				task.Namespace, task.Name, node.Name)
+		})
+		return true, true
+	}
+	fitErrors.AddNodeError(err)
+	job.AddTaskFitErrors(task, fitErrors)
+	return false, false
+}
+
+func logPredicateFailure(task *pod_info.PodInfo, node *node_info.NodeInfo, err error) {
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("Predicates failed for task <%s/%s> on node <%s>: %v",
+			task.Namespace, task.Name, node.Name, err)
+	})
 }
 
 // OrderedNodesByTask scores nodes for a task and returns them in order of their scores
@@ -361,7 +388,7 @@ func (ssn *Session) RecomputeDetailedFitErrors(
 			}
 			continue
 		}
-		if err := ssn.PredicateFn(task, job, node); err != nil {
+		if err := ssn.PredicateFn(task, job, node, ssn.CurrentClusterView()); err != nil {
 			if fitError := taskFitErrorFromError(task, node, err); fitError != nil {
 				nodeErrors = append(nodeErrors, fitError)
 			}

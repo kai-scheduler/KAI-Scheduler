@@ -1477,7 +1477,7 @@ func Test_predicatesPlugin_evaluateTaskOnPredicates(t *testing.T) {
 			node := nodesMap[tt.args.nodeName]
 
 			if err := pp.evaluateTaskOnPredicates(
-				task, job, node, tt.args.k8sPredicates,
+				task, job, node, ssn.CurrentClusterView(), tt.args.k8sPredicates,
 				tt.args.isNonPreemptableTaskOnNodeOverCapacityFn,
 				tt.clusterData.isRestrictNodeSchedulingEnabled,
 				skipPredicates,

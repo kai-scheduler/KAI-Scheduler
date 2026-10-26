@@ -19,6 +19,7 @@ import (
 
 	featuregates "github.com/kai-scheduler/KAI-scheduler/pkg/common/feature_gates"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/k8s_utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
@@ -223,7 +224,9 @@ func (drap *draPlugin) preFilter(task *pod_info.PodInfo, job *podgroup_info.PodG
 	return nil
 }
 
-func (drap *draPlugin) filter(task *pod_info.PodInfo, _ *podgroup_info.PodGroupInfo, nodeInfo *node_info.NodeInfo) error {
+func (drap *draPlugin) filter(
+	task *pod_info.PodInfo, _ *podgroup_info.PodGroupInfo, nodeInfo *node_info.NodeInfo, view api.ClusterView,
+) error {
 	pod := task.Pod
 
 	hasDRAExtResources := task.ExtendedResourceClaim != nil
@@ -276,28 +279,7 @@ func (drap *draPlugin) filter(task *pod_info.PodInfo, _ *podgroup_info.PodGroupI
 		return nil
 	}
 
-	allocatedState, err := drap.manager.ResourceClaims().GatherAllocatedState()
-	if err != nil {
-		return fmt.Errorf("failed to gather allocated device state: %v", err)
-	}
-
-	slices, err := drap.manager.ResourceSlices().ListWithDeviceTaintRules()
-	if err != nil {
-		return fmt.Errorf("failed to list resource slices: %v", err)
-	}
-
-	allocator, err := structured.NewAllocator(
-		context.Background(), drap.allocatorFeatures,
-		*allocatedState,
-		drap.manager.DeviceClasses(),
-		slices,
-		drap.celCache,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create allocator: %v", err)
-	}
-
-	results, err := allocator.Allocate(context.Background(), nodeInfo.Node, claimsToAllocate)
+	results, err := drap.allocate(view, pod, nodeInfo.Node, claimsToAllocate)
 	if err != nil {
 		return fmt.Errorf("cannot allocate DRA claims on node %s: %v", nodeInfo.Name, err)
 	}
@@ -348,9 +330,10 @@ func (drap *draPlugin) allocateHandlerFn(ssn *framework.Session) func(event *fra
 		nodeName := event.Task.NodeName
 		node := ssn.ClusterInfo.Nodes[nodeName].Node
 		nodeInfo := ssn.ClusterInfo.Nodes[nodeName]
+		view := ssn.ClusterViewFor(event.Task)
 
 		for _, podClaim := range pod.Spec.ResourceClaims {
-			err := drap.allocateResourceClaim(event.Task, &podClaim, node)
+			err := drap.allocateResourceClaim(view, event.Task, &podClaim, node)
 			if err != nil {
 				log.InfraLogger.Errorf("Failed to allocate resource claim %s for pod %s/%s: %v", podClaim.Name, pod.Namespace, pod.Name, err)
 				continue
@@ -358,14 +341,16 @@ func (drap *draPlugin) allocateHandlerFn(ssn *framework.Session) func(event *fra
 		}
 
 		if event.Task.ExtendedResourceClaim != nil {
-			if err := drap.allocateExtendedResourceClaim(event.Task, node, nodeInfo); err != nil {
+			if err := drap.allocateExtendedResourceClaim(view, event.Task, node, nodeInfo); err != nil {
 				log.InfraLogger.Errorf("Failed to allocate extended resource claim for pod %s/%s: %v", pod.Namespace, pod.Name, err)
 			}
 		}
 	}
 }
 
-func (drap *draPlugin) allocateExtendedResourceClaim(task *pod_info.PodInfo, node *v1.Node, nodeInfo *node_info.NodeInfo) error {
+func (drap *draPlugin) allocateExtendedResourceClaim(
+	view api.ClusterView, task *pod_info.PodInfo, node *v1.Node, nodeInfo *node_info.NodeInfo,
+) error {
 	extResources := podExtendedResourcesNeedingDRA(task, nodeInfo, drap.deviceClassByResource)
 	if len(extResources) == 0 {
 		// Device-plugin handles the resource on this node; no DRA allocation needed.
@@ -378,7 +363,7 @@ func (drap *draPlugin) allocateExtendedResourceClaim(task *pod_info.PodInfo, nod
 	specialClaim := buildSpecialClaim(task.Pod)
 	specialClaim.Spec.Devices.Requests = deviceRequests
 
-	results, err := drap.allocate(node, []*resourceapi.ResourceClaim{specialClaim})
+	results, err := drap.allocate(view, task.Pod, node, []*resourceapi.ResourceClaim{specialClaim})
 	if err != nil || len(results) == 0 {
 		return fmt.Errorf("failed to allocate extended resources on node %s: %v", node.Name, err)
 	}
@@ -422,8 +407,10 @@ func (drap *draPlugin) deallocateHandlerFn(_ *framework.Session) func(event *fra
 
 func (drap *draPlugin) OnSessionClose(_ *framework.Session) {}
 
-func (drap *draPlugin) allocate(node *v1.Node, claims []*resourceapi.ResourceClaim) ([]resourceapi.AllocationResult, error) {
-	allocatedState, err := drap.manager.ResourceClaims().GatherAllocatedState()
+func (drap *draPlugin) allocate(
+	view api.ClusterView, pod *v1.Pod, node *v1.Node, claims []*resourceapi.ResourceClaim,
+) ([]resourceapi.AllocationResult, error) {
+	allocatedState, err := view.DRAAllocatedState(pod)
 	if err != nil {
 		return nil, fmt.Errorf("failed to gather allocated device state: %v", err)
 	}
@@ -444,7 +431,9 @@ func (drap *draPlugin) allocate(node *v1.Node, claims []*resourceapi.ResourceCla
 	return allocator.Allocate(context.Background(), node, claims)
 }
 
-func (drap *draPlugin) allocateResourceClaim(task *pod_info.PodInfo, podClaim *v1.PodResourceClaim, node *v1.Node) error {
+func (drap *draPlugin) allocateResourceClaim(
+	view api.ClusterView, task *pod_info.PodInfo, podClaim *v1.PodResourceClaim, node *v1.Node,
+) error {
 	claimName, err := resources.GetResourceClaimName(task.Pod, podClaim)
 	if err != nil {
 		return err
@@ -467,7 +456,7 @@ func (drap *draPlugin) allocateResourceClaim(task *pod_info.PodInfo, podClaim *v
 	}
 
 	if claim.Status.Allocation == nil {
-		result, err := drap.allocate(node, []*resourceapi.ResourceClaim{claim})
+		result, err := drap.allocate(view, task.Pod, node, []*resourceapi.ResourceClaim{claim})
 		if err != nil {
 			return fmt.Errorf("failed to allocate resources: %v", err)
 		}
