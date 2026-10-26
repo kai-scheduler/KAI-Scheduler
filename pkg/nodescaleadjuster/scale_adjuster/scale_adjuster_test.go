@@ -177,7 +177,7 @@ var _ = Describe("Scale Adjuster Test Suite", func() {
 			},
 		),
 		Entry(
-			"legacy scaling pod lookup fails - do not create duplicates",
+			"legacy scaling pod lookup fails - continue with other pods",
 			testData{
 				unschedulablePods: []*corev1.Pod{
 					testutils.CreateUnschedulableFractionPod("train-worker", "team", "0.7", 1),
@@ -188,6 +188,7 @@ var _ = Describe("Scale Adjuster Test Suite", func() {
 					{namespace: "team", name: "train-worker"},
 					{namespace: "team-train", name: "worker"},
 					{namespace: testutils.ScalingPodNamespace, name: "team-train-worker", numDevices: ptr.To(int64(1))},
+					{namespace: testutils.ScalingPodNamespace, name: "scaling.team-train.worker", numDevices: ptr.To(int64(2))},
 				},
 				interceptFuncs: &interceptor.Funcs{
 					Get: func(ctx context.Context, client runtimeClient.WithWatch, key runtimeClient.ObjectKey,
@@ -199,7 +200,7 @@ var _ = Describe("Scale Adjuster Test Suite", func() {
 						return client.Get(ctx, key, obj, opts...)
 					},
 				},
-				wantErr: true,
+				wantErr: false,
 			},
 		),
 		Entry(

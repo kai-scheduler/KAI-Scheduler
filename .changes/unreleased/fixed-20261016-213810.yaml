@@ -3,4 +3,4 @@ body: |-
   Avoid scaling pod name collisions across namespaces while recognizing existing scaling pods
 custom:
   Author: "spicysharkco"
-  Issue: ""
+  Issue: "2439"
