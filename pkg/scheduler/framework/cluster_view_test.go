@@ -47,15 +47,13 @@ func TestFutureClusterViewK8sNodeInfo(t *testing.T) {
 			byNode: map[string][]*pod_info.PodInfo{"node0": {{Name: "terminating", Namespace: "test", Pod: terminating}}},
 			uids:   sets.New[types.UID]("terminating"),
 		},
-		nodes: map[string]futureNode{},
 	}
 
 	future := view.K8sNodeInfo(nodeInfo)
 	assert.Empty(t, podNames(future))
 	assert.Empty(t, future.UsedPorts)
 	assert.Equal(t, []string{"terminating"}, podNames(liveK8sNodeInfo(nodeInfo)), "the live node is not changed")
-	assert.Same(t, future, view.K8sNodeInfo(nodeInfo), "reused while the node is unchanged")
 
 	affinityInfo.AddPod(hostPortPod("pipelined", 9090))
-	assert.Equal(t, []string{"pipelined"}, podNames(view.K8sNodeInfo(nodeInfo)), "recomputed after the session changes the node")
+	assert.Equal(t, []string{"pipelined"}, podNames(view.K8sNodeInfo(nodeInfo)), "reflects the session's changes to the node")
 }

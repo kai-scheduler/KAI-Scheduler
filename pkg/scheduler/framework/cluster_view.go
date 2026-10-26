@@ -62,11 +62,9 @@ func (ssn *Session) clusterViews() *clusterViews {
 		ssn.views.terminating = newTerminatingPods(ssn)
 		ssn.views.current = &currentClusterView{ssn: ssn}
 		ssn.views.future = &futureClusterView{
-			ssn:              ssn,
-			terminating:      ssn.views.terminating,
-			preFilterRemoves: preFilterRemovers(ssn),
-			nodes:            map[string]futureNode{},
-			states:           map[types.UID]futureState{},
+			ssn:         ssn,
+			terminating: ssn.views.terminating,
+			podAffinity: podAffinityExtensions(ssn),
 		}
 	})
 	return &ssn.views
@@ -165,69 +163,29 @@ func (v *currentClusterView) DRAAllocatedState(pod *v1.Pod) (*structured.Allocat
 }
 
 type futureClusterView struct {
-	ssn              *Session
-	terminating      *terminatingPods
-	preFilterRemoves []preFilterRemover
-
-	mutex  sync.Mutex
-	nodes  map[string]futureNode
-	states map[types.UID]futureState
+	ssn         *Session
+	terminating *terminatingPods
+	// podAffinity removes a pod from the inter-pod affinity prefilter state, as kube-scheduler
+	// does when it evaluates preemption victims.
+	podAffinity ksf.PreFilterExtensions
 }
 
-type futureNode struct {
-	liveGeneration int64
-	nodeInfo       *k8sframework.NodeInfo
-}
-
-type futureState struct {
-	sources []ksf.StateData
-	state   k8s_internal.SessionState
-}
-
-// preFilterRemover removes a pod from a k8s plugin's prefilter state, as kube-scheduler does when
-// it evaluates preemption victims.
-type preFilterRemover struct {
-	stateKey   ksf.StateKey
-	extensions ksf.PreFilterExtensions
-}
-
-func preFilterRemovers(ssn *Session) []preFilterRemover {
-	if ssn.Cache == nil {
+func podAffinityExtensions(ssn *Session) ksf.PreFilterExtensions {
+	if ssn.Cache == nil || ssn.InternalK8sPlugins() == nil {
 		return nil
 	}
-	k8sPlugins := ssn.InternalK8sPlugins()
-	if k8sPlugins == nil {
-		return nil
+	if plugin, ok := ssn.InternalK8sPlugins().PodAffinity.(ksf.PreFilterPlugin); ok {
+		return plugin.PreFilterExtensions()
 	}
-	var removers []preFilterRemover
-	for _, plugin := range []ksf.Plugin{k8sPlugins.NodePorts, k8sPlugins.TaintToleration,
-		k8sPlugins.NodeAffinity, k8sPlugins.PodAffinity, k8sPlugins.VolumeBinding} {
-		preFilter, ok := plugin.(ksf.PreFilterPlugin)
-		if !ok || preFilter.PreFilterExtensions() == nil {
-			continue
-		}
-		// In-tree plugins store their prefilter state under "PreFilter" + their name.
-		removers = append(removers, preFilterRemover{
-			stateKey:   ksf.StateKey("PreFilter" + plugin.Name()),
-			extensions: preFilter.PreFilterExtensions(),
-		})
-	}
-	return removers
+	return nil
 }
 
-// K8sNodeInfo returns the node without its terminating pods. The copy is kept until the session
-// changes the node's pods.
+// K8sNodeInfo returns a copy of the node without its terminating pods.
 func (v *futureClusterView) K8sNodeInfo(node *node_info.NodeInfo) *k8sframework.NodeInfo {
 	live := liveK8sNodeInfo(node)
 	terminating := v.terminating.byNode[node.Name]
 	if len(terminating) == 0 {
 		return live
-	}
-
-	v.mutex.Lock()
-	defer v.mutex.Unlock()
-	if cached, found := v.nodes[node.Name]; found && cached.liveGeneration == live.Generation {
-		return cached.nodeInfo
 	}
 	nodeInfo := live.SnapshotConcrete()
 	for _, task := range terminating {
@@ -236,52 +194,17 @@ func (v *futureClusterView) K8sNodeInfo(node *node_info.NodeInfo) *k8sframework.
 				task.Namespace, task.Name, node.Name, err)
 		}
 	}
-	v.nodes[node.Name] = futureNode{liveGeneration: live.Generation, nodeInfo: nodeInfo}
 	return nodeInfo
 }
 
-// CycleState returns the pod's prefilter state without the terminating pods of the whole cluster.
-// Affinity counts are aggregated per topology domain, so a terminating pod on another node of the
-// candidate's rack matters as much as one on the candidate. The adjusted data is derived once per
-// prefilter run of the pod; everything else is read from the live state.
+// CycleState returns a copy of the pod's prefilter state without the terminating pods of the
+// whole cluster. Affinity counts are aggregated per topology domain, so a terminating pod on
+// another node of the candidate's rack matters as much as one on the candidate.
 func (v *futureClusterView) CycleState(pod *v1.Pod) k8s_internal.SessionState {
 	state := v.ssn.GetSessionStateForResource(pod.UID)
-	if !v.terminating.mayChangeAffinity(pod) || len(v.preFilterRemoves) == 0 {
+	if v.podAffinity == nil || !v.terminating.mayChangeAffinity(pod) {
 		return state
 	}
-	sources := make([]ksf.StateData, len(v.preFilterRemoves))
-	hasSource := false
-	for i, remover := range v.preFilterRemoves {
-		if data, err := state.Read(remover.stateKey); err == nil {
-			sources[i] = data
-			hasSource = true
-		}
-	}
-	if !hasSource {
-		return state
-	}
-
-	v.mutex.Lock()
-	defer v.mutex.Unlock()
-	if cached, found := v.states[pod.UID]; found && sameStateData(cached.sources, sources) {
-		return cached.state
-	}
-	overrides, err := v.withoutTerminatingPods(pod, state, sources)
-	if err != nil {
-		log.InfraLogger.V(4).Infof("Failed to remove terminating pods from the prefilter state of %s/%s: %v",
-			pod.Namespace, pod.Name, err)
-		return state
-	}
-	overlay := &overlayCycleState{CycleState: state, overrides: overrides}
-	v.states[pod.UID] = futureState{sources: sources, state: overlay}
-	return overlay
-}
-
-// withoutTerminatingPods returns the prefilter data of the plugins with extensions, with the
-// terminating pods removed.
-func (v *futureClusterView) withoutTerminatingPods(
-	pod *v1.Pod, state k8s_internal.SessionState, sources []ksf.StateData,
-) (map[ksf.StateKey]ksf.StateData, error) {
 	derived := state.Clone()
 	for nodeName := range v.terminating.byNode {
 		node, found := v.ssn.ClusterInfo.Nodes[nodeName]
@@ -293,54 +216,13 @@ func (v *futureClusterView) withoutTerminatingPods(
 			if !v.terminating.uids.Has(podInfo.GetPod().UID) {
 				continue
 			}
-			for i, remover := range v.preFilterRemoves {
-				if sources[i] == nil {
-					continue
-				}
-				status := remover.extensions.RemovePod(context.Background(), derived, pod, podInfo, nodeInfo)
-				if !status.IsSuccess() {
-					return nil, status.AsError()
-				}
+			// Fails when the prefilter was skipped: the pod has no affinity terms to adjust.
+			if status := v.podAffinity.RemovePod(context.Background(), derived, pod, podInfo, nodeInfo); !status.IsSuccess() {
+				return state
 			}
 		}
 	}
-	overrides := map[ksf.StateKey]ksf.StateData{}
-	for i, remover := range v.preFilterRemoves {
-		if sources[i] == nil {
-			continue
-		}
-		data, err := derived.Read(remover.stateKey)
-		if err != nil {
-			return nil, err
-		}
-		overrides[remover.stateKey] = data
-	}
-	return overrides, nil
-}
-
-// overlayCycleState reads the overridden prefilter data, and everything else from the live state.
-type overlayCycleState struct {
-	ksf.CycleState
-	overrides map[ksf.StateKey]ksf.StateData
-}
-
-func (s *overlayCycleState) Read(key ksf.StateKey) (ksf.StateData, error) {
-	if data, found := s.overrides[key]; found {
-		return data, nil
-	}
-	return s.CycleState.Read(key)
-}
-
-func sameStateData(a, b []ksf.StateData) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
+	return derived
 }
 
 func (v *futureClusterView) DRAAllocatedState(pod *v1.Pod) (*structured.AllocatedState, error) {
