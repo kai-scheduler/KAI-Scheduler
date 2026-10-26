@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v0.16.14] - 2026-10-26
+
+### Fixed
+- Binder no longer panics on nil data when updating an existing GPU-sharing ConfigMap [#2505](https://github.com/kai-scheduler/KAI-Scheduler/issues/2505) [SiorMeir](https://github.com/SiorMeir)
+
 ## [v0.16.13] - 2026-10-22
 
 ### Fixed
