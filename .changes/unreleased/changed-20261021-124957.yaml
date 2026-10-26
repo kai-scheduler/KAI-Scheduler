@@ -1,6 +1,6 @@
 kind: Changed
 body: |-
-  Clarified the `total_preemption_attempts` metric description: it counts preemptions the scheduler started (victims evicted, preemptor pipelined), not failed attempts
+  Clarified the `total_preemption_attempts` metric description: it counts preemptions the scheduler started (victims evicted, preemptor not yet running), once per preemption
 custom:
   Author: "Thezone-1"
   Issue: "2053"
