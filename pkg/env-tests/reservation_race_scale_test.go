@@ -238,11 +238,18 @@ var _ = Describe("Reservation pod race at scale", Ordered, func() {
 				fmt.Sprintf("%s-shared-gpu", g.fractionPod.Name)
 			Expect(ctrlClient.Create(ctx, g.fractionPod)).To(Succeed())
 
+			configMapOwner := []metav1.OwnerReference{{
+				APIVersion: "v1",
+				Kind:       "Pod",
+				Name:       g.fractionPod.Name,
+				UID:        g.fractionPod.UID,
+			}}
 			configMapPrefix := g.fractionPod.Annotations[constants.GpuSharingConfigMapAnnotation]
 			capabilitiesConfigMap := &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      fmt.Sprintf("%s-0", configMapPrefix),
-					Namespace: testNamespace.Name,
+					Name:            fmt.Sprintf("%s-0", configMapPrefix),
+					Namespace:       testNamespace.Name,
+					OwnerReferences: configMapOwner,
 				},
 				Data: map[string]string{},
 			}
@@ -250,8 +257,9 @@ var _ = Describe("Reservation pod race at scale", Ordered, func() {
 
 			directEnvConfigMap := &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      fmt.Sprintf("%s-0-evar", configMapPrefix),
-					Namespace: testNamespace.Name,
+					Name:            fmt.Sprintf("%s-0-evar", configMapPrefix),
+					Namespace:       testNamespace.Name,
+					OwnerReferences: configMapOwner,
 				},
 				Data: map[string]string{},
 			}
