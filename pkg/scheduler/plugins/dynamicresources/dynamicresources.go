@@ -10,6 +10,8 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/component-helpers/scheduling/corev1/nodeaffinity"
 	"k8s.io/dynamic-resource-allocation/cel"
 	"k8s.io/dynamic-resource-allocation/deviceclass/extendedresourcecache"
@@ -21,6 +23,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/k8s_utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
@@ -40,6 +43,23 @@ type draPlugin struct {
 	allocatorFeatures     structured.Features
 	queueLabelKey         string
 	deviceClassByResource *extendedresourcecache.ExtendedResourceCache
+	// inFlightClaims mirrors, by claim UID, the claims this plugin signaled to the claim tracker as in-flight
+	// allocations: claims of binding pods whose allocation exists only in their BindRequest, and
+	// extended-resource claims allocated in this session, which have no API object.
+	// GatherAllocatedState counts their devices as allocated, but List returns these claims without their
+	// allocation, or not at all. The pipeline check walks the claims to find devices held by pods that are not
+	// terminating, including the pods these in-flight allocations were made for; without this map it would
+	// release their devices.
+	inFlightClaims map[types.UID]*resourceapi.ResourceClaim
+	// releasingDevices holds the devices related only to releasing pods.
+	// This list is filled lazily by a pipeline check in this session found held only by terminating pods on the checked node.
+	// Keeping them in a list allows us to avoid a mismatch between the tracker's device set and
+	// the allocated actual state that can happen on an unpipeline statement.
+	// A claim must stay allocated for strict checks, because the device really is still in use.
+	// The device is only removed from the computed state in pipeline mode.
+	// So the terminating claim and the pipelined claim hold the same device at the same time,
+	// which is the first case the tracker was never built for, and releasingDevices compensates for it.
+	releasingDevices sets.Set[structured.DeviceID]
 }
 
 // +kubebuilder:rbac:groups="resource.k8s.io",resources=deviceclasses;resourceslices;resourceclaims,verbs=get;list;watch
@@ -79,6 +99,8 @@ func (drap *draPlugin) Name() string {
 func (drap *draPlugin) OnSessionOpen(ssn *framework.Session) {
 	drap.queueLabelKey = ssn.SchedulerParams.QueueLabelKey
 	drap.deviceClassByResource = ssn.ClusterInfo.DeviceClassByResource
+	drap.inFlightClaims = map[types.UID]*resourceapi.ResourceClaim{}
+	drap.releasingDevices = sets.New[structured.DeviceID]()
 
 	k8sPlugins := ssn.InternalK8sPlugins()
 	if k8sPlugins != nil && k8sPlugins.ResourceSliceTracker != nil {
@@ -152,7 +174,7 @@ func (drap *draPlugin) assumePendingClaim(claim *schedulingv1alpha2.ResourceClai
 	resources.UpsertReservedFor(updatedClaim, pod)
 	updatedClaim.Status.Allocation = claim.Allocation
 
-	return drap.manager.ResourceClaims().SignalClaimPendingAllocation(updatedClaim.UID, updatedClaim)
+	return drap.signalClaimPendingAllocation(updatedClaim)
 }
 
 func (drap *draPlugin) preFilter(task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo) error {
@@ -223,7 +245,7 @@ func (drap *draPlugin) preFilter(task *pod_info.PodInfo, job *podgroup_info.PodG
 	return nil
 }
 
-func (drap *draPlugin) filter(task *pod_info.PodInfo, _ *podgroup_info.PodGroupInfo, nodeInfo *node_info.NodeInfo) error {
+func (drap *draPlugin) filter(task *pod_info.PodInfo, _ *podgroup_info.PodGroupInfo, nodeInfo *node_info.NodeInfo, isPipeline bool) error {
 	pod := task.Pod
 
 	hasDRAExtResources := task.ExtendedResourceClaim != nil
@@ -276,28 +298,7 @@ func (drap *draPlugin) filter(task *pod_info.PodInfo, _ *podgroup_info.PodGroupI
 		return nil
 	}
 
-	allocatedState, err := drap.manager.ResourceClaims().GatherAllocatedState()
-	if err != nil {
-		return fmt.Errorf("failed to gather allocated device state: %v", err)
-	}
-
-	slices, err := drap.manager.ResourceSlices().ListWithDeviceTaintRules()
-	if err != nil {
-		return fmt.Errorf("failed to list resource slices: %v", err)
-	}
-
-	allocator, err := structured.NewAllocator(
-		context.Background(), drap.allocatorFeatures,
-		*allocatedState,
-		drap.manager.DeviceClasses(),
-		slices,
-		drap.celCache,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create allocator: %v", err)
-	}
-
-	results, err := allocator.Allocate(context.Background(), nodeInfo.Node, claimsToAllocate)
+	results, err := drap.allocate(nodeInfo, claimsToAllocate, isPipeline)
 	if err != nil {
 		return fmt.Errorf("cannot allocate DRA claims on node %s: %v", nodeInfo.Name, err)
 	}
@@ -345,12 +346,12 @@ func (drap *draPlugin) allocateHandlerFn(ssn *framework.Session) func(event *fra
 	// we can add it to the reservedFor list and also call allocator if needed.
 	return func(event *framework.Event) {
 		pod := event.Task.Pod
-		nodeName := event.Task.NodeName
-		node := ssn.ClusterInfo.Nodes[nodeName].Node
-		nodeInfo := ssn.ClusterInfo.Nodes[nodeName]
+		nodeInfo := ssn.ClusterInfo.Nodes[event.Task.NodeName]
+		// This pipeline check works because the Statement always updates the status first and only then fires the event handlers.
+		isPipeline := event.Task.Status == pod_status.Pipelined
 
 		for _, podClaim := range pod.Spec.ResourceClaims {
-			err := drap.allocateResourceClaim(event.Task, &podClaim, node)
+			err := drap.allocateResourceClaim(event.Task, &podClaim, nodeInfo, isPipeline)
 			if err != nil {
 				log.InfraLogger.Errorf("Failed to allocate resource claim %s for pod %s/%s: %v", podClaim.Name, pod.Namespace, pod.Name, err)
 				continue
@@ -358,14 +359,14 @@ func (drap *draPlugin) allocateHandlerFn(ssn *framework.Session) func(event *fra
 		}
 
 		if event.Task.ExtendedResourceClaim != nil {
-			if err := drap.allocateExtendedResourceClaim(event.Task, node, nodeInfo); err != nil {
+			if err := drap.allocateExtendedResourceClaim(event.Task, nodeInfo, isPipeline); err != nil {
 				log.InfraLogger.Errorf("Failed to allocate extended resource claim for pod %s/%s: %v", pod.Namespace, pod.Name, err)
 			}
 		}
 	}
 }
 
-func (drap *draPlugin) allocateExtendedResourceClaim(task *pod_info.PodInfo, node *v1.Node, nodeInfo *node_info.NodeInfo) error {
+func (drap *draPlugin) allocateExtendedResourceClaim(task *pod_info.PodInfo, nodeInfo *node_info.NodeInfo, isPipeline bool) error {
 	extResources := podExtendedResourcesNeedingDRA(task, nodeInfo, drap.deviceClassByResource)
 	if len(extResources) == 0 {
 		// Device-plugin handles the resource on this node; no DRA allocation needed.
@@ -378,13 +379,13 @@ func (drap *draPlugin) allocateExtendedResourceClaim(task *pod_info.PodInfo, nod
 	specialClaim := buildSpecialClaim(task.Pod)
 	specialClaim.Spec.Devices.Requests = deviceRequests
 
-	results, err := drap.allocate(node, []*resourceapi.ResourceClaim{specialClaim})
+	results, err := drap.allocate(nodeInfo, []*resourceapi.ResourceClaim{specialClaim}, isPipeline)
 	if err != nil || len(results) == 0 {
-		return fmt.Errorf("failed to allocate extended resources on node %s: %v", node.Name, err)
+		return fmt.Errorf("failed to allocate extended resources on node %s: %v", nodeInfo.Name, err)
 	}
 
 	specialClaim.Status.Allocation = &results[0]
-	if err := drap.manager.ResourceClaims().SignalClaimPendingAllocation(specialClaim.UID, specialClaim); err != nil {
+	if err := drap.signalClaimPendingAllocation(specialClaim); err != nil {
 		log.InfraLogger.Warningf("Failed to signal pending allocation for extended resource claim of pod %s/%s: %v",
 			task.Namespace, task.Name, err)
 	}
@@ -413,7 +414,7 @@ func (drap *draPlugin) deallocateHandlerFn(_ *framework.Session) func(event *fra
 
 		if event.Task.ExtendedResourceClaim != nil {
 			if event.Task.ExtendedResourceClaim.UID != "" {
-				drap.manager.ResourceClaims().RemoveClaimPendingAllocation(event.Task.ExtendedResourceClaim.UID)
+				drap.removeClaimPendingAllocation(event.Task.ExtendedResourceClaim.UID)
 			}
 			event.Task.ExtendedResourceClaim = nil
 		}
@@ -422,10 +423,12 @@ func (drap *draPlugin) deallocateHandlerFn(_ *framework.Session) func(event *fra
 
 func (drap *draPlugin) OnSessionClose(_ *framework.Session) {}
 
-func (drap *draPlugin) allocate(node *v1.Node, claims []*resourceapi.ResourceClaim) ([]resourceapi.AllocationResult, error) {
-	allocatedState, err := drap.manager.ResourceClaims().GatherAllocatedState()
+func (drap *draPlugin) allocate(
+	nodeInfo *node_info.NodeInfo, claims []*resourceapi.ResourceClaim, isPipeline bool,
+) ([]resourceapi.AllocationResult, error) {
+	allocatedState, err := drap.gatherAllocatedState(nodeInfo, isPipeline)
 	if err != nil {
-		return nil, fmt.Errorf("failed to gather allocated device state: %v", err)
+		return nil, err
 	}
 	slices, err := drap.manager.ResourceSlices().ListWithDeviceTaintRules()
 	if err != nil {
@@ -441,10 +444,12 @@ func (drap *draPlugin) allocate(node *v1.Node, claims []*resourceapi.ResourceCla
 	if err != nil {
 		return nil, fmt.Errorf("failed to create allocator: %v", err)
 	}
-	return allocator.Allocate(context.Background(), node, claims)
+	return allocator.Allocate(context.Background(), nodeInfo.Node, claims)
 }
 
-func (drap *draPlugin) allocateResourceClaim(task *pod_info.PodInfo, podClaim *v1.PodResourceClaim, node *v1.Node) error {
+func (drap *draPlugin) allocateResourceClaim(
+	task *pod_info.PodInfo, podClaim *v1.PodResourceClaim, nodeInfo *node_info.NodeInfo, isPipeline bool,
+) error {
 	claimName, err := resources.GetResourceClaimName(task.Pod, podClaim)
 	if err != nil {
 		return err
@@ -467,7 +472,7 @@ func (drap *draPlugin) allocateResourceClaim(task *pod_info.PodInfo, podClaim *v
 	}
 
 	if claim.Status.Allocation == nil {
-		result, err := drap.allocate(node, []*resourceapi.ResourceClaim{claim})
+		result, err := drap.allocate(nodeInfo, []*resourceapi.ResourceClaim{claim}, isPipeline)
 		if err != nil {
 			return fmt.Errorf("failed to allocate resources: %v", err)
 		}

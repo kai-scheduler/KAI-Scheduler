@@ -36,7 +36,23 @@ func AllocateJob(ssn *framework.Session, stmt *framework.Statement, nodes []*nod
 		}
 		return false
 	}
-	return allocateSubGroupSet(ssn, stmt, nodes, job, job.RootSubGroupSet, tasksToAllocate, isPipelineOnly)
+
+	fitErrorsBefore := len(job.JobFitErrors)
+	allocateResult := allocateSubGroupSet(ssn, stmt, nodes, job, job.RootSubGroupSet, tasksToAllocate, isPipelineOnly)
+	if allocateResult || isPipelineOnly {
+		return allocateResult
+	}
+
+	// Real allocation already recorded why the job cannot bind. The pipeline retry must not append
+	// another copy, and a successful pipeline drops that failed-bind explanation.
+	fitErrorsAfterReal := append([]common_info.JobFitError(nil), job.JobFitErrors...)
+	pipelined := allocateSubGroupSet(ssn, stmt, nodes, job, job.RootSubGroupSet, tasksToAllocate, true)
+	if pipelined {
+		job.JobFitErrors = job.JobFitErrors[:fitErrorsBefore]
+	} else {
+		job.JobFitErrors = fitErrorsAfterReal
+	}
+	return pipelined
 }
 
 func allocateSubGroupSet(ssn *framework.Session, stmt *framework.Statement, nodes []*node_info.NodeInfo,
@@ -141,7 +157,10 @@ func allocateTasksOnNodeSet(ssn *framework.Session, stmt *framework.Statement, n
 	for index, task := range tasksToAllocate {
 		success := allocateTask(ssn, stmt, nodes, task, isPipelineOnly)
 		if !success {
-			handleFailedTaskAllocation(job, task, index)
+			// A pipeline attempt reuses fit errors from the real allocation and must not record them again.
+			if !isPipelineOnly {
+				handleFailedTaskAllocation(job, task, index)
+			}
 			return false
 		}
 	}
@@ -175,7 +194,7 @@ func allocateTask(ssn *framework.Session, stmt *framework.Statement, nodes []*no
 
 	orderedNodes := ssn.OrderedNodesByTask(nodes, task)
 	for _, node := range orderedNodes {
-		if !ssn.FittingNode(task, node, !isPipelineOnly) {
+		if !ssn.FittingNode(task, node, isPipelineOnly) {
 			continue
 		}
 		success = allocateTaskToNode(ssn, stmt, task, node, isPipelineOnly)

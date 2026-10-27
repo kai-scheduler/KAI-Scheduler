@@ -41,7 +41,8 @@ type SessionPredicate struct {
 	IsPreFilterRequired FitPredicateRequired
 	PreFilter           FitPredicatePreFilter
 	IsFilterRequired    FitPredicateRequired
-	Filter              FitPredicateFilter
+	IsAllocatable       FitPredicateFilter
+	IsPipelineable      FitPredicateFilter
 }
 
 type PreScoreFn func(pod *v1.Pod, fittingNodes []ksf.NodeInfo) *ksf.Status
