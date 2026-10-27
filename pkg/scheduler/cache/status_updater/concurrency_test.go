@@ -6,6 +6,7 @@ package status_updater
 import (
 	"context"
 	"errors"
+	"net/http"
 	"strconv"
 	"sync"
 	"testing"
@@ -16,6 +17,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -243,5 +245,94 @@ var _ = Describe("Status Updater Concurrency - large scale: increase queue size"
 
 		_, inFlightExists := statusUpdater.inFlightPods.Load(key)
 		Expect(inFlightExists).To(BeFalse(), "In-flight update should be dropped after NotFound error")
+	})
+
+	Context("updatePodGroup - status patch", func() {
+		var (
+			snapshot   *enginev2alpha2.PodGroup
+			updateData *inflightUpdate
+			key        updatePayloadKey
+		)
+
+		BeforeEach(func() {
+			stored := &enginev2alpha2.PodGroup{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pg",
+					Namespace: "test-ns",
+					UID:       "test-uid",
+					Labels:    map[string]string{nodePoolLabelKey: "pool-a"},
+				},
+				Status: enginev2alpha2.PodGroupStatus{
+					ResourcesStatus: enginev2alpha2.PodGroupResourcesStatus{
+						Allocated: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1")},
+					},
+				},
+			}
+			_, err := kubeAiSchedClient.SchedulingV2alpha2().PodGroups(stored.Namespace).Create(
+				context.Background(), stored, metav1.CreateOptions{})
+			Expect(err).To(Succeed())
+
+			snapshot = stored.DeepCopy()
+			oldStatus := snapshot.Status
+			Expect(setPodGroupSchedulingCondition(snapshot, &enginev2alpha2.SchedulingCondition{
+				Type:     enginev2alpha2.UnschedulableOnNodePool,
+				NodePool: "pool-a",
+				Reason:   "test",
+				Message:  "test",
+				Status:   v1.ConditionTrue,
+			})).To(BeTrue())
+			statusPatch, err := getPodGroupStatusPatch(snapshot, oldStatus, nodePoolLabelKey)
+			Expect(err).To(Succeed())
+
+			key = statusUpdater.keyForPodGroupPayload(snapshot.Name, snapshot.Namespace, snapshot.UID)
+			updateData = &inflightUpdate{object: snapshot, updateStatus: true, statusPatch: statusPatch}
+			statusUpdater.inFlightPodGroups.Store(key, updateData)
+		})
+
+		It("keeps a status write made after the snapshot", func() {
+			podGroups := kubeAiSchedClient.SchedulingV2alpha2().PodGroups(snapshot.Namespace)
+			live, err := podGroups.Get(context.Background(), snapshot.Name, metav1.GetOptions{})
+			Expect(err).To(Succeed())
+			live.Status.ResourcesStatus.Allocated = v1.ResourceList{v1.ResourceCPU: resource.MustParse("2")}
+			_, err = podGroups.UpdateStatus(context.Background(), live, metav1.UpdateOptions{})
+			Expect(err).To(Succeed())
+
+			statusUpdater.updatePodGroup(context.Background(), key, updateData)
+
+			updated, err := podGroups.Get(context.Background(), snapshot.Name, metav1.GetOptions{})
+			Expect(err).To(Succeed())
+			Expect(updated.Status.SchedulingConditions).To(HaveLen(1))
+			Expect(updated.Status.SchedulingConditions[0].NodePool).To(Equal("pool-a"))
+			Expect(updated.Status.ResourcesStatus.Allocated[v1.ResourceCPU]).To(Equal(resource.MustParse("2")))
+			_, appliedExists := statusUpdater.appliedPodGroupUpdates.Load(key)
+			Expect(appliedExists).To(BeTrue())
+		})
+
+		It("falls back to update when the patch test fails", func() {
+			updateStatusCalls := 0
+			kubeAiSchedClient.SchedulingV2alpha2().(*fakeschedulingv2alpha2.FakeSchedulingV2alpha2).PrependReactor(
+				"patch", "podgroups", func(action faketesting.Action) (handled bool, ret runtime.Object, err error) {
+					return true, nil, apierrors.NewGenericServerResponse(http.StatusUnprocessableEntity, "patch",
+						schema.GroupResource{Group: "scheduling.run.ai", Resource: "podgroups"}, "test-pg",
+						"testing value /status/schedulingConditions failed", 0, false)
+				},
+			)
+			kubeAiSchedClient.SchedulingV2alpha2().(*fakeschedulingv2alpha2.FakeSchedulingV2alpha2).PrependReactor(
+				"update", "podgroups", func(action faketesting.Action) (handled bool, ret runtime.Object, err error) {
+					updateStatusCalls++
+					return true, nil, apierrors.NewConflict(
+						schema.GroupResource{Group: "scheduling.run.ai", Resource: "podgroups"}, "test-pg",
+						errors.New("the object has been modified"))
+				},
+			)
+
+			statusUpdater.updatePodGroup(context.Background(), key, updateData)
+
+			Expect(updateStatusCalls).To(Equal(1))
+			_, inFlightExists := statusUpdater.inFlightPodGroups.Load(key)
+			Expect(inFlightExists).To(BeFalse())
+			_, appliedExists := statusUpdater.appliedPodGroupUpdates.Load(key)
+			Expect(appliedExists).To(BeFalse())
+		})
 	})
 })
