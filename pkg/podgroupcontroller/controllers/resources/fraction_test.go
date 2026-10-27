@@ -5,7 +5,6 @@ package resources
 
 import (
 	"context"
-	"reflect"
 	"testing"
 
 	v1 "k8s.io/api/core/v1"
@@ -15,6 +14,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/kai-scheduler/api/constants"
+	"github.com/kai-scheduler/api/utilities/resources"
 )
 
 func Test_getReceivedFraction(t *testing.T) {
@@ -34,6 +34,40 @@ func Test_getReceivedFraction(t *testing.T) {
 			},
 			nil,
 			resource.MustParse("0.4"),
+			false,
+		},
+		{
+			"Direct fraction request on multiple devices",
+			&v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						constants.GpuFraction:            "0.5",
+						constants.GpuFractionsNumDevices: "2",
+					},
+				},
+			},
+			nil,
+			resource.MustParse("1"),
+			false,
+		},
+		{
+			"NvFractions memory request on multiple devices + Nvidia node",
+			&v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						resources.CalcGpuFractionAnnotationForContainer("main"): "2000Mi",
+						constants.GpuFractionsNumDevices:                        "2",
+					},
+				},
+				Spec: v1.PodSpec{NodeName: "n1", Containers: []v1.Container{{Name: "main"}}},
+			},
+			&v1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "n1",
+					Labels: map[string]string{constants.NvidiaGpuMemory: "4000"},
+				},
+			},
+			resource.MustParse("1"),
 			false,
 		},
 		{
@@ -134,7 +168,7 @@ func Test_getReceivedFraction(t *testing.T) {
 				t.Errorf("calculateAllocatedFraction() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if !reflect.DeepEqual(got, tt.want) {
+			if got.Cmp(tt.want) != 0 {
 				t.Errorf("calculateAllocatedFraction() got = %v, want %v", got, tt.want)
 			}
 		})
