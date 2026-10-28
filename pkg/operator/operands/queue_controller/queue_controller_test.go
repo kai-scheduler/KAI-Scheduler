@@ -71,6 +71,29 @@ var _ = Describe("QueueController", func() {
 				))
 			})
 
+			It("should bind the metrics listener to the service target port", func(ctx context.Context) {
+				kaiConfig.Spec.QueueController.ControllerService.Metrics.Port = ptr.To(8080)
+				kaiConfig.Spec.QueueController.ControllerService.Metrics.TargetPort = ptr.To(9090)
+
+				objects, err := qc.DesiredState(ctx, fakeKubeClient, kaiConfig)
+				Expect(err).To(BeNil())
+
+				deploymentT := test_utils.FindTypeInObjects[*appsv1.Deployment](objects)
+				Expect(deploymentT).NotTo(BeNil())
+				args := (*deploymentT).Spec.Template.Spec.Containers[0].Args
+				Expect(args).To(ContainElements("--metrics-listen-address", ":9090"))
+				Expect(args).NotTo(ContainElement(":8080"))
+
+				serviceT := test_utils.FindTypeInObjects[*corev1.Service](objects)
+				Expect(serviceT).NotTo(BeNil())
+				for _, port := range (*serviceT).Spec.Ports {
+					if port.Name == *kaiConfig.Spec.QueueController.ControllerService.Metrics.Name {
+						Expect(port.Port).To(Equal(int32(8080)))
+						Expect(port.TargetPort.IntValue()).To(Equal(9090))
+					}
+				}
+			})
+
 			It("the deployment should keep labels from existing deployment", func(ctx context.Context) {
 				objects, err := qc.DesiredState(ctx, fakeKubeClient, kaiConfig)
 				Expect(err).To(BeNil())
