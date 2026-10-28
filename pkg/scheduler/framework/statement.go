@@ -272,7 +272,9 @@ func (s *Statement) Pipeline(task *pod_info.PodInfo, hostname string, updateTask
 		previousResourceClaimInfo = task.ResourceClaimInfo.Clone()
 	}
 
+	var replacedTaskOnNode *pod_info.PodInfo
 	if gpuPlacementChanged {
+		replacedTaskOnNode = taskOnNode
 		log.InfraLogger.V(6).Do(func() {
 			log.InfraLogger.Infof(
 				"Task: <%v/%v> already exists on node: <%v> on gpu index of: <%v>, moving it to index: <%v>",
@@ -320,7 +322,7 @@ func (s *Statement) Pipeline(task *pod_info.PodInfo, hostname string, updateTask
 		reverseOperation: func() error {
 			return s.unpipeline(
 				task, previousNode, previousStatus, previousFractionalGpuGroups,
-				previousNumaPlacement, previousResourceClaimInfo, previousIsVirtualStatus)
+				previousNumaPlacement, previousResourceClaimInfo, previousIsVirtualStatus, replacedTaskOnNode)
 		},
 	})
 	task.IsVirtualStatus = true
@@ -488,7 +490,7 @@ func (s *Statement) unpipeline(
 	previousFractionalGpuGroups []schedulingv1alpha2.FractionalGpuGroup,
 	previousNumaPlacement pod_info.NUMAPlacement,
 	previousResourceClaimInfo bindrequest_info.ResourceClaimInfo,
-	previousIsVirtualStatus bool) error {
+	previousIsVirtualStatus bool, replacedTaskOnNode *pod_info.PodInfo) error {
 	// Only update status in session
 	job, found := s.ssn.ClusterInfo.PodGroupInfos[task.Job]
 	if found {
@@ -511,6 +513,9 @@ func (s *Statement) unpipeline(
 		if err := node.RemoveTask(task); err != nil {
 			log.InfraLogger.Errorf("Failed to unpipeline task <%v/%v> from node <%v> in Session <%v>: %v",
 				task.Namespace, task.Name, hostname, s.sessionID, err)
+		}
+		if replacedTaskOnNode != nil {
+			node.RestoreReplacedSharedPodInfo(replacedTaskOnNode)
 		}
 	} else {
 		log.InfraLogger.Errorf("Failed to find Node <%s> in Session <%s> index when binding.",

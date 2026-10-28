@@ -1,0 +1,6 @@
+kind: Fixed
+body: Statement rollback no longer double-counts shared GPU pods moved to another GPU on the same node
+time: 2026-10-27T17:05:02.780612+07:00
+custom:
+    Author: vonhatnam1212
+    Issue: "2526"
