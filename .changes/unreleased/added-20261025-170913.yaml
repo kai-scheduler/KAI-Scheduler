@@ -1,0 +1,6 @@
+kind: Added
+body: |-
+  Opt-in preempt and reclaim on a node to make room for in-place resizes the kubelet deferred
+custom:
+  Author: "gshaibi"
+  Issue: "1872"

@@ -23,9 +23,11 @@ import (
 	"golang.org/x/exp/maps"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/deferredresize"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
@@ -58,6 +60,7 @@ func (ra *reclaimAction) Execute(ssn *framework.Session) {
 		FilterUnready:               true,
 		FilterWithinPreemptionDelay: true,
 		MaxJobsQueueDepth:           ssn.GetJobsDepth(framework.Reclaim),
+		NonPendingJobFilter:         deferredresize.NonPendingJobFilter(ssn),
 	})
 	jobsOrderByQueues.InitializeWithJobs(ssn.ClusterInfo.PodGroupInfos)
 
@@ -68,48 +71,85 @@ func (ra *reclaimAction) Execute(ssn *framework.Session) {
 
 	for !jobsOrderByQueues.IsEmpty() {
 		job := jobsOrderByQueues.PopNextJob()
-		if !ssn.CanReclaimResources(job) {
-			continue
+
+		if shouldStop := ra.reclaimForPendingTasks(ssn, job, actionBudget, smallestFailedJobsByQueue); shouldStop {
+			return
 		}
 
-		smallestFailedJobs, found := smallestFailedJobsByQueue[job.Queue]
-		if !found {
-			smallestFailedJobsByQueue[job.Queue] = common.NewMinimalJobRepresentatives()
-			smallestFailedJobs = smallestFailedJobsByQueue[job.Queue]
-		}
-		if ssn.UseSchedulingSignatures() {
-			easier, otherJob := smallestFailedJobs.IsEasierToSchedule(job)
-			if !easier {
-				log.InfraLogger.V(3).Infof(
-					"Skipping reclaim for job: <%v/%v> - is not easier to reclaim for than: <%v/%v>",
-					job.Namespace, job.Name, otherJob.Namespace, otherJob.Name)
-				continue
-			}
-		}
-		tasks := podgroup_info.GetTasksToAllocate(job, ssn.SubGroupOrderFn, ssn.TaskOrderFn,
-			podgroup_info.SimulatedTaskAllocation)
-		if task, failure := common.VictimInvariantPrePredicateFailureForTasks(ssn, tasks); failure != nil {
-			common.RecordVictimInvariantPrePredicateFailure(job, task, failure)
-			continue
-		}
-		metrics.IncPodgroupsConsideredByAction()
-		succeeded, statement, reclaimeeTasksNames, searchResult := ra.attemptToReclaimForSpecificJob(ssn, job, actionBudget)
-		if succeeded {
-			metrics.IncPodgroupScheduledByAction()
-			log.InfraLogger.V(3).Infof(
-				"Reclaimed resources for job <%s/%s>, evicting reclaimee tasks: <%v>.",
-				job.Namespace, job.Name, reclaimeeTasksNames,
-			)
-			if err := statement.Commit(); err != nil {
-				log.InfraLogger.Errorf("Failed to commit reclaim statement: %v", err)
-			}
-		} else if shouldStopActionForSearchResult(searchResult) {
+		// Pending pods get the first pick of victims.
+		if shouldStop := deferredresize.AttemptForJob(ssn, job, framework.Reclaim,
+			solveDeferredResize(ssn, actionBudget), shouldStopActionForSearchResult); shouldStop {
 			return
-		} else {
-			log.InfraLogger.V(3).Infof("Didn't find a reclaim strategy for job <%s/%s>",
-				job.Namespace, job.Name)
-			smallestFailedJobs.UpdateRepresentative(job)
 		}
+	}
+}
+
+func (ra *reclaimAction) reclaimForPendingTasks(
+	ssn *framework.Session, job *podgroup_info.PodGroupInfo, actionBudget *solvers.ActionSearchBudget,
+	smallestFailedJobsByQueue map[common_info.QueueID]*common.MinimalJobRepresentatives,
+) (shouldStop bool) {
+	if job.GetNumPendingTasks() == 0 {
+		return false
+	}
+	if !ssn.CanReclaimResources(job) {
+		return false
+	}
+
+	smallestFailedJobs, found := smallestFailedJobsByQueue[job.Queue]
+	if !found {
+		smallestFailedJobsByQueue[job.Queue] = common.NewMinimalJobRepresentatives()
+		smallestFailedJobs = smallestFailedJobsByQueue[job.Queue]
+	}
+	if ssn.UseSchedulingSignatures() {
+		easier, otherJob := smallestFailedJobs.IsEasierToSchedule(job)
+		if !easier {
+			log.InfraLogger.V(3).Infof(
+				"Skipping reclaim for job: <%v/%v> - is not easier to reclaim for than: <%v/%v>",
+				job.Namespace, job.Name, otherJob.Namespace, otherJob.Name)
+			return false
+		}
+	}
+	tasks := podgroup_info.GetTasksToAllocate(job, ssn.SubGroupOrderFn, ssn.TaskOrderFn,
+		podgroup_info.SimulatedTaskAllocation)
+	if task, failure := common.VictimInvariantPrePredicateFailureForTasks(ssn, tasks); failure != nil {
+		common.RecordVictimInvariantPrePredicateFailure(job, task, failure)
+		return false
+	}
+	metrics.IncPodgroupsConsideredByAction()
+	succeeded, statement, reclaimeeTasksNames, searchResult := ra.attemptToReclaimForSpecificJob(ssn, job, actionBudget)
+	if succeeded {
+		metrics.IncPodgroupScheduledByAction()
+		log.InfraLogger.V(3).Infof(
+			"Reclaimed resources for job <%s/%s>, evicting reclaimee tasks: <%v>.",
+			job.Namespace, job.Name, reclaimeeTasksNames,
+		)
+		if err := statement.Commit(); err != nil {
+			log.InfraLogger.Errorf("Failed to commit reclaim statement: %v", err)
+		}
+	} else if shouldStopActionForSearchResult(searchResult) {
+		return true
+	} else {
+		log.InfraLogger.V(3).Infof("Didn't find a reclaim strategy for job <%s/%s>",
+			job.Namespace, job.Name)
+		smallestFailedJobs.UpdateRepresentative(job)
+	}
+	return false
+}
+
+func solveDeferredResize(ssn *framework.Session, actionBudget *solvers.ActionSearchBudget) deferredresize.Solve {
+	return func(job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo) (*framework.Statement, *solvers.SearchResult) {
+		if !ssn.CanReclaimResources(job) {
+			return nil, nil
+		}
+		ssn.OnJobSolutionStart()
+		_, statement, _, result := solvers.NewJobsSolver(
+			maps.Values(ssn.ClusterInfo.Nodes),
+			ssn.ReclaimScenarioValidatorFn,
+			getOrderedVictimsQueueOnNode(ssn, job, node.Name),
+			framework.Reclaim,
+			actionBudget,
+		).SolveWithResult(ssn, job)
+		return statement, result
 	}
 }
 
@@ -144,11 +184,31 @@ func shouldStopActionForSearchResult(result *solvers.SearchResult) bool {
 }
 
 func getOrderedVictimsQueue(ssn *framework.Session, reclaimer *podgroup_info.PodGroupInfo) solvers.GenerateVictimsQueue {
+	return newVictimsQueueGenerator(ssn, func() map[common_info.PodGroupID]*podgroup_info.PodGroupInfo {
+		return getReclaimVictimCandidates(ssn, reclaimer)
+	})
+}
+
+func getOrderedVictimsQueueOnNode(
+	ssn *framework.Session, reclaimer *podgroup_info.PodGroupInfo, nodeName string,
+) solvers.GenerateVictimsQueue {
+	return newVictimsQueueGenerator(ssn, func() map[common_info.PodGroupID]*podgroup_info.PodGroupInfo {
+		candidates := getReclaimVictimCandidates(ssn, reclaimer)
+		for uid, job := range candidates {
+			if !deferredresize.HasActiveAllocatedTaskOnNode(job, nodeName) {
+				delete(candidates, uid)
+			}
+		}
+		return candidates
+	})
+}
+
+func newVictimsQueueGenerator(
+	ssn *framework.Session, candidates func() map[common_info.PodGroupID]*podgroup_info.PodGroupInfo,
+) solvers.GenerateVictimsQueue {
 	return utils.NewCachedVictimsQueueGenerator(
 		ssn,
-		func() map[common_info.PodGroupID]*podgroup_info.PodGroupInfo {
-			return getReclaimVictimCandidates(ssn, reclaimer)
-		},
+		candidates,
 		utils.JobsOrderInitOptions{
 			FilterNonPreemptible:     true,
 			FilterNonActiveAllocated: true,
