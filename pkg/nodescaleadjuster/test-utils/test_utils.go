@@ -119,7 +119,7 @@ func CreatePendingFractionPod(name, namespace string, fractionValue string, numD
 }
 
 func CreateScalingPod(unschedulablePodNamespace, unschedulablePodName string, numDevices int) *corev1.Pod {
-	name := fmt.Sprintf("%s-%s", unschedulablePodNamespace, unschedulablePodName)
+	name := fmt.Sprintf("scaling.%s.%s", unschedulablePodNamespace, unschedulablePodName)
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
