@@ -5,6 +5,7 @@ package solvers
 
 import (
 	"golang.org/x/exp/maps"
+	v1 "k8s.io/api/core/v1"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
@@ -160,6 +161,22 @@ func (s *byPodSolver) handleScenarioSolution(
 func (s *byPodSolver) tryScenarioWithEvictedVictims(ssn *framework.Session, scenario *scenario.ByNodeScenario,
 	statement *framework.Statement, victimTasks []*pod_info.PodInfo, nodes []*node_info.NodeInfo) (bool, *simulationVictims) {
 	pendingJob := scenario.GetPreemptor()
+
+	if s.actionType == framework.Preempt || s.actionType == framework.Reclaim {
+		originalPods := make(map[*pod_info.PodInfo]*v1.Pod)
+		for _, task := range victimTasks {
+			if task.Status == pod_status.Releasing && task.IsVirtualStatus && task.NodeName != "" {
+				originalPods[task] = task.Pod
+				task.Pod = task.Pod.DeepCopy()
+				task.Pod.Status.NominatedNodeName = task.NodeName
+			}
+		}
+		defer func() {
+			for task, pod := range originalPods {
+				task.Pod = pod
+			}
+		}()
+	}
 
 	jobsToAllocate := common.GetJobsToAllocate(ssn, victimTasks, pendingJob)
 	isSuccessfulAllocations, _ :=

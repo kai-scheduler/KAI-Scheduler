@@ -1,0 +1,6 @@
+kind: Fixed
+body: Prefer victims' original nodes during reallocation to avoid unnecessary evictions.
+time: 2026-10-20T16:25:19.353497+07:00
+custom:
+    Author: vonhatnam1212
+    Issue: "2426"
