@@ -33,6 +33,7 @@ import (
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	admissionv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	v1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
@@ -79,6 +80,7 @@ var _ = BeforeSuite(func() {
 	Expect(coordinationv1.AddToScheme(scheme)).To(Succeed())
 	Expect(discoveryv1.AddToScheme(scheme)).To(Succeed())
 	Expect(policyv1.AddToScheme(scheme)).To(Succeed())
+	Expect(autoscalingv2.AddToScheme(scheme)).To(Succeed())
 	Expect(apiextensionsv1.AddToScheme(scheme)).To(Succeed())
 
 	By("bootstrapping test environment")

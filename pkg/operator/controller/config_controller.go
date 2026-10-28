@@ -33,6 +33,7 @@ import (
 	nvidiav1 "github.com/kai-scheduler/KAI-scheduler/third_party/nvidia/gpu-operator/api/nvidia/v1"
 
 	kaiv1 "github.com/kai-scheduler/api/kai/v1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/controller/status_reconciler"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands"
@@ -91,6 +92,7 @@ func (r *ConfigReconciler) SetOperands(ops []operands.Operand) {
 // +kubebuilder:rbac:groups="monitoring.coreos.com",resources=prometheuses;servicemonitors,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="scheduling.run.ai",resources=queues,verbs=get;list;watch
 // +kubebuilder:rbac:groups="autoscaling.k8s.io",resources=verticalpodautoscalers,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="autoscaling",resources=horizontalpodautoscalers,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="policy",resources=poddisruptionbudgets,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
@@ -159,6 +161,8 @@ func (r *ConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		known_types.MutatingWebhookConfigurationFieldInherit)
 	r.deployable.RegisterFieldsInheritFromClusterObjects(&vpav1.VerticalPodAutoscaler{},
 		known_types.VPAFieldInherit)
+	r.deployable.RegisterFieldsInheritFromClusterObjects(&autoscalingv2.HorizontalPodAutoscaler{},
+		known_types.HPAFieldInherit)
 	r.StatusReconciler = status_reconciler.New(r.Client, r.deployable)
 
 	builder := ctrl.NewControllerManagedBy(mgr).

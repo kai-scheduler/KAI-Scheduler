@@ -43,6 +43,7 @@ func (a *Admission) DesiredState(
 	objects := []client.Object{secret}
 	for _, resourceFunc := range []resourceForKAIConfig{
 		a.deploymentForKAIConfig,
+		a.horizontalPodAutoscalerForKAIConfig,
 		a.podDisruptionBudgetForKAIConfig,
 		a.serviceAccountForKAIConfig,
 		a.serviceForKAIConfig,

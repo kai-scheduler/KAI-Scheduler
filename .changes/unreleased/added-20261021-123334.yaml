@@ -1,0 +1,3 @@
+kind: Added
+body: |-
+  Add horizontal autoscaling support for the admission service
