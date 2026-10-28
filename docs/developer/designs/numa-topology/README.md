@@ -1,5 +1,7 @@
 # NUMA-Aware Scheduling via NodeResourceTopology
 
+Related: [Scheduling with Memory Manager Groups](memory-manager-groups.md)
+
 ## Summary
 
 This document describes a v1 design for making KAI-Scheduler aware of per-NUMA-node
@@ -68,11 +70,13 @@ These are the objectives of NUMA-aware scheduling as a whole; The implementation
   kubelet's Topology Manager will reject it on topology grounds — eliminating the `Pending`
   bounce and reschedule hot-loop that follow.
 - **Enable NUMA locality for performance on `best-effort` nodes where achievable.** For nodes
-  with the kubelet **`best-effort`** policy — which never rejects on topology grounds but may
+  with the kubelet **`best-effort`** policy — whose Topology Manager policy never rejects on
+  alignment grounds but may
   silently run workloads *unaligned* when resources cannot co-locate on one NUMA node — steer
   topology-sensitive pods (e.g. GPU↔CPU↔NIC) toward nodes where alignment can succeed, preferring
   alignable placements over ones that would not, without ever blocking when locality is
-  unachievable ([v2](#v2-optimization--scoring); v1 leaves `best-effort` nodes as pass-through).
+  unachievable ([v2](#v2-optimization--scoring); v1 leaves `best-effort` nodes as pass-through
+  except when observed static Memory Manager state proves allocation impossible).
 - **Remain a safe optimization layer; never compromise correctness.** The kubelet stays the
   source of truth and the enforcement point; this feature only reduces churn and improves
   placement, and attempts to never cause an incorrect or mis-pinned placement.
@@ -126,7 +130,9 @@ The work is staged into two phases (plus a v3 idea, and a default-on cross-cycle
   for the two policies that *reject* on topology grounds (`single-numa-node` and `restricted`),
   plus **within-cycle per-zone reservation** so pods placed together in one cycle stay consistent.
   The aim is to prevent the wasted cycles and stranded capacity from *Background* — pods
-  land where they can actually run. `best-effort` and `none` are pass-through.
+  land where they can actually run. `best-effort` passes Topology Manager alignment, but static
+  Memory Manager groups can independently prove that allocation will fail. Policy `none` is
+  outside the plugin's scope; see [Scheduling with Memory Manager Groups](memory-manager-groups.md).
 - **Observed placement (v1).** A per-node exporter publishes each pod's *actual* NUMA placement; the
   scheduler consumes it for exact per-zone accounting (and accurate reclaim) when available, and
   **falls back to its own prediction when the exporter is absent or lagging**. The exporter ships with
@@ -135,7 +141,8 @@ The work is staged into two phases (plus a v3 idea, and a default-on cross-cycle
 - **v2 — optimization & scoring** ([Optimization & scoring](#v2-optimization--scoring)). Adds
   *performance*: ranks feasible nodes (least fragmentation / fewest NUMA nodes) and steers
   `best-effort` workloads toward nodes where alignment will actually succeed. It reuses v1's
-  evaluators and per-zone model and only **ranks** — it never changes the admit decision.
+  evaluators and per-zone model and only **ranks** — it never changes the Topology Manager alignment
+  decision. The Memory Manager feasibility exception is part of the correctness filter.
 
 The rest of this section describes **v1**.
 
@@ -145,8 +152,8 @@ The rest of this section describes **v1**.
 | --- | --- |
 | [`single-numa-node`][tm-single-numa-node] | Fully modeled: require **one** NUMA zone to satisfy all the pod's NUMA-relevant requests (the `\|M\|=1` case of the merge below). |
 | [`restricted`][tm-restricted] | Fully modeled: admit iff a common minimal-width NUMA mask satisfies all the pod's NUMA-relevant requests (the general merge — see *Modeling `restricted`*). |
-| [`best-effort`][tm-best-effort] | Pass (kubelet never rejects on topology grounds). [v2](#v2-optimization--scoring) adds node scoring to steer toward alignable placements. |
-| [`none`][tm-none] | Pass (plugin no-op; Topology Manager performs no alignment). |
+| [`best-effort`][tm-best-effort] | Topology Manager alignment passes. [v2](#v2-optimization--scoring) scores locality. A node is filtered only when observed static Memory Manager groups leave no valid memory allocation. |
+| [`none`][tm-none] | Outside plugin scope: pass-through, no placement or memory-group accounting; scoring assumes full-node spread. |
 | No NRT object for node | Pass (cluster without NRT is unaffected). |
 
 Both modeled policies are different cases of the same admit question and are implemented behind
@@ -172,20 +179,34 @@ NUMA state lives on the existing snapshot objects:
   `NumaTopology` attached to its `NodeInfo` (alongside the raw NRT): the Topology Manager
   policy/scope, the per-zone `Available` (dynamic — decremented as tasks commit in-cycle, restored
   on rollback) and `Allocatable` (static per-zone capacity), and the set of resources the node
-  reports per zone.
-- **Per-task placement on `PodInfo`.** A task carries its NUMA placement — the zone(s) it was
-  allocated to *and the exact per-zone amount* (if known) — on `PodInfo`. Storing the exact
-  amount enables simulating NUMA allocations on allocation rollback/eviction, which allows for 
-  consolidate/preempt/reclaim simulations.
+  reports per zone. When observations are complete, it also carries Memory Manager groups whose
+  aggregate availability is reconstructed from pod owner amounts.
+- **Per-task placement on `PodInfo`.** A task carries one `NUMAPlacement` containing the zone(s) it
+  was allocated to with the exact per-zone amount (if known), plus its pod-level Memory Manager
+  masks and reserved amounts. The zone amounts enable allocation rollback and eviction simulation;
+  the group amounts provide exact aggregate memory accounting without inventing a per-zone byte
+  split.
 
-A running pod's placement is rebuilt each cycle from its durable record (precedence
-**observed > predicted**; see *Observed placement* and *Scheduler-predicted placement record*),
-parsed onto `PodInfo` at snapshot build exactly as `GPUGroups` is. A running pod with no record 
-(for example, if the NUMA exporter is missing or stuck) has an empty placement and is simply **not credited on
-virtual eviction**. Its consumption is already netted out of NRT `Available` (the occupancy ledger
-is seeded from `Available`), so the only effect is that evicting it frees no zone in the ledger —
-which matters *only* to a NUMA-sensitive preemptor on that exact zone; non-NUMA-sensitive preemption
-is unaffected.
+A node with no active managed-memory consumers starts with a known-empty group ledger under the
+existing manager-policy assumption. The first allocation creates predicted ownership. Missing
+records for an active relevant pod make the ledger unknown; releasing pods remain owners while
+their allocations are active.
+
+A running pod's zone and memory-group components are resolved independently and combined into one
+`NUMAPlacement` at snapshot build. Zone placement uses **observed > predicted** precedence. A
+complete observed group list replaces predicted groups; an absent group observation may use a
+complete prediction, while an explicit `null`, malformed, or invalid observation makes the node's
+group state unavailable. A pod can therefore have known zones without known groups. Missing zones
+provide no per-zone eviction credit. Unknown group ownership blocks further managed-memory
+allocation until a complete observation or prediction is available under the precedence rules.
+CPU/device-only requests use the same hint-based solver without requiring memory-group state.
+Memory hints and predicted groups cover application containers and native sidecars only.
+Ordinary init-container memory placement and reservation reuse are out of scope: temporary groups
+can cause unexpected kubelet NUMA admission failures even when predicted placements fit. A transient
+conflict does not guarantee recovery of a pod that admission has marked failed. Existing CPU/device
+init accounting, whole-pod resource requests, and QoS calculation remain unchanged.
+See *Observed placement* and *Scheduler-predicted placement
+record*.
 
 ### NUMA-relevant resources
 
@@ -221,6 +242,9 @@ topologyAware(node) = { r : some zone of node reports r }  ∩  { r : pod reques
 (The QoS gate still applies — `cpu`/`memory`/`hugepages` constrain only Guaranteed pods, matching
 the kubelet, which aligns them only for Guaranteed QoS.)
 
+Complete observations of Memory Manager groups enforce actual allocation compatibility and capacity
+even when the resource is in `ignoreList`; the list controls speculative per-zone alignment.
+
 > **Possible future work:** upstream a `cpuManagerPolicy` / `memoryManagerPolicy` NRT attribute (none
 > exists today — exporters publish only the Topology Manager policy/scope). With it, `cpu`/`memory`
 > alignment becomes inferable per node and the ignoreList can be dropped.
@@ -228,7 +252,8 @@ the kubelet, which aligns them only for Guaranteed QoS.)
 ### `shouldHandle` gate
 
 The plugin engages for a task on a `single-numa-node`/`restricted` node when the kubelet would
-NUMA-align any of its resources:
+NUMA-align any of its resources. It also engages its memory-only feasibility path on any policy
+when a Guaranteed task requests managed memory and observed Memory Manager groups are present:
 
 - **devices** (GPUs and other topology device-plugin resources) are aligned for **all** QoS classes,
   so a non-Guaranteed task that requests one *is* handled (`requestsAlignedDevice` checks its
@@ -268,12 +293,13 @@ suitable(qos, r, qty, avail):
 
 - **`pod` scope** → align the whole pod to one zone. Use KAI's effective-pod-request
   computation (which already accounts for init containers and native sidecars), projected
-  onto the NUMA-relevant set, and run `resourcesAvailableInAnyZone` once.
+  onto the NUMA-relevant CPU/device set. Memory hints instead use the sum of application and
+  native-sidecar requests, excluding ordinary-init peak memory.
 - **`container` scope** → align each container independently but sharing zone headroom. Run
   the check per container on a scratch copy of the zones, subtracting the chosen zone's
   resources after each container (greedy, first-fit lowest zone). This matches the upstream
-  `singleNUMAContainerLevelHandler`. Init containers run serially and are checked but not
-  accumulated.
+  `singleNUMAContainerLevelHandler`. Ordinary init containers retain serial CPU/device checks
+  without accumulating those resources, but do not participate in memory-group evaluation.
 
 The predicate is **pure** (read-only); it never mutates `nodes`. It also runs only on nodes
 that already passed the existing whole-node vector gate, so it is naturally late in the
@@ -324,16 +350,15 @@ width (1) disagrees with the GPU's (2). The only ways to run it are to raise the
 request above one node's capacity, or to use `best-effort`. The plugin faithfully reproduces this
 rejection — it does not (and must not) "fix" it.
 
-#### Reimplement the merge, don't import it
+#### Reuse upstream merging
 
-The merge + `Preferred`/admit rule is small (the admit short-circuit is a few dozen lines).
-Importing `k8s.io/kubernetes/.../topologymanager` (an internal kubelet package) would couple KAI to
-kubelet internals; upstream scheduler-plugins itself imports only `bitmask` and reimplements the
-rest. v1 does the same.
+The plugin imports the pinned Kubernetes `topologymanager` package and delegates intersection,
+preferred-hint ranking, single-NUMA filtering, and admission to the node policy's `Merge` method.
+Hint generation still uses simulated scheduler state rather than live kubelet manager instances.
 
-**One generic counting rule covers GPU, CPU and memory.** Per-resource hint generation is
-*identical* across all three kubelet hint providers, so a single generic rule over `resource.Quantity`
-reproduces them — there is no per-resource hinter and no vendor-specific hint code:
+**Capacity-based hint generation covers CPU and devices; memory additionally respects groups.**
+The common preferred-width rule uses physical capacity, while memory feasibility uses compatible
+group ownership and aggregate free capacity rather than a fabricated per-zone byte split:
 
 - **Device Manager** — `generateDeviceTopologyHints`
   (`k8s.io/kubernetes/pkg/kubelet/cm/devicemanager/topology_hints.go`): preferred width =
@@ -360,24 +385,26 @@ Absent those, the providers' hint generation and the generic rule are identical.
 ### In-cycle reservation (EventHandler)
 
 Within-cycle correctness rides the existing session `EventHandler` (`framework.Event{Task}`), which
-fires symmetrically on commit and on rollback/undo. On allocate, the task's chosen placement is
-charged against the node's per-zone `Available`; on deallocate (rollback, or virtual eviction during
-preempt/reclaim probing), the exact per-zone amounts are credited back. A task with no placement is
-not accounted (no re-derive).
+fires symmetrically on commit and on rollback/undo. On allocation, CPU and devices are charged
+against per-zone `Available`. Statically managed memory is charged to the group ledger instead;
+unknown group state rejects new managed-memory allocations rather than selecting a legacy solver.
+Deallocation, rollback, and virtual eviction apply the inverse operation to both components. An
+unknown placement component is not re-derived.
 
-For `single-numa-node` this charges exactly one zone. For `restricted`, the chosen mask `M` may
-span several zones; the kubelet does not fix the per-zone split at admission, so the plugin uses
-an **approximate greedy split** across `M`'s zones (internal accounting only — see the
-reservation-split caveat in *Known Limitations*).
+For resources tracked per zone, `single-numa-node` charges exactly one zone. Under `restricted`, the
+chosen mask `M` may span several zones; the kubelet does not fix the per-zone split at admission, so
+the plugin uses an **approximate greedy split** across `M`'s zones (internal accounting only — see
+the reservation-split caveat in *Known Limitations*). Known statically managed memory remains an
+aggregate group charge and never receives that invented split.
 
-The placement (zones **and** amounts) rides `PodInfo`, set during the allocate step before
-`Pipeline` like `GPUGroups`, so the copy the statement clones onto the node carries it and the dedup
-can compare it. Because it rides `PodInfo`, the statement's existing undo machinery **snapshots the
-previous placement on virtual eviction and restores it on rollback** (exactly as for
-`GPUGroups`/`previousGpuGroups`), so preemption/reclaim scenario probing — which speculatively
-allocates and `Discard()`s — stays consistent with **no plugin-side bookkeeping**. The chosen zones
-are internal accounting only; they are never sent to the kubelet, which independently re-derives
-placement.
+The complete placement — zone amounts plus Memory Manager masks and amounts — rides `PodInfo`, set
+during the allocate step before `Pipeline` like `GPUGroups`, so the copy the statement clones onto
+the node carries it and the dedup can compare it. Because it rides `PodInfo`, the statement's
+existing undo machinery **snapshots the previous placement on virtual eviction and restores it on
+rollback** (exactly as for `GPUGroups`/`previousGpuGroups`), so preemption/reclaim scenario probing
+— which speculatively allocates and `Discard()`s — stays consistent with **no plugin-side
+bookkeeping**. The placement is internal accounting and prediction, not a kubelet directive; the
+kubelet independently derives its allocation.
 
 This restore-by-snapshot is necessary but **not sufficient**: the solver's *eviction dedup* can
 cancel a victim's eviction outright. That interaction is handled via the same `NUMAPlacement`
@@ -402,20 +429,20 @@ v1 closes this by giving the chosen placement the same first-class allocation-id
 GPU sharing already gets:
 
 - **`NUMAPlacement` on `PodInfo`** (defined in *NUMA data model*) — the task's
-  chosen zone(s) and per-zone amounts, set during the allocate step (before `Pipeline`'s dedup
-  check), mirroring `GPUGroups`. It is the same placement the record persists, so the in-memory
-  identity and the durable annotation agree.
+  chosen zone placements and Memory Manager groups,
+  set during the allocate step (before
+  `Pipeline`'s dedup check), mirroring `GPUGroups`. It is the complete internal allocation identity;
+  explicit conversions persist its zones and groups in their separate durable records.
 - The framework **snapshots the previous `NUMAPlacement` on virtual eviction and restores it** on
   evict undo / pipeline undo, exactly as it already does for `GPUGroups` (`previousGpuGroups`).
 - A **`numaPlacementChanged` gate** is added to the dedup, analogous to
   `isSharedAndMoveToDifferentGPU`: when the task's new placement differs from the copy on the
   node, the eviction is *not* deduped, so the move is realized. The comparison is the **full
-  placement — zones *and* per-zone amounts**, not zone identity alone. The per-zone split is a
-  free variable (it depends on evaluation-time headroom), so a consolidation/rebalance can
-  deliberately re-lay-out a pod onto the *same* zone set; deduping that on zone identity would
-  silently restore the old split and desync the ledger. (Unlike GPU, where per-task memory is
-  fixed and group identity is a sufficient move key, NUMA needs the amounts.) An ordinary victim
-  that stays put carries its placement unchanged, so it still dedups.
+  placement — zones and per-zone amounts plus Memory Manager masks and reserved amounts**, not
+  zone identity alone. The per-zone split and memory group are allocation decisions, so a
+  consolidation can deliberately change either while keeping the CPU/device zone set. Deduping on
+  zone identity would silently restore the old allocation and desynchronize the ledgers. An
+  ordinary victim that stays put carries both records unchanged, so it still dedups.
 
 This is a small, mechanical extension of the existing GPU-sharing dedup path; it is the one piece
 of v1 that touches shared framework code (`pkg/scheduler/framework/statement.go`,
@@ -423,42 +450,39 @@ of v1 that touches shared framework code (`pkg/scheduler/framework/statement.go`
 
 ### Scheduler-predicted placement record
 
-The evaluator produces a prediction of each pod's NUMA placement (`NUMAPlacement`). Within a cycle
-it rides `PodInfo`; persisting it on commit turns it into a durable, per-pod **placement record**
-that survives across cycles and scheduler restarts. **This record is part of v1.**
+The evaluator produces a prediction of each pod's per-zone placement and Memory Manager groups.
+Within a cycle both ride `PodInfo`; persisting them on commit turns them into durable, per-pod
+allocation records which survive across cycles and scheduler restarts. **These records are part of
+v1.**
 
-- **On commit only**, the chosen zone(s) are carried in the `BindRequest` (a new field, exactly
-  like `SelectedGPUGroups` / `ResourceClaimAllocations`), and the binder writes them to a pod
-  annotation (`kai.scheduler/numa-placement-predicted`). This piggybacks on the bind the binder
-  already performs — **no extra API writes** — and the `BindRequest` is added to the snapshot
-  store synchronously, so the prediction is readable the very next cycle. Speculative
-  (probed-then-discarded) allocations are never persisted.
-- **On later cycles**, each pod's `NUMAPlacement` is populated from this recorded prediction at
-  snapshot build (when no observed annotation supersedes it). This is what makes the reclaim
-  eviction-crediting **stable**: a recorded prediction never drifts, whereas guessing would
-  (and a restart would guess inconsistently). It is the persistent form of the per-pod placement
-  the eviction-crediting needs.
+- **On commit only**, the chosen zones and groups are carried in `BindRequest` fields, and the binder
+  writes `kai.scheduler/numa-placement-predicted` and
+  `kai.scheduler/numa-memory-groups-predicted`. This piggybacks on the bind the binder already
+  performs — **no extra API writes** — and the `BindRequest` is added to the snapshot store
+  synchronously, so the predictions are readable the very next cycle. Speculative allocations are
+  never persisted.
+- **On later cycles**, `PodInfo` is populated from these recorded predictions only while the
+  corresponding observed annotation is absent. This makes both per-zone eviction credit and Memory
+  Manager group accounting stable across cycles and scheduler restarts.
 
-**Precedence: observed > predicted.** This record is the scheduler's *prediction*, not ground
-truth. When the per-node placement exporter (next) has published a pod's *observed* placement, that
-supersedes this predicted one; when the exporter is absent or hasn't reported a pod yet, the
-predicted record is the best available placement. When **neither** exists, the pod has no
-`NUMAPlacement` and is not accounted on virtual eviction — v1 never *guesses* a zone.
+Zone placement retains its existing observed-over-predicted precedence. Memory groups use a stricter
+table: a complete observed list wins; an explicit `null`, malformed, or invalid observed group value
+forces unknown state; an absent observed annotation uses a complete prediction
+when present; and when neither form exists, v1 never guesses.
 
 ### Observed placement: the per-node exporter
 
 Prediction is only as good as the scheduler's evaluator matching the kubelet's actual choice. To
 make per-zone accounting (and especially reclaim) *exact*, v1 also consumes the **observed**
-placement produced by a per-node exporter — a DaemonSet that reads the kubelet **podresources API**,
-derives each pod's actual per-NUMA-zone resource placement, and publishes it as a pod annotation
-(`kai.scheduler/numa-placement-observed`). When present, the plugin uses observed placement
-directly: occupancy is exact, victim evictions credit the *real* zone, and reclaim simulation is
-accurate. When absent or not-yet-reported (exporter undeployed, lagging, or pod just bound), the
-plugin falls back to the predicted record — and when that is also absent, the pod is simply not
-accounted on virtual eviction (no guessing). So the exporter is **purely additive**: it improves
-accuracy without being a hard dependency, and the scheduler is built to consume its input from day
-one. **Scope:** the *scheduler-side* consumption of the observed annotation is part of v1; the
-per-node exporter's own implementation and delivery are tracked separately (not in this PR).
+placement produced by a per-node exporter — a DaemonSet that reads the kubelet **podResources API**,
+derives each pod's actual per-NUMA-zone resource placement and pod-level Memory Manager groups, and
+publishes them as `kai.scheduler/numa-placement-observed` and
+`kai.scheduler/numa-memory-groups-observed`. When present, the plugin uses observed placement and
+group amounts directly: CPU/device occupancy is exact, group capacity is exact in aggregate, and
+victim eviction restores the recorded allocation. When absent or not yet reported, the plugin
+falls back to the corresponding complete predicted record. An explicit `null`, malformed, or
+invalid group observation disables that prediction fallback and blocks new managed-memory
+allocations until complete ownership is available.
 
 Cross-cycle reconstruction from these placements is **on by default** (Appendix A); the exporter makes
 it *exact*, and without the exporter it falls back to the prediction record. The operator deploys the
@@ -472,24 +496,18 @@ Both policies' admit / zone-selection logic is isolated behind one interface, so
 and the reservation are policy-agnostic:
 
 ```go
-// evaluate returns whether the pod can be NUMA-aligned on this node, and the
-// zone(s) the in-cycle reservation should charge — one zone for single-numa-node,
-// one or more for a restricted merge.
-type numaEvaluator interface {
-    evaluate(nt *NumaTopology, req resourceRequests) (zones []*NumaZone, admit bool)
-}
+func (pp *numaPlugin) evaluate(task *pod_info.PodInfo, node *node_info.NodeInfo) (pod_info.NUMAPlacement, error)
 ```
 
-v1 ships **two** evaluators, selected per node by its Topology Manager policy:
-- `singleNUMAEvaluator` — the bitmask intersection (`single-numa-node`); always returns one zone.
-- `restrictedEvaluator` — the hint merge (`restricted`); returns the chosen mask's zones. It builds
-  per-resource hints with the single generic counting rule (`Allocatable` for preferred-width,
-  `Available` for feasibility; see *Reimplement the merge*) and searches for a common minimal-width
-  mask — one rule covers GPU, CPU and memory, so there is no per-resource registry.
+One solver handles all modeled policies and both scopes: build admission requests, generate resource hints,
+merge with upstream Topology Manager, and simulate allocations. Predicate and scoring use this
+solver; final placement reruns it after node selection. Unknown required memory state returns an
+explicit error, never a second evaluator. CPU/device-only requests need no group state, and
+non-Guaranteed pods do not use static Memory Manager accounting. Deployment configuration must
+enable static Memory Manager on nodes whose memory is modeled.
 
-The predicate and the `AllocateFunc`/`DeallocateFunc` reservation both route through `evaluate`
-and charge whatever zones it returns. v2's scoring layer reuses the same evaluators and per-zone
-model — it only adds ranking, never changes the admit decision.
+`AllocateFunc` and `DeallocateFunc` charge or restore the recorded placement; neither reruns a
+solver. CPU/devices use per-zone quantities, while managed memory uses pod-owned groups.
 
 ### Registration
 
@@ -566,8 +584,8 @@ regardless; Appendix A is the in-plugin fallback if the assumption proves insuff
   NUMA-relevant inference (resource constrains iff reported per-zone) and ignoreList exclusion; pod-
   vs container-scope; `shouldHandle` rejection of fractional/MIG/non-Guaranteed pods.
 - **`restricted` merge**: the worked examples above (admit on a common minimal-width mask;
-  reject when per-resource minimal widths disagree, incl. the 4-GPU+1-CPU footgun); hinter-
-  coverage fallback to `singleNUMAEvaluator`; multi-zone mask selection.
+  reject when per-resource minimal widths disagree, incl. the 4-GPU+1-CPU footgun); upstream
+  policy admission, single-NUMA filtering, and multi-zone mask selection.
 - **Reservation**: in-cycle multi-pod placement on a multi-NUMA node (single- and multi-zone
   charges); rollback consistency through allocate → discard (preemption probing).
 - **In-cycle consistency** (scheduler integration tests): on a single multi-NUMA node, schedule a
@@ -612,9 +630,10 @@ support more modes, and welcome community feedback on this.
 
 ### What scoring adds
 
-- **Optimize `best-effort` performance.** On a `best-effort` node the kubelet never rejects — it
-  silently runs the pod *unaligned* when it can't fit a NUMA node, costing throughput. v1 does
-  nothing for `best-effort` (there is no admission error to prevent). v2 **scores** `best-effort`
+- **Optimize `best-effort` performance.** On a `best-effort` node Topology Manager does not reject
+  an unpreferred merge; it silently runs the pod *unaligned* when it cannot achieve locality,
+  costing throughput. v1 otherwise passes `best-effort`, except for known static Memory Manager
+  allocation impossibility. v2 **scores** `best-effort`
   nodes by how few zones the pod's resources *can* be aligned to there, steering it toward a node
   where the kubelet's best-effort alignment will actually succeed. This is the primary motivation for v2.
 - **Prefer tighter, fewer-zone fit** on feasible `restricted` nodes, where the kubelet forces the
@@ -638,12 +657,19 @@ the node (worst score), and among aligned nodes fewer `zones` scores higher.
 | --- | --- | --- | --- |
 | `single-numa-node` | `1` | no single zone fits by `Available` | rejects (filtered) |
 | `restricted` | the forced preferred width `w` | preferred widths disagree, or no width-`w` mask fits | rejects (filtered) |
-| `best-effort` | greedy narrowest zone mask that fits by `Available` (width = span) | even all N zones can't cover the request (pod runs unaligned) | passes (best-effort never rejects) |
+| `best-effort` | greedy narrowest zone mask that fits by `Available` (width = span) | even all N zones can't cover the request (pod runs unaligned), or no Memory Manager-compatible mask exists | passes for alignment; rejects only known Memory Manager impossibility |
+| `none` | unmodeled full-node span | never filtered by this plugin | passes; kubelet handles memory admission |
 
-For the two rejecting policies, `aligned` is the *same bit the predicate computes*, so a sunk node
-is one the predicate would filter — the score just reorders the funnel. For `best-effort`,
-`aligned=false` is the unaligned case: still selectable (worst-but-finite score), because
-`best-effort` offers no other node any guarantee.
+The greedy BestEffort span remains the default on nodes without observed Memory Manager groups.
+When groups are present, the scheduler uses the exact hint and allocation prediction described
+in [Scheduling with Memory Manager Groups](memory-manager-groups.md); the greedy span is not used
+to declare a Memory Manager mask valid.
+
+For the two alignment-rejecting policies, `aligned` is the *same bit the predicate computes*, so a
+sunk node is one the predicate would filter — the score just reorders the funnel. For
+`best-effort`, an ordinary unaligned case remains selectable with a worst-but-finite score. A known
+Memory Manager-incompatible case is filtered separately because provider allocation can fail after
+Topology Manager returns admit.
 
 ### Notes
 
@@ -673,9 +699,10 @@ on the kubelet's `best-effort` aligner (which still aligns when it can) to deliv
 
 Two properties make it attractive:
 
-- **Softer failure mode than v1.** A `best-effort` kubelet never rejects, so a scheduler
-  misprediction yields an *unaligned* pod (a throughput hit), never a `TopologyAffinityError` or a
-  stuck `Pending`.
+- **Softer failure mode than v1.** BestEffort Topology Manager never rejects an unpreferred merge,
+  so an ordinary scheduler alignment misprediction yields an *unaligned* pod rather than a
+  `TopologyAffinityError`. Static Memory Manager allocation can still fail independently when cell
+  sets conflict.
 - **Pod-granularity NUMA requirements.** Like network topology, the sensitivity to NUMA placement 
   should be a property of the workload, and specifically, of the pod. This implementation lets
   the users express their workloads' requirements, instead of having the admin config this globally.
@@ -683,8 +710,9 @@ Two properties make it attractive:
   and NIC, not CPU), sidestepping the node-level all-resource merge that drives `restricted`'s
   request-inflation quirk.
 
-**Honest limitation — not a hard guarantee.** Because a `best-effort` kubelet never rejects, the
-scheduler cannot provide a *kubelet-enforced* guarantee; it offers a strong placement preference
+**Honest limitation — not a hard guarantee.** Because BestEffort Topology Manager does not enforce
+preferred alignment, the scheduler cannot provide a *kubelet-enforced* locality guarantee; it
+offers a strong placement preference
 (place only where alignment is achievable, plus reservation) and the kubelet best-effort path
 delivers it. A true "align or don't run" guarantee would additionally need the
 [placement exporter](../numa-placement-exporter/README.md) to observe actual placement and re-place on a
@@ -706,6 +734,17 @@ can pin the flag off (`reconstructAvailable: "false"`) to trust NRT `Available` 
 operational mitigation in *Deployment guidance* instead. Correctness never depends on this — the
 kubelet is the backstop — but on packed or single-node clusters the stale window is hit on nearly every
 bind, so the correction matters in practice.
+
+This reconstruction covers per-zone CPU and device quantities. When Memory Manager group
+observations are complete, ordinary memory and hugepages use a separate aggregate ledger:
+
+```text
+group available = sum(zone Allocatable in mask) − sum(pod owner amounts)
+```
+
+Observed group amounts come from podResources block sizes. Predicted group records bridge the bind
+to observation gap. The scheduler does not reconstruct cross-NUMA memory by inventing a per-zone
+split.
 
 ### The problem
 
@@ -732,32 +771,34 @@ Available[zone] = Allocatable[zone] − Σ placement[zone]   over every pod the 
 ```
 
 where each pod's placement is resolved by the precedence already used for eviction crediting —
-**observed (exporter) > predicted (BindRequest / annotation)**. The evaluator, predicate and merge are
-unchanged; they consume whatever `Available` the topology carries. This reads from three sources,
-**none of which is the laggy NRT `Available`**:
+**observed (exporter) > predicted (BindRequest / annotation)**. The evaluator, predicate and merge
+are unchanged for CPU and devices; they consume whatever `Available` the topology carries.
+Statically managed memory instead uses the group formula above when group state is known. Both paths
+read from three sources, **none of which is the laggy NRT `Available`**:
 
 1. **`Allocatable`** — static per-zone capacity; never changes within a node's lifetime.
 2. **The set of pods on the node** — from the scheduler's own snapshot, which sees binds *and
    deletions* immediately, long before the NRT exporter republishes.
-3. **Each pod's zone** — the exporter's **observed** placement (ground truth, read from the kubelet
-   podresources API), with the scheduler's own **predicted** placement as a fallback for the brief
-   window between a bind and the exporter's first report.
+3. **Each pod's allocation record** — observed per-zone CPU/device placement and pod-level Memory
+   Manager group amounts from podResources, with scheduler predictions as a fallback for the brief
+   window between bind and the exporter's first report.
 
 ### Why anchor on *observed*, not predictions
 
 Reconstructing from *predicted* placements alone was rejected earlier: predicted zones often
 disagree with the kubelet's actual choice, and the error would scale with the whole pod count. The
-exporter removes that objection — observed placement is the kubelet's real per-zone assignment, so the
-reconstruction is **exact for every pod the exporter has reported**. Prediction survives only as a
-fallback for a just-bound pod the exporter has not yet observed (seconds), for that one pod, and is the
-scheduler's own prediction — internally consistent (the pod was pipelined onto the zone it
-predicts). The exporter annotates **all** pods with exclusive NUMA allocations — KAI-scheduled *and
-foreign* — so the subtraction is complete for `cpu`/`memory` (every exclusive consumer is
-accounted), not only for GPUs.
+exporter removes that objection: observed CPU/device placement is the kubelet's real per-zone
+assignment, while observed Memory Manager blocks provide the real aggregate reserved amount for
+each group. Reconstruction is therefore **exact for every pod the exporter has reported** without
+inventing a cross-NUMA memory split. Prediction survives only as a fallback for a just-bound pod the
+exporter has not yet observed, and remains internally consistent with the scheduler's own decision.
+The exporter annotates **all** pods with exclusive NUMA allocations — KAI-scheduled and foreign —
+so both ledgers include every reported exclusive consumer, not only GPUs.
 
 ### Why it beats trusting NRT `Available`
 
-Because it never reads NRT `Available`, it is immune to exporter lag in both directions:
+For pods with complete observed or predicted records, neither ledger reads NRT `Available`, so
+reconstruction avoids its lag in both directions:
 
 - **Additions**: a just-bound pod is in the snapshot immediately and subtracted (observed once
   reported, predicted until then) — no over-allocation window.
@@ -767,17 +808,19 @@ Because it never reads NRT `Available`, it is immune to exporter lag in both dir
   Pipelined preemptor is charged on its predicted zone; once the victim deletes it drops out and the
   zone frees — all from the fresh snapshot, so the over-eviction scenario above cannot arise.
 
-It is also simpler than any scheme that keeps NRT `Available` as the baseline and patches it: there
-is no staleness *detection* step, because the laggy source is not used at all.
+Missing, explicit-incomplete, or invalid Memory Manager group observations make the group ledger
+unknown. New managed-memory requests are blocked until complete ownership is available; per-zone
+memory availability is never used as a substitute.
 
 ### Operator integration
 
 The flag is **on by default in the plugin** — reconstruction does not wait on the exporter; it uses
 observed placements when the exporter is present and predicted placement records otherwise. The
 operator independently deploys the exporter when the `numa` plugin is enabled in a shard (making
-reconstruction *exact*), and an admin can pin the flag off per shard to revert to trusting NRT
-`Available`. Detailed mechanics — the exporter operand, its shard-enablement trigger, and the override
-— are in the [Operator Deployment design](./operator-deployment.md).
+reconstruction exact when observations are complete), and an admin can pin the flag off per shard
+to revert to trusting NRT `Available`. Detailed mechanics — the exporter operand, its
+shard-enablement trigger, and the override — are in the
+[Operator Deployment design](./operator-deployment.md).
 
 ### Caveats
 
@@ -795,7 +838,8 @@ reconstruction *exact*), and an admin can pin the flag off per shard to revert t
   kubelet rejects.
 - **`Allocatable` already nets out reserved capacity** (kube/system-reserved), so
   `Allocatable − Σ exclusive` is the correct free-for-alignment figure; no separate reserved
-  handling is needed.
+  handling is needed. Memory Manager group accounting assumes NRT `Allocatable` matches kubelet's
+  internal allocatable view; v1 does not add a separate validation path.
 
 ## Operator integration
 
