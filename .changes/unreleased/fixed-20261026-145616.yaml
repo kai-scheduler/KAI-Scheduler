@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Fair share remainder no longer exceeds a queue's remaining request or MaxAllowed
+custom:
+  Author: "blacksoxx"
+  Issue: "2522"

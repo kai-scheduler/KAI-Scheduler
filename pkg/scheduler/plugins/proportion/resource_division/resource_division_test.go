@@ -222,6 +222,52 @@ var _ = Describe("Proportion", func() {
 			})
 		})
 
+		Context("remainder with fractional requests", func() {
+			newQueue := func(uid string, request, maxAllowed float64) *rs.QueueAttributes {
+				return &rs.QueueAttributes{
+					UID:  common_info.QueueID(uid),
+					Name: "queue-" + uid,
+					QueueResourceShare: rs.QueueResourceShare{
+						GPU: rs.ResourceShare{
+							OverQuotaWeight: 1,
+							MaxAllowed:      maxAllowed,
+							Request:         request,
+						},
+						CPU:    rs.EmptyResource(),
+						Memory: rs.EmptyResource(),
+					},
+				}
+			}
+
+			It("does not give a queue more than its request", func() {
+				unlimited := commonconstants.UnlimitedResourceQuantity
+				queues := map[common_info.QueueID]*rs.QueueAttributes{
+					"1": newQueue("1", 3.5, unlimited),
+					"2": newQueue("2", 3.5, unlimited),
+					"3": newQueue("3", 3.5, unlimited),
+				}
+				remaining := divideOverQuotaResource(10.2, 0, queues, rs.GpuResource)
+				Expect(remaining).To(BeNumerically("~", 0, 1e-9))
+				Expect(queues["1"].GPU.FairShare).To(BeNumerically("~", 3.5, 1e-9))
+				Expect(queues["2"].GPU.FairShare).To(BeNumerically("~", 3.5, 1e-9))
+				Expect(queues["3"].GPU.FairShare).To(BeNumerically("~", 3.2, 1e-9))
+			})
+
+			It("does not give a queue more than its MaxAllowed", func() {
+				unlimited := commonconstants.UnlimitedResourceQuantity
+				queues := map[common_info.QueueID]*rs.QueueAttributes{
+					"1": newQueue("1", 5, 0.5),
+					"2": newQueue("2", 0.5, unlimited),
+					"3": newQueue("3", 0.5, unlimited),
+				}
+				remaining := divideOverQuotaResource(1.2, 0, queues, rs.GpuResource)
+				Expect(remaining).To(BeNumerically("~", 0, 1e-9))
+				Expect(queues["1"].GPU.FairShare).To(BeNumerically("~", 0.5, 1e-9))
+				Expect(queues["2"].GPU.FairShare).To(BeNumerically("~", 0.5, 1e-9))
+				Expect(queues["3"].GPU.FairShare).To(BeNumerically("~", 0.2, 1e-9))
+			})
+		})
+
 		Context("two queues", func() {
 			type testMetadata struct {
 				totalGPUs           float64
