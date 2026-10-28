@@ -566,3 +566,33 @@ func TestPodResizeValidator_PendingScheduled_StillValidated(t *testing.T) {
 	_, err := v.ValidateUpdate(context.Background(), oldPod, newPod)
 	assert.Error(t, err, "scheduled pending pod holds capacity and must be checked")
 }
+
+// TestPodResizeValidator_PodLevelUpsize_DeniedWhenLimitExceeded verifies that a resize
+// expressed through pod-level resources (KEP-2837) is charged like kubelet admission
+// charges it: the pod-level request replaces the container sum, so the delta is the
+// pod-level change even though no container request moved.
+func TestPodResizeValidator_PodLevelUpsize_DeniedWhenLimitExceeded(t *testing.T) {
+	scheme := buildScheme()
+	queue := newQueue("q", 4000, -1, 0, "2", "0") // limit=4000m, allocated=2000m
+	pg := newPodGroup("pg", "ns", "q")
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(queue, pg).Build()
+	v := NewPodResizeValidator(c, testSchedulerName, true, false)
+
+	// Container asks for 1 CPU; pod-level 2 CPU is what the pod is charged.
+	oldPod := podWithRequests("ns", "p", "pg", testSchedulerName, "1", "0")
+	oldPod.Spec.Resources = &corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2")},
+	}
+	// Pod-level 2 -> 5 CPU, containers unchanged: delta = 3; 2(alloc)+3 = 5 > 4 limit.
+	newPod := podWithRequests("ns", "p", "pg", testSchedulerName, "1", "0")
+	newPod.Spec.Resources = &corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("5")},
+	}
+	_, err := v.ValidateUpdate(context.Background(), oldPod, newPod)
+	assert.Error(t, err, "pod-level upsize over limit should be denied")
+
+	// Same pod-level change that still fits is allowed: 2(alloc)+1 = 3 <= 4.
+	newPod.Spec.Resources.Requests[corev1.ResourceCPU] = resource.MustParse("3")
+	_, err = v.ValidateUpdate(context.Background(), oldPod, newPod)
+	assert.NoError(t, err, "pod-level upsize within limit should be allowed")
+}
