@@ -136,8 +136,10 @@ func (pp *predicatesPlugin) OnSessionOpen(ssn *framework.Session) {
 		return pp.evaluateTaskOnVictimInvariantPrePredicates(task, k8sPredicates)
 	})
 
-	ssn.AddPredicateFn(func(task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo) error {
-		return pp.evaluateTaskOnPredicates(task, job, node, k8sPredicates,
+	ssn.AddPredicateFn(func(
+		task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo, view api.ClusterView,
+	) error {
+		return pp.evaluateTaskOnPredicates(task, job, node, view, k8sPredicates,
 			ssn.IsTaskAllocationOnNodeOverCapacityFn, ssn.IsRestrictNodeSchedulingEnabled, pp.skipPredicates)
 	})
 }
@@ -299,7 +301,7 @@ func generateErrorLog(allErrors []prePredicateError) string {
 }
 
 func (pp *predicatesPlugin) evaluateTaskOnPredicates(
-	task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo,
+	task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo, view api.ClusterView,
 	k8sPredicates k8s_internal.SessionPredicates,
 	isTaskAllocationOnNodeOverCapacityFn api.IsTaskAllocationOverCapacityFn,
 	isRestrictNodeSchedulingEnabled func() bool,
@@ -314,8 +316,6 @@ func (pp *predicatesPlugin) evaluateTaskOnPredicates(
 		task.Pod.Spec.NodeName = originalPodNodeName
 		task.NodeName = originalPodInfoNodeName
 	}()
-
-	k8sNodeInfo := node.PodAffinityInfo.(*cluster_info.K8sNodePodAffinityInfo).NodeInfo
 
 	if result := isTaskAllocationOnNodeOverCapacityFn(task, job, node); !result.IsSchedulable {
 		return common_info.NewFitError(task.Name, task.Namespace, node.Name,
@@ -348,6 +348,8 @@ func (pp *predicatesPlugin) evaluateTaskOnPredicates(
 		return common_info.NewFitErrorByReasons(task.Name, task.Namespace, node.Name, err, reasons...)
 	}
 
+	k8sNodeInfo := view.K8sNodeInfo(node)
+	state := view.CycleState(task.Pod)
 	for name, predicate := range k8sPredicates {
 		if !predicate.IsFilterRequired(task.Pod) {
 			log.InfraLogger.V(6).Do(func() {
@@ -363,7 +365,7 @@ func (pp *predicatesPlugin) evaluateTaskOnPredicates(
 			continue
 		}
 
-		fit, reasons, err := predicate.Filter(task.Pod, k8sNodeInfo)
+		fit, reasons, err := predicate.Filter(state, task.Pod, k8sNodeInfo)
 		if err != nil {
 			return err
 		}
