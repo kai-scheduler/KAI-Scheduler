@@ -11,14 +11,14 @@ on:
 jobs:
   dco-check:
     name: DCO Check
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 
       - name: Setup Python
         uses: actions/setup-python@v7
         with:
-          python-version: '3.14.4'
+          python-version: '3.14'
 
       - name: Run python DCO check
         env:
