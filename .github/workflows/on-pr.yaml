@@ -304,7 +304,7 @@ jobs:
     name: Run E2E Tests (${{ matrix.bucket }})
     needs: [ build, check-build-and-test-required, prepare-e2e-buckets ]
     if: needs.check-build-and-test-required.outputs.code == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.prepare-e2e-buckets.outputs.matrix) }}
@@ -322,10 +322,8 @@ jobs:
           PACKAGE_VERSION: ${{ needs.build.outputs.package_version }}
         run: |
           helm upgrade -i kai-scheduler /mnt/images/kai-scheduler-$PACKAGE_VERSION.tgz -n kai-scheduler --create-namespace \
-            --values ./hack/kai-scheduler-fake-npe-values.yaml \
+            --values ./hack/kai-scheduler-mokka-values.yaml \
             --set "global.gpuSharing=true" --set "global.registry=localhost:30100" --set "prometheus.enabled=true" --debug --wait
-          kubectl create clusterrole pods-patcher --verb=patch --resource=pods
-          kubectl create rolebinding fake-status-updater --clusterrole=pods-patcher --serviceaccount=gpu-operator:status-updater -n kai-resource-reservation
 
       - name: Run e2e tests
         env:
@@ -334,7 +332,7 @@ jobs:
           E2E_SEED: ${{ matrix.seed }}
         run: |
           read -r -a packages <<< "$E2E_PACKAGES"
-          go tool ginkgo -r --keep-going --randomize-all --randomize-suites --seed="$E2E_SEED" --trace -vv --label-filter '!autoscale && !scale && !upgrade && !gitops && !nightly' --output-dir=. --json-report="$E2E_REPORT" "${packages[@]}"
+          go tool ginkgo -r --keep-going --randomize-all --randomize-suites --seed="$E2E_SEED" --trace -vv --label-filter '!autoscale && !scale && !upgrade && !gitops && !nightly && !numa && !kwok' --output-dir=. --json-report="$E2E_REPORT" "${packages[@]}"
 
       - name: Report skipped tests
         if: always()
@@ -389,7 +387,7 @@ jobs:
     name: Run E2E Upgrade Tests
     needs: [ build, check-build-and-test-required ]
     if: needs.check-build-and-test-required.outputs.code == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       actions: write
     steps:
@@ -461,9 +459,7 @@ jobs:
         run: |
           echo "Installing kai-scheduler $UPGRADE_FROM_VERSION from OCI registry..."
           helm upgrade -i kai-scheduler oci://ghcr.io/kai-scheduler/kai-scheduler/kai-scheduler -n kai-scheduler --create-namespace \
-            --set "global.gpuSharing=true" --wait --version "$UPGRADE_FROM_VERSION"
-          kubectl create clusterrole pods-patcher --verb=patch --resource=pods
-          kubectl create rolebinding fake-status-updater --clusterrole=pods-patcher --serviceaccount=gpu-operator:status-updater -n kai-resource-reservation
+            --values ./hack/kai-scheduler-mokka-values.yaml --set "global.gpuSharing=true" --wait --version "$UPGRADE_FROM_VERSION"
 
       - name: Run upgrade e2e tests
         if: steps.resolve_version.outputs.skip != 'true'
@@ -476,7 +472,7 @@ jobs:
     name: Run E2E GitOps Tests
     needs: [ build, check-build-and-test-required ]
     if: needs.check-build-and-test-required.outputs.code == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v7

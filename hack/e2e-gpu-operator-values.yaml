@@ -1,0 +1,51 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# The original NVIDIA driver and toolkit operands run. The digest selects the
+# multi-arch Ubuntu 24.04 driver image despite kind reporting a Debian node OS.
+driver:
+  enabled: true
+  repository: nvcr.io/nvidia
+  image: driver
+  version: sha256:2b6e81c01ffa5634d2e3e798ad19e287877ef7551086eb36782348e653e34b74
+  upgradePolicy:
+    gpuPodDeletion:
+      force: true
+toolkit:
+  enabled: true
+devicePlugin:
+  enabled: true
+  config:
+    name: ""
+gfd:
+  enabled: true
+  env:
+    - name: GFD_MACHINE_TYPE_FILE
+      value: /etc/nvml-mock/machine-type
+dcgmExporter:
+  enabled: true
+dcgm:
+  enabled: false
+nodeStatusExporter:
+  enabled: false
+mig:
+  strategy: none
+migManager:
+  enabled: false
+cdi:
+  enabled: true
+  default: true
+validator:
+  driver:
+    env:
+      - name: DISABLE_DEV_CHAR_SYMLINK_CREATION
+        value: "true"
+  toolkit:
+    env:
+      - name: NVIDIA_VISIBLE_DEVICES
+        value: all
+  cuda:
+    env:
+      # Synthetic GPUs do not execute CUDA kernels.
+      - name: WITH_WORKLOAD
+        value: "false"

@@ -15,11 +15,15 @@ inputs:
   k8s_version:
     description: kindest/node image tag (e.g. v1.34.0)
     required: false
-    default: 'v1.34.0'
+    default: 'v1.35.0'
   feature_config:
     description: Named feature configuration (default, dra-enabled, or numa-full)
     required: false
     default: 'default'
+  gpu_stack:
+    description: GPU stack for the disposable cluster (mokka or fake)
+    required: false
+    default: 'mokka'
 
 runs:
   using: composite
@@ -50,10 +54,12 @@ runs:
       env:
         FEATURE_CONFIG: ${{ inputs.feature_config }}
         K8S_VERSION: ${{ inputs.k8s_version }}
+        GPU_STACK: ${{ inputs.gpu_stack }}
       run: |
         hack/generate-kind-config.sh \
           --feature-config $FEATURE_CONFIG \
           --k8s-version $K8S_VERSION \
+          --gpu-stack "$GPU_STACK" \
           --output /tmp/kind-config.yaml
 
     - name: Raise inotify limits
@@ -94,7 +100,21 @@ runs:
           docker push $new_image
         done
 
-    - name: Deploy fake gpu operator
+    - name: Install Helm for the Mokka setup
+      if: inputs.gpu_stack == 'mokka'
+      uses: azure/setup-helm@v4
+      with:
+        version: v3.19.0
+
+    - name: Deploy Mokka and GPU Operator
+      if: inputs.gpu_stack == 'mokka'
+      shell: bash
+      env:
+        CLUSTER_NAME: kind
+      run: ./hack/install-mokka-gpu-operator.sh
+
+    - name: Deploy fake gpu operator for dedicated legacy layouts
+      if: inputs.gpu_stack == 'fake'
       shell: bash
       env:
         FEATURE_CONFIG: ${{ inputs.feature_config }}

@@ -8,17 +8,20 @@
 set -eo pipefail
 
 FEATURE_CONFIG="default"
+GPU_STACK="fake"
 K8S_VERSION=""
 OUTPUT=""
 
 while [[ $# -gt 0 ]]; do
   case $1 in
     --feature-config) FEATURE_CONFIG="$2"; shift 2;;
+    --gpu-stack)      GPU_STACK="$2"; shift 2;;
     --k8s-version)    K8S_VERSION="$2"; shift 2;;
     --output)         OUTPUT="$2"; shift 2;;
     -h|--help)
       echo "Usage: $0 --feature-config <config> --k8s-version <version> --output <path>"
       echo "  --feature-config: default | dra-enabled | numa-full"
+      echo "  --gpu-stack:      fake | mokka (default: fake)"
       echo "  --k8s-version:    kindest/node version tag, e.g. v1.34.0"
       echo "  --output:         path to write the generated kind config YAML"
       exit 0;;
@@ -72,6 +75,13 @@ esac
   echo "kind: Cluster"
   echo "apiVersion: kind.x-k8s.io/v1alpha4"
 
+  if [ "$GPU_STACK" = "mokka" ]; then
+    echo 'containerdConfigPatches:'
+    echo '- |-'
+    echo '  [plugins."io.containerd.nri.v1.nri"]'
+    echo '    disable = false'
+  fi
+
   if [ "$ENABLE_DRA_FEATURE_GATE" = "true" ] || [ "$ENABLE_DRA_EXTENDED_RESOURCE_GATE" = "true" ]; then
     echo "featureGates:"
     if [ "$ENABLE_DRA_FEATURE_GATE" = "true" ]; then
@@ -109,6 +119,10 @@ esac
   for pool in "${WORKER_POOLS[@]}"; do
     echo "- role: worker"
     echo "  labels:"
+    if [ "$GPU_STACK" = "mokka" ]; then
+      echo '    mokka.nvidia.com/e2e-gpu: "true"'
+      continue
+    fi
     echo "    run.ai/simulated-gpu-node-pool: $pool"
     echo "    nvidia.com/gpu.deploy.device-plugin: \"true\""
     # fake-gpu-operator's status-exporter (which publishes NodeResourceTopology)

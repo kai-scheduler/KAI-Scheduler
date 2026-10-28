@@ -11,6 +11,7 @@ CLUSTER_NAME=${CLUSTER_NAME:-e2e-kai-scheduler}
 
 REPO_ROOT=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )/..
 : ${FEATURE_CONFIG:="default"}
+: ${GPU_STACK:="mokka"}
 KIND_CONFIG=${KIND_CONFIG:-""}
 GENERATED_KIND_CONFIG=""
 PORT_FORWARD_PID=""
@@ -98,6 +99,16 @@ if [[ -n "$KIND_CONFIG" && "$FEATURE_CONFIG" != "default" ]]; then
   exit 1
 fi
 
+case "$GPU_STACK" in
+  mokka|fake) ;;
+  *) echo "GPU_STACK must be mokka or fake"; exit 1 ;;
+esac
+
+if [[ "$GPU_STACK" = "mokka" && "$FEATURE_CONFIG" != "default" ]]; then
+  echo "The Mokka testing setup supports the default layout. Use GPU_STACK=fake for the existing DRA/NUMA layouts."
+  exit 1
+fi
+
 if [[ -n "$KIND_CONFIG" ]]; then
   CLUSTER_KIND_CONFIG="$KIND_CONFIG"
 else
@@ -105,6 +116,7 @@ else
   ${REPO_ROOT}/hack/generate-kind-config.sh \
       --feature-config "$FEATURE_CONFIG" \
       --k8s-version "$KIND_K8S_TAG" \
+      --gpu-stack "$GPU_STACK" \
       --output "$GENERATED_KIND_CONFIG"
   CLUSTER_KIND_CONFIG="$GENERATED_KIND_CONFIG"
 fi
@@ -126,13 +138,19 @@ echo "Deploying local image registry..."
 kubectl apply -f ${REPO_ROOT}/hack/local_registry.yaml
 kubectl wait --for=condition=available --timeout=60s deployment/registry -n kube-registry
 
-# Install the fake-gpu-operator to provide fake GPU resources for the e2e tests
-DRA_PLUGIN_ENABLED="false"
-if [ "$FEATURE_CONFIG" = "dra-enabled" ]; then
-  DRA_PLUGIN_ENABLED="true"
+if [ "$GPU_STACK" = "mokka" ]; then
+  CLUSTER_NAME="$CLUSTER_NAME" "${REPO_ROOT}/hack/install-mokka-gpu-operator.sh"
+  KAI_GPU_VALUES="${REPO_ROOT}/hack/kai-scheduler-mokka-values.yaml"
+else
+  # Preserve the dedicated FGO topology setups; they are outside this experiment.
+  DRA_PLUGIN_ENABLED="false"
+  if [ "$FEATURE_CONFIG" = "dra-enabled" ]; then
+    DRA_PLUGIN_ENABLED="true"
+  fi
+  helm upgrade -i gpu-operator oci://ghcr.io/run-ai/fake-gpu-operator/fake-gpu-operator --namespace gpu-operator --create-namespace \
+      --version 0.2.0 --values ${REPO_ROOT}/hack/fake-gpu-operator-values.yaml --set "draPlugin.enabled=$DRA_PLUGIN_ENABLED" --wait
+  KAI_GPU_VALUES="${REPO_ROOT}/hack/kai-scheduler-fake-npe-values.yaml"
 fi
-helm upgrade -i gpu-operator oci://ghcr.io/run-ai/fake-gpu-operator/fake-gpu-operator --namespace gpu-operator --create-namespace \
-    --version 0.2.0 --values ${REPO_ROOT}/hack/fake-gpu-operator-values.yaml --set "draPlugin.enabled=$DRA_PLUGIN_ENABLED" --wait
 
 # Deploy Prometheus Operator
 echo "Deploying Prometheus Operator..."
@@ -233,7 +251,7 @@ if [ "$LOCAL_IMAGES_BUILD" = "true" ]; then
         echo "Skipping KAI install; packaged chart kept at ./charts/kai-scheduler-$PACKAGE_VERSION.tgz"
     else
         helm upgrade -i kai-scheduler ./charts/kai-scheduler-$PACKAGE_VERSION.tgz -n kai-scheduler --create-namespace \
-        --values ${REPO_ROOT}/hack/kai-scheduler-fake-npe-values.yaml \
+        --values "$KAI_GPU_VALUES" \
         --set "global.gpuSharing=true" --set "global.registry=localhost:30100" --set "prometheus.enabled=true" \
         "${HAMI_HELM_SETS[@]}" --debug --wait
         rm -rf ./charts/kai-scheduler-$PACKAGE_VERSION.tgz
@@ -243,12 +261,12 @@ elif [ "$SKIP_KAI_INSTALL" = "true" ]; then
     echo "Skipping KAI install."
 else
     helm upgrade -i kai-scheduler oci://ghcr.io/kai-scheduler/kai-scheduler/kai-scheduler -n kai-scheduler --create-namespace \
-        --values ${REPO_ROOT}/hack/kai-scheduler-fake-npe-values.yaml \
+        --values "$KAI_GPU_VALUES" \
         --set "global.gpuSharing=true" --set "prometheus.enabled=true" \
         "${HAMI_HELM_SETS[@]}" --wait --version "$PACKAGE_VERSION"
 fi
 
-if [ "$SKIP_KAI_INSTALL" != "true" ]; then
+if [ "$SKIP_KAI_INSTALL" != "true" ] && [ "$GPU_STACK" = "fake" ]; then
     # Create RBAC for fake-gpu-operator status updates
     kubectl create clusterrole pods-patcher --verb=patch --resource=pods
     kubectl create rolebinding fake-status-updater --clusterrole=pods-patcher --serviceaccount=gpu-operator:status-updater -n kai-resource-reservation
