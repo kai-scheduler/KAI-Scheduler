@@ -34,7 +34,7 @@ type ExtendedNodeScorer interface {
 
 type FitPredicateRequired func(pod *v1.Pod) bool
 type FitPredicatePreFilter func(pod *v1.Pod) (sets.Set[string], *ksf.Status)
-type FitPredicateFilter func(pod *v1.Pod, nodeInfo *k8sframework.NodeInfo) (bool, []string, error)
+type FitPredicateFilter func(state SessionState, pod *v1.Pod, nodeInfo *k8sframework.NodeInfo) (bool, []string, error)
 
 type SessionPredicate struct {
 	Name                string

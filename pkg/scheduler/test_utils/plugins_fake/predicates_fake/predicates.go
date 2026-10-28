@@ -58,7 +58,7 @@ func failingPredicatePreFilterNoReason(predicateName string) k8s_internal.FitPre
 }
 
 func emptyPredicateFilter(predicateName string) k8s_internal.FitPredicateFilter {
-	return func(pod *v1.Pod, nodeInfo *k8sframework.NodeInfo) (bool, []string, error) {
+	return func(_ k8s_internal.SessionState, pod *v1.Pod, nodeInfo *k8sframework.NodeInfo) (bool, []string, error) {
 		log.InfraLogger.V(6).Infof(
 			"Checking pod %s/%s on node %s with empty predicate: %s",
 			pod.Namespace, pod.Name, nodeInfo.Node().Name, predicateName)
@@ -67,7 +67,7 @@ func emptyPredicateFilter(predicateName string) k8s_internal.FitPredicateFilter 
 }
 
 func failingPredicateFilter(predicateName string) k8s_internal.FitPredicateFilter {
-	return func(pod *v1.Pod, nodeInfo *k8sframework.NodeInfo) (bool, []string, error) {
+	return func(_ k8s_internal.SessionState, pod *v1.Pod, nodeInfo *k8sframework.NodeInfo) (bool, []string, error) {
 		log.InfraLogger.V(6).Infof(
 			"Checking pod %s/%s on node %s with failing predicate: %s",
 			pod.Namespace, pod.Name, nodeInfo.Node().Name, predicateName)
@@ -76,7 +76,7 @@ func failingPredicateFilter(predicateName string) k8s_internal.FitPredicateFilte
 }
 
 func failingPredicateFilterWithError(predicateName string) k8s_internal.FitPredicateFilter {
-	return func(pod *v1.Pod, nodeInfo *k8sframework.NodeInfo) (bool, []string, error) {
+	return func(_ k8s_internal.SessionState, pod *v1.Pod, nodeInfo *k8sframework.NodeInfo) (bool, []string, error) {
 		log.InfraLogger.V(6).Infof(
 			"Checking pod %s/%s on node %s with error failing predicate: %s",
 			pod.Namespace, pod.Name, nodeInfo.Node().Name, predicateName)
