@@ -12,6 +12,9 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	utilfeature "k8s.io/apiserver/pkg/util/feature"
+	featuregatetesting "k8s.io/component-base/featuregate/testing"
+	kubefeatures "k8s.io/kubernetes/pkg/features"
 	"k8s.io/utils/pointer"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
@@ -244,6 +247,50 @@ func TestPodSchedulingConstraintsSignature_InitContainerPorts(t *testing.T) {
 	newPodInfo := NewTaskInfo(&pod, resource_info.NewResourceVectorMap())
 	newKey := newPodInfo.GetSchedulingConstraintsSignature()
 	assert.NotEqualf(t, key, newKey, "Expected init container ports to affect signature, got same")
+}
+
+func TestPodSchedulingConstraintsSignature_NodeDeclaredFeatures(t *testing.T) {
+	tests := []struct {
+		name         string
+		gateEnabled  bool
+		expectChange bool
+	}{
+		{name: "gate enabled", gateEnabled: true, expectChange: true},
+		{name: "gate disabled", gateEnabled: false, expectChange: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			featuregatetesting.SetFeatureGateDuringTest(t, utilfeature.DefaultFeatureGate,
+				kubefeatures.NodeDeclaredFeatures, tt.gateEnabled)
+
+			pod := getRandomPod()
+			key := NewTaskInfo(&pod, resource_info.NewResourceVectorMap()).GetSchedulingConstraintsSignature()
+
+			podWithRequirement := pod.DeepCopy()
+			podWithRequirement.Spec.Containers[0].RestartPolicyRules = []v1.ContainerRestartRule{
+				{Action: v1.ContainerRestartRuleActionRestartAllContainers},
+			}
+			newKey := NewTaskInfo(podWithRequirement, resource_info.NewResourceVectorMap()).GetSchedulingConstraintsSignature()
+
+			if tt.expectChange {
+				assert.NotEqual(t, key, newKey, "Expected node declared feature requirements to affect signature")
+			} else {
+				assert.Equal(t, key, newKey, "Expected restart rules not to affect signature with the gate disabled")
+			}
+		})
+	}
+}
+
+func TestPodSchedulingConstraintsSignature_NodeDeclaredFeaturesGateDoesNotChangePodsWithoutRequirements(t *testing.T) {
+	pod := getRandomPod()
+
+	featuregatetesting.SetFeatureGateDuringTest(t, utilfeature.DefaultFeatureGate, kubefeatures.NodeDeclaredFeatures, false)
+	key := NewTaskInfo(&pod, resource_info.NewResourceVectorMap()).GetSchedulingConstraintsSignature()
+
+	featuregatetesting.SetFeatureGateDuringTest(t, utilfeature.DefaultFeatureGate, kubefeatures.NodeDeclaredFeatures, true)
+	newKey := NewTaskInfo(&pod, resource_info.NewResourceVectorMap()).GetSchedulingConstraintsSignature()
+
+	assert.Equal(t, key, newKey, "Expected the gate alone not to change signatures of pods without requirements")
 }
 
 // GenerateRandomString generates a random string of given length

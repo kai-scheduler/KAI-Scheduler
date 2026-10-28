@@ -8,13 +8,20 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"sync/atomic"
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/k8s_utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/storageclaim_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 )
+
+// A failed inference setup is cached and returns the same error for every pod,
+// so only the first error is logged at error level.
+var nodeDeclaredFeaturesErrorLogged atomic.Bool
 
 func schedulingConstraintsSignature(pod *v1.Pod, storageClaims map[storageclaim_info.Key]*storageclaim_info.StorageClaimInfo) common_info.SchedulingConstraintsSignature {
 	hash := sha256.New()
@@ -94,6 +101,19 @@ func schedulingConstraintsSignature(pod *v1.Pod, storageClaims map[storageclaim_
 		for _, port := range container.Ports {
 			_ = binary.Write(hash, binary.LittleEndian, port.HostPort)
 		}
+	}
+
+	// Node declared features. Skipped when empty so existing signatures stay unchanged.
+	featureRequirements, err := k8s_utils.NodeDeclaredFeatureRequirements(pod)
+	if err != nil {
+		if nodeDeclaredFeaturesErrorLogged.CompareAndSwap(false, true) {
+			log.InfraLogger.Errorf("Failed to infer node declared features for pod %s/%s: %v", pod.Namespace, pod.Name, err)
+		} else {
+			log.InfraLogger.V(4).Warnf("Failed to infer node declared features for pod %s/%s: %v", pod.Namespace, pod.Name, err)
+		}
+	}
+	if len(featureRequirements) > 0 {
+		hash.Write([]byte(fmt.Sprintf("%v", featureRequirements)))
 	}
 
 	return common_info.SchedulingConstraintsSignature(fmt.Sprintf("%x", hash.Sum(nil)))
