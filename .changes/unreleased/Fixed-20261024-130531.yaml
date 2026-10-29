@@ -1,0 +1,6 @@
+kind: Fixed
+body: Apply global.podSecurityContext to the kai-config-deployer hook Job
+time: 2026-10-24T13:05:31.976577194+01:00
+custom:
+    Author: dttung2905
+    Issue: ""
