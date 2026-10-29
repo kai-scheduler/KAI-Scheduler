@@ -11,9 +11,12 @@ const _s3raw = typeof window.SCALE_TESTS_S3_BASE_URL !== 'undefined'
 const S3_BASE_URL = (_s3raw === '__S3_' + 'BASE_URL__' ? '.' : _s3raw).replace(/\/$/, '');
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+const FETCH_CONCURRENCY = 8;
+const RENDER_THROTTLE_MS = 250;
 
 // ── State ──────────────────────────────────────────────────────────────────
 
+let loadedRuns = [];
 let allRuns    = [];
 let sortKey    = 'time';
 let sortAsc    = false;
@@ -448,12 +451,27 @@ function renderRun(run, runIdx) {
 
 // ── Page render ────────────────────────────────────────────────────────────
 
-function renderAll() {
-  const sorted = sortedRuns();
-  const visible = sorted.filter(run => run.kind === 'scale-results'
-    ? run.result.tests.some(scaleResultVisible)
-    : ginkgoSpecs(run).some(specVisible));
+function isRunsTabActive() {
+  return !document.getElementById('main').classList.contains('hidden');
+}
 
+function renderAll() {
+  allRuns = loadedRuns.filter(Boolean);
+  window.allRuns = allRuns;
+  renderStats();
+  if (isRunsTabActive()) renderRunList();
+}
+
+let renderTimer = null;
+function scheduleRender() {
+  if (renderTimer) return;
+  renderTimer = setTimeout(() => {
+    renderTimer = null;
+    renderAll();
+  }, RENDER_THROTTLE_MS);
+}
+
+function renderStats() {
   const totalRuns = allRuns.length;
   const passedRuns = allRuns.filter(run => ScaleTestResultsView.summarizeRun(run).failed === 0).length;
   const failedRuns = totalRuns - passedRuns;
@@ -471,9 +489,16 @@ function renderAll() {
       with failures
     </div>` : ''}`;
 
+}
+
+function renderRunList() {
+  const visible = sortedRuns().filter(run => run.kind === 'scale-results'
+    ? run.result.tests.some(scaleResultVisible)
+    : ginkgoSpecs(run).some(specVisible));
+
   const totalSpecs = allRuns.reduce((count, run) => count + ScaleTestResultsView.summarizeRun(run).total, 0);
   document.getElementById('summary').innerHTML =
-    `Showing <strong>${visible.length}</strong> of <strong>${totalRuns}</strong> runs
+    `Showing <strong>${visible.length}</strong> of <strong>${allRuns.length}</strong> runs
      &nbsp;·&nbsp; <strong>${totalSpecs}</strong> total tests
      ${searchQuery ? `&nbsp;·&nbsp; filtering by <strong>"${esc(searchQuery)}"</strong>` : ''}`;
 
@@ -504,10 +529,35 @@ async function loadManifest() {
   return res.json();
 }
 
+// Result objects are immutable (the path embeds timestamp, commit and run id), so the HTTP cache is always valid.
 async function loadResult(path) {
-  const res = await fetch(`${S3_BASE_URL}/${path}`, { cache: 'no-cache' });
+  const res = await fetch(`${S3_BASE_URL}/${path}`, { cache: 'force-cache' });
   if (!res.ok) throw new Error(`${path}: HTTP ${res.status}`);
   return res.json();
+}
+
+function setLoadProgress(text) {
+  const el = document.getElementById('metrics-progress');
+  if (el) el.textContent = text;
+}
+
+async function loadRuns(recent) {
+  let next = 0;
+  let done = 0;
+  const worker = async () => {
+    while (next < recent.length) {
+      const index = next++;
+      try {
+        loadedRuns[index] = ScaleTestResults.loadRun(await loadResult(recent[index].path), recent[index]);
+      } catch (error) {
+        console.warn('[scale-tests] Failed to load result:', recent[index].path, error);
+      }
+      done++;
+      setLoadProgress(`${done} / ${recent.length} runs`);
+      scheduleRender();
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(FETCH_CONCURRENCY, recent.length) }, worker));
 }
 
 async function init() {
@@ -523,45 +573,40 @@ async function init() {
       `Loading <strong>${recent.length}</strong> runs from the last 30 days…`;
 
     if (!recent.length) {
-      mainEl.innerHTML = '<div class="msg">No runs found in the last 30 days.</div>';
+      const message = '<div class="msg">No runs found in the last 30 days.</div>';
+      mainEl.innerHTML = message;
+      document.getElementById('metrics-grid').innerHTML = message;
       return;
     }
 
-    // Fetch results in batches and render progressively.
-    const BATCH = 5;
-    for (let i = 0; i < recent.length; i += BATCH) {
-      const batch   = recent.slice(i, i + BATCH);
-      const results = await Promise.allSettled(batch.map(r => loadResult(r.path)));
-      results.forEach((result, j) => {
-        if (result.status === 'fulfilled') {
-          try {
-            allRuns.push(ScaleTestResults.loadRun(result.value, batch[j]));
-          } catch (error) {
-            console.warn('[scale-tests] Failed to parse result:', batch[j].path, error);
-          }
-        } else {
-          console.warn('[scale-tests] Failed to load result:', batch[j].path, result.reason);
-        }
-      });
-      window.allRuns = allRuns;
-      renderAll();
-    }
+    loadedRuns = new Array(recent.length);
+    await loadRuns(recent);
+
+    clearTimeout(renderTimer);
+    renderTimer = null;
+    renderAll();
 
     // Notify metrics.js that data is ready
     window.dispatchEvent(new CustomEvent('scale-tests:data-loaded'));
   } catch (err) {
-    mainEl.innerHTML = `<div class="msg err">
+    const errorHtml = `<div class="msg err">
       <strong>Error loading results</strong><br><br>${esc(err.message)}
       <br><br><span style="font-size:12px;color:var(--muted)">
         S3 base URL: <code>${esc(S3_BASE_URL)}</code>
       </span>
     </div>`;
+    mainEl.innerHTML = errorHtml;
+    document.getElementById('metrics-grid').innerHTML = errorHtml;
     document.getElementById('summary').textContent = '';
     console.error('[scale-tests]', err);
   }
 }
 
 // ── Event wiring ───────────────────────────────────────────────────────────
+
+window.addEventListener('scale-tests:tab-changed', event => {
+  if (event.detail === 'runs') renderAll();
+});
 
 document.getElementById('search').addEventListener('input', e => {
   searchQuery = e.target.value.trim();

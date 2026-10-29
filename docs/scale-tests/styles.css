@@ -455,6 +455,8 @@ main { padding: 16px 24px; max-width: 1280px; margin: 0 auto; }
   padding: 16px 0;
 }
 
+.metrics-grid > .msg { grid-column: 1 / -1; }
+
 .chart-card {
   background: var(--surface);
   border: 1px solid var(--border);

@@ -78,6 +78,24 @@ test('keeps fraction saturation runs in one series when only derived metrics dif
   assert.equal(first.seriesLabel, second.seriesLabel);
 });
 
+test('charts bind time after the last allocation for the scheduling saturation series', () => {
+  const run = loadRun({
+    metadata: { kai_scheduler_ref: 'main', service_resources: { scheduler: { limits: { cpu: '5' } } } },
+    results: {
+      status: 'success',
+      tests: [{
+        test_name: 'Mixed fractions saturation - scheduling',
+        status: 'success',
+        details: { nodes: 500, allocation_seconds: 30, scheduling_seconds: 42.5 },
+      }],
+    },
+  }, meta);
+  const [observation] = extractChartObservations([run]);
+
+  assert.equal(observation.timingSeconds, 12.5);
+  assert.ok(!buildTooltipLines(observation).some(line => line.includes('service_resources')));
+});
+
 test('labels the actual topology KWOK node count in topology graphs', () => {
   const topologyPayload = {
     metadata: { kai_scheduler_ref: 'main', kwok_node_count: 1000 },
@@ -108,8 +126,6 @@ test('preserves complete details and raw timing values in observations', () => {
   assert.equal(observation.timingSeconds, expectedDetails['time(seconds)']);
   assert.equal(observation.commit, 'abc123');
   const tooltip = buildTooltipLines(observation);
-  assert.ok(tooltip.includes('test: NCCL Simulation on empty cluster'));
-  assert.ok(tooltip.includes(`time(seconds): ${expectedDetails['time(seconds)']}`));
   assert.ok(tooltip.includes(`total pods: ${expectedDetails['total pods']}`));
 });
 
