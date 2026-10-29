@@ -113,6 +113,8 @@ func BuildSchedulerParams(opt *options.ServerOption) *conf.SchedulerParams {
 		DetailedFitErrors:                 opt.DetailedFitErrors,
 		UpdatePodEvictionCondition:        opt.UpdatePodEvictionCondition,
 		QueueLabelKey:                     opt.QueueLabelKey,
+		MinFailedSearchBackoff:            opt.MinFailedSearchBackoff,
+		MaxFailedSearchBackoff:            opt.MaxFailedSearchBackoff,
 	}
 	if opt.GpuSharingMode != "" {
 		gpuSharingMode := kaiv1common.GpuSharingMode(opt.GpuSharingMode)
