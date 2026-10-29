@@ -7,8 +7,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -55,6 +57,7 @@ type inflightUpdate struct {
 	object       runtime.Object
 	patchData    []byte
 	updateStatus bool
+	statusPatch  []byte
 	subResources []string
 
 	writtenResourceVersions []string
@@ -222,11 +225,14 @@ func (su *defaultStatusUpdater) RecordJobStatusEvent(
 		return err
 	}
 
+	// The status helpers below replace the conditions slice and scheduling state rather than
+	// mutating them, so a shallow copy keeps the values the status patch is tested against.
+	oldStatus := job.PodGroup.Status
 	updatePodgroupStatus := updateCorePods(job)
 	if job.GetNumPendingTasks() > 0 || job.GetNumGatedTasks() > 0 {
 		if !job.IsReadyForScheduling() {
 			su.recordJobNotReadyEvent(job)
-			su.pushPodGroupUpdate(job, patchData, updatePodgroupStatus)
+			su.pushPodGroupUpdate(job, patchData, oldStatus, updatePodgroupStatus)
 			return nil
 		}
 		if err := su.recordUnschedulablePodsEvents(job, resolveDetailedFitErrors); err != nil {
@@ -237,14 +243,14 @@ func (su *defaultStatusUpdater) RecordJobStatusEvent(
 		updatePodgroupStatus = su.clearPodGroupSchedulingCondition(job) || updatePodgroupStatus
 	}
 
-	su.pushPodGroupUpdate(job, patchData, updatePodgroupStatus)
+	su.pushPodGroupUpdate(job, patchData, oldStatus, updatePodgroupStatus)
 
 	return nil
 }
 
 // updateCorePods writes the scheduler-owned core pod set onto the pod group status for
-// semi-preemptible jobs, and reports whether it changed. The status write is a full UpdateStatus of
-// the snapshot object, so it must only fire when core membership actually changed.
+// semi-preemptible jobs, and reports whether it changed. The status write can fall back to a full
+// UpdateStatus of the snapshot object, so it must only fire when core membership actually changed.
 func updateCorePods(job *podgroup_info.PodGroupInfo) bool {
 	if !job.IsSemiPreemptibleJob() {
 		return false
@@ -258,10 +264,18 @@ func updateCorePods(job *podgroup_info.PodGroupInfo) bool {
 }
 
 func (su *defaultStatusUpdater) pushPodGroupUpdate(
-	job *podgroup_info.PodGroupInfo, patchData []byte, updateStatus bool,
+	job *podgroup_info.PodGroupInfo, patchData []byte, oldStatus enginev2alpha2.PodGroupStatus, updateStatus bool,
 ) {
 	if len(patchData) == 0 && !updateStatus {
 		return
+	}
+	var statusPatch []byte
+	if updateStatus {
+		var err error
+		if statusPatch, err = getPodGroupStatusPatch(job.PodGroup, oldStatus, su.nodePoolLabelKey); err != nil {
+			log.InfraLogger.Warningf("Failed to create status patch for podgroup %s/%s, using update instead: %v",
+				job.PodGroup.Namespace, job.PodGroup.Name, err)
+		}
 	}
 	su.pushToUpdateQueue(
 		&updatePayload{
@@ -272,6 +286,7 @@ func (su *defaultStatusUpdater) pushPodGroupUpdate(
 			object:       job.PodGroup,
 			patchData:    patchData,
 			updateStatus: updateStatus,
+			statusPatch:  statusPatch,
 		},
 	)
 }
@@ -767,3 +782,65 @@ func getPodGroupPatch(old *enginev2alpha2.PodGroup, new *enginev2alpha2.PodGroup
 
 	return json.Marshal(patches)
 }
+
+type jsonPatchOperation struct {
+	Op    string `json:"op"`
+	Path  string `json:"path"`
+	Value any    `json:"value"`
+}
+
+// getPodGroupStatusPatch builds a JSON patch of the scheduler-owned status fields that only applies
+// if the pod group still has the scheduling conditions and node pool the update was computed from.
+// The conditions list has no list-map keys, so it is tested and written as a whole. A test for null
+// matches an absent field.
+func getPodGroupStatusPatch(
+	podGroup *enginev2alpha2.PodGroup, oldStatus enginev2alpha2.PodGroupStatus, nodePoolLabelKey string,
+) ([]byte, error) {
+	// Status is dropped on create, so until something writes it there is no /status to test or add
+	// under. The first write stays a full update.
+	if reflect.ValueOf(oldStatus).IsZero() {
+		return nil, nil
+	}
+	patch := []jsonPatchOperation{
+		{Op: "test", Path: "/metadata/uid", Value: podGroup.UID},
+		{Op: "test", Path: "/metadata/deletionTimestamp", Value: podGroup.DeletionTimestamp},
+	}
+	if nodePoolLabelKey != "" {
+		if len(podGroup.Labels) == 0 {
+			patch = append(patch, jsonPatchOperation{Op: "test", Path: "/metadata/labels"})
+		} else {
+			var nodePool any
+			if value, found := podGroup.Labels[nodePoolLabelKey]; found {
+				nodePool = value
+			}
+			patch = append(patch, jsonPatchOperation{
+				Op: "test", Path: "/metadata/labels/" + jsonPointerEscaper.Replace(nodePoolLabelKey), Value: nodePool,
+			})
+		}
+	}
+
+	conditions := podGroup.Status.SchedulingConditions
+	if !reflect.DeepEqual(oldStatus.SchedulingConditions, conditions) {
+		var oldConditions any
+		if len(oldStatus.SchedulingConditions) > 0 {
+			oldConditions = oldStatus.SchedulingConditions
+		}
+		patch = append(patch, jsonPatchOperation{Op: "test", Path: "/status/schedulingConditions", Value: oldConditions})
+		if len(conditions) > 0 {
+			patch = append(patch, jsonPatchOperation{Op: "add", Path: "/status/schedulingConditions", Value: conditions})
+		} else {
+			patch = append(patch, jsonPatchOperation{Op: "remove", Path: "/status/schedulingConditions"})
+		}
+	}
+
+	if podGroup.Status.SchedulingState != nil &&
+		!reflect.DeepEqual(oldStatus.SchedulingState, podGroup.Status.SchedulingState) {
+		patch = append(patch, jsonPatchOperation{
+			Op: "add", Path: "/status/schedulingState", Value: podGroup.Status.SchedulingState,
+		})
+	}
+
+	return json.Marshal(patch)
+}
+
+var jsonPointerEscaper = strings.NewReplacer("~", "~0", "/", "~1")

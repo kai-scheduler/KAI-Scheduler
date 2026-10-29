@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -1342,4 +1343,105 @@ func TestUpdateCorePods(t *testing.T) {
 		assert.False(t, updateCorePods(job))
 		assert.Nil(t, job.PodGroup.Status.SchedulingState)
 	})
+}
+
+func TestGetPodGroupStatusPatch(t *testing.T) {
+	condition := func(nodePool, transitionID string) enginev2alpha2.SchedulingCondition {
+		return enginev2alpha2.SchedulingCondition{
+			Type:         enginev2alpha2.UnschedulableOnNodePool,
+			NodePool:     nodePool,
+			TransitionID: transitionID,
+		}
+	}
+	conditionJSON := func(nodePool, transitionID string) string {
+		return fmt.Sprintf(`{"type":"UnschedulableOnNodePool","nodePool":%q,"transitionID":%q,"lastTransitionTime":null}`,
+			nodePool, transitionID)
+	}
+	allocatedCPU := enginev2alpha2.PodGroupResourcesStatus{Allocated: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1")}}
+
+	tests := []struct {
+		name      string
+		labels    map[string]string
+		oldStatus enginev2alpha2.PodGroupStatus
+		newStatus enginev2alpha2.PodGroupStatus
+		expected  string
+	}{
+		{
+			name:      "no patch for a pod group without a status",
+			newStatus: enginev2alpha2.PodGroupStatus{SchedulingConditions: []enginev2alpha2.SchedulingCondition{condition("default", "1")}},
+		},
+		{
+			name:      "first condition on a pod group without labels",
+			oldStatus: enginev2alpha2.PodGroupStatus{ResourcesStatus: allocatedCPU},
+			newStatus: enginev2alpha2.PodGroupStatus{
+				ResourcesStatus:      allocatedCPU,
+				SchedulingConditions: []enginev2alpha2.SchedulingCondition{condition("default", "1")},
+			},
+			expected: `[
+				{"op":"test","path":"/metadata/uid","value":"pg-uid"},
+				{"op":"test","path":"/metadata/deletionTimestamp","value":null},
+				{"op":"test","path":"/metadata/labels","value":null},
+				{"op":"test","path":"/status/schedulingConditions","value":null},
+				{"op":"add","path":"/status/schedulingConditions","value":[` + conditionJSON("default", "1") + `]}
+			]`,
+		},
+		{
+			name:      "replaces the conditions of a labeled pod group",
+			labels:    map[string]string{nodePoolLabelKey: "pool-a"},
+			oldStatus: enginev2alpha2.PodGroupStatus{SchedulingConditions: []enginev2alpha2.SchedulingCondition{condition("pool-b", "1")}},
+			newStatus: enginev2alpha2.PodGroupStatus{SchedulingConditions: []enginev2alpha2.SchedulingCondition{
+				condition("pool-b", "1"), condition("pool-a", "2"),
+			}},
+			expected: `[
+				{"op":"test","path":"/metadata/uid","value":"pg-uid"},
+				{"op":"test","path":"/metadata/deletionTimestamp","value":null},
+				{"op":"test","path":"/metadata/labels/kai.scheduler~1node-pool","value":"pool-a"},
+				{"op":"test","path":"/status/schedulingConditions","value":[` + conditionJSON("pool-b", "1") + `]},
+				{"op":"add","path":"/status/schedulingConditions","value":[` +
+				conditionJSON("pool-b", "1") + `,` + conditionJSON("pool-a", "2") + `]}
+			]`,
+		},
+		{
+			name:      "removes cleared conditions",
+			labels:    map[string]string{"other": "label"},
+			oldStatus: enginev2alpha2.PodGroupStatus{SchedulingConditions: []enginev2alpha2.SchedulingCondition{condition("default", "3")}},
+			expected: `[
+				{"op":"test","path":"/metadata/uid","value":"pg-uid"},
+				{"op":"test","path":"/metadata/deletionTimestamp","value":null},
+				{"op":"test","path":"/metadata/labels/kai.scheduler~1node-pool","value":null},
+				{"op":"test","path":"/status/schedulingConditions","value":[` + conditionJSON("default", "3") + `]},
+				{"op":"remove","path":"/status/schedulingConditions","value":null}
+			]`,
+		},
+		{
+			name:      "core pods change does not test the conditions",
+			labels:    map[string]string{nodePoolLabelKey: "pool-a"},
+			oldStatus: enginev2alpha2.PodGroupStatus{SchedulingConditions: []enginev2alpha2.SchedulingCondition{condition("pool-a", "1")}},
+			newStatus: enginev2alpha2.PodGroupStatus{
+				SchedulingConditions: []enginev2alpha2.SchedulingCondition{condition("pool-a", "1")},
+				SchedulingState:      &enginev2alpha2.PodGroupSchedulingState{CorePods: []string{"pod-a"}},
+			},
+			expected: `[
+				{"op":"test","path":"/metadata/uid","value":"pg-uid"},
+				{"op":"test","path":"/metadata/deletionTimestamp","value":null},
+				{"op":"test","path":"/metadata/labels/kai.scheduler~1node-pool","value":"pool-a"},
+				{"op":"add","path":"/status/schedulingState","value":{"corePods":["pod-a"]}}
+			]`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			podGroup := &enginev2alpha2.PodGroup{
+				ObjectMeta: metav1.ObjectMeta{Name: "pg", Namespace: "ns", UID: "pg-uid", Labels: test.labels},
+				Status:     test.newStatus,
+			}
+			patch, err := getPodGroupStatusPatch(podGroup, test.oldStatus, nodePoolLabelKey)
+			require.NoError(t, err)
+			if test.expected == "" {
+				assert.Nil(t, patch)
+				return
+			}
+			assert.JSONEq(t, test.expected, string(patch))
+		})
+	}
 }
