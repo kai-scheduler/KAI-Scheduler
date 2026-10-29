@@ -51,9 +51,9 @@ resources:
     overQuotaWeight: 1
     limit: 8192                          # Max 8GB
   gpu:
-    quota: 2                             # 2 GPUs guaranteed
+    quota: 2                             # 2 GPU units guaranteed
     overQuotaWeight: 1
-    limit: 4                             # Max 4 GPUs
+    limit: 4                             # Max 4 GPU units
 ```
 
 ## Resource Configuration
@@ -69,9 +69,20 @@ resources:
 ### Resource Units
 - **CPU**: Millicores (1000 = 1 CPU core)
 - **Memory**: Megabytes (MB = 10⁶ bytes)
-- **GPU**: Units (1 = full GPU device)
+- **GPU**: Queue quota and limit use aggregate GPU units:
+  - Each requested whole GPU (`nvidia.com/gpu`) counts as 1 unit.
+  - A fractional GPU request counts by its requested fraction per device. For example, two pods each requesting `gpu-fraction: "0.5"` consume 1 unit together. Memory-based fractional requests are converted to GPU units using the requested memory and GPU memory capacity. See [GPU Sharing](../gpu-sharing/README.md#choose-an-annotation-style).
+  - Each requested [MIG](https://docs.nvidia.com/datacenter/tesla/mig-user-guide/latest/introduction.html) device (`nvidia.com/mig-Xg.Ygb`) counts as X units, where X is the number before `g` in the profile name. See [supported MIG profiles](https://docs.nvidia.com/datacenter/tesla/mig-user-guide/latest/supported-mig-profiles.html).
+
+  Whole GPUs, fractional requests, and MIG devices share the same queue quota and limit. These fields do not reserve a particular MIG profile or guarantee that a matching device is available. GPU units are not physical GPU equivalents: a whole GPU counts as 1, while a `mig-7g.*` device counts as 7.
 
 ## Examples
+
+### GPU Quota with MIG and Fractional Requests
+
+For a queue with `gpu.quota: 2` and `gpu.limit: 2`, two `mig-1g.*` devices, one `mig-2g.*` device, or two whole GPUs each consume 2 GPU units and reach the limit. One `mig-3g.*` device consumes 3 units and exceeds the limit. Requests within the limit still require suitable devices to be available.
+
+Two pods each requesting `gpu-fraction: "0.5"` consume 1 unit together. Adding one `mig-1g.*` device consumes the second unit and reaches the same limit.
 
 ### Basic Queue
 ```yaml
