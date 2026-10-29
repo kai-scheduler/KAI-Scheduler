@@ -819,6 +819,19 @@ func TestPodInfo_Clone_ResourceClaimInfo(t *testing.T) {
 		"Clone should copy Allocation, not share pointer")
 }
 
+func TestPodInfo_Clone_SharesOnlyTheRequestVector(t *testing.T) {
+	pi := createPodInfoWithGPU()
+	originalAcceptedVector := pi.AcceptedResourceVector.Clone()
+
+	cloned := pi.Clone()
+
+	assert.Assert(t, &cloned.ResReqVector[0] == &pi.ResReqVector[0], "Clone should share the request vector")
+
+	cloned.AcceptedResourceVector.Set(resource_info.GPUIndex, 7)
+
+	assert.DeepEqual(t, originalAcceptedVector, pi.AcceptedResourceVector)
+}
+
 func TestPodInfo_ShouldAllocate(t *testing.T) {
 	tests := []struct {
 		name             string

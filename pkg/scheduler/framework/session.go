@@ -20,10 +20,13 @@ limitations under the License.
 package framework
 
 import (
+	"cmp"
 	"fmt"
 	"net/http"
 	"runtime"
+	"slices"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -136,8 +139,11 @@ func (ssn *Session) GetNodes() []ksf.NodeInfo {
 
 func (ssn *Session) BindPod(pod *pod_info.PodInfo) error {
 	bindRequestAnnotations := ssn.MutateBindRequestAnnotations(pod, pod.NodeName)
-	predictedNUMAZones := numaPlacementToZones(pod, ssn.ClusterInfo.Nodes[pod.NodeName])
-	if err := ssn.Cache.Bind(pod, pod.NodeName, bindRequestAnnotations, predictedNUMAZones); err != nil {
+	numa := cache.NUMAPrediction{
+		Zones:        numaPlacementToZones(pod, ssn.ClusterInfo.Nodes[pod.NodeName]),
+		MemoryGroups: numaPlacementToMemoryGroups(pod, ssn.ClusterInfo.Nodes[pod.NodeName]),
+	}
+	if err := ssn.Cache.Bind(pod, pod.NodeName, bindRequestAnnotations, numa); err != nil {
 		return err
 	}
 
@@ -272,16 +278,15 @@ func (ssn *Session) OrderedNodesByTask(nodes []*node_info.NodeInfo, task *pod_in
 	ssn.NodePreOrderFn(task, nodes)
 
 	numWorkersToUseInParallel := max(min(ssn.scoringPoolWorkerCount, len(nodes)), 1)
-	workerLocalScores := make([]map[float64][]*node_info.NodeInfo, numWorkersToUseInParallel)
+	scores := make([]nodeScore, len(nodes))
 
 	var wg sync.WaitGroup
 	chunkSize := (len(nodes) + numWorkersToUseInParallel - 1) / numWorkersToUseInParallel
 	scoreChunk := func(idx int) {
-		workerNodes := ssn.getWorkerNodes(nodes, idx, chunkSize)
-		if workerNodes == nil {
-			return
+		start := idx * chunkSize
+		for i := start; i < min(start+chunkSize, len(nodes)); i++ {
+			scores[i] = ssn.scoreNode(nodes[i], task)
 		}
-		workerLocalScores[idx] = ssn.scoreNodes(workerNodes, task)
 	}
 	for workerIdx := range numWorkersToUseInParallel {
 		wg.Add(1)
@@ -298,39 +303,26 @@ func (ssn *Session) OrderedNodesByTask(nodes []*node_info.NodeInfo, task *pod_in
 	}
 	wg.Wait()
 
-	nodeScores := workerLocalScores[0]
-	for _, m := range workerLocalScores[1:] {
-		for score, ns := range m {
-			nodeScores[score] = append(nodeScores[score], ns...)
-		}
-	}
-	return sortNodesByScore(nodeScores)
+	return sortNodesByScore(scores)
 }
 
-func (ssn *Session) getWorkerNodes(nodes []*node_info.NodeInfo, workerIdx int, chunkSize int) []*node_info.NodeInfo {
-	start := workerIdx * chunkSize
-	end := min(start+chunkSize, len(nodes))
-	if start >= end {
-		return nil
-	}
-	return nodes[start:end]
+type nodeScore struct {
+	node  *node_info.NodeInfo
+	score float64
 }
 
-func (ssn *Session) scoreNodes(nodes []*node_info.NodeInfo, task *pod_info.PodInfo) map[float64][]*node_info.NodeInfo {
-	workerScores := make(map[float64][]*node_info.NodeInfo)
-	for _, node := range nodes {
-		score, err := ssn.NodeOrderFn(task, node)
-		if err != nil {
-			log.InfraLogger.Errorf("Error in Calculating Priority for the node:%v", err)
-			continue
-		}
-		workerScores[score] = append(workerScores[score], node)
-		log.InfraLogger.V(5).Do(func() {
-			log.InfraLogger.Infof("Overall priority node score of node <%v> for task <%v/%v> is: %f",
-				node.Name, task.Namespace, task.Name, score)
-		})
+// scoreNode leaves node nil when scoring fails, so the node is dropped.
+func (ssn *Session) scoreNode(node *node_info.NodeInfo, task *pod_info.PodInfo) nodeScore {
+	score, err := ssn.NodeOrderFn(task, node)
+	if err != nil {
+		log.InfraLogger.Errorf("Error in Calculating Priority for the node:%v", err)
+		return nodeScore{}
 	}
-	return workerScores
+	log.InfraLogger.V(5).Do(func() {
+		log.InfraLogger.Infof("Overall priority node score of node <%v> for task <%v/%v> is: %f",
+			node.Name, task.Namespace, task.Name, score)
+	})
+	return nodeScore{node: node, score: score}
 }
 
 func (ssn *Session) isTaskAllocatableOnNode(task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo,
@@ -636,25 +628,23 @@ func (ssn *Session) ResourceVectorMap() *resource_info.ResourceVectorMap {
 	return ssn.ClusterInfo.ResourceVectorMap
 }
 
-func sortNodesByScore(nodeScores map[float64][]*node_info.NodeInfo) []*node_info.NodeInfo {
-	var nodesInorder []*node_info.NodeInfo
-	var keys []float64
-	for key := range nodeScores {
-		keys = append(keys, key)
+// sortNodesByScore orders nodes by score, highest first, and by name within a score.
+func sortNodesByScore(scores []nodeScore) []*node_info.NodeInfo {
+	scores = slices.DeleteFunc(scores, func(s nodeScore) bool { return s.node == nil })
+	if len(scores) == 0 {
+		return nil
 	}
-	sort.Sort(sort.Reverse(sort.Float64Slice(keys)))
-	for _, key := range keys {
-		nodes := sortNodesByName(nodeScores[key])
-		nodesInorder = append(nodesInorder, nodes...)
-	}
-	return nodesInorder
-}
-
-func sortNodesByName(nodes []*node_info.NodeInfo) []*node_info.NodeInfo {
-	sort.Slice(nodes, func(i, j int) bool {
-		return nodes[i].Name < nodes[j].Name
+	slices.SortFunc(scores, func(a, b nodeScore) int {
+		if c := cmp.Compare(b.score, a.score); c != 0 {
+			return c
+		}
+		return strings.Compare(a.node.Name, b.node.Name)
 	})
-	return nodes
+	ordered := make([]*node_info.NodeInfo, len(scores))
+	for i, s := range scores {
+		ordered[i] = s.node
+	}
+	return ordered
 }
 
 func sortGPUs(gpuScores map[float64][]string) []string {

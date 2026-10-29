@@ -1,0 +1,6 @@
+kind: Added
+body: |-
+  Model Memory Manager NUMA groups in scheduling and export pod-level observed memory ownership
+custom:
+  Author: "itsomri"
+  Issue: "2013"

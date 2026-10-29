@@ -57,10 +57,11 @@ const (
 )
 
 type NumaTopology struct {
-	Policy    TopologyManagerPolicy
-	Scope     TopologyManagerScope
-	Zones     []*NumaZone
-	Resources sets.Set[v1.ResourceName]
+	Policy       TopologyManagerPolicy
+	Scope        TopologyManagerScope
+	Zones        []*NumaZone
+	Resources    sets.Set[v1.ResourceName]
+	MemoryGroups *MemoryGroupState
 
 	VectorMap *resource_info.ResourceVectorMap
 	// AwareIndices holds the VectorMap indices of the zone-reported resources — the only ones the
@@ -126,6 +127,7 @@ func (t *NumaTopology) Clone() *NumaTopology {
 		Scope:             t.Scope,
 		Zones:             zones,
 		Resources:         t.Resources.Clone(),
+		MemoryGroups:      t.MemoryGroups.Clone(),
 		VectorMap:         t.VectorMap,         // shared, read-only during scoring
 		AwareIndices:      t.AwareIndices,      // shared, read-only
 		AwareNames:        t.AwareNames,        // shared, read-only

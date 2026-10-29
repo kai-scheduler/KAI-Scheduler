@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Ray clusters with in-tree autoscaling use minReplicas, including zero or unset, as the worker gang minimum.
+custom:
+  Author: "Pranjulcr7"
+  Issue: "2242"

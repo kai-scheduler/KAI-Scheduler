@@ -162,7 +162,7 @@ test('renders both result formats and fifteen unified charts', async () => {
   assert.doesNotMatch(browser.elements.get('main').innerHTML, /kai_commit_hash/);
   assert.doesNotMatch(browser.elements.get('main').innerHTML, /test_focus/);
 
-  assert.equal(browser.renderedCharts.length, 15);
+  assert.equal(browser.renderedCharts.length, 17);
   assert.ok(browser.renderedCharts.every(chart => (
     chart.config.options.plugins.migrationLine.timestamp === '2026-06-29T08:42:33Z'
   )));

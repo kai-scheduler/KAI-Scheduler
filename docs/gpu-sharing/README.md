@@ -16,7 +16,7 @@ Make sure the following conditions are met:
 - KAI Scheduler is installed or ready to be installed.
 - NVIDIA GPU Operator is installed.
 
-For NvFractions, also make sure the cluster can run the `gpu-sharing` operator and that NVIDIA CDI/NRI support is configured when runtime memory enforcement is required.
+For NvFractions, also make sure the cluster can run the `gpu-fractioning` operator and that NVIDIA CDI/NRI support is configured when runtime memory enforcement is required.
 
 ## Admins
 
@@ -32,6 +32,10 @@ Administrators choose one GPU-sharing mode for the cluster. The mode configures 
 | `NvFractions` | Schedule fractional GPU workloads using NvFractions annotations and gpu-fractioning. | Enforced by the NvFractions runtime path when CDI/NRI is configured. | `nvidia.com/container.<container>.gpu-memory.request`, `nvidia.com/container.<container>.gpu-memory.limit` |
 
 Set the mode with `global.gpuSharingMode`. The legacy `global.gpuSharing` value is deprecated and should only be used for upgrades that still rely on the old boolean value.
+
+### Device plugin `replicas` setting
+
+KAI Scheduler does not currently support the [NVIDIA device plugin `replicas` setting](https://github.com/NVIDIA/k8s-device-plugin#shared-access-to-gpus). Use the GPU-sharing modes above instead.
 
 ### Install without GPU memory enforcement
 
@@ -69,15 +73,15 @@ helm upgrade -i kai-scheduler oci://ghcr.io/kai-scheduler/kai-scheduler/kai-sche
   --set global.nvFractions.set=true
 ```
 
-Setting `global.nvFractions.set=true` installs the `gpu-sharing` Helm dependency from `oci://ghcr.io/kai-scheduler/gpu-sharing` and renders KAI with `global.gpuSharingMode=NvFractions`.
+Setting `global.nvFractions.set=true` installs the `gpu-fractioning` Helm dependency from `oci://ghcr.io/kai-scheduler/gpu-fractioning` and renders KAI with `global.gpuSharingMode=NvFractions`.
 
-When managing the `gpu-sharing` operator separately, install it before KAI.
+When managing the `gpu-fractioning` operator separately, install it before KAI.
 The KAI operator registers its `GpuSharingConfig` watch only when the CRD exists
-at startup. If `gpu-sharing` is installed after KAI, restart the KAI operator so
+at startup. If `gpu-fractioning` is installed after KAI, restart the KAI operator so
 it discovers the CRD; otherwise, `GpuSharingConfig` changes do not trigger KAI
 reconciliation.
 
-If the `gpu-sharing` operator is already installed and managed separately, do not install the subchart from KAI. Set `global.gpuSharingMode=NvFractions` and keep `global.nvFractions.set=false`:
+If the `gpu-fractioning` operator is already installed and managed separately, do not install the subchart from KAI. Set `global.gpuSharingMode=NvFractions` and keep `global.nvFractions.set=false`:
 
 ```bash
 helm upgrade -i kai-scheduler oci://ghcr.io/kai-scheduler/kai-scheduler/kai-scheduler \
@@ -97,9 +101,9 @@ helm upgrade -i kai-scheduler oci://ghcr.io/kai-scheduler/kai-scheduler/kai-sche
 
 The chart rejects `global.nvFractions.set=true` when `global.gpuSharingMode` is set to another mode.
 
-### Configure the gpu-sharing subchart
+### Configure the gpu-fractioning subchart
 
-KAI's global scheduling placement values are not propagated into the `gpu-sharing` subchart. Configure the subchart under the top-level `gpu-sharing` key:
+KAI's global scheduling placement values are not propagated into the `gpu-fractioning` subchart. Configure the subchart under the top-level `gpu-fractioning` key:
 
 ```yaml
 global:
@@ -117,7 +121,7 @@ gpu-fractioning:
       effect: NoSchedule
 ```
 
-For air-gapped environments, mirror both the KAI images and the gpu-fractioning chart and images, or vendor the dependency before installing.
+For air-gapped environments, mirror both the KAI images and the gpu-fractioning chart and images, or vendor the dependency before installing. The chart declares gpu-fractioning as a version range rather than a fixed version, so `Chart.yaml` does not name the version to mirror. Each KAI release publishes the version it bundles as the `subcharts.yaml` asset on its [GitHub Release](https://github.com/kai-scheduler/KAI-Scheduler/releases).
 
 ### Runtime class and CDI
 
