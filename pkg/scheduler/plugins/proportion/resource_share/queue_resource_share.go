@@ -88,6 +88,13 @@ func (qrs *QueueResourceShare) GetFairShare() ResourceQuantities {
 	return qrs.lastFairShare
 }
 
+func (qrs *QueueResourceShare) GetSteadyFairShare() ResourceQuantities {
+	f := func(rs *ResourceShare) float64 {
+		return rs.SteadyFairShare
+	}
+	return qrs.buildResourceQuantities(f)
+}
+
 func (qrs *QueueResourceShare) GetAllocatedShare() ResourceQuantities {
 	f := func(rs *ResourceShare) float64 {
 		return rs.Allocated
@@ -177,6 +184,12 @@ func (qrs *QueueResourceShare) QuantitiesLessEqualAllocatable(quantities Resourc
 		}
 	}
 	return true
+}
+
+// CompareSteadyAllocatable compares quantity with what the queue may keep of resource under steady
+// fair-share reclaim: -1 below, 0 equal, 1 above.
+func (qrs *QueueResourceShare) CompareSteadyAllocatable(resource ResourceName, quantity float64) int {
+	return compareQuantities(quantity, qrs.ResourceShare(resource).GetSteadyAllocatableShare())
 }
 
 // ResourceQuantityFromVector maps a scheduler vector to the dimensions currently accounted by proportion.

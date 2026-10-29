@@ -63,6 +63,7 @@ type proportionPlugin struct {
 	kValue                        float64
 	minNodeGPUMemory              *int64
 	queuePriorityInQuotaReclaim   bool
+	steadyFairShareReclaim        bool
 	// lastSemiPreemptibleCore tracks the not-preemptible (core) resource vector last applied to the queues
 	// for each semi-preemptible job, so allocate/deallocate events apply only the delta as pods flip
 	// between the core and elastic tiers.
@@ -93,6 +94,11 @@ func New(arguments framework.PluginArguments) framework.Plugin {
 		log.InfraLogger.Warningf("Failed to parse queuePriorityInQuotaReclaim: %v. Using default value of false", err)
 	}
 
+	steadyFairShareReclaim, err := arguments.GetBool("steadyFairShareReclaim", false)
+	if err != nil {
+		log.InfraLogger.Warningf("Failed to parse steadyFairShareReclaim: %v. Using default value of false", err)
+	}
+
 	return &proportionPlugin{
 		totalResource:                 rs.EmptyResourceQuantities(),
 		queues:                        map[common_info.QueueID]*rs.QueueAttributes{},
@@ -100,6 +106,7 @@ func New(arguments framework.PluginArguments) framework.Plugin {
 		relcaimerSaturationMultiplier: multiplier,
 		kValue:                        kValue,
 		queuePriorityInQuotaReclaim:   queuePriorityInQuotaReclaim,
+		steadyFairShareReclaim:        steadyFairShareReclaim,
 	}
 }
 
@@ -113,7 +120,8 @@ func (pp *proportionPlugin) OnSessionOpen(ssn *framework.Session) {
 	pp.taskOrderFunc = ssn.TaskOrderFn
 	pp.minNodeGPUMemory = ssn.ClusterInfo.MinNodeGPUMemoryMiB
 	pp.calculateResourcesProportion(ssn)
-	pp.reclaimablePlugin = rec.New(pp.relcaimerSaturationMultiplier, pp.queuePriorityInQuotaReclaim)
+	pp.reclaimablePlugin = rec.New(pp.relcaimerSaturationMultiplier, pp.queuePriorityInQuotaReclaim).
+		WithSteadyFairShareReclaim(pp.steadyFairShareReclaim)
 	capacityPolicy := cp.New(pp.queues, ssn.ClusterInfo.MaxNodeGPUMemoryMiB)
 	ssn.AddQueueOrderFn(pp.queueOrder)
 	ssn.AddCanReclaimResourcesFn(pp.CanReclaimResourcesFn)
@@ -157,7 +165,17 @@ func (pp *proportionPlugin) reclaimVictimFilterFn(
 	reclaimer *podgroup_info.PodGroupInfo, victim *podgroup_info.PodGroupInfo,
 ) bool {
 	reclaimerInfo := pp.buildReclaimerInfo(reclaimer, pp.minNodeGPUMemory, podgroup_info.PartialTaskAllocation)
+	if pp.steadyFairShareReclaim {
+		return pp.reclaimablePlugin.FilterVictimWithSteadyFairShare(pp.queues, &reclaimerInfo, victim.Queue,
+			func() rs.ResourceQuantities { return pp.firstEvictionBatch(victim) })
+	}
 	return pp.reclaimablePlugin.FilterVictim(pp.queues, &reclaimerInfo, victim.Queue)
+}
+
+// firstEvictionBatch is what reclaim would evict from victim first: its elastic surplus, else the job.
+func (pp *proportionPlugin) firstEvictionBatch(victim *podgroup_info.PodGroupInfo) rs.ResourceQuantities {
+	tasks, _ := podgroup_info.GetTasksToEvict(victim, pp.subGroupOrderFn, pp.taskOrderFunc)
+	return utils.QuantifyVector(getResources(false, tasks...), victim.VectorMap)
 }
 
 func (pp *proportionPlugin) reclaimableFn(
@@ -379,6 +397,9 @@ func (pp *proportionPlugin) createQueueAttributes(ssn *framework.Session) {
 	pp.createQueueResourceAttrs(ssn)
 	pp.updateQueuesCurrentResourceUsage(ssn)
 	pp.setFairShare()
+	if pp.steadyFairShareReclaim {
+		pp.setSteadyFairShare()
+	}
 }
 
 func (pp *proportionPlugin) buildReclaimerInfo(
@@ -531,6 +552,59 @@ func (pp *proportionPlugin) setFairShareForQueues(totalResources rs.ResourceQuan
 	}
 }
 
+// setSteadyFairShare divides the cluster again, on copies of the queues, as if every leaf queue with an
+// over-quota weight and a finite quota requested the whole cluster, and records each queue's share as its
+// steady fair share. Other queues keep their requests: unused quota of a queue without a weight goes to
+// the weighted queues, and a queue with unlimited quota does not take the whole cluster.
+func (pp *proportionPlugin) setSteadyFairShare() {
+	steady := make(map[common_info.QueueID]*rs.QueueAttributes, len(pp.queues))
+	for id, queue := range pp.queues {
+		steady[id] = queue.Clone()
+	}
+	for _, queue := range steady {
+		for _, resource := range rs.AllResources {
+			share := queue.ResourceShare(resource)
+			share.FairShare = 0 // the division adds to it
+			if len(queue.ChildQueues) > 0 || share.OverQuotaWeight <= 0 ||
+				share.Deserved == commonconstants.UnlimitedResourceQuantity {
+				continue
+			}
+			for q, found := queue, true; found; q, found = steady[q.ParentQueue] {
+				q.ResourceShare(resource).Request = pp.totalResource[resource]
+			}
+		}
+	}
+	topQueues := map[common_info.QueueID]*rs.QueueAttributes{}
+	for id := range pp.getTopQueues() {
+		topQueues[id] = steady[id]
+	}
+	divideSteadyFairShare(pp.totalResource, pp.kValue, topQueues, steady)
+	for id, queue := range steady {
+		for _, resource := range rs.AllResources {
+			pp.queues[id].ResourceShare(resource).SteadyFairShare = queue.ResourceShare(resource).FairShare
+		}
+		log.InfraLogger.V(5).Do(func() {
+			log.InfraLogger.Infof("Steady fair share for queue <%v>: GPU: <%v>", queue.Name,
+				resource_info.HumanizeResource(queue.GPU.FairShare, 1))
+		})
+	}
+}
+
+func divideSteadyFairShare(totalResources rs.ResourceQuantities, kValue float64,
+	level, all map[common_info.QueueID]*rs.QueueAttributes) {
+	if len(level) == 0 {
+		return
+	}
+	resource_division.DivideResources(totalResources, kValue, level)
+	for _, queue := range level {
+		children := map[common_info.QueueID]*rs.QueueAttributes{}
+		for _, id := range queue.ChildQueues {
+			children[id] = all[id]
+		}
+		divideSteadyFairShare(queue.GetFairShare(), kValue, children, all)
+	}
+}
+
 func (pp *proportionPlugin) getTopQueues() map[common_info.QueueID]*rs.QueueAttributes {
 	topQueues := map[common_info.QueueID]*rs.QueueAttributes{}
 	for _, queue := range pp.queues {
@@ -620,6 +694,12 @@ func (pp *proportionPlugin) queueOrder(lQ, rQ *queue_info.QueueInfo, lJob, rJob 
 		return -1
 	}
 
+	if pp.steadyFairShareReclaim {
+		if result := queue_order.PrioritizeBelowSteadyFairShare(lQueueAttributes, rQueueAttributes, lJob, rJob,
+			pp.subGroupOrderFn, pp.taskOrderFunc, minNodeGPUMemory); result != 0 {
+			return result
+		}
+	}
 	return queue_order.GetQueueOrderResult(lQueueAttributes, rQueueAttributes, lJob, rJob, lVictims, rVictims,
 		pp.subGroupOrderFn, pp.taskOrderFunc, pp.totalResource, minNodeGPUMemory, pp.queuePriorityInQuotaReclaim)
 }
