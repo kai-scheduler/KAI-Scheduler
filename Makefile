@@ -153,7 +153,7 @@ BENCH_OUTPUT ?= benchmark-results.txt
 # because some reclaim benchmarks require -benchtime=1x and only a curated subset
 # should run in CI.
 BENCH_SPECIAL_PACKAGES := ./pkg/scheduler/actions/reclaim
-BENCH_SPECIAL_REGEX := '^BenchmarkReclaim(WithMissingPVCJobs|UnschedulableDistributedJob_((10|50|100)Node|AntiAffinity100Node))$$'
+BENCH_SPECIAL_REGEX := '^BenchmarkReclaim(WithMissingPVCJobs|UnschedulableDistributedJob_((10|50|100)Node|AntiAffinity100Node)|RecordedVictimOverlap_(16|64|128)Node)$$'
 
 .PHONY: benchmark
 benchmark: envtest ## Run benchmarks and output results (use BENCH_OUTPUT=file.txt to customize output)
