@@ -25,6 +25,7 @@ import (
 	"github.com/spf13/pflag"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	"github.com/kai-scheduler/api/constants"
 )
@@ -71,6 +72,8 @@ type ServerOption struct {
 	NumOfStatusRecordingWorkers       int
 	GlobalDefaultStalenessGracePeriod time.Duration
 	StuckInReleasingThreshold         time.Duration
+	MinFailedSearchBackoff            map[string]string
+	MaxFailedSearchBackoff            map[string]string
 	PluginServerPort                  int
 	CPUWorkerNodeLabelKey             string
 	GPUWorkerNodeLabelKey             string
@@ -129,6 +132,10 @@ func (s *ServerOption) AddFlags(fs *pflag.FlagSet) {
 	fs.IntVar(&s.NumOfStatusRecordingWorkers, "num-of-status-recording-workers", defaultNumOfStatusRecordingWorkers, "specifies the max number of go routines spawned to update pod and podgroups conditions and events. Defaults to 5")
 	fs.DurationVar(&s.GlobalDefaultStalenessGracePeriod, "default-staleness-grace-period", defaultStalenessGracePeriod, "Global default staleness grace period duration. Negative values means infinite. Defaults to 60s")
 	fs.DurationVar(&s.StuckInReleasingThreshold, "stuck-in-releasing-threshold", constants.DefaultStuckInReleasingThreshold, "Duration after a Running pod's deletionTimestamp before its resources are excluded from pipelining. Defaults to 2m.")
+	fs.StringToStringVar(&s.MinFailedSearchBackoff, conf.MinFailedSearchBackoffFlag, nil,
+		"After a reclaim, preempt or consolidation search finds no solution for a job, the action skips it for this long, doubling after each further failure. action=duration pairs; actions are default, reclaim, preempt and consolidation, and an action without its own value uses default. Off when unset or 0.")
+	fs.StringToStringVar(&s.MaxFailedSearchBackoff, conf.MaxFailedSearchBackoffFlag, nil,
+		"Upper bound of --min-failed-search-backoff, as action=duration pairs. Defaults to, and is at least, the minimum.")
 	fs.IntVar(&s.PluginServerPort, "plugin-server-port", 8081, "The port to bind for plugin server requests")
 	fs.StringVar(&s.CPUWorkerNodeLabelKey, "cpu-worker-node-label-key", constants.DefaultCPUWorkerNodeLabelKey, "The label key for CPU worker nodes")
 	fs.StringVar(&s.GPUWorkerNodeLabelKey, "gpu-worker-node-label-key", constants.DefaultGPUWorkerNodeLabelKey, "The label key for GPU worker nodes")
@@ -142,5 +149,5 @@ func (so *ServerOption) ValidateOptions() error {
 	pflag.VisitAll(func(flag *pflag.Flag) {
 		log.InfraLogger.V(1).Infof("FLAG: --%s=%q", flag.Name, flag.Value)
 	})
-	return nil
+	return conf.ValidateFailedSearchBackoff(so.MinFailedSearchBackoff, so.MaxFailedSearchBackoff)
 }

@@ -186,11 +186,6 @@ spec:
       default: "2m"
       NodeLocalGreedy: "30s"
       MultiNodeGang: "2m"
-    # Opt-in; see Failed-Search Backoff.
-    minFailedSearchBackoff:
-      default: "10s"
-    maxFailedSearchBackoff:
-      default: "2m"
 ```
 
 Initial defaults when the block is omitted:
@@ -206,8 +201,6 @@ Initial defaults when the block is omitted:
 | `maxGeneratorSearchDuration.default` | `"2m"` | fallback generator budget |
 | `maxGeneratorSearchDuration.NodeLocalGreedy` | `"30s"` | narrow generator budget |
 | `maxGeneratorSearchDuration.MultiNodeGang` | `"2m"` | wide generator budget |
-| `minFailedSearchBackoff` | unset | failed-search backoff disabled |
-| `maxFailedSearchBackoff` | unset | defaults to the action's `minFailedSearchBackoff` |
 
 All values are strings parsed with Go's standard `time.ParseDuration`, which supports units such as `ms`, `s`, `m`, and `h`. Values must parse as non-negative durations. For max budgets, `0s` means unlimited and is used for legacy-equivalent support configurations. For `minJobSearchDuration`, `0s` disables the best-effort floor. If configured, `minJobSearchDuration` must be lower than `maxJobSearchDuration` unless `maxJobSearchDuration` is unlimited. Unknown action or generator names should be rejected during configuration validation so misspelled knobs do not silently fail.
 
@@ -268,9 +261,9 @@ Generators can rediscover the same effective victim set — within one generator
 
 The scheduler keeps no state between sessions, so a pending job that no scenario can place, such as a gang that needs more whole nodes than its zone can free, gets its full search repeated every session. The opt-in failed-search backoff bounds that cost. After a search for a job ends with `generators_exhausted`, the action skips the job for an interval. The interval doubles with each further such search, up to a maximum.
 
-- **Configuration.** `minFailedSearchBackoff` and `maxFailedSearchBackoff` are keyed by action name, with `default` as the fallback, like `maxActionSearchDuration`.
-  - The backoff is disabled for an action unless its `minFailedSearchBackoff` resolves to a non-zero duration.
-  - `maxFailedSearchBackoff` defaults to it.
+- **Configuration.** Two scheduler flags, `--min-failed-search-backoff` and `--max-failed-search-backoff`, set per shard through the SchedulingShard's `args`. Each takes `action=duration` pairs keyed by action name, with `default` as the fallback, like `maxActionSearchDuration`; for example `default=10s` and `default=2m`. The scheduler rejects unknown actions, negative or unparsable durations, and a maximum below the minimum at startup.
+  - The backoff is disabled for an action unless its `--min-failed-search-backoff` resolves to a non-zero duration.
+  - `--max-failed-search-backoff` defaults to it.
 - **What counts as a failed search.** Only a search that `scenario_search_jobs_total` reports as `generators_exhausted` starts or extends a backoff, and `solved` ends it. Searches stopped by a budget (`deadline_exhausted`, `not_attempted`) or without a generator run again next session, as before.
 - **Where the state lives.** The scheduler cache keeps the records in memory, per action and job.
   - Each snapshot marks the jobs still in a backoff in `PodGroupInfo.SearchBackoffUntil`.
@@ -278,7 +271,7 @@ The scheduler keeps no state between sessions, so a pending job that no scenario
   - Allocate is unaffected.
 - **Retry on change.** A job is searched again at once when its PodGroup spec or queue changes, or its pods waiting for a node, or their scheduling constraints or resource requests. A pod waits for a node when the API shows it pending, unbound, ungated and not being deleted. Each snapshot drops the records whose shape key no longer matches. The key reads the pods' API state, so the session's own placements do not change it.
 - **Observability.** Skipped jobs count as the `backoff` result of `scenario_search_jobs_total`.
-- **Trade-off.** A change elsewhere that would let the search succeed is noticed only when the backoff ends, at most `maxFailedSearchBackoff` later. Examples: a victim's min-runtime ending, another job finishing, a queue weight changing. A scheduler restart forgets every backoff.
+- **Trade-off.** A change elsewhere that would let the search succeed is noticed only when the backoff ends, at most `--max-failed-search-backoff` later. Examples: a victim's min-runtime ending, another job finishing, a queue weight changing. A scheduler restart forgets every backoff.
 - **Relation to checkpointing.** Unlike generator checkpointing (below), the backoff does not resume a search. It only avoids repeating one that found nothing, and it never extends a search beyond its budgets.
 
 ### Future Enhancements

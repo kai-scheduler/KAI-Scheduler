@@ -47,6 +47,8 @@ type SchedulerParams struct {
 	DetailedFitErrors                 bool                        `json:"detailedFitErrors,omitempty"`
 	UpdatePodEvictionCondition        bool                        `json:"updatePodEvictionCondition,omitempty"`
 	QueueLabelKey                     string                      `json:"queueLabelKey,omitempty"`
+	MinFailedSearchBackoff            map[string]string           `json:"minFailedSearchBackoff,omitempty"`
+	MaxFailedSearchBackoff            map[string]string           `json:"maxFailedSearchBackoff,omitempty"`
 }
 
 // SchedulerConfiguration defines the configuration of scheduler.

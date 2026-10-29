@@ -8,7 +8,6 @@ import (
 	"time"
 
 	. "go.uber.org/mock/gomock"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/consolidation"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
@@ -20,7 +19,6 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
 	commonconstants "github.com/kai-scheduler/api/constants"
-	kaiv1 "github.com/kai-scheduler/api/kai/v1"
 )
 
 // With a failed-search backoff configured, consolidation reports each search it completes to the
@@ -82,10 +80,8 @@ func TestConsolidationReportsSearchOutcomes(t *testing.T) {
 				Queues: []test_utils.TestQueueBasic{{Name: "queue0", DeservedGPUs: 8}},
 				Mocks:  &test_utils.TestMock{CacheRequirements: tt.mocks},
 			}, controller)
-			ssn.Config.ScenarioSearchBudgets = &kaiv1.ScenarioSearchBudgets{
-				MinFailedSearchBackoff: map[string]metav1.Duration{commonconstants.ActionConsolidation: {Duration: 10 * time.Second}},
-				MaxFailedSearchBackoff: map[string]metav1.Duration{commonconstants.ActionConsolidation: {Duration: time.Minute}},
-			}
+			ssn.SchedulerParams.MinFailedSearchBackoff = map[string]string{commonconstants.ActionConsolidation: "10s"}
+			ssn.SchedulerParams.MaxFailedSearchBackoff = map[string]string{commonconstants.ActionConsolidation: "1m"}
 			tt.expect(ssn.Cache.(*cache.MockCache))
 
 			consolidation.New().Execute(ssn)

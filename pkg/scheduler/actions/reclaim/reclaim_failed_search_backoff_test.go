@@ -8,7 +8,6 @@ import (
 	"time"
 
 	. "go.uber.org/mock/gomock"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
@@ -20,7 +19,6 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
 	commonconstants "github.com/kai-scheduler/api/constants"
-	kaiv1 "github.com/kai-scheduler/api/kai/v1"
 )
 
 // With a failed-search backoff configured, reclaim reports each search it completes to the cache: a
@@ -56,10 +54,8 @@ func TestReclaimReportsSearchOutcomes(t *testing.T) {
 			controller := NewController(t)
 			defer controller.Finish()
 			ssn := test_utils.BuildSession(searchOutcomeTopology(tt.runningJobPriority, tt.mocks), controller)
-			ssn.Config.ScenarioSearchBudgets = &kaiv1.ScenarioSearchBudgets{
-				MinFailedSearchBackoff: map[string]metav1.Duration{commonconstants.ActionReclaim: {Duration: 10 * time.Second}},
-				MaxFailedSearchBackoff: map[string]metav1.Duration{commonconstants.ActionReclaim: {Duration: time.Minute}},
-			}
+			ssn.SchedulerParams.MinFailedSearchBackoff = map[string]string{commonconstants.ActionReclaim: "10s"}
+			ssn.SchedulerParams.MaxFailedSearchBackoff = map[string]string{commonconstants.ActionReclaim: "1m"}
 			tt.expect(ssn.Cache.(*cache.MockCache))
 
 			reclaim.New().Execute(ssn)
