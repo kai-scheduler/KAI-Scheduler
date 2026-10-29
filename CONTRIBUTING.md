@@ -35,6 +35,14 @@ Help us keep the docs clear and useful by fixing typos, updating outdated inform
 - Approval Policy – PRs from external contributors require approval from 2 trusted reviewers (organization members or collaborators) before merging.
 - Coverage - Please look at the coverage change details and create unit tests, integration tests or end-to-end tests to cover new functionality or changes.
 
+### Changing API Types and Shared Utilities
+API types, generated clients, and the `constants`, `utilities/resources` and `utilities/podgroup` packages live in the [`github.com/kai-scheduler/api`](https://github.com/kai-scheduler/api) module. Change them there first:
+1. Make the change in `kai-scheduler/api`.
+2. Test it here with a local `replace github.com/kai-scheduler/api => ../api` in `go.mod`. Do not commit the `replace`.
+3. Release a new api version, then bump it here with `go get github.com/kai-scheduler/api@vX.Y.Z`.
+
+Do not edit the old in-tree copies under `pkg/apis/{scheduling,kai/v1alpha1,client}` and `pkg/common/{constants,resources,podgroup}`. Most code no longer imports them, so changes there usually have no effect, and they will be removed. See the api repo's [Contributing](https://github.com/kai-scheduler/api/blob/main/README.md#contributing) section.
+
 ### Logging Practices
 
 Use `log.InfraLogger` for scheduler actions and phases. V(2-3) logs are operational; V(5+) logs are diagnostic and may run in scheduler hot paths.

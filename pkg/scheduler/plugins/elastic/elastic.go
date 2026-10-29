@@ -5,6 +5,7 @@ package elastic
 
 import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 )
 
@@ -51,17 +52,38 @@ func JobOrderFn(l, r interface{}) int {
 }
 
 func minAvailableState(pgi *podgroup_info.PodGroupInfo) (bool, bool, bool) {
-	exactlyAtMinAvailable := true
-	for _, subGroup := range pgi.GetAllPodSets() {
-		numAllocatedTasks := int32(subGroup.GetNumActiveAllocatedTasks())
-		if numAllocatedTasks < subGroup.GetMinAvailable() {
-			return true, false, false
-		}
-		if numAllocatedTasks > subGroup.GetMinAvailable() {
-			exactlyAtMinAvailable = false
-		}
+	belowMinAvailable, aboveMinAvailable := subGroupSetState(pgi.RootSubGroupSet)
+	if belowMinAvailable {
+		return true, false, false
 	}
-	return false, !exactlyAtMinAvailable, exactlyAtMinAvailable
+	return false, aboveMinAvailable, !aboveMinAvailable
+}
+
+func subGroupSetState(subGroupSet *subgroup_info.SubGroupSet) (bool, bool) {
+	if subGroupSet == nil {
+		return false, false
+	}
+	aboveMinAvailable := false
+	for _, podSet := range subGroupSet.GetDirectPodSets() {
+		below, above := podSetState(podSet)
+		if below {
+			return true, false
+		}
+		aboveMinAvailable = aboveMinAvailable || above
+	}
+	for _, child := range subGroupSet.GetDirectSubgroupsSets() {
+		below, above := subGroupSetState(child)
+		if below {
+			return true, false
+		}
+		aboveMinAvailable = aboveMinAvailable || above
+	}
+	return false, aboveMinAvailable
+}
+
+func podSetState(podSet *subgroup_info.PodSet) (bool, bool) {
+	numAllocatedTasks := int32(podSet.GetNumActiveAllocatedTasks())
+	return numAllocatedTasks < podSet.GetMinAvailable(), numAllocatedTasks > podSet.GetMinAvailable()
 }
 
 func (pp *elasticPlugin) OnSessionClose(_ *framework.Session) {}

@@ -19,7 +19,6 @@ import (
 	podgroup_info "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	data_lister "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/cluster_info/data_lister"
 	plugins "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal/plugins"
-	v1alpha2 "github.com/kai-scheduler/api/scheduling/v1alpha2"
 	gomock "go.uber.org/mock/gomock"
 	v1 "k8s.io/api/core/v1"
 	informers "k8s.io/client-go/informers"
@@ -52,17 +51,17 @@ func (m *MockCache) EXPECT() *MockCacheMockRecorder {
 }
 
 // Bind mocks base method.
-func (m *MockCache) Bind(podInfo *pod_info.PodInfo, hostname string, bindRequestAnnotations map[string]string, predictedNUMAZones []v1alpha2.NUMAZonePlacement) error {
+func (m *MockCache) Bind(podInfo *pod_info.PodInfo, hostname string, bindRequestAnnotations map[string]string, numa NUMAPrediction) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Bind", podInfo, hostname, bindRequestAnnotations, predictedNUMAZones)
+	ret := m.ctrl.Call(m, "Bind", podInfo, hostname, bindRequestAnnotations, numa)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Bind indicates an expected call of Bind.
-func (mr *MockCacheMockRecorder) Bind(podInfo, hostname, bindRequestAnnotations, predictedNUMAZones any) *gomock.Call {
+func (mr *MockCacheMockRecorder) Bind(podInfo, hostname, bindRequestAnnotations, numa any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Bind", reflect.TypeOf((*MockCache)(nil).Bind), podInfo, hostname, bindRequestAnnotations, predictedNUMAZones)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Bind", reflect.TypeOf((*MockCache)(nil).Bind), podInfo, hostname, bindRequestAnnotations, numa)
 }
 
 // Evict mocks base method.
