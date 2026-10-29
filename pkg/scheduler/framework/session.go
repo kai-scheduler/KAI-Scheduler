@@ -550,6 +550,10 @@ func (ssn *Session) GetMaxNumberConsolidationPreemptees() int {
 	return ssn.SchedulerParams.MaxNumberConsolidationPreemptees
 }
 
+func (ssn *Session) GetConsolidationCooldown() time.Duration {
+	return ssn.SchedulerParams.ConsolidationCooldown
+}
+
 func (ssn *Session) OverrideMaxNumberConsolidationPreemptees(maxPreemptees int) {
 	ssn.SchedulerParams.MaxNumberConsolidationPreemptees = maxPreemptees
 }
