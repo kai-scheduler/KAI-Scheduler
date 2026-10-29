@@ -11,7 +11,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/dynamic-resource-allocation/structured"
-	"k8s.io/klog/v2"
 	ksf "k8s.io/kube-scheduler/framework"
 	k8sframework "k8s.io/kubernetes/pkg/scheduler/framework"
 
@@ -23,8 +22,6 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 )
-
-var clusterViewLogger = klog.NewKlogr()
 
 // clusterViews are the views predicates read the session through, built on first use.
 type clusterViews struct {
@@ -195,7 +192,7 @@ func (v *futureClusterView) K8sNodeInfo(node *node_info.NodeInfo) *k8sframework.
 	}
 	nodeInfo := live.SnapshotConcrete()
 	for _, task := range terminating {
-		if err := nodeInfo.RemovePod(clusterViewLogger, task.Pod); err != nil {
+		if err := cluster_info.RemovePodKeepingSharedPorts(nodeInfo, task.Pod); err != nil {
 			log.InfraLogger.V(4).Infof("Terminating pod %s/%s is not indexed on node %s: %v",
 				task.Namespace, task.Name, node.Name, err)
 		}

@@ -56,4 +56,8 @@ func TestFutureClusterViewK8sNodeInfo(t *testing.T) {
 
 	affinityInfo.AddPod(hostPortPod("pipelined", 9090))
 	assert.Equal(t, []string{"pipelined"}, podNames(view.K8sNodeInfo(nodeInfo)), "reflects the session's changes to the node")
+
+	// A pod pipelined onto the terminating pod's port keeps holding it once the terminating pod is gone.
+	affinityInfo.AddPod(hostPortPod("pipelined-on-port", 8080))
+	assert.True(t, view.K8sNodeInfo(nodeInfo).UsedPorts.CheckConflict("", string(v1.ProtocolTCP), 8080))
 }
