@@ -9,8 +9,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/utils/ptr"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/safe_to_disrupt"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
@@ -100,7 +101,7 @@ func TestPreemptibleFilterExcludedJobsDoNotUsePreempteeBudget(t *testing.T) {
 	ssn, preemptor, _, queueID := newConsolidationVictimQueueTestSession()
 	notSafeToDisrupt, _ := newConsolidationVictimQueueTestJob("not-safe-to-disrupt", queueID, v1.PodRunning)
 	notSafeToDisrupt.PodGroup = &schedulingv2alpha2.PodGroup{
-		Spec: schedulingv2alpha2.PodGroupSpec{SafeToDisrupt: ptr.To(false)},
+		ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{safe_to_disrupt.AnnotationKey: "false"}},
 	}
 	rejectedByPlugin, _ := newConsolidationVictimQueueTestJob("rejected-by-plugin", queueID, v1.PodRunning)
 	ssn.AddConsolidationVictimFilterFn(func(_, victim *podgroup_info.PodGroupInfo) bool {

@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"golang.org/x/exp/maps"
@@ -21,6 +22,7 @@ import (
 	commonconsts "github.com/kai-scheduler/api/constants"
 	"github.com/kai-scheduler/api/scheduling/v2alpha2"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/safe_to_disrupt"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/topowner"
 	"github.com/kai-scheduler/api/podgrouper/constants"
@@ -80,8 +82,10 @@ func (dg *DefaultGrouper) GetPodGroupMetadata(topOwner *unstructured.Unstructure
 		Preemptibility:       preemptibility,
 		PreemptionDelay:      dg.calcPodGroupPreemptionDelay(allOwners, pod),
 		StalenessGracePeriod: dg.calcStalenessGracePeriod(allOwners, pod),
-		SafeToDisrupt:        dg.calcSafeToDisrupt(allOwners, pod),
 		MinAvailable:         1,
+	}
+	if safe := dg.calcSafeToDisrupt(allOwners, pod); safe != nil {
+		podGroupMetadata.Annotations[safe_to_disrupt.AnnotationKey] = strconv.FormatBool(*safe)
 	}
 
 	annotations := topOwner.GetAnnotations()
@@ -320,21 +324,21 @@ func (dg *DefaultGrouper) calcStalenessGracePeriod(allOwners []*metav1.PartialOb
 	return nil
 }
 
-// calcSafeToDisrupt reads the safe-to-disrupt annotation from owners then the pod.
-// First valid value wins; invalid values are ignored with a warning.
+// calcSafeToDisrupt reads the safe-to-disrupt annotation from owners then the pod, for the PodGroup's own
+// annotation. First valid value wins; invalid values are ignored with a warning.
 func (dg *DefaultGrouper) calcSafeToDisrupt(allOwners []*metav1.PartialObjectMetadata, pod *v1.Pod) *bool {
 	for _, owner := range allOwners {
-		if safeStr, found := owner.GetAnnotations()[constants.SafeToDisruptAnnotationKey]; found {
-			if safe, err := v2alpha2.ParseSafeToDisrupt(safeStr); err == nil {
-				return safe
+		if safeStr, found := owner.GetAnnotations()[safe_to_disrupt.AnnotationKey]; found {
+			if safe, err := safe_to_disrupt.Parse(safeStr); err == nil {
+				return &safe
 			} else {
 				logger.Error(err, "Invalid safe-to-disrupt annotation found on owner", "owner", owner.GetName(), "safeToDisrupt", safeStr)
 			}
 		}
 	}
-	if safeStr, found := pod.GetAnnotations()[constants.SafeToDisruptAnnotationKey]; found {
-		if safe, err := v2alpha2.ParseSafeToDisrupt(safeStr); err == nil {
-			return safe
+	if safeStr, found := pod.GetAnnotations()[safe_to_disrupt.AnnotationKey]; found {
+		if safe, err := safe_to_disrupt.Parse(safeStr); err == nil {
+			return &safe
 		} else {
 			logger.Error(err, "Invalid safe-to-disrupt annotation found on pod", "pod", pod.GetName(), "safeToDisrupt", safeStr)
 		}

@@ -30,6 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/safe_to_disrupt"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
@@ -209,10 +210,7 @@ func (pgi *PodGroupInfo) IsPreemptibleJob() bool {
 // IsSafeToDisrupt reports whether the podgroup's pods may be evicted for reasons other than fairness or
 // priority, such as consolidation.
 func (pgi *PodGroupInfo) IsSafeToDisrupt() bool {
-	if pgi.PodGroup == nil || pgi.PodGroup.Spec.SafeToDisrupt == nil {
-		return true
-	}
-	return *pgi.PodGroup.Spec.SafeToDisrupt
+	return pgi.PodGroup == nil || safe_to_disrupt.FromAnnotations(pgi.PodGroup.Annotations)
 }
 
 // PreemptionDelayEnd returns the earliest time this podgroup may trigger eviction

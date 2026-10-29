@@ -19,18 +19,19 @@ metadata:
 
 The value is a boolean (`"true"` or `"false"`). Invalid values are ignored with a warning. When both the workload object and its pods carry the annotation, the workload object's value wins, as with `kai.scheduler/preemption-delay`. Workloads without the annotation behave exactly as before.
 
-Workloads that create PodGroups directly can set the equivalent spec field:
+The pod grouper copies the value to the workload's PodGroup as the same annotation, which is what the scheduler reads. Workloads that create PodGroups directly set the annotation on the PodGroup:
 
 ```yaml
 apiVersion: scheduling.run.ai/v2alpha2
 kind: PodGroup
-spec:
-  safeToDisrupt: false
+metadata:
+  annotations:
+    kai.scheduler/safe-to-disrupt: "false"
 ```
 
 ## Behavior
 
-A workload with `safeToDisrupt: false`:
+A workload with `kai.scheduler/safe-to-disrupt: "false"`:
 - Is never moved by the consolidation action.
 - Can still be evicted by reclaim and preempt, which follow fairness and priority. It is not eviction protection; use [preemptibility](../priority/README.md) for that.
 - Keeps its preemptibility, quota accounting and fair share.

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/safe_to_disrupt"
 	"github.com/kai-scheduler/api/podgrouper/constants"
 	"github.com/kai-scheduler/api/scheduling/v2alpha2"
 	"github.com/stretchr/testify/assert"
@@ -1310,48 +1311,48 @@ func TestCalcSafeToDisrupt(t *testing.T) {
 		{
 			name: "false from owner",
 			ownerAnnotations: map[string]interface{}{
-				constants.SafeToDisruptAnnotationKey: "false",
+				safe_to_disrupt.AnnotationKey: "false",
 			},
 			expected: ptr.To(false),
 		},
 		{
 			name: "false from pod",
 			podAnnotations: map[string]string{
-				constants.SafeToDisruptAnnotationKey: "false",
+				safe_to_disrupt.AnnotationKey: "false",
 			},
 			expected: ptr.To(false),
 		},
 		{
 			name: "true from pod",
 			podAnnotations: map[string]string{
-				constants.SafeToDisruptAnnotationKey: "true",
+				safe_to_disrupt.AnnotationKey: "true",
 			},
 			expected: ptr.To(true),
 		},
 		{
 			name: "owner overrides pod",
 			ownerAnnotations: map[string]interface{}{
-				constants.SafeToDisruptAnnotationKey: "true",
+				safe_to_disrupt.AnnotationKey: "true",
 			},
 			podAnnotations: map[string]string{
-				constants.SafeToDisruptAnnotationKey: "false",
+				safe_to_disrupt.AnnotationKey: "false",
 			},
 			expected: ptr.To(true),
 		},
 		{
 			name: "invalid owner value falls through to pod",
 			ownerAnnotations: map[string]interface{}{
-				constants.SafeToDisruptAnnotationKey: "no",
+				safe_to_disrupt.AnnotationKey: "no",
 			},
 			podAnnotations: map[string]string{
-				constants.SafeToDisruptAnnotationKey: "false",
+				safe_to_disrupt.AnnotationKey: "false",
 			},
 			expected: ptr.To(false),
 		},
 		{
 			name: "invalid pod value is ignored",
 			podAnnotations: map[string]string{
-				constants.SafeToDisruptAnnotationKey: "never",
+				safe_to_disrupt.AnnotationKey: "never",
 			},
 			expected: nil,
 		},
@@ -1390,7 +1391,7 @@ func TestCalcSafeToDisrupt(t *testing.T) {
 
 			metadata, err := defaultGrouper.GetPodGroupMetadata(owner, pod)
 			assert.NoError(t, err)
-			assert.Equal(t, tt.expected, metadata.SafeToDisrupt)
+			assert.Equal(t, tt.expected == nil || *tt.expected, safe_to_disrupt.FromAnnotations(metadata.Annotations))
 		})
 	}
 }
