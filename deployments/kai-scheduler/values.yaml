@@ -157,6 +157,10 @@ binder:
   #     arguments:
   #       bindTimeoutSeconds: "60"
   plugins: {}
+  # cdiEnabled overrides NVIDIA GPU Operator ClusterPolicy auto-detection for CDI.
+  # Leave unset to auto-detect. Set true or false only when ClusterPolicy is unavailable
+  # (for example --set binder.cdiEnabled=true). Setting admission.cdi=true is rejected.
+  # cdiEnabled: true
 scheduler:
   enabled: true
   image:
@@ -267,7 +271,6 @@ admission:
     webhookPort: 9443
     metricsPort: 8080
     probePort: 8081
-  cdi: false
   # Ignored when the GPU Operator ClusterPolicy enables the NRI plugin.
   gpuFractionRuntimeClassName: nvidia
   affinity: {}
