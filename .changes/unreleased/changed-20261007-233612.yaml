@@ -1,0 +1,6 @@
+kind: Changed
+body: |-
+  Deprecated total_preemption_attempts in favor of podgroups_scheduled_by_action with action preempt
+custom:
+  Author: "theminjunchoi"
+  Issue: "2352"
