@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -25,15 +26,20 @@ import (
 
 var InvalidCrdWarning = errors.New("invalid binding request")
 
+// Keep confirmation from extending a failed binding request indefinitely.
+const bindingConfirmationTimeout = 5 * time.Second
+
 type Binder struct {
 	kubeClient                 client.Client
+	apiReader                  client.Reader
 	resourceReservationService resourcereservation.Interface
 	plugins                    *plugins.BinderPlugins
 }
 
-func NewBinder(kubeClient client.Client, rrs resourcereservation.Interface, plugins *plugins.BinderPlugins) *Binder {
+func NewBinder(kubeClient client.Client, apiReader client.Reader, rrs resourcereservation.Interface, plugins *plugins.BinderPlugins) *Binder {
 	return &Binder{
 		kubeClient:                 kubeClient,
+		apiReader:                  apiReader,
 		resourceReservationService: rrs,
 		plugins:                    plugins,
 	}
@@ -93,11 +99,30 @@ func (b *Binder) Bind(ctx context.Context, pod *v1.Pod, node *v1.Node, bindReque
 		},
 	}
 	if err = b.kubeClient.SubResource("binding").Create(ctx, pod, binding); err != nil {
-		return fmt.Errorf("failed to bind pod <%s/%s> to node <%s>: %w", pod.Namespace, pod.Name, node.Name, err)
+		// A lost response can follow a committed bind. Only an uncached read of the
+		// same Pod on the requested node can confirm that this binding succeeded.
+		if !b.isBindingConfirmed(ctx, pod, node.Name) {
+			return fmt.Errorf("failed to bind pod <%s/%s> to node <%s>: %w", pod.Namespace, pod.Name, node.Name, err)
+		}
+		logger.Info("Pod binding confirmed after API request returned an error",
+			"namespace", pod.Namespace, "name", pod.Name, "hostname", node.Name, "error", err)
 	}
 
 	b.plugins.PostBind(ctx, pod, node, bindRequest, bindingState)
 	return nil
+}
+
+func (b *Binder) isBindingConfirmed(ctx context.Context, pod *v1.Pod, nodeName string) bool {
+	if b.apiReader == nil || pod.UID == "" || nodeName == "" {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(ctx, bindingConfirmationTimeout)
+	defer cancel()
+	boundPod := &v1.Pod{}
+	if err := b.apiReader.Get(ctx, client.ObjectKeyFromObject(pod), boundPod); err != nil {
+		return false
+	}
+	return boundPod.UID == pod.UID && boundPod.Spec.NodeName == nodeName
 }
 
 func (b *Binder) Rollback(ctx context.Context, pod *v1.Pod, node *v1.Node, bindRequest *v1alpha2.BindRequest) error {
