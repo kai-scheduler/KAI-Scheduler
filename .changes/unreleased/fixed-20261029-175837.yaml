@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Fix topology false rejections for heterogeneous pod resource requests
+custom:
+  Author: "gaoyk19"
+  Issue: "2546"
