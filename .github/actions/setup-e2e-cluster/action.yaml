@@ -53,6 +53,11 @@ runs:
           --k8s-version "${{ inputs.k8s_version }}" \
           --output /tmp/kind-config.yaml
 
+    - name: Raise inotify limits
+      shell: bash
+      # ubuntu-26.04 defaults to max_user_instances=128, which crashes kube-proxy on multi-node kind clusters
+      run: sudo sysctl -w fs.inotify.max_user_instances=1280 fs.inotify.max_user_watches=655360
+
     - name: Create k8s Kind Cluster
       uses: helm/kind-action@v1.13.0
       with:
@@ -96,9 +101,17 @@ runs:
         helm repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update
         helm repo update prometheus-community
         helm install prometheus prometheus-community/kube-prometheus-stack --namespace monitoring --create-namespace \
+        --version 90.0.0 \
         --set "alertmanager.enabled=false" \
         --set "grafana.enabled=false" \
         --set "prometheus.enabled=false" \
+        --set "kubeApiServer.enabled=false" \
+        --set "kubelet.enabled=false" \
+        --set "kubeControllerManager.enabled=false" \
+        --set "coreDns.enabled=false" \
+        --set "kubeEtcd.enabled=false" \
+        --set "kubeScheduler.enabled=false" \
+        --set "kubeProxy.enabled=false" \
         --wait
 
     - name: Set up Go
