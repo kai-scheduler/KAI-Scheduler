@@ -21,11 +21,15 @@ import (
 	"github.com/kai-scheduler/api/scheduling/v2alpha2"
 )
 
+// subGroupSpec is a leaf SubGroup with pods, or, when other specs name it as parent, a pod-less SubGroup that requires
+// all of its children.
 type subGroupSpec struct {
-	name      string
-	pods      int
-	resources v1.ResourceRequirements
-	topology  *v2alpha2.TopologyConstraint
+	name         string
+	parent       string
+	pods         int
+	resources    v1.ResourceRequirements
+	nodeSelector map[string]string
+	topology     *v2alpha2.TopologyConstraint
 }
 
 func createSubGroupPodGroupForKwok(
@@ -35,20 +39,35 @@ func createSubGroupPodGroupForKwok(
 ) (*v2alpha2.PodGroup, []*v1.Pod, error) {
 	namespace := queue.GetConnectedNamespaceToQueue(jobQueue)
 	podGroup := pod_group.Create(namespace, podGroupName, jobQueue.Name)
-	podGroup.Spec.MinMember = nil
-	podGroup.Spec.MinSubGroup = ptr.To(int32(len(subGroups)))
 	if podGroupTopology != nil {
 		podGroup.Spec.TopologyConstraint = *podGroupTopology
 	}
 	maps.Copy(podGroup.Labels, extraLabels)
 
+	children := map[string]int32{}
+	topLevel := int32(0)
+	for _, subGroup := range subGroups {
+		if subGroup.parent == "" {
+			topLevel++
+		} else {
+			children[subGroup.parent]++
+		}
+	}
+	podGroup.Spec.MinMember = nil
+	podGroup.Spec.MinSubGroup = ptr.To(topLevel)
+
 	totalPods := 0
 	for _, subGroup := range subGroups {
-		podGroup.Spec.SubGroups = append(podGroup.Spec.SubGroups, v2alpha2.SubGroup{
-			Name:               subGroup.name,
-			MinMember:          ptr.To(int32(subGroup.pods)),
-			TopologyConstraint: subGroup.topology,
-		})
+		spec := v2alpha2.SubGroup{Name: subGroup.name, TopologyConstraint: subGroup.topology}
+		if subGroup.parent != "" {
+			spec.Parent = ptr.To(subGroup.parent)
+		}
+		if childCount := children[subGroup.name]; childCount > 0 {
+			spec.MinSubGroup = ptr.To(childCount)
+		} else {
+			spec.MinMember = ptr.To(int32(subGroup.pods))
+		}
+		podGroup.Spec.SubGroups = append(podGroup.Spec.SubGroups, spec)
 		totalPods += subGroup.pods
 	}
 
@@ -70,6 +89,7 @@ func createSubGroupPodGroupForKwok(
 				pod.Labels[constants.SubGroupLabelKey] = subGroup.name
 				maps.Copy(pod.Labels, extraLabels)
 				addKWOKTaintsAndAffinity(&pod.Spec)
+				pod.Spec.NodeSelector = subGroup.nodeSelector
 
 				err := rd.CreateObjectWithRetries(ctx, testCtx.ControllerClient, pod)
 				lock.Lock()
