@@ -57,7 +57,6 @@ type TopologySpec struct {
 	// +listType=atomic
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=16
-	// +kubebuilder:validation:XValidation:rule="self.map(l, l.nodeLabel) == oldSelf.map(l, l.nodeLabel)",message="nodeLabel structure is immutable; only aliases may be edited"
 	// +kubebuilder:validation:XValidation:rule="size(self.filter(i, size(self.filter(j, j.nodeLabel == i.nodeLabel)) > 1)) == 0",message="nodeLabel must be unique"
 	// +kubebuilder:validation:XValidation:rule="size(self.filter(i, i.nodeLabel == 'kubernetes.io/hostname')) == 0 || self[size(self) - 1].nodeLabel == 'kubernetes.io/hostname'",message="the kubernetes.io/hostname label can only be used at the lowest level of topology"
 	Levels []TopologyLevel `json:"levels,omitempty"`
