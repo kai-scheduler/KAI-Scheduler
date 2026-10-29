@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Guard GPU sharing ConfigMap updates and rollback against stale allocation ownership
+custom:
+  Author: "NVGreg"
+  Issue: "2450"

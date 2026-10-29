@@ -38,6 +38,7 @@ var happyFlowObjectsBc = []runtime.Object{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: "my-ns",
 			Name:      "my-pod",
+			UID:       "my-pod-uid",
 			Annotations: map[string]string{
 				gpuSharingConfigMapAnnotation: "my-configmap-shared-gpu",
 			},
@@ -89,6 +90,7 @@ var happyFlowObjects = []runtime.Object{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: "my-ns",
 			Name:      "my-pod",
+			UID:       "my-pod-uid",
 			Annotations: map[string]string{
 				gpuSharingConfigMapAnnotation: "my-configmap-shared-gpu",
 			},
