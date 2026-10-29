@@ -41,15 +41,41 @@ test('configures charts for the new workload scale results', () => {
     ['Disaggregated inference reclaim', 'inference-reclaim'],
     ['Zone-constrained hero job reclaim', 'hero-job-reclaim'],
     ['Elastic distributed job reclaim', 'elastic-job-reclaim'],
+    ['Mixed fractions saturation - allocation', 'fractions-saturation-allocation'],
+    ['Mixed fractions saturation - scheduling', 'fractions-saturation-scheduling'],
   ]);
 
-  assert.equal(CHART_CONFIGS.length, 15);
+  assert.equal(CHART_CONFIGS.length, 17);
   expectedCharts.forEach((chartId, testName) => {
     const testCase = resolveTestCase('scale-results', testName);
     assert.equal(testCase.chartId, chartId);
-    assert.equal(testCase.timingField, 'duration_seconds');
+    assert.equal(testCase.timingField, {
+      'fractions-saturation-allocation': 'allocation_seconds',
+      'fractions-saturation-scheduling': 'scheduling_seconds',
+    }[chartId] || 'duration_seconds');
     assert.ok(CHART_CONFIGS.some(config => config.id === chartId));
   });
+});
+
+test('keeps fraction saturation runs in one series when only derived metrics differ', () => {
+  const runFor = (allocation, utilization) => loadRun({
+    metadata: { kai_scheduler_ref: 'main', kwok_node_count: 500 },
+    results: {
+      status: 'success',
+      tests: [{
+        test_name: 'Mixed fractions saturation - allocation',
+        status: 'success',
+        details: {
+          nodes: 500, pods: 20000, allocated_pods: 20000, unschedulable_pods: 0, gpu_utilization_pct: utilization,
+          allocation_seconds: allocation, scheduling_seconds: allocation + 5, bind_lag_p50_seconds: 1,
+          bind_lag_p95_seconds: 2, bind_lag_max_seconds: 3,
+        },
+      }],
+    },
+  }, meta);
+  const [first, second] = extractChartObservations([runFor(30, 100), runFor(35, 99.5)]);
+
+  assert.equal(first.seriesLabel, second.seriesLabel);
 });
 
 test('labels the actual topology KWOK node count in topology graphs', () => {

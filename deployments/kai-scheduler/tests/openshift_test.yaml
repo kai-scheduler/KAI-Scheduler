@@ -54,6 +54,26 @@ tests:
         template: rbac/scc.yaml
         documentIndex: 2
 
+  - it: should grant the kai-config-deployer ServiceAccount access to the SCC
+    release:
+      namespace: custom-ns
+    set:
+      openshift: true
+    asserts:
+      - contains:
+          path: users
+          content: system:serviceaccount:custom-ns:kai-config-deployer
+        template: rbac/scc.yaml
+        documentIndex: 0
+      - contains:
+          path: subjects
+          content:
+            kind: ServiceAccount
+            name: kai-config-deployer
+            namespace: custom-ns
+        template: rbac/scc.yaml
+        documentIndex: 2
+
   - it: should use the default securityContext in hook pods by default
     asserts:
       - notExists:

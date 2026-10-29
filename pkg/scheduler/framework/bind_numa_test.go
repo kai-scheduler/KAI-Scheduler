@@ -23,7 +23,7 @@ func TestNumaPlacementToZones(t *testing.T) {
 	}
 	pod := &pod_info.PodInfo{
 		NUMAPlacement: pod_info.NUMAPlacement{
-			{ZoneIndex: 1, Amount: v1.ResourceList{"cpu": resource.MustParse("3")}},
+			Zones: []pod_info.ZonePlacement{{ZoneIndex: 1, Amount: v1.ResourceList{"cpu": resource.MustParse("3")}}},
 		},
 	}
 
@@ -44,7 +44,43 @@ func TestNumaPlacementToZones(t *testing.T) {
 	})
 
 	t.Run("out-of-range index is skipped", func(t *testing.T) {
-		bad := &pod_info.PodInfo{NUMAPlacement: pod_info.NUMAPlacement{{ZoneIndex: 5}}}
+		bad := &pod_info.PodInfo{NUMAPlacement: pod_info.NUMAPlacement{Zones: []pod_info.ZonePlacement{{ZoneIndex: 5}}}}
 		assert.Empty(t, numaPlacementToZones(bad, node))
 	})
+}
+
+func TestNumaPlacementToMemoryGroups(t *testing.T) {
+	node := &node_info.NodeInfo{NumaTopology: &node_info.NumaTopology{Zones: []*node_info.NumaZone{{ID: "zone-a"}, {ID: "zone-b"}}}}
+	pod := &pod_info.PodInfo{NUMAPlacement: pod_info.NUMAPlacement{MemoryGroups: []pod_info.MemoryGroupPlacement{{Mask: 3, Amount: v1.ResourceList{v1.ResourceMemory: resource.MustParse("8Gi")}}}}}
+	groups := numaPlacementToMemoryGroups(pod, node)
+	assert.Len(t, groups, 1)
+	assert.Equal(t, []string{"zone-a", "zone-b"}, groups[0].MemoryNodes)
+	groups[0].Amount[v1.ResourceMemory] = resource.MustParse("16Gi")
+	assert.Equal(t, resource.MustParse("8Gi"), pod.NUMAPlacement.MemoryGroups[0].Amount[v1.ResourceMemory])
+	pod.NUMAPlacement.MemoryGroups[0].Mask = 4
+	assert.Nil(t, numaPlacementToMemoryGroups(pod, node))
+}
+
+func TestNumaPlacementConversionMissingInputs(t *testing.T) {
+	node := &node_info.NodeInfo{NumaTopology: &node_info.NumaTopology{Zones: []*node_info.NumaZone{{ID: "node-0"}}}}
+	pod := &pod_info.PodInfo{NUMAPlacement: pod_info.NUMAPlacement{
+		Zones:        []pod_info.ZonePlacement{{ZoneIndex: 0}},
+		MemoryGroups: []pod_info.MemoryGroupPlacement{{Mask: 1}},
+	}}
+	tests := []struct {
+		name string
+		pod  *pod_info.PodInfo
+		node *node_info.NodeInfo
+	}{
+		{name: "nil pod", node: node},
+		{name: "nil node", pod: pod},
+		{name: "no topology", pod: pod, node: &node_info.NodeInfo{}},
+		{name: "empty placement", pod: &pod_info.PodInfo{}, node: node},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assert.Nil(t, numaPlacementToZones(test.pod, test.node))
+			assert.Nil(t, numaPlacementToMemoryGroups(test.pod, test.node))
+		})
+	}
 }

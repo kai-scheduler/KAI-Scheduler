@@ -242,6 +242,9 @@ func newSchedulerCache(schedulerCacheParams *SchedulerCacheParams) (*SchedulerCa
 	if err := setSchedulerPodTransform(sc.informerFactory.Core().V1().Pods().Informer()); err != nil {
 		return nil, fmt.Errorf("failed to set scheduler pod transform: %w", err)
 	}
+	if err := setSchedulerConfigMapTransform(sc.informerFactory.Core().V1().ConfigMaps().Informer()); err != nil {
+		return nil, fmt.Errorf("failed to set scheduler configmap transform: %w", err)
+	}
 	sc.kubeAiSchedulerInformerFactory = kubeaischedulerinfo.NewSharedInformerFactory(sc.kubeAiSchedulerClient, 0)
 	partitionSelector, err := sc.schedulingNodePoolParams.GetLabelSelector()
 	if err != nil {
@@ -402,7 +405,11 @@ func (sc *SchedulerCache) WaitForWorkers(stopCh <-chan struct{}) {
 }
 
 // Bind binds task to the target host.
-func (sc *SchedulerCache) Bind(taskInfo *pod_info.PodInfo, hostname string, bindRequestAnnotations map[string]string, predictedNUMAZones []schedulingv1alpha2.NUMAZonePlacement) error {
+func (sc *SchedulerCache) Bind(taskInfo *pod_info.PodInfo,
+	hostname string,
+	bindRequestAnnotations map[string]string,
+	numa NUMAPrediction,
+) error {
 	startTime := time.Now()
 	defer metrics.UpdateTaskBindDuration(startTime)
 	sc.StatusUpdater.PreBind(taskInfo.Pod)
@@ -410,7 +417,7 @@ func (sc *SchedulerCache) Bind(taskInfo *pod_info.PodInfo, hostname string, bind
 	log.InfraLogger.V(3).Infof(
 		"Creating bind request for task <%v/%v> to node <%v> gpuGroup: <%v>, requires: <%v> GPUs",
 		taskInfo.Namespace, taskInfo.Name, hostname, taskInfo.GPUGroupIDs(), taskInfo.ResReqVector)
-	if bindRequestError := sc.createBindRequest(taskInfo, hostname, bindRequestAnnotations, predictedNUMAZones); bindRequestError != nil {
+	if bindRequestError := sc.createBindRequest(taskInfo, hostname, bindRequestAnnotations, numa); bindRequestError != nil {
 		return sc.StatusUpdater.Bound(taskInfo.Pod, hostname, bindRequestError, sc.getNodPoolName())
 	}
 
@@ -425,7 +432,7 @@ func (sc *SchedulerCache) Bind(taskInfo *pod_info.PodInfo, hostname string, bind
 // +kubebuilder:rbac:groups="scheduling.run.ai",resources=bindrequests,verbs=create;update;patch
 // +kubebuilder:rbac:groups="",resources=pods/finalizers,verbs=create;delete;update;patch;get;list
 
-func (sc *SchedulerCache) createBindRequest(podInfo *pod_info.PodInfo, nodeName string, bindRequestAnnotations map[string]string, predictedNUMAZones []schedulingv1alpha2.NUMAZonePlacement) error {
+func (sc *SchedulerCache) createBindRequest(podInfo *pod_info.PodInfo, nodeName string, bindRequestAnnotations map[string]string, numa NUMAPrediction) error {
 	labels := map[string]string{
 		"selected-node": nodeName,
 	}
@@ -460,7 +467,8 @@ func (sc *SchedulerCache) createBindRequest(podInfo *pod_info.PodInfo, nodeName 
 			},
 			ResourceClaimAllocations:        podInfo.ResourceClaimInfo.ToSlice(),
 			ExtendedResourceClaimAllocation: podInfo.ExtendedResourceClaimAllocation(),
-			PredictedNUMAZones:              predictedNUMAZones,
+			PredictedNUMAZones:              numa.Zones,
+			PredictedNUMAMemoryGroups:       numa.MemoryGroups,
 		},
 	}
 

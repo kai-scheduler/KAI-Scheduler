@@ -5,10 +5,12 @@ package gpusharingconfigmap
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -108,12 +110,14 @@ func TestUpsertConfigMap(t *testing.T) {
 					},
 				},
 				Data: map[string]string{
-					"bla": "blu",
+					"bla":   "blu",
+					"stale": "old value",
 				},
 			},
 			desiredConfigMapName: "config-map-name",
 			desiredConfigMapData: map[string]string{
-				"bla": "blu",
+				"bla":   "blu",
+				"empty": "",
 			},
 			expectedError: false,
 			expectedPod: &v1.Pod{
@@ -141,7 +145,8 @@ func TestUpsertConfigMap(t *testing.T) {
 					},
 				},
 				Data: map[string]string{
-					"bla": "blu",
+					"bla":   "blu",
+					"empty": "",
 				},
 			},
 		},
@@ -171,6 +176,93 @@ func TestUpsertConfigMap(t *testing.T) {
 		)
 		assert.Nil(t, err)
 		assertConfigMapsEqual(t, test.expectedConfigMap, resultConfigMap)
+	}
+}
+
+func TestUpsertConfigMapSameOwner(t *testing.T) {
+	tests := []struct {
+		name         string
+		existingData map[string]string
+		desiredData  map[string]string
+		expectedData map[string]string
+	}{
+		{
+			name:         "nil data",
+			desiredData:  map[string]string{"new": "value", "empty": ""},
+			expectedData: map[string]string{"new": "value"},
+		},
+		{
+			name:         "empty data omitted during serialization",
+			existingData: map[string]string{},
+			desiredData:  map[string]string{"new": "value"},
+			expectedData: map[string]string{"new": "value"},
+		},
+		{
+			name:         "merge nonempty values and preserve existing data",
+			existingData: map[string]string{"keep": "original", "update": "before"},
+			desiredData:  map[string]string{"new": "value", "update": "after", "keep": "", "empty": ""},
+			expectedData: map[string]string{"keep": "original", "update": "after", "new": "value"},
+		},
+		{
+			name:        "ignore empty values with nil data",
+			desiredData: map[string]string{"empty": ""},
+		},
+		{
+			name:         "nil desired data preserves existing data",
+			existingData: map[string]string{"keep": "original"},
+			expectedData: map[string]string{"keep": "original"},
+		},
+		{
+			name:         "empty desired data preserves existing data",
+			existingData: map[string]string{"keep": "original"},
+			desiredData:  map[string]string{},
+			expectedData: map[string]string{"keep": "original"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			pod := &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "test-namespace",
+					UID:       "test-pod-uid",
+				},
+			}
+			existingConfigMap := &v1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "config-map-name",
+					Namespace: pod.Namespace,
+					OwnerReferences: []metav1.OwnerReference{{
+						APIVersion: "v1",
+						Kind:       "Pod",
+						Name:       pod.Name,
+						UID:        pod.UID,
+					}},
+				},
+				Data: test.existingData,
+			}
+			serialized, err := json.Marshal(existingConfigMap)
+			require.NoError(t, err)
+			storedConfigMap := &v1.ConfigMap{}
+			require.NoError(t, json.Unmarshal(serialized, storedConfigMap))
+			if len(test.existingData) == 0 {
+				require.Nil(t, storedConfigMap.Data)
+			}
+			kubeClient := initTest(upsertConfigMapTest{
+				existingPod:       pod,
+				existingConfigMap: storedConfigMap,
+			})
+			ctx, cancel := context.WithTimeout(context.Background(), timeout)
+			defer cancel()
+
+			require.NoError(t, UpsertJobConfigMap(ctx, kubeClient, pod, existingConfigMap.Name, test.desiredData))
+
+			result := &v1.ConfigMap{}
+			require.NoError(t, kubeClient.Get(ctx, client.ObjectKeyFromObject(existingConfigMap), result))
+			assert.Equal(t, test.expectedData, result.Data)
+			assert.Equal(t, existingConfigMap.OwnerReferences, result.OwnerReferences)
+		})
 	}
 }
 

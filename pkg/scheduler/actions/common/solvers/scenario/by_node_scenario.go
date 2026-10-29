@@ -41,6 +41,15 @@ func NewByNodeScenario(
 	return bns
 }
 
+// NewSubScenario starts an empty scenario that reuses the recorded victim representatives.
+func (bns *ByNodeScenario) NewSubScenario() *ByNodeScenario {
+	return &ByNodeScenario{
+		BaseScenario: newBaseScenario(bns.session, bns.preemptor, bns.pendingTasks, nil,
+			bns.recordedVictimsJobs, bns.recordedVictimsRepresentatives),
+		potentialVictimsJobsByNode: map[string][]common_info.PodGroupID{},
+	}
+}
+
 func (bns *ByNodeScenario) addPotentialVictimTask(task *pod_info.PodInfo) {
 	if !slices.Contains(bns.potentialVictimsJobsByNode[task.NodeName], task.Job) {
 		bns.potentialVictimsJobsByNode[task.NodeName] = append(bns.potentialVictimsJobsByNode[task.NodeName], task.Job)
@@ -49,6 +58,16 @@ func (bns *ByNodeScenario) addPotentialVictimTask(task *pod_info.PodInfo) {
 
 func (bns *ByNodeScenario) AddPotentialVictimsTasks(tasks []*pod_info.PodInfo) {
 	bns.BaseScenario.AddPotentialVictimsTasks(tasks)
+
+	for _, task := range tasks {
+		bns.addPotentialVictimTask(task)
+	}
+}
+
+func (bns *ByNodeScenario) AddPotentialVictimsTasksWithRepresentative(
+	tasks []*pod_info.PodInfo, representative *podgroup_info.PodGroupInfo,
+) {
+	bns.BaseScenario.AddPotentialVictimsTasksWithRepresentative(tasks, representative)
 
 	for _, task := range tasks {
 		bns.addPotentialVictimTask(task)

@@ -64,8 +64,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
-      - name: Cache Go build cache (Docker-mounted)
-        uses: actions/cache@v6
+      # Restore-only: main (push-artifacts) saves this cache. PR and merge-queue saves are unreachable
+      # from other refs and evict main's entries from the repo cache quota.
+      - name: Restore Go build cache (Docker-mounted)
+        uses: actions/cache/restore@v6
         with:
           path: |
             ~/.cache/go-build-docker-gocache
@@ -190,8 +192,8 @@ jobs:
           echo "PACKAGE_VERSION=$PACKAGE_VERSION" >> $GITHUB_OUTPUT
           echo $PACKAGE_VERSION
 
-      - name: Cache Go build cache (Docker-mounted)
-        uses: actions/cache@v6
+      - name: Restore Go build cache (Docker-mounted)
+        uses: actions/cache/restore@v6
         with:
           path: |
             ~/.cache/go-build-docker-gocache
@@ -230,8 +232,8 @@ jobs:
 
       - name: Build docker images
         run: |
-          make build DOCKER_BUILDX_ADDITIONAL_ARGS="--load --cache-from type=gha --cache-to type=gha,mode=max" VERSION=$PACKAGE_VERSION
-          docker save $(docker images --format '{{.Repository}}:{{.Tag}}' | grep $PACKAGE_VERSION) | gzip > /mnt/images/docker_images.tgz
+          make -j$(nproc) --output-sync=target build DOCKER_BUILDX_ADDITIONAL_ARGS=--load VERSION=$PACKAGE_VERSION
+          docker save $(docker images --format '{{.Repository}}:{{.Tag}}' | grep $PACKAGE_VERSION) -o /mnt/images/docker_images.tar
 
       - name: Build helm chart
         run: |
