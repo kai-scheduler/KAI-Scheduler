@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Scheduler patches a pending pod's PodScheduled condition only when it changes, not every cycle
+custom:
+  Author: "sam-huang1223"
+  Issue: "2544"
