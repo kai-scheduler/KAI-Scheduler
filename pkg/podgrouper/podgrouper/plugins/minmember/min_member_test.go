@@ -86,3 +86,58 @@ func TestFromAnnotations(t *testing.T) {
 		})
 	}
 }
+
+func TestFromAnnotationsWithKey(t *testing.T) {
+	const customKey = "kai.scheduler/min-member"
+
+	tests := []struct {
+		name          string
+		annotations   map[string]string
+		fallback      int32
+		expectedError bool
+		expected      int32
+		errContains   string
+	}{
+		{
+			name:        "custom annotation absent → fallback returned",
+			annotations: map[string]string{"other": "3"},
+			fallback:    5,
+			expected:    5,
+		},
+		{
+			name:        "valid custom annotation → parsed value",
+			annotations: map[string]string{customKey: "4"},
+			fallback:    1,
+			expected:    4,
+		},
+		{
+			name:          "invalid custom annotation → error mentions custom key",
+			annotations:   map[string]string{customKey: "abc"},
+			fallback:      1,
+			expectedError: true,
+			errContains:   customKey,
+		},
+		{
+			name:          "zero value → error mentions custom key",
+			annotations:   map[string]string{customKey: "0"},
+			fallback:      1,
+			expectedError: true,
+			errContains:   customKey,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			obj := &metav1.ObjectMeta{Annotations: test.annotations}
+
+			minMember, err := FromAnnotationsWithKey(obj, "StatefulSet", customKey, test.fallback)
+			if test.expectedError {
+				assert.NotNil(t, err)
+				assert.Contains(t, err.Error(), test.errContains)
+				return
+			}
+			assert.Nil(t, err)
+			assert.Equal(t, test.expected, minMember)
+		})
+	}
+}
