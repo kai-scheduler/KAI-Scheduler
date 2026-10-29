@@ -114,6 +114,13 @@ kind create cluster \
     --image "${KIND_IMAGE}" \
     --name "$CLUSTER_NAME"
 
+# Kindnet has no Memory Manager observation on simulated NUMA nodes.
+KINDNET_DAEMONSET=$(kubectl -n kube-system get daemonset kindnet --ignore-not-found -o name)
+if [[ -n "$KINDNET_DAEMONSET" ]]; then
+  kubectl -n kube-system set resources daemonset/kindnet --containers=kindnet-cni --limits=cpu=200m
+  kubectl -n kube-system rollout status daemonset/kindnet --timeout=180s
+fi
+
 # Deploy local image registry
 echo "Deploying local image registry..."
 kubectl apply -f ${REPO_ROOT}/hack/local_registry.yaml
