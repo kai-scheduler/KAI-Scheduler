@@ -40,10 +40,22 @@ func calculateAllocatedFraction(
 		return resource.Quantity{}, fmt.Errorf("cannot calculate fraction because the pod doesn't have a fraction or memory annotation")
 	}
 
+	var fraction resource.Quantity
 	if req.Portion > 0 {
-		return resource.MustParse(fmt.Sprintf("%g", req.Portion)), nil
+		fraction = resource.MustParse(fmt.Sprintf("%g", req.Portion))
+	} else {
+		fraction, err = getFractionFromMemoryRequest(ctx, req.Memory.Value()/resources.BytesInMiB, pod.Spec.NodeName, kubeClient)
+		if err != nil {
+			return resource.Quantity{}, err
+		}
 	}
-	return getFractionFromMemoryRequest(ctx, req.Memory.Value()/resources.BytesInMiB, pod.Spec.NodeName, kubeClient)
+
+	fractionStr := fraction.String()
+	if ok := fraction.Mul(req.NumDevices); !ok {
+		return resource.Quantity{}, fmt.Errorf("failed to multiply gpu fraction by device count. fraction <%s>, count: %d",
+			fractionStr, req.NumDevices)
+	}
+	return fraction, nil
 }
 
 func getFractionFromMemoryRequest(
