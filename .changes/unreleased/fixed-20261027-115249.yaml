@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Default pod anti-affinity terms are added when global or service affinity is unset
+custom:
+  Author: "ZeXi0308"
+  Issue: "2527"
