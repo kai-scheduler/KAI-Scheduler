@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Scheduler usage database uses `externalPrometheusUrl` when Prometheus is enabled instead of the missing internal Service
+custom:
+  Author: "ZeXi0308"
+  Issue: "2551"

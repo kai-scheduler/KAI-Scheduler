@@ -1381,6 +1381,79 @@ func TestGetUsageDBConfig(t *testing.T) {
 			},
 		},
 		{
+			name: "prometheus with external TSDB connection and internal prometheus enabled",
+			shard: &kaiv1.SchedulingShard{
+				Spec: kaiv1.SchedulingShardSpec{
+					UsageDBConfig: &usagedbapi.UsageDBConfig{
+						ClientType: "prometheus",
+					},
+				},
+			},
+			kaiConfig: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Namespace: "kai-system",
+					Prometheus: &kaiprometheus.Prometheus{
+						Enabled:               ptr.To(true),
+						ExternalPrometheusUrl: ptr.To("http://external-tsdb:9090"),
+					},
+				},
+			},
+			expectError: false,
+			validate: func(t *testing.T, result *usagedbapi.UsageDBConfig) {
+				assert.NotNil(t, result)
+				assert.Equal(t, "http://external-tsdb:9090", result.ConnectionString)
+			},
+		},
+		{
+			name: "prometheus with empty external TSDB connection and internal prometheus enabled",
+			shard: &kaiv1.SchedulingShard{
+				Spec: kaiv1.SchedulingShardSpec{
+					UsageDBConfig: &usagedbapi.UsageDBConfig{
+						ClientType: "prometheus",
+					},
+				},
+			},
+			kaiConfig: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Namespace: "kai-system",
+					Prometheus: &kaiprometheus.Prometheus{
+						Enabled:               ptr.To(true),
+						ExternalPrometheusUrl: ptr.To(""),
+					},
+				},
+			},
+			expectError: false,
+			validate: func(t *testing.T, result *usagedbapi.UsageDBConfig) {
+				assert.NotNil(t, result)
+				assert.Equal(t, "http://usage-prometheus.kai-system.svc.cluster.local:9090", result.ConnectionString)
+			},
+		},
+		{
+			name: "prometheus with explicit connection string and external TSDB connection",
+			shard: &kaiv1.SchedulingShard{
+				Spec: kaiv1.SchedulingShardSpec{
+					UsageDBConfig: &usagedbapi.UsageDBConfig{
+						ClientType:       "prometheus",
+						ConnectionString: "http://shard-prometheus:9090",
+					},
+				},
+			},
+			kaiConfig: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Namespace: "kai-system",
+					Prometheus: &kaiprometheus.Prometheus{
+						Enabled:               ptr.To(true),
+						ExternalPrometheusUrl: ptr.To("http://external-tsdb:9090"),
+					},
+				},
+			},
+			expectError: false,
+			validate: func(t *testing.T, result *usagedbapi.UsageDBConfig) {
+				assert.NotNil(t, result)
+				assert.Equal(t, "http://shard-prometheus:9090", result.ConnectionString)
+			},
+		},
+		{
 			name: "prometheus with nil prometheus config",
 			shard: &kaiv1.SchedulingShard{
 				Spec: kaiv1.SchedulingShardSpec{

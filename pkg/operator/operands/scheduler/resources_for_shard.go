@@ -284,11 +284,13 @@ func getUsageDBConfig(shard *kaiv1.SchedulingShard, kaiConfig *kaiv1.Config) (*u
 	if usageDBConfig.ConnectionString == "" && usageDBConfig.ConnectionStringEnvVar == "" {
 		// Use prometheus from config
 		if kaiConfig.Spec.Prometheus != nil &&
+			kaiConfig.Spec.Prometheus.ExternalPrometheusUrl != nil &&
+			*kaiConfig.Spec.Prometheus.ExternalPrometheusUrl != "" {
+			usageDBConfig.ConnectionString = *kaiConfig.Spec.Prometheus.ExternalPrometheusUrl
+		} else if kaiConfig.Spec.Prometheus != nil &&
 			kaiConfig.Spec.Prometheus.Enabled != nil &&
 			*kaiConfig.Spec.Prometheus.Enabled {
 			usageDBConfig.ConnectionString = fmt.Sprintf("http://usage-prometheus.%s.svc.cluster.local:9090", kaiConfig.Spec.Namespace)
-		} else if kaiConfig.Spec.Prometheus != nil && kaiConfig.Spec.Prometheus.ExternalPrometheusUrl != nil {
-			usageDBConfig.ConnectionString = *kaiConfig.Spec.Prometheus.ExternalPrometheusUrl
 		} else {
 			return nil, fmt.Errorf("prometheus connection string not configured: either enable internal prometheus or configure external TSDB connection URL")
 		}
