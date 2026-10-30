@@ -51,6 +51,20 @@ func Test_getReceivedFraction(t *testing.T) {
 			false,
 		},
 		{
+			"Direct fraction request on three devices exceeds one GPU",
+			&v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						constants.GpuFraction:            "0.6",
+						constants.GpuFractionsNumDevices: "3",
+					},
+				},
+			},
+			nil,
+			resource.MustParse("1.8"),
+			false,
+		},
+		{
 			"NvFractions memory request on multiple devices + Nvidia node",
 			&v1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
@@ -68,6 +82,26 @@ func Test_getReceivedFraction(t *testing.T) {
 				},
 			},
 			resource.MustParse("1"),
+			false,
+		},
+		{
+			"NvFractions memory request on three devices exceeds one GPU",
+			&v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						resources.CalcGpuFractionAnnotationForContainer("main"): "2400Mi",
+						constants.GpuFractionsNumDevices:                        "3",
+					},
+				},
+				Spec: v1.PodSpec{NodeName: "n1", Containers: []v1.Container{{Name: "main"}}},
+			},
+			&v1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "n1",
+					Labels: map[string]string{constants.NvidiaGpuMemory: "4000"},
+				},
+			},
+			resource.MustParse("1.8"),
 			false,
 		},
 		{

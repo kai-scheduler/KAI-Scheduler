@@ -87,6 +87,23 @@ func Test_extractReceivedResources(t *testing.T) {
 			v1.ResourceList{constants.NvidiaGpuResource: resource.MustParse("1")},
 			false,
 		},
+		{
+			"receivedTypeFraction on three devices exceeds one GPU",
+			args{
+				&v1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Annotations: map[string]string{
+							receivedResourceTypeAnnotationName: receivedTypeFraction,
+							constants.GpuFraction:              "0.6",
+							constants.GpuFractionsNumDevices:   "3",
+						},
+					},
+				},
+				&v1.Node{},
+			},
+			v1.ResourceList{constants.NvidiaGpuResource: resource.MustParse("1.8")},
+			false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
