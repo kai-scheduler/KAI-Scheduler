@@ -23,6 +23,10 @@ func NewMinimalJobRepresentatives() *MinimalJobRepresentatives {
 }
 
 func (m *MinimalJobRepresentatives) IsEasierToSchedule(otherJob *podgroup_info.PodGroupInfo) (bool, *podgroup_info.PodGroupInfo) {
+	if hasPendingResourceClaims(otherJob) {
+		return true, nil
+	}
+
 	key := otherJob.GetSchedulingConstraintsSignature()
 
 	representative, found := m.representatives[key]
@@ -34,6 +38,10 @@ func (m *MinimalJobRepresentatives) IsEasierToSchedule(otherJob *podgroup_info.P
 }
 
 func (m *MinimalJobRepresentatives) UpdateRepresentative(newJob *podgroup_info.PodGroupInfo) {
+	if hasPendingResourceClaims(newJob) {
+		return
+	}
+
 	key := newJob.GetSchedulingConstraintsSignature()
 	currentRepresentative, found := m.representatives[key]
 
@@ -42,6 +50,18 @@ func (m *MinimalJobRepresentatives) UpdateRepresentative(newJob *podgroup_info.P
 	}
 
 	m.representatives[key] = newJob
+}
+
+// Signatures and ResReqVector don't capture the device requests of resource
+// claims, so jobs with claims are left out of the failure reuse: they are
+// never skipped and never become representatives.
+func hasPendingResourceClaims(job *podgroup_info.PodGroupInfo) bool {
+	for _, task := range job.GetPendingTasks() {
+		if len(task.Pod.Spec.ResourceClaims) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func jobEasierToScheduleComparison(podGroup1, podGroup2 *podgroup_info.PodGroupInfo) bool {

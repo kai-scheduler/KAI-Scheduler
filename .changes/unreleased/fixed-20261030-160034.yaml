@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Reclaim, preempt and consolidation no longer skip jobs because of failed jobs with resource claims
+custom:
+  Author: "Re1lya"
+  Issue: "2549"
