@@ -1325,6 +1325,40 @@ var _ = Describe("ResourceReservationService", func() {
 			Expect(gpuRequest.Value()).To(Equal(int64(1)), "GPU request should be 1, not overridden by podResources")
 			Expect(gpuLimit.Value()).To(Equal(int64(1)), "GPU limit should be 1, not overridden by podResources")
 		})
+
+		It("should not modify the configured podResources", func() {
+			// podResources is the service-wide configuration, shared by every reservation pod
+			// (and by concurrent binds): creating a pod must leave it as configured.
+			rsc := &service{
+				namespace:           "kai-resource-reservation",
+				appLabelValue:       "kai-reservation",
+				serviceAccountName:  "kai-sa",
+				reservationPodImage: "test-image:latest",
+				kubeClient:          fake.NewClientBuilder().WithScheme(testScheme).Build(),
+				podResources: &v1.ResourceRequirements{
+					Requests: v1.ResourceList{
+						v1.ResourceCPU:              resource.MustParse("10m"),
+						constants.NvidiaGpuResource: resource.MustParse("999"),
+					},
+					Limits: v1.ResourceList{
+						v1.ResourceCPU:              resource.MustParse("100m"),
+						constants.NvidiaGpuResource: resource.MustParse("999"),
+					},
+				},
+				scalingPodNamespace: scalingPodsNamespace,
+			}
+			configured := rsc.podResources.DeepCopy()
+
+			for _, id := range []string{"gpu-group-1", "gpu-group-2"} {
+				_, err := rsc.createGPUReservationPod(context.TODO(), nil, "test-node", schedulingv1alpha2.FractionalGpuGroup{
+					ID:                 id,
+					ComputeSharingMode: schedulingv1alpha2.GPUComputeSharingModeTimeSlicing,
+				})
+				Expect(err).To(BeNil())
+			}
+
+			Expect(rsc.podResources).To(Equal(configured))
+		})
 	})
 })
 

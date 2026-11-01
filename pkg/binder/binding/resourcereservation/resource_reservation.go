@@ -511,14 +511,17 @@ func (rsc *service) createGPUReservationPod(
 		},
 	}
 
+	// rsc.podResources is shared by every call: work on copies, so it is never written to.
 	if rsc.podResources != nil {
 		if rsc.podResources.Limits != nil {
-			delete(rsc.podResources.Limits, constants.NvidiaGpuResource)
-			maps.Copy(resources.Limits, rsc.podResources.Limits)
+			limits := maps.Clone(rsc.podResources.Limits)
+			delete(limits, constants.NvidiaGpuResource)
+			maps.Copy(resources.Limits, limits)
 		}
 		if rsc.podResources.Requests != nil {
-			delete(rsc.podResources.Requests, constants.NvidiaGpuResource)
-			maps.Copy(resources.Requests, rsc.podResources.Requests)
+			requests := maps.Clone(rsc.podResources.Requests)
+			delete(requests, constants.NvidiaGpuResource)
+			maps.Copy(resources.Requests, requests)
 		}
 	}
 
