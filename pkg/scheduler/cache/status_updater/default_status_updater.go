@@ -796,11 +796,6 @@ type jsonPatchOperation struct {
 func getPodGroupStatusPatch(
 	podGroup *enginev2alpha2.PodGroup, oldStatus enginev2alpha2.PodGroupStatus, nodePoolLabelKey string,
 ) ([]byte, error) {
-	// Status is dropped on create, so until something writes it there is no /status to test or add
-	// under. The first write stays a full update.
-	if reflect.ValueOf(oldStatus).IsZero() {
-		return nil, nil
-	}
 	patch := []jsonPatchOperation{
 		{Op: "test", Path: "/metadata/uid", Value: podGroup.UID},
 		{Op: "test", Path: "/metadata/deletionTimestamp", Value: podGroup.DeletionTimestamp},

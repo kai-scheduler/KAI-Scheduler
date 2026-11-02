@@ -320,6 +320,7 @@ func TestRecordJobStatusEvent(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "group-1",
 					Namespace: "namespace-1",
+					UID:       "group-1",
 				},
 				Spec: enginev2alpha2.PodGroupSpec{
 					SchedulingBackoff: ptr.To(int32(1)),

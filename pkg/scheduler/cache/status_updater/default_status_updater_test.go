@@ -745,10 +745,13 @@ func TestDefaultStatusUpdater_RecordJobStatusEvent(t *testing.T) {
 					return false, nil, nil
 				},
 			)
-			// Also block patch operations (for annotation updates)
+			// Also block patch operations (for annotation updates and status patches)
 			kubeAiSchedClient.SchedulingV2alpha2().(*fakeschedulingv2alpha2.FakeSchedulingV2alpha2).PrependReactor(
 				"patch", "podgroups", func(action faketesting.Action) (handled bool, ret runtime.Object, err error) {
 					<-finishUpdatesChan
+					if action.GetSubresource() == "status" {
+						wg.Done()
+					}
 					return false, nil, nil
 				},
 			)
@@ -1367,8 +1370,15 @@ func TestGetPodGroupStatusPatch(t *testing.T) {
 		expected  string
 	}{
 		{
-			name:      "no patch for a pod group without a status",
+			name:      "first condition on a pod group without a status",
 			newStatus: enginev2alpha2.PodGroupStatus{SchedulingConditions: []enginev2alpha2.SchedulingCondition{condition("default", "1")}},
+			expected: `[
+				{"op":"test","path":"/metadata/uid","value":"pg-uid"},
+				{"op":"test","path":"/metadata/deletionTimestamp","value":null},
+				{"op":"test","path":"/metadata/labels","value":null},
+				{"op":"test","path":"/status/schedulingConditions","value":null},
+				{"op":"add","path":"/status/schedulingConditions","value":[` + conditionJSON("default", "1") + `]}
+			]`,
 		},
 		{
 			name:      "first condition on a pod group without labels",
