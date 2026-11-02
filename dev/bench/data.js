@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793528352159,
+  "lastUpdate": 1793618005923,
   "repoUrl": "https://github.com/kai-scheduler/KAI-Scheduler",
   "entries": {
     "KAI Scheduler": [
@@ -599924,6 +599924,6114 @@ window.BENCHMARK_DATA = {
           {
             "name": "BenchmarkReclaimWithMissingPVCJobs (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - allocs/op",
             "value": 184,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "39763067+gshaibi@users.noreply.github.com",
+            "name": "Guy Shaibi",
+            "username": "gshaibi"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "a271a9852ada27151fcdbab155a89a2c6220ac8a",
+          "message": "feat(scheduler): free room for deferred in-place resizes as in KEP-5836 (#2510)\n\nSigned-off-by: gshaibi <gshaibi@nvidia.com>",
+          "timestamp": "2026-11-02T10:32:49Z",
+          "tree_id": "185b8449c0afa7ef90dda76b36f4b235df367c9f",
+          "url": "https://github.com/kai-scheduler/KAI-Scheduler/commit/a271a9852ada27151fcdbab155a89a2c6220ac8a"
+        },
+        "date": 1793618000179,
+        "tool": "go",
+        "benches": [
+          {
+            "name": "BenchmarkAllocateAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 105346198,
+            "unit": "ns/op\t 1999173 B/op\t   19521 allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 105346198,
+            "unit": "ns/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 1999173,
+            "unit": "B/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 19521,
+            "unit": "allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 105314481,
+            "unit": "ns/op\t 2000496 B/op\t   19512 allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 105314481,
+            "unit": "ns/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 2000496,
+            "unit": "B/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 19512,
+            "unit": "allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 105363382,
+            "unit": "ns/op\t 2001456 B/op\t   19514 allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 105363382,
+            "unit": "ns/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 2001456,
+            "unit": "B/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 19514,
+            "unit": "allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 105158013,
+            "unit": "ns/op\t 2001005 B/op\t   19515 allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 105158013,
+            "unit": "ns/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 2001005,
+            "unit": "B/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 19515,
+            "unit": "allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 105330916,
+            "unit": "ns/op\t 1996426 B/op\t   19512 allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 105330916,
+            "unit": "ns/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 1996426,
+            "unit": "B/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 19512,
+            "unit": "allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 104890023,
+            "unit": "ns/op\t 1996921 B/op\t   19508 allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 104890023,
+            "unit": "ns/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 1996921,
+            "unit": "B/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 19508,
+            "unit": "allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 116924324,
+            "unit": "ns/op\t 7591394 B/op\t   69972 allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 116924324,
+            "unit": "ns/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 7591394,
+            "unit": "B/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 69972,
+            "unit": "allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 116233960,
+            "unit": "ns/op\t 7582619 B/op\t   69967 allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 116233960,
+            "unit": "ns/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 7582619,
+            "unit": "B/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 69967,
+            "unit": "allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 115948765,
+            "unit": "ns/op\t 7597784 B/op\t   69974 allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 115948765,
+            "unit": "ns/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 7597784,
+            "unit": "B/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 69974,
+            "unit": "allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 115738389,
+            "unit": "ns/op\t 7587014 B/op\t   69969 allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 115738389,
+            "unit": "ns/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 7587014,
+            "unit": "B/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 69969,
+            "unit": "allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 116700242,
+            "unit": "ns/op\t 7578102 B/op\t   69965 allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 116700242,
+            "unit": "ns/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 7578102,
+            "unit": "B/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 69965,
+            "unit": "allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 116820231,
+            "unit": "ns/op\t 7594938 B/op\t   69969 allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 116820231,
+            "unit": "ns/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 7594938,
+            "unit": "B/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 69969,
+            "unit": "allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 151594069,
+            "unit": "ns/op\t19387165 B/op\t  169036 allocs/op",
+            "extra": "7 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 151594069,
+            "unit": "ns/op",
+            "extra": "7 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 19387165,
+            "unit": "B/op",
+            "extra": "7 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 169036,
+            "unit": "allocs/op",
+            "extra": "7 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 144983701,
+            "unit": "ns/op\t19349275 B/op\t  169046 allocs/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 144983701,
+            "unit": "ns/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 19349275,
+            "unit": "B/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 169046,
+            "unit": "allocs/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 144326313,
+            "unit": "ns/op\t19347539 B/op\t  169037 allocs/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 144326313,
+            "unit": "ns/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 19347539,
+            "unit": "B/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 169037,
+            "unit": "allocs/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 148468914,
+            "unit": "ns/op\t19345969 B/op\t  169034 allocs/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 148468914,
+            "unit": "ns/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 19345969,
+            "unit": "B/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 169034,
+            "unit": "allocs/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 144140752,
+            "unit": "ns/op\t19348093 B/op\t  169042 allocs/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 144140752,
+            "unit": "ns/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 19348093,
+            "unit": "B/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 169042,
+            "unit": "allocs/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 145071242,
+            "unit": "ns/op\t19352367 B/op\t  169043 allocs/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 145071242,
+            "unit": "ns/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 19352367,
+            "unit": "B/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkAllocateAction_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 169043,
+            "unit": "allocs/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 103163319,
+            "unit": "ns/op\t  986412 B/op\t    8385 allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 103163319,
+            "unit": "ns/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 986412,
+            "unit": "B/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 8385,
+            "unit": "allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 102975061,
+            "unit": "ns/op\t  984156 B/op\t    8389 allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 102975061,
+            "unit": "ns/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 984156,
+            "unit": "B/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 8389,
+            "unit": "allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 103010154,
+            "unit": "ns/op\t  988029 B/op\t    8390 allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 103010154,
+            "unit": "ns/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 988029,
+            "unit": "B/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 8390,
+            "unit": "allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 102973348,
+            "unit": "ns/op\t  984215 B/op\t    8390 allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 102973348,
+            "unit": "ns/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 984215,
+            "unit": "B/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 8390,
+            "unit": "allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 103414745,
+            "unit": "ns/op\t  983751 B/op\t    8387 allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 103414745,
+            "unit": "ns/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 983751,
+            "unit": "B/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 8387,
+            "unit": "allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 103224829,
+            "unit": "ns/op\t  989216 B/op\t    8390 allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 103224829,
+            "unit": "ns/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 989216,
+            "unit": "B/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 8390,
+            "unit": "allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 105366536,
+            "unit": "ns/op\t 3283289 B/op\t   25850 allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 105366536,
+            "unit": "ns/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 3283289,
+            "unit": "B/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 25850,
+            "unit": "allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 105701482,
+            "unit": "ns/op\t 3287576 B/op\t   25852 allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 105701482,
+            "unit": "ns/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 3287576,
+            "unit": "B/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 25852,
+            "unit": "allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 105553246,
+            "unit": "ns/op\t 3280392 B/op\t   25849 allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 105553246,
+            "unit": "ns/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 3280392,
+            "unit": "B/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 25849,
+            "unit": "allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 106568978,
+            "unit": "ns/op\t 3287697 B/op\t   25853 allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 106568978,
+            "unit": "ns/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 3287697,
+            "unit": "B/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 25853,
+            "unit": "allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 105472700,
+            "unit": "ns/op\t 3283296 B/op\t   25850 allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 105472700,
+            "unit": "ns/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 3283296,
+            "unit": "B/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 25850,
+            "unit": "allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 105303175,
+            "unit": "ns/op\t 3279405 B/op\t   25849 allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 105303175,
+            "unit": "ns/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 3279405,
+            "unit": "B/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 25849,
+            "unit": "allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 104016632,
+            "unit": "ns/op\t 1457671 B/op\t   14692 allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 104016632,
+            "unit": "ns/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 1457671,
+            "unit": "B/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 14692,
+            "unit": "allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 104108122,
+            "unit": "ns/op\t 1461498 B/op\t   14692 allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 104108122,
+            "unit": "ns/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 1461498,
+            "unit": "B/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 14692,
+            "unit": "allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 103815085,
+            "unit": "ns/op\t 1453759 B/op\t   14690 allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 103815085,
+            "unit": "ns/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 1453759,
+            "unit": "B/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 14690,
+            "unit": "allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 103873482,
+            "unit": "ns/op\t 1453719 B/op\t   14691 allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 103873482,
+            "unit": "ns/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 1453719,
+            "unit": "B/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 14691,
+            "unit": "allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 103987164,
+            "unit": "ns/op\t 1468217 B/op\t   14694 allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 103987164,
+            "unit": "ns/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 1468217,
+            "unit": "B/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 14694,
+            "unit": "allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 103745997,
+            "unit": "ns/op\t 1453612 B/op\t   14689 allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 103745997,
+            "unit": "ns/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 1453612,
+            "unit": "B/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 14689,
+            "unit": "allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 111812426,
+            "unit": "ns/op\t 6413409 B/op\t   52888 allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 111812426,
+            "unit": "ns/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 6413409,
+            "unit": "B/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 52888,
+            "unit": "allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 111325355,
+            "unit": "ns/op\t 6413616 B/op\t   52890 allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 111325355,
+            "unit": "ns/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 6413616,
+            "unit": "B/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 52890,
+            "unit": "allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 111147441,
+            "unit": "ns/op\t 6413136 B/op\t   52884 allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 111147441,
+            "unit": "ns/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 6413136,
+            "unit": "B/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 52884,
+            "unit": "allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 112709083,
+            "unit": "ns/op\t 6411152 B/op\t   52888 allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 112709083,
+            "unit": "ns/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 6411152,
+            "unit": "B/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 52888,
+            "unit": "allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 112432028,
+            "unit": "ns/op\t 6415396 B/op\t   52888 allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 112432028,
+            "unit": "ns/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 6415396,
+            "unit": "B/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 52888,
+            "unit": "allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 111152619,
+            "unit": "ns/op\t 6409612 B/op\t   52887 allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 111152619,
+            "unit": "ns/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 6409612,
+            "unit": "B/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkPreemptAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 52887,
+            "unit": "allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 109017754,
+            "unit": "ns/op\t 4546878 B/op\t   42020 allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 109017754,
+            "unit": "ns/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 4546878,
+            "unit": "B/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 42020,
+            "unit": "allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 108604025,
+            "unit": "ns/op\t 4545836 B/op\t   41989 allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 108604025,
+            "unit": "ns/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 4545836,
+            "unit": "B/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 41989,
+            "unit": "allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 110131000,
+            "unit": "ns/op\t 4554307 B/op\t   42031 allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 110131000,
+            "unit": "ns/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 4554307,
+            "unit": "B/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 42031,
+            "unit": "allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 108461788,
+            "unit": "ns/op\t 4553058 B/op\t   42007 allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 108461788,
+            "unit": "ns/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 4553058,
+            "unit": "B/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 42007,
+            "unit": "allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 108677233,
+            "unit": "ns/op\t 4561160 B/op\t   42026 allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 108677233,
+            "unit": "ns/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 4561160,
+            "unit": "B/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 42026,
+            "unit": "allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 108231305,
+            "unit": "ns/op\t 4561344 B/op\t   42029 allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 108231305,
+            "unit": "ns/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 4561344,
+            "unit": "B/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 42029,
+            "unit": "allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 148638827,
+            "unit": "ns/op\t33535883 B/op\t  265136 allocs/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 148638827,
+            "unit": "ns/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 33535883,
+            "unit": "B/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 265136,
+            "unit": "allocs/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 148271343,
+            "unit": "ns/op\t33547841 B/op\t  265155 allocs/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 148271343,
+            "unit": "ns/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 33547841,
+            "unit": "B/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 265155,
+            "unit": "allocs/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 151063187,
+            "unit": "ns/op\t33539399 B/op\t  265163 allocs/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 151063187,
+            "unit": "ns/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 33539399,
+            "unit": "B/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 265163,
+            "unit": "allocs/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 152334558,
+            "unit": "ns/op\t33539976 B/op\t  265166 allocs/op",
+            "extra": "7 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 152334558,
+            "unit": "ns/op",
+            "extra": "7 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 33539976,
+            "unit": "B/op",
+            "extra": "7 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 265166,
+            "unit": "allocs/op",
+            "extra": "7 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 149083540,
+            "unit": "ns/op\t33539267 B/op\t  265159 allocs/op",
+            "extra": "7 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 149083540,
+            "unit": "ns/op",
+            "extra": "7 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 33539267,
+            "unit": "B/op",
+            "extra": "7 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 265159,
+            "unit": "allocs/op",
+            "extra": "7 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 150079082,
+            "unit": "ns/op\t33558487 B/op\t  265206 allocs/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 150079082,
+            "unit": "ns/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 33558487,
+            "unit": "B/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConsolidationAction_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 265206,
+            "unit": "allocs/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 104395539,
+            "unit": "ns/op\t 1386649 B/op\t   13244 allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 104395539,
+            "unit": "ns/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 1386649,
+            "unit": "B/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 13244,
+            "unit": "allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 104689877,
+            "unit": "ns/op\t 1397840 B/op\t   13243 allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 104689877,
+            "unit": "ns/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 1397840,
+            "unit": "B/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 13243,
+            "unit": "allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 104475994,
+            "unit": "ns/op\t 1399061 B/op\t   13244 allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 104475994,
+            "unit": "ns/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 1399061,
+            "unit": "B/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 13244,
+            "unit": "allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 104709810,
+            "unit": "ns/op\t 1397202 B/op\t   13244 allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 104709810,
+            "unit": "ns/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 1397202,
+            "unit": "B/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 13244,
+            "unit": "allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 104392630,
+            "unit": "ns/op\t 1389336 B/op\t   13242 allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 104392630,
+            "unit": "ns/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 1389336,
+            "unit": "B/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 13242,
+            "unit": "allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 104507294,
+            "unit": "ns/op\t 1393413 B/op\t   13243 allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 104507294,
+            "unit": "ns/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 1393413,
+            "unit": "B/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_SmallCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 13243,
+            "unit": "allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 111174428,
+            "unit": "ns/op\t 5038491 B/op\t   44934 allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 111174428,
+            "unit": "ns/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 5038491,
+            "unit": "B/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 44934,
+            "unit": "allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 110664761,
+            "unit": "ns/op\t 5053383 B/op\t   44937 allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 110664761,
+            "unit": "ns/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 5053383,
+            "unit": "B/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 44937,
+            "unit": "allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 110337644,
+            "unit": "ns/op\t 5039664 B/op\t   44934 allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 110337644,
+            "unit": "ns/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 5039664,
+            "unit": "B/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 44934,
+            "unit": "allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 110522221,
+            "unit": "ns/op\t 5057423 B/op\t   44935 allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 110522221,
+            "unit": "ns/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 5057423,
+            "unit": "B/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 44935,
+            "unit": "allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 110556785,
+            "unit": "ns/op\t 5049588 B/op\t   44935 allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 110556785,
+            "unit": "ns/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 5049588,
+            "unit": "B/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 44935,
+            "unit": "allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 110565700,
+            "unit": "ns/op\t 5038103 B/op\t   44933 allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 110565700,
+            "unit": "ns/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 5038103,
+            "unit": "B/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 44933,
+            "unit": "allocs/op",
+            "extra": "10 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 131955471,
+            "unit": "ns/op\t12547748 B/op\t  106435 allocs/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 131955471,
+            "unit": "ns/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 12547748,
+            "unit": "B/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 106435,
+            "unit": "allocs/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 129085191,
+            "unit": "ns/op\t12547442 B/op\t  106433 allocs/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 129085191,
+            "unit": "ns/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 12547442,
+            "unit": "B/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 106433,
+            "unit": "allocs/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 130356460,
+            "unit": "ns/op\t12548270 B/op\t  106437 allocs/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 130356460,
+            "unit": "ns/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 12548270,
+            "unit": "B/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 106437,
+            "unit": "allocs/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 131680773,
+            "unit": "ns/op\t12548158 B/op\t  106436 allocs/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 131680773,
+            "unit": "ns/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 12548158,
+            "unit": "B/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 106436,
+            "unit": "allocs/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 131778539,
+            "unit": "ns/op\t12547852 B/op\t  106432 allocs/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 131778539,
+            "unit": "ns/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 12547852,
+            "unit": "B/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 106432,
+            "unit": "allocs/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 127741080,
+            "unit": "ns/op\t12547034 B/op\t  106431 allocs/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 127741080,
+            "unit": "ns/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 12547034,
+            "unit": "B/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFullSchedulingCycle_LargeCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 106431,
+            "unit": "allocs/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkManyQueues_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 118809886,
+            "unit": "ns/op\t10970218 B/op\t   98224 allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkManyQueues_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 118809886,
+            "unit": "ns/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkManyQueues_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 10970218,
+            "unit": "B/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkManyQueues_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 98224,
+            "unit": "allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkManyQueues_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 120076719,
+            "unit": "ns/op\t10971130 B/op\t   98198 allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkManyQueues_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 120076719,
+            "unit": "ns/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkManyQueues_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 10971130,
+            "unit": "B/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkManyQueues_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 98198,
+            "unit": "allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkManyQueues_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 119811237,
+            "unit": "ns/op\t10966010 B/op\t   98193 allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkManyQueues_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 119811237,
+            "unit": "ns/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkManyQueues_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 10966010,
+            "unit": "B/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkManyQueues_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 98193,
+            "unit": "allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkManyQueues_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 119758644,
+            "unit": "ns/op\t10968938 B/op\t   98213 allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkManyQueues_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 119758644,
+            "unit": "ns/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkManyQueues_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 10968938,
+            "unit": "B/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkManyQueues_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 98213,
+            "unit": "allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkManyQueues_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 120376135,
+            "unit": "ns/op\t10966983 B/op\t   98198 allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkManyQueues_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 120376135,
+            "unit": "ns/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkManyQueues_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 10966983,
+            "unit": "B/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkManyQueues_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 98198,
+            "unit": "allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkManyQueues_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 119515392,
+            "unit": "ns/op\t10965889 B/op\t   98190 allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkManyQueues_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 119515392,
+            "unit": "ns/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkManyQueues_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 10965889,
+            "unit": "B/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkManyQueues_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 98190,
+            "unit": "allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGangScheduling_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 125262711,
+            "unit": "ns/op\t10192352 B/op\t   92625 allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGangScheduling_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 125262711,
+            "unit": "ns/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGangScheduling_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 10192352,
+            "unit": "B/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGangScheduling_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 92625,
+            "unit": "allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGangScheduling_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 124864729,
+            "unit": "ns/op\t10175076 B/op\t   92618 allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGangScheduling_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 124864729,
+            "unit": "ns/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGangScheduling_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 10175076,
+            "unit": "B/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGangScheduling_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 92618,
+            "unit": "allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGangScheduling_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 125006453,
+            "unit": "ns/op\t10191725 B/op\t   92620 allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGangScheduling_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 125006453,
+            "unit": "ns/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGangScheduling_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 10191725,
+            "unit": "B/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGangScheduling_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 92620,
+            "unit": "allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGangScheduling_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 123702916,
+            "unit": "ns/op\t10174298 B/op\t   92614 allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGangScheduling_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 123702916,
+            "unit": "ns/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGangScheduling_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 10174298,
+            "unit": "B/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGangScheduling_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 92614,
+            "unit": "allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGangScheduling_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 123914041,
+            "unit": "ns/op\t10175427 B/op\t   92621 allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGangScheduling_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 123914041,
+            "unit": "ns/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGangScheduling_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 10175427,
+            "unit": "B/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGangScheduling_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 92621,
+            "unit": "allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGangScheduling_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions)",
+            "value": 124273719,
+            "unit": "ns/op\t10180286 B/op\t   92624 allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGangScheduling_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - ns/op",
+            "value": 124273719,
+            "unit": "ns/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGangScheduling_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - B/op",
+            "value": 10180286,
+            "unit": "B/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGangScheduling_MediumCluster (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions) - allocs/op",
+            "value": 92624,
+            "unit": "allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus)",
+            "value": 509.5,
+            "unit": "ns/op\t     256 B/op\t       1 allocs/op",
+            "extra": "2493567 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - ns/op",
+            "value": 509.5,
+            "unit": "ns/op",
+            "extra": "2493567 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - B/op",
+            "value": 256,
+            "unit": "B/op",
+            "extra": "2493567 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "2493567 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus)",
+            "value": 501,
+            "unit": "ns/op\t     256 B/op\t       1 allocs/op",
+            "extra": "2202015 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - ns/op",
+            "value": 501,
+            "unit": "ns/op",
+            "extra": "2202015 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - B/op",
+            "value": 256,
+            "unit": "B/op",
+            "extra": "2202015 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "2202015 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus)",
+            "value": 482,
+            "unit": "ns/op\t     256 B/op\t       1 allocs/op",
+            "extra": "2484886 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - ns/op",
+            "value": 482,
+            "unit": "ns/op",
+            "extra": "2484886 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - B/op",
+            "value": 256,
+            "unit": "B/op",
+            "extra": "2484886 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "2484886 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus)",
+            "value": 488.1,
+            "unit": "ns/op\t     256 B/op\t       1 allocs/op",
+            "extra": "2499915 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - ns/op",
+            "value": 488.1,
+            "unit": "ns/op",
+            "extra": "2499915 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - B/op",
+            "value": 256,
+            "unit": "B/op",
+            "extra": "2499915 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "2499915 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus)",
+            "value": 501,
+            "unit": "ns/op\t     256 B/op\t       1 allocs/op",
+            "extra": "2500305 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - ns/op",
+            "value": 501,
+            "unit": "ns/op",
+            "extra": "2500305 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - B/op",
+            "value": 256,
+            "unit": "B/op",
+            "extra": "2500305 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "2500305 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus)",
+            "value": 481.4,
+            "unit": "ns/op\t     256 B/op\t       1 allocs/op",
+            "extra": "2317485 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - ns/op",
+            "value": 481.4,
+            "unit": "ns/op",
+            "extra": "2317485 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - B/op",
+            "value": 256,
+            "unit": "B/op",
+            "extra": "2317485 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "2317485 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus)",
+            "value": 3.101,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "389045978 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - ns/op",
+            "value": 3.101,
+            "unit": "ns/op",
+            "extra": "389045978 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "389045978 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "389045978 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus)",
+            "value": 3.032,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "394889960 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - ns/op",
+            "value": 3.032,
+            "unit": "ns/op",
+            "extra": "394889960 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "394889960 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "394889960 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus)",
+            "value": 3.031,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "391773657 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - ns/op",
+            "value": 3.031,
+            "unit": "ns/op",
+            "extra": "391773657 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "391773657 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "391773657 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus)",
+            "value": 3.034,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "391811556 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - ns/op",
+            "value": 3.034,
+            "unit": "ns/op",
+            "extra": "391811556 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "391811556 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "391811556 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus)",
+            "value": 3.104,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "395725028 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - ns/op",
+            "value": 3.104,
+            "unit": "ns/op",
+            "extra": "395725028 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "395725028 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "395725028 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus)",
+            "value": 3.028,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "398395743 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - ns/op",
+            "value": 3.028,
+            "unit": "ns/op",
+            "extra": "398395743 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "398395743 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/32 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "398395743 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus)",
+            "value": 28464,
+            "unit": "ns/op\t    2048 B/op\t       1 allocs/op",
+            "extra": "42578 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - ns/op",
+            "value": 28464,
+            "unit": "ns/op",
+            "extra": "42578 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - B/op",
+            "value": 2048,
+            "unit": "B/op",
+            "extra": "42578 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "42578 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus)",
+            "value": 28992,
+            "unit": "ns/op\t    2048 B/op\t       1 allocs/op",
+            "extra": "39363 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - ns/op",
+            "value": 28992,
+            "unit": "ns/op",
+            "extra": "39363 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - B/op",
+            "value": 2048,
+            "unit": "B/op",
+            "extra": "39363 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "39363 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus)",
+            "value": 27762,
+            "unit": "ns/op\t    2048 B/op\t       1 allocs/op",
+            "extra": "42513 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - ns/op",
+            "value": 27762,
+            "unit": "ns/op",
+            "extra": "42513 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - B/op",
+            "value": 2048,
+            "unit": "B/op",
+            "extra": "42513 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "42513 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus)",
+            "value": 27963,
+            "unit": "ns/op\t    2048 B/op\t       1 allocs/op",
+            "extra": "42663 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - ns/op",
+            "value": 27963,
+            "unit": "ns/op",
+            "extra": "42663 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - B/op",
+            "value": 2048,
+            "unit": "B/op",
+            "extra": "42663 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "42663 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus)",
+            "value": 27894,
+            "unit": "ns/op\t    2048 B/op\t       1 allocs/op",
+            "extra": "42181 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - ns/op",
+            "value": 27894,
+            "unit": "ns/op",
+            "extra": "42181 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - B/op",
+            "value": 2048,
+            "unit": "B/op",
+            "extra": "42181 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "42181 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus)",
+            "value": 27764,
+            "unit": "ns/op\t    2048 B/op\t       1 allocs/op",
+            "extra": "41452 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - ns/op",
+            "value": 27764,
+            "unit": "ns/op",
+            "extra": "41452 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - B/op",
+            "value": 2048,
+            "unit": "B/op",
+            "extra": "41452 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "41452 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus)",
+            "value": 3.081,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "397738594 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - ns/op",
+            "value": 3.081,
+            "unit": "ns/op",
+            "extra": "397738594 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "397738594 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "397738594 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus)",
+            "value": 3.092,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "393811592 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - ns/op",
+            "value": 3.092,
+            "unit": "ns/op",
+            "extra": "393811592 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "393811592 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "393811592 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus)",
+            "value": 3.256,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "396251755 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - ns/op",
+            "value": 3.256,
+            "unit": "ns/op",
+            "extra": "396251755 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "396251755 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "396251755 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus)",
+            "value": 3.02,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "394885747 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - ns/op",
+            "value": 3.02,
+            "unit": "ns/op",
+            "extra": "394885747 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "394885747 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "394885747 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus)",
+            "value": 3.031,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "394744912 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - ns/op",
+            "value": 3.031,
+            "unit": "ns/op",
+            "extra": "394744912 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "394744912 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "394744912 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus)",
+            "value": 3.124,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "400544778 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - ns/op",
+            "value": 3.124,
+            "unit": "ns/op",
+            "extra": "400544778 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "400544778 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/256 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "400544778 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus)",
+            "value": 1563428,
+            "unit": "ns/op\t   16384 B/op\t       1 allocs/op",
+            "extra": "763 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - ns/op",
+            "value": 1563428,
+            "unit": "ns/op",
+            "extra": "763 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - B/op",
+            "value": 16384,
+            "unit": "B/op",
+            "extra": "763 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "763 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus)",
+            "value": 1582687,
+            "unit": "ns/op\t   16384 B/op\t       1 allocs/op",
+            "extra": "764 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - ns/op",
+            "value": 1582687,
+            "unit": "ns/op",
+            "extra": "764 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - B/op",
+            "value": 16384,
+            "unit": "B/op",
+            "extra": "764 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "764 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus)",
+            "value": 1569384,
+            "unit": "ns/op\t   16384 B/op\t       1 allocs/op",
+            "extra": "762 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - ns/op",
+            "value": 1569384,
+            "unit": "ns/op",
+            "extra": "762 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - B/op",
+            "value": 16384,
+            "unit": "B/op",
+            "extra": "762 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "762 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus)",
+            "value": 1595214,
+            "unit": "ns/op\t   16384 B/op\t       1 allocs/op",
+            "extra": "763 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - ns/op",
+            "value": 1595214,
+            "unit": "ns/op",
+            "extra": "763 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - B/op",
+            "value": 16384,
+            "unit": "B/op",
+            "extra": "763 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "763 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus)",
+            "value": 1567922,
+            "unit": "ns/op\t   16384 B/op\t       1 allocs/op",
+            "extra": "771 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - ns/op",
+            "value": 1567922,
+            "unit": "ns/op",
+            "extra": "771 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - B/op",
+            "value": 16384,
+            "unit": "B/op",
+            "extra": "771 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "771 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus)",
+            "value": 1564695,
+            "unit": "ns/op\t   16384 B/op\t       1 allocs/op",
+            "extra": "764 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - ns/op",
+            "value": 1564695,
+            "unit": "ns/op",
+            "extra": "764 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - B/op",
+            "value": 16384,
+            "unit": "B/op",
+            "extra": "764 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/Linear/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "764 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus)",
+            "value": 3.128,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "376564338 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - ns/op",
+            "value": 3.128,
+            "unit": "ns/op",
+            "extra": "376564338 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "376564338 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "376564338 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus)",
+            "value": 3.032,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "396120999 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - ns/op",
+            "value": 3.032,
+            "unit": "ns/op",
+            "extra": "396120999 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "396120999 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "396120999 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus)",
+            "value": 3.033,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "394135413 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - ns/op",
+            "value": 3.033,
+            "unit": "ns/op",
+            "extra": "394135413 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "394135413 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "394135413 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus)",
+            "value": 3.027,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "391116120 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - ns/op",
+            "value": 3.027,
+            "unit": "ns/op",
+            "extra": "391116120 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "391116120 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "391116120 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus)",
+            "value": 3.159,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "377844303 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - ns/op",
+            "value": 3.159,
+            "unit": "ns/op",
+            "extra": "377844303 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "377844303 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "377844303 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus)",
+            "value": 3.103,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "378482034 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - ns/op",
+            "value": 3.103,
+            "unit": "ns/op",
+            "extra": "378482034 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "378482034 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGreedyMatchRequirements/SegmentTree/Triangular/2000 (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "378482034 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 122344467,
+            "unit": "ns/op\t13933079 B/op\t  160384 allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 122344467,
+            "unit": "ns/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 13933079,
+            "unit": "B/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 160384,
+            "unit": "allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 121575802,
+            "unit": "ns/op\t13870352 B/op\t  159742 allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 121575802,
+            "unit": "ns/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 13870352,
+            "unit": "B/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 159742,
+            "unit": "allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 122497892,
+            "unit": "ns/op\t13828168 B/op\t  159737 allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 122497892,
+            "unit": "ns/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 13828168,
+            "unit": "B/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 159737,
+            "unit": "allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 123325792,
+            "unit": "ns/op\t13836613 B/op\t  159731 allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 123325792,
+            "unit": "ns/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 13836613,
+            "unit": "B/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 159731,
+            "unit": "allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 121274066,
+            "unit": "ns/op\t13806175 B/op\t  159724 allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 121274066,
+            "unit": "ns/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 13806175,
+            "unit": "B/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 159724,
+            "unit": "allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 121450223,
+            "unit": "ns/op\t13825674 B/op\t  159711 allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 121450223,
+            "unit": "ns/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 13825674,
+            "unit": "B/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 159711,
+            "unit": "allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 210641997,
+            "unit": "ns/op\t70341651 B/op\t  791388 allocs/op",
+            "extra": "5 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 210641997,
+            "unit": "ns/op",
+            "extra": "5 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 70341651,
+            "unit": "B/op",
+            "extra": "5 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 791388,
+            "unit": "allocs/op",
+            "extra": "5 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 213436968,
+            "unit": "ns/op\t70220728 B/op\t  791317 allocs/op",
+            "extra": "5 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 213436968,
+            "unit": "ns/op",
+            "extra": "5 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 70220728,
+            "unit": "B/op",
+            "extra": "5 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 791317,
+            "unit": "allocs/op",
+            "extra": "5 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 212522530,
+            "unit": "ns/op\t70227208 B/op\t  791304 allocs/op",
+            "extra": "5 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 212522530,
+            "unit": "ns/op",
+            "extra": "5 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 70227208,
+            "unit": "B/op",
+            "extra": "5 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 791304,
+            "unit": "allocs/op",
+            "extra": "5 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 209901670,
+            "unit": "ns/op\t70264435 B/op\t  791321 allocs/op",
+            "extra": "5 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 209901670,
+            "unit": "ns/op",
+            "extra": "5 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 70264435,
+            "unit": "B/op",
+            "extra": "5 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 791321,
+            "unit": "allocs/op",
+            "extra": "5 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 208619082,
+            "unit": "ns/op\t70246308 B/op\t  791273 allocs/op",
+            "extra": "5 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 208619082,
+            "unit": "ns/op",
+            "extra": "5 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 70246308,
+            "unit": "B/op",
+            "extra": "5 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 791273,
+            "unit": "allocs/op",
+            "extra": "5 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 211015709,
+            "unit": "ns/op\t70297592 B/op\t  791356 allocs/op",
+            "extra": "5 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 211015709,
+            "unit": "ns/op",
+            "extra": "5 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 70297592,
+            "unit": "B/op",
+            "extra": "5 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 791356,
+            "unit": "allocs/op",
+            "extra": "5 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 356935352,
+            "unit": "ns/op\t147848354 B/op\t 1617561 allocs/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 356935352,
+            "unit": "ns/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 147848354,
+            "unit": "B/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 1617561,
+            "unit": "allocs/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 366981178,
+            "unit": "ns/op\t147821266 B/op\t 1617617 allocs/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 366981178,
+            "unit": "ns/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 147821266,
+            "unit": "B/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 1617617,
+            "unit": "allocs/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 369069269,
+            "unit": "ns/op\t147796690 B/op\t 1617535 allocs/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 369069269,
+            "unit": "ns/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 147796690,
+            "unit": "B/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 1617535,
+            "unit": "allocs/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 380645811,
+            "unit": "ns/op\t147775426 B/op\t 1617568 allocs/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 380645811,
+            "unit": "ns/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 147775426,
+            "unit": "B/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 1617568,
+            "unit": "allocs/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 395493595,
+            "unit": "ns/op\t147869133 B/op\t 1617531 allocs/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 395493595,
+            "unit": "ns/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 147869133,
+            "unit": "B/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 1617531,
+            "unit": "allocs/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 359326570,
+            "unit": "ns/op\t147797464 B/op\t 1617557 allocs/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 359326570,
+            "unit": "ns/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 147797464,
+            "unit": "B/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 1617557,
+            "unit": "allocs/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 750590125,
+            "unit": "ns/op\t321402228 B/op\t 3320298 allocs/op",
+            "extra": "2 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 750590125,
+            "unit": "ns/op",
+            "extra": "2 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 321402228,
+            "unit": "B/op",
+            "extra": "2 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 3320298,
+            "unit": "allocs/op",
+            "extra": "2 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 772408877,
+            "unit": "ns/op\t321403720 B/op\t 3320342 allocs/op",
+            "extra": "2 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 772408877,
+            "unit": "ns/op",
+            "extra": "2 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 321403720,
+            "unit": "B/op",
+            "extra": "2 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 3320342,
+            "unit": "allocs/op",
+            "extra": "2 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 803584930,
+            "unit": "ns/op\t321435244 B/op\t 3320269 allocs/op",
+            "extra": "2 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 803584930,
+            "unit": "ns/op",
+            "extra": "2 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 321435244,
+            "unit": "B/op",
+            "extra": "2 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 3320269,
+            "unit": "allocs/op",
+            "extra": "2 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 791862374,
+            "unit": "ns/op\t321404636 B/op\t 3320322 allocs/op",
+            "extra": "2 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 791862374,
+            "unit": "ns/op",
+            "extra": "2 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 321404636,
+            "unit": "B/op",
+            "extra": "2 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 3320322,
+            "unit": "allocs/op",
+            "extra": "2 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 780178083,
+            "unit": "ns/op\t321379748 B/op\t 3320247 allocs/op",
+            "extra": "2 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 780178083,
+            "unit": "ns/op",
+            "extra": "2 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 321379748,
+            "unit": "B/op",
+            "extra": "2 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 3320247,
+            "unit": "allocs/op",
+            "extra": "2 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 772580241,
+            "unit": "ns/op\t321367852 B/op\t 3320339 allocs/op",
+            "extra": "2 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 772580241,
+            "unit": "ns/op",
+            "extra": "2 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 321367852,
+            "unit": "B/op",
+            "extra": "2 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 3320339,
+            "unit": "allocs/op",
+            "extra": "2 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 2946158088,
+            "unit": "ns/op\t958228176 B/op\t 8447467 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 2946158088,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 958228176,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 8447467,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 2957265800,
+            "unit": "ns/op\t957826712 B/op\t 8446758 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 2957265800,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 957826712,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 8446758,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 3047428613,
+            "unit": "ns/op\t957845480 B/op\t 8447096 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 3047428613,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 957845480,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 8447096,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 3069559883,
+            "unit": "ns/op\t958013432 B/op\t 8447059 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 3069559883,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 958013432,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 8447059,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 3169601928,
+            "unit": "ns/op\t957720632 B/op\t 8447438 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 3169601928,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 957720632,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 8447438,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 3034869696,
+            "unit": "ns/op\t957439776 B/op\t 8447069 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 3034869696,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 957439776,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 8447069,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_1000Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 11140993764,
+            "unit": "ns/op\t2430984552 B/op\t17575552 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_1000Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 11140993764,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_1000Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 2430984552,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_1000Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 17575552,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_1000Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 11232687010,
+            "unit": "ns/op\t2430643888 B/op\t17575425 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_1000Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 11232687010,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_1000Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 2430643888,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_1000Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 17575425,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_1000Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 11359925930,
+            "unit": "ns/op\t2430880496 B/op\t17575596 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_1000Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 11359925930,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_1000Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 2430880496,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_1000Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 17575596,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_1000Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 11360101330,
+            "unit": "ns/op\t2430446448 B/op\t17575526 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_1000Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 11360101330,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_1000Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 2430446448,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_1000Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 17575526,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_1000Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 11326464830,
+            "unit": "ns/op\t2430749632 B/op\t17575629 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_1000Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 11326464830,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_1000Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 2430749632,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_1000Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 17575629,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_1000Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 11273553682,
+            "unit": "ns/op\t2430570984 B/op\t17575586 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_1000Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 11273553682,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_1000Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 2430570984,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimLargeJobs_1000Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 17575586,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 123660718,
+            "unit": "ns/op\t         1.000 full_cycles/op\t 8917178 B/op\t   96239 allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 123660718,
+            "unit": "ns/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - full_cycles/op",
+            "value": 1,
+            "unit": "full_cycles/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 8917178,
+            "unit": "B/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 96239,
+            "unit": "allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 122940331,
+            "unit": "ns/op\t         1.000 full_cycles/op\t 8908442 B/op\t   95908 allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 122940331,
+            "unit": "ns/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - full_cycles/op",
+            "value": 1,
+            "unit": "full_cycles/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 8908442,
+            "unit": "B/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 95908,
+            "unit": "allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 122900752,
+            "unit": "ns/op\t         1.000 full_cycles/op\t 8907973 B/op\t   95906 allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 122900752,
+            "unit": "ns/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - full_cycles/op",
+            "value": 1,
+            "unit": "full_cycles/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 8907973,
+            "unit": "B/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 95906,
+            "unit": "allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 123601007,
+            "unit": "ns/op\t         1.000 full_cycles/op\t 8894784 B/op\t   95904 allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 123601007,
+            "unit": "ns/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - full_cycles/op",
+            "value": 1,
+            "unit": "full_cycles/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 8894784,
+            "unit": "B/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 95904,
+            "unit": "allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 122982114,
+            "unit": "ns/op\t         1.000 full_cycles/op\t 8902970 B/op\t   95903 allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 122982114,
+            "unit": "ns/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - full_cycles/op",
+            "value": 1,
+            "unit": "full_cycles/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 8902970,
+            "unit": "B/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 95903,
+            "unit": "allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 123680056,
+            "unit": "ns/op\t         1.000 full_cycles/op\t 8915557 B/op\t   95907 allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 123680056,
+            "unit": "ns/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - full_cycles/op",
+            "value": 1,
+            "unit": "full_cycles/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 8915557,
+            "unit": "B/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 95907,
+            "unit": "allocs/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 378137816,
+            "unit": "ns/op\t         1.000 full_cycles/op\t75918760 B/op\t  699989 allocs/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 378137816,
+            "unit": "ns/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - full_cycles/op",
+            "value": 1,
+            "unit": "full_cycles/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 75918760,
+            "unit": "B/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 699989,
+            "unit": "allocs/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 366974712,
+            "unit": "ns/op\t         1.000 full_cycles/op\t75916554 B/op\t  699971 allocs/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 366974712,
+            "unit": "ns/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - full_cycles/op",
+            "value": 1,
+            "unit": "full_cycles/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 75916554,
+            "unit": "B/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 699971,
+            "unit": "allocs/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 370595125,
+            "unit": "ns/op\t         1.000 full_cycles/op\t75968080 B/op\t  699988 allocs/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 370595125,
+            "unit": "ns/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - full_cycles/op",
+            "value": 1,
+            "unit": "full_cycles/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 75968080,
+            "unit": "B/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 699988,
+            "unit": "allocs/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 368322052,
+            "unit": "ns/op\t         1.000 full_cycles/op\t75892565 B/op\t  699965 allocs/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 368322052,
+            "unit": "ns/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - full_cycles/op",
+            "value": 1,
+            "unit": "full_cycles/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 75892565,
+            "unit": "B/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 699965,
+            "unit": "allocs/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 379210449,
+            "unit": "ns/op\t         1.000 full_cycles/op\t75929674 B/op\t  699973 allocs/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 379210449,
+            "unit": "ns/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - full_cycles/op",
+            "value": 1,
+            "unit": "full_cycles/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 75929674,
+            "unit": "B/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 699973,
+            "unit": "allocs/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 373900750,
+            "unit": "ns/op\t         1.000 full_cycles/op\t75893085 B/op\t  699976 allocs/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 373900750,
+            "unit": "ns/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - full_cycles/op",
+            "value": 1,
+            "unit": "full_cycles/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 75893085,
+            "unit": "B/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 699976,
+            "unit": "allocs/op",
+            "extra": "3 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 1152831950,
+            "unit": "ns/op\t         1.000 full_cycles/op\t233989152 B/op\t 1963643 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 1152831950,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - full_cycles/op",
+            "value": 1,
+            "unit": "full_cycles/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 233989152,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 1963643,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 1139704165,
+            "unit": "ns/op\t         1.000 full_cycles/op\t234025368 B/op\t 1963655 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 1139704165,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - full_cycles/op",
+            "value": 1,
+            "unit": "full_cycles/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 234025368,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 1963655,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 1147714646,
+            "unit": "ns/op\t         1.000 full_cycles/op\t233949064 B/op\t 1963626 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 1147714646,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - full_cycles/op",
+            "value": 1,
+            "unit": "full_cycles/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 233949064,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 1963626,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 1140984571,
+            "unit": "ns/op\t         1.000 full_cycles/op\t234059720 B/op\t 1963628 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 1140984571,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - full_cycles/op",
+            "value": 1,
+            "unit": "full_cycles/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 234059720,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 1963628,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 1132579131,
+            "unit": "ns/op\t         1.000 full_cycles/op\t233987624 B/op\t 1963650 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 1132579131,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - full_cycles/op",
+            "value": 1,
+            "unit": "full_cycles/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 233987624,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 1963650,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 1135633967,
+            "unit": "ns/op\t         1.000 full_cycles/op\t233983272 B/op\t 1963619 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 1135633967,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - full_cycles/op",
+            "value": 1,
+            "unit": "full_cycles/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 233983272,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 1963619,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 4187032969,
+            "unit": "ns/op\t         1.000 full_cycles/op\t799427336 B/op\t 6184862 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 4187032969,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - full_cycles/op",
+            "value": 1,
+            "unit": "full_cycles/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 799427336,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 6184862,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 4188626656,
+            "unit": "ns/op\t         1.000 full_cycles/op\t799197608 B/op\t 6184809 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 4188626656,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - full_cycles/op",
+            "value": 1,
+            "unit": "full_cycles/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 799197608,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 6184809,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 4276025982,
+            "unit": "ns/op\t         1.000 full_cycles/op\t799384488 B/op\t 6184822 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 4276025982,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - full_cycles/op",
+            "value": 1,
+            "unit": "full_cycles/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 799384488,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 6184822,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 4254671875,
+            "unit": "ns/op\t         1.000 full_cycles/op\t799315728 B/op\t 6184844 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 4254671875,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - full_cycles/op",
+            "value": 1,
+            "unit": "full_cycles/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 799315728,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 6184844,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 4262028993,
+            "unit": "ns/op\t         1.000 full_cycles/op\t799309760 B/op\t 6184796 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 4262028993,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - full_cycles/op",
+            "value": 1,
+            "unit": "full_cycles/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 799309760,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 6184796,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 4233776440,
+            "unit": "ns/op\t         1.000 full_cycles/op\t799353440 B/op\t 6184855 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 4233776440,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - full_cycles/op",
+            "value": 1,
+            "unit": "full_cycles/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 799353440,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_200Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 6184855,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 27957941387,
+            "unit": "ns/op\t      4000 fit_error_tasks_after_allocate/op\t         1.000 full_cycles/op\t  68732384 heap_live_after_allocate_bytes/op\t  79935208 heap_live_after_cycle_bytes/op\t5321529416 B/op\t32434124 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 27957941387,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - fit_error_tasks_after_allocate/op",
+            "value": 4000,
+            "unit": "fit_error_tasks_after_allocate/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - full_cycles/op",
+            "value": 1,
+            "unit": "full_cycles/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - heap_live_after_allocate_bytes/op",
+            "value": 68732384,
+            "unit": "heap_live_after_allocate_bytes/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - heap_live_after_cycle_bytes/op",
+            "value": 79935208,
+            "unit": "heap_live_after_cycle_bytes/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 5321529416,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 32434124,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 28152442597,
+            "unit": "ns/op\t      4000 fit_error_tasks_after_allocate/op\t         1.000 full_cycles/op\t  75427968 heap_live_after_allocate_bytes/op\t  86671144 heap_live_after_cycle_bytes/op\t5320985752 B/op\t32433807 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 28152442597,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - fit_error_tasks_after_allocate/op",
+            "value": 4000,
+            "unit": "fit_error_tasks_after_allocate/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - full_cycles/op",
+            "value": 1,
+            "unit": "full_cycles/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - heap_live_after_allocate_bytes/op",
+            "value": 75427968,
+            "unit": "heap_live_after_allocate_bytes/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - heap_live_after_cycle_bytes/op",
+            "value": 86671144,
+            "unit": "heap_live_after_cycle_bytes/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 5320985752,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 32433807,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 28079524500,
+            "unit": "ns/op\t      4000 fit_error_tasks_after_allocate/op\t         1.000 full_cycles/op\t  58658720 heap_live_after_allocate_bytes/op\t  69866328 heap_live_after_cycle_bytes/op\t5321985928 B/op\t32433970 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 28079524500,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - fit_error_tasks_after_allocate/op",
+            "value": 4000,
+            "unit": "fit_error_tasks_after_allocate/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - full_cycles/op",
+            "value": 1,
+            "unit": "full_cycles/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - heap_live_after_allocate_bytes/op",
+            "value": 58658720,
+            "unit": "heap_live_after_allocate_bytes/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - heap_live_after_cycle_bytes/op",
+            "value": 69866328,
+            "unit": "heap_live_after_cycle_bytes/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 5321985928,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 32433970,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 27884658026,
+            "unit": "ns/op\t      4000 fit_error_tasks_after_allocate/op\t         1.000 full_cycles/op\t  58659344 heap_live_after_allocate_bytes/op\t  69905400 heap_live_after_cycle_bytes/op\t5321777128 B/op\t32434053 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 27884658026,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - fit_error_tasks_after_allocate/op",
+            "value": 4000,
+            "unit": "fit_error_tasks_after_allocate/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - full_cycles/op",
+            "value": 1,
+            "unit": "full_cycles/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - heap_live_after_allocate_bytes/op",
+            "value": 58659344,
+            "unit": "heap_live_after_allocate_bytes/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - heap_live_after_cycle_bytes/op",
+            "value": 69905400,
+            "unit": "heap_live_after_cycle_bytes/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 5321777128,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 32434053,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 28018668375,
+            "unit": "ns/op\t      4000 fit_error_tasks_after_allocate/op\t         1.000 full_cycles/op\t  58660832 heap_live_after_allocate_bytes/op\t  69860152 heap_live_after_cycle_bytes/op\t5321605864 B/op\t32433922 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 28018668375,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - fit_error_tasks_after_allocate/op",
+            "value": 4000,
+            "unit": "fit_error_tasks_after_allocate/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - full_cycles/op",
+            "value": 1,
+            "unit": "full_cycles/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - heap_live_after_allocate_bytes/op",
+            "value": 58660832,
+            "unit": "heap_live_after_allocate_bytes/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - heap_live_after_cycle_bytes/op",
+            "value": 69860152,
+            "unit": "heap_live_after_cycle_bytes/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 5321605864,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 32433922,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 28162480391,
+            "unit": "ns/op\t      4000 fit_error_tasks_after_allocate/op\t         1.000 full_cycles/op\t  58661216 heap_live_after_allocate_bytes/op\t  69864824 heap_live_after_cycle_bytes/op\t5321039800 B/op\t32433893 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 28162480391,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - fit_error_tasks_after_allocate/op",
+            "value": 4000,
+            "unit": "fit_error_tasks_after_allocate/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - full_cycles/op",
+            "value": 1,
+            "unit": "full_cycles/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - heap_live_after_allocate_bytes/op",
+            "value": 58661216,
+            "unit": "heap_live_after_allocate_bytes/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - heap_live_after_cycle_bytes/op",
+            "value": 69864824,
+            "unit": "heap_live_after_cycle_bytes/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 5321039800,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycle_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 32433893,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycleWithMinRuntime_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 28075921794,
+            "unit": "ns/op\t         1.000 full_cycles/op\t5319689160 B/op\t32433906 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycleWithMinRuntime_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 28075921794,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycleWithMinRuntime_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - full_cycles/op",
+            "value": 1,
+            "unit": "full_cycles/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycleWithMinRuntime_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 5319689160,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycleWithMinRuntime_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 32433906,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycleWithMinRuntime_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 28152747403,
+            "unit": "ns/op\t         1.000 full_cycles/op\t5320232288 B/op\t32433827 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycleWithMinRuntime_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 28152747403,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycleWithMinRuntime_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - full_cycles/op",
+            "value": 1,
+            "unit": "full_cycles/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycleWithMinRuntime_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 5320232288,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycleWithMinRuntime_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 32433827,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycleWithMinRuntime_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 28178073912,
+            "unit": "ns/op\t         1.000 full_cycles/op\t5320535448 B/op\t32433854 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycleWithMinRuntime_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 28178073912,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycleWithMinRuntime_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - full_cycles/op",
+            "value": 1,
+            "unit": "full_cycles/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycleWithMinRuntime_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 5320535448,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycleWithMinRuntime_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 32433854,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycleWithMinRuntime_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 28137057833,
+            "unit": "ns/op\t         1.000 full_cycles/op\t5321393400 B/op\t32433946 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycleWithMinRuntime_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 28137057833,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycleWithMinRuntime_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - full_cycles/op",
+            "value": 1,
+            "unit": "full_cycles/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycleWithMinRuntime_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 5321393400,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycleWithMinRuntime_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 32433946,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycleWithMinRuntime_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 28015432966,
+            "unit": "ns/op\t         1.000 full_cycles/op\t5321620984 B/op\t32433923 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycleWithMinRuntime_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 28015432966,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycleWithMinRuntime_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - full_cycles/op",
+            "value": 1,
+            "unit": "full_cycles/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycleWithMinRuntime_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 5321620984,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycleWithMinRuntime_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 32433923,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycleWithMinRuntime_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim)",
+            "value": 28034285141,
+            "unit": "ns/op\t         1.000 full_cycles/op\t5321942392 B/op\t32434046 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycleWithMinRuntime_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - ns/op",
+            "value": 28034285141,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycleWithMinRuntime_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - full_cycles/op",
+            "value": 1,
+            "unit": "full_cycles/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycleWithMinRuntime_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - B/op",
+            "value": 5321942392,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimManySingleGPUJobsFullCycleWithMinRuntime_500Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/reclaim) - allocs/op",
+            "value": 32434046,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkOrderedVictimsQueueConstruction (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/preempt)",
+            "value": 402943,
+            "unit": "ns/op\t   53632 B/op\t      33 allocs/op",
+            "extra": "2839 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkOrderedVictimsQueueConstruction (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/preempt) - ns/op",
+            "value": 402943,
+            "unit": "ns/op",
+            "extra": "2839 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkOrderedVictimsQueueConstruction (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/preempt) - B/op",
+            "value": 53632,
+            "unit": "B/op",
+            "extra": "2839 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkOrderedVictimsQueueConstruction (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/preempt) - allocs/op",
+            "value": 33,
+            "unit": "allocs/op",
+            "extra": "2839 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkOrderedVictimsQueueConstruction (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/preempt)",
+            "value": 408117,
+            "unit": "ns/op\t   53632 B/op\t      33 allocs/op",
+            "extra": "2937 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkOrderedVictimsQueueConstruction (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/preempt) - ns/op",
+            "value": 408117,
+            "unit": "ns/op",
+            "extra": "2937 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkOrderedVictimsQueueConstruction (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/preempt) - B/op",
+            "value": 53632,
+            "unit": "B/op",
+            "extra": "2937 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkOrderedVictimsQueueConstruction (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/preempt) - allocs/op",
+            "value": 33,
+            "unit": "allocs/op",
+            "extra": "2937 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkOrderedVictimsQueueConstruction (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/preempt)",
+            "value": 412566,
+            "unit": "ns/op\t   53632 B/op\t      33 allocs/op",
+            "extra": "2878 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkOrderedVictimsQueueConstruction (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/preempt) - ns/op",
+            "value": 412566,
+            "unit": "ns/op",
+            "extra": "2878 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkOrderedVictimsQueueConstruction (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/preempt) - B/op",
+            "value": 53632,
+            "unit": "B/op",
+            "extra": "2878 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkOrderedVictimsQueueConstruction (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/preempt) - allocs/op",
+            "value": 33,
+            "unit": "allocs/op",
+            "extra": "2878 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkOrderedVictimsQueueConstruction (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/preempt)",
+            "value": 415476,
+            "unit": "ns/op\t   53632 B/op\t      33 allocs/op",
+            "extra": "2802 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkOrderedVictimsQueueConstruction (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/preempt) - ns/op",
+            "value": 415476,
+            "unit": "ns/op",
+            "extra": "2802 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkOrderedVictimsQueueConstruction (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/preempt) - B/op",
+            "value": 53632,
+            "unit": "B/op",
+            "extra": "2802 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkOrderedVictimsQueueConstruction (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/preempt) - allocs/op",
+            "value": 33,
+            "unit": "allocs/op",
+            "extra": "2802 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkOrderedVictimsQueueConstruction (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/preempt)",
+            "value": 414573,
+            "unit": "ns/op\t   53632 B/op\t      33 allocs/op",
+            "extra": "2840 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkOrderedVictimsQueueConstruction (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/preempt) - ns/op",
+            "value": 414573,
+            "unit": "ns/op",
+            "extra": "2840 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkOrderedVictimsQueueConstruction (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/preempt) - B/op",
+            "value": 53632,
+            "unit": "B/op",
+            "extra": "2840 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkOrderedVictimsQueueConstruction (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/preempt) - allocs/op",
+            "value": 33,
+            "unit": "allocs/op",
+            "extra": "2840 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkOrderedVictimsQueueConstruction (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/preempt)",
+            "value": 412946,
+            "unit": "ns/op\t   53632 B/op\t      33 allocs/op",
+            "extra": "2854 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkOrderedVictimsQueueConstruction (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/preempt) - ns/op",
+            "value": 412946,
+            "unit": "ns/op",
+            "extra": "2854 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkOrderedVictimsQueueConstruction (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/preempt) - B/op",
+            "value": 53632,
+            "unit": "B/op",
+            "extra": "2854 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkOrderedVictimsQueueConstruction (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/preempt) - allocs/op",
+            "value": 33,
+            "unit": "allocs/op",
+            "extra": "2854 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim)",
+            "value": 128176988,
+            "unit": "ns/op\t         0 duplicate/op\t        16.00 simulated/op\t14448528 B/op\t  163292 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - ns/op",
+            "value": 128176988,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - duplicate/op",
+            "value": 0,
+            "unit": "duplicate/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - simulated/op",
+            "value": 16,
+            "unit": "simulated/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - B/op",
+            "value": 14448528,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - allocs/op",
+            "value": 163292,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim)",
+            "value": 126576747,
+            "unit": "ns/op\t         0 duplicate/op\t        16.00 simulated/op\t13674344 B/op\t  154611 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - ns/op",
+            "value": 126576747,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - duplicate/op",
+            "value": 0,
+            "unit": "duplicate/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - simulated/op",
+            "value": 16,
+            "unit": "simulated/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - B/op",
+            "value": 13674344,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - allocs/op",
+            "value": 154611,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim)",
+            "value": 125624731,
+            "unit": "ns/op\t         0 duplicate/op\t        16.00 simulated/op\t13567112 B/op\t  154633 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - ns/op",
+            "value": 125624731,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - duplicate/op",
+            "value": 0,
+            "unit": "duplicate/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - simulated/op",
+            "value": 16,
+            "unit": "simulated/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - B/op",
+            "value": 13567112,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - allocs/op",
+            "value": 154633,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim)",
+            "value": 125087770,
+            "unit": "ns/op\t         0 duplicate/op\t        16.00 simulated/op\t13598056 B/op\t  154585 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - ns/op",
+            "value": 125087770,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - duplicate/op",
+            "value": 0,
+            "unit": "duplicate/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - simulated/op",
+            "value": 16,
+            "unit": "simulated/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - B/op",
+            "value": 13598056,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - allocs/op",
+            "value": 154585,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim)",
+            "value": 126583962,
+            "unit": "ns/op\t         0 duplicate/op\t        16.00 simulated/op\t13676424 B/op\t  154623 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - ns/op",
+            "value": 126583962,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - duplicate/op",
+            "value": 0,
+            "unit": "duplicate/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - simulated/op",
+            "value": 16,
+            "unit": "simulated/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - B/op",
+            "value": 13676424,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - allocs/op",
+            "value": 154623,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim)",
+            "value": 126043143,
+            "unit": "ns/op\t         0 duplicate/op\t        16.00 simulated/op\t13606672 B/op\t  154631 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - ns/op",
+            "value": 126043143,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - duplicate/op",
+            "value": 0,
+            "unit": "duplicate/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - simulated/op",
+            "value": 16,
+            "unit": "simulated/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - B/op",
+            "value": 13606672,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_10Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - allocs/op",
+            "value": 154631,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim)",
+            "value": 833528068,
+            "unit": "ns/op\t       183.0 duplicate/op\t       136.0 simulated/op\t348855024 B/op\t 3916394 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - ns/op",
+            "value": 833528068,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - duplicate/op",
+            "value": 183,
+            "unit": "duplicate/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - simulated/op",
+            "value": 136,
+            "unit": "simulated/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - B/op",
+            "value": 348855024,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - allocs/op",
+            "value": 3916394,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim)",
+            "value": 830107964,
+            "unit": "ns/op\t       183.0 duplicate/op\t       136.0 simulated/op\t348660512 B/op\t 3916312 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - ns/op",
+            "value": 830107964,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - duplicate/op",
+            "value": 183,
+            "unit": "duplicate/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - simulated/op",
+            "value": 136,
+            "unit": "simulated/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - B/op",
+            "value": 348660512,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - allocs/op",
+            "value": 3916312,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim)",
+            "value": 797023524,
+            "unit": "ns/op\t       183.0 duplicate/op\t       136.0 simulated/op\t349016240 B/op\t 3916220 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - ns/op",
+            "value": 797023524,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - duplicate/op",
+            "value": 183,
+            "unit": "duplicate/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - simulated/op",
+            "value": 136,
+            "unit": "simulated/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - B/op",
+            "value": 349016240,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - allocs/op",
+            "value": 3916220,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim)",
+            "value": 819811455,
+            "unit": "ns/op\t       183.0 duplicate/op\t       136.0 simulated/op\t348097704 B/op\t 3916177 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - ns/op",
+            "value": 819811455,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - duplicate/op",
+            "value": 183,
+            "unit": "duplicate/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - simulated/op",
+            "value": 136,
+            "unit": "simulated/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - B/op",
+            "value": 348097704,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - allocs/op",
+            "value": 3916177,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim)",
+            "value": 817397031,
+            "unit": "ns/op\t       183.0 duplicate/op\t       136.0 simulated/op\t348684040 B/op\t 3916168 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - ns/op",
+            "value": 817397031,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - duplicate/op",
+            "value": 183,
+            "unit": "duplicate/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - simulated/op",
+            "value": 136,
+            "unit": "simulated/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - B/op",
+            "value": 348684040,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - allocs/op",
+            "value": 3916168,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim)",
+            "value": 831677576,
+            "unit": "ns/op\t       183.0 duplicate/op\t       136.0 simulated/op\t348582728 B/op\t 3916272 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - ns/op",
+            "value": 831677576,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - duplicate/op",
+            "value": 183,
+            "unit": "duplicate/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - simulated/op",
+            "value": 136,
+            "unit": "simulated/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - B/op",
+            "value": 348582728,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_50Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - allocs/op",
+            "value": 3916272,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim)",
+            "value": 3985229967,
+            "unit": "ns/op\t       510.0 duplicate/op\t       286.0 simulated/op\t1357897272 B/op\t14661927 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - ns/op",
+            "value": 3985229967,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - duplicate/op",
+            "value": 510,
+            "unit": "duplicate/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - simulated/op",
+            "value": 286,
+            "unit": "simulated/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - B/op",
+            "value": 1357897272,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - allocs/op",
+            "value": 14661927,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim)",
+            "value": 3698168207,
+            "unit": "ns/op\t       510.0 duplicate/op\t       286.0 simulated/op\t1357681976 B/op\t14661675 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - ns/op",
+            "value": 3698168207,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - duplicate/op",
+            "value": 510,
+            "unit": "duplicate/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - simulated/op",
+            "value": 286,
+            "unit": "simulated/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - B/op",
+            "value": 1357681976,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - allocs/op",
+            "value": 14661675,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim)",
+            "value": 3700972666,
+            "unit": "ns/op\t       510.0 duplicate/op\t       286.0 simulated/op\t1358163152 B/op\t14661685 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - ns/op",
+            "value": 3700972666,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - duplicate/op",
+            "value": 510,
+            "unit": "duplicate/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - simulated/op",
+            "value": 286,
+            "unit": "simulated/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - B/op",
+            "value": 1358163152,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - allocs/op",
+            "value": 14661685,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim)",
+            "value": 3709014303,
+            "unit": "ns/op\t       510.0 duplicate/op\t       286.0 simulated/op\t1358841216 B/op\t14661911 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - ns/op",
+            "value": 3709014303,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - duplicate/op",
+            "value": 510,
+            "unit": "duplicate/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - simulated/op",
+            "value": 286,
+            "unit": "simulated/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - B/op",
+            "value": 1358841216,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - allocs/op",
+            "value": 14661911,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim)",
+            "value": 3706499252,
+            "unit": "ns/op\t       510.0 duplicate/op\t       286.0 simulated/op\t1358278512 B/op\t14661775 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - ns/op",
+            "value": 3706499252,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - duplicate/op",
+            "value": 510,
+            "unit": "duplicate/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - simulated/op",
+            "value": 286,
+            "unit": "simulated/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - B/op",
+            "value": 1358278512,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - allocs/op",
+            "value": 14661775,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim)",
+            "value": 3687069643,
+            "unit": "ns/op\t       510.0 duplicate/op\t       286.0 simulated/op\t1357802272 B/op\t14661778 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - ns/op",
+            "value": 3687069643,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - duplicate/op",
+            "value": 510,
+            "unit": "duplicate/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - simulated/op",
+            "value": 286,
+            "unit": "simulated/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - B/op",
+            "value": 1357802272,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - allocs/op",
+            "value": 14661778,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_AntiAffinity100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim)",
+            "value": 3643784970,
+            "unit": "ns/op\t       510.0 duplicate/op\t       286.0 simulated/op\t1350663664 B/op\t14542476 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_AntiAffinity100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - ns/op",
+            "value": 3643784970,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_AntiAffinity100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - duplicate/op",
+            "value": 510,
+            "unit": "duplicate/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_AntiAffinity100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - simulated/op",
+            "value": 286,
+            "unit": "simulated/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_AntiAffinity100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - B/op",
+            "value": 1350663664,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_AntiAffinity100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - allocs/op",
+            "value": 14542476,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_AntiAffinity100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim)",
+            "value": 3698793189,
+            "unit": "ns/op\t       510.0 duplicate/op\t       286.0 simulated/op\t1350567440 B/op\t14542205 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_AntiAffinity100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - ns/op",
+            "value": 3698793189,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_AntiAffinity100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - duplicate/op",
+            "value": 510,
+            "unit": "duplicate/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_AntiAffinity100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - simulated/op",
+            "value": 286,
+            "unit": "simulated/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_AntiAffinity100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - B/op",
+            "value": 1350567440,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_AntiAffinity100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - allocs/op",
+            "value": 14542205,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_AntiAffinity100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim)",
+            "value": 3740326427,
+            "unit": "ns/op\t       510.0 duplicate/op\t       286.0 simulated/op\t1350285360 B/op\t14542049 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_AntiAffinity100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - ns/op",
+            "value": 3740326427,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_AntiAffinity100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - duplicate/op",
+            "value": 510,
+            "unit": "duplicate/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_AntiAffinity100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - simulated/op",
+            "value": 286,
+            "unit": "simulated/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_AntiAffinity100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - B/op",
+            "value": 1350285360,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_AntiAffinity100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - allocs/op",
+            "value": 14542049,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_AntiAffinity100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim)",
+            "value": 3678150345,
+            "unit": "ns/op\t       510.0 duplicate/op\t       286.0 simulated/op\t1350322136 B/op\t14541967 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_AntiAffinity100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - ns/op",
+            "value": 3678150345,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_AntiAffinity100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - duplicate/op",
+            "value": 510,
+            "unit": "duplicate/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_AntiAffinity100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - simulated/op",
+            "value": 286,
+            "unit": "simulated/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_AntiAffinity100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - B/op",
+            "value": 1350322136,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_AntiAffinity100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - allocs/op",
+            "value": 14541967,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_AntiAffinity100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim)",
+            "value": 3744660074,
+            "unit": "ns/op\t       510.0 duplicate/op\t       286.0 simulated/op\t1350761968 B/op\t14542301 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_AntiAffinity100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - ns/op",
+            "value": 3744660074,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_AntiAffinity100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - duplicate/op",
+            "value": 510,
+            "unit": "duplicate/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_AntiAffinity100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - simulated/op",
+            "value": 286,
+            "unit": "simulated/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_AntiAffinity100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - B/op",
+            "value": 1350761968,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_AntiAffinity100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - allocs/op",
+            "value": 14542301,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_AntiAffinity100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim)",
+            "value": 3711728436,
+            "unit": "ns/op\t       510.0 duplicate/op\t       286.0 simulated/op\t1350413768 B/op\t14542029 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_AntiAffinity100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - ns/op",
+            "value": 3711728436,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_AntiAffinity100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - duplicate/op",
+            "value": 510,
+            "unit": "duplicate/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_AntiAffinity100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - simulated/op",
+            "value": 286,
+            "unit": "simulated/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_AntiAffinity100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - B/op",
+            "value": 1350413768,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimUnschedulableDistributedJob_AntiAffinity100Node (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - allocs/op",
+            "value": 14542029,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimWithMissingPVCJobs (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim)",
+            "value": 2425632,
+            "unit": "ns/op\t   11264 B/op\t     184 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimWithMissingPVCJobs (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - ns/op",
+            "value": 2425632,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimWithMissingPVCJobs (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - B/op",
+            "value": 11264,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimWithMissingPVCJobs (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - allocs/op",
+            "value": 184,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimWithMissingPVCJobs (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim)",
+            "value": 2918784,
+            "unit": "ns/op\t   11392 B/op\t     185 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimWithMissingPVCJobs (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - ns/op",
+            "value": 2918784,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimWithMissingPVCJobs (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - B/op",
+            "value": 11392,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimWithMissingPVCJobs (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - allocs/op",
+            "value": 185,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimWithMissingPVCJobs (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim)",
+            "value": 3246339,
+            "unit": "ns/op\t   11456 B/op\t     185 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimWithMissingPVCJobs (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - ns/op",
+            "value": 3246339,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimWithMissingPVCJobs (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - B/op",
+            "value": 11456,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimWithMissingPVCJobs (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - allocs/op",
+            "value": 185,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimWithMissingPVCJobs (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim)",
+            "value": 2355077,
+            "unit": "ns/op\t   11424 B/op\t     185 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimWithMissingPVCJobs (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - ns/op",
+            "value": 2355077,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimWithMissingPVCJobs (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - B/op",
+            "value": 11424,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimWithMissingPVCJobs (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - allocs/op",
+            "value": 185,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimWithMissingPVCJobs (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim)",
+            "value": 3101843,
+            "unit": "ns/op\t   11456 B/op\t     185 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimWithMissingPVCJobs (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - ns/op",
+            "value": 3101843,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimWithMissingPVCJobs (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - B/op",
+            "value": 11456,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimWithMissingPVCJobs (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - allocs/op",
+            "value": 185,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimWithMissingPVCJobs (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim)",
+            "value": 3150531,
+            "unit": "ns/op\t   11456 B/op\t     185 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimWithMissingPVCJobs (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - ns/op",
+            "value": 3150531,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimWithMissingPVCJobs (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - B/op",
+            "value": 11456,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReclaimWithMissingPVCJobs (github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim) - allocs/op",
+            "value": 185,
             "unit": "allocs/op",
             "extra": "1 times\n4 procs"
           }
