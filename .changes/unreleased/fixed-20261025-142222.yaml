@@ -1,3 +1,0 @@
-kind: Fixed
-body: |-
-  Binder no longer panics on nil data when updating an existing GPU-sharing ConfigMap
