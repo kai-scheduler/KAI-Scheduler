@@ -104,6 +104,8 @@ type PodInfo struct {
 	Status          pod_status.PodStatus
 	IsVirtualStatus bool
 	IsLegacyMIGtask bool
+	// IsResizeStandIn marks a pending copy of a running pod with a deferred resize; it is never placed.
+	IsResizeStandIn bool
 
 	BindRequest *bindrequest_info.BindRequestInfo
 
@@ -307,6 +309,7 @@ func (pi *PodInfo) Clone() *PodInfo {
 		ResourceReceivedType:   pi.ResourceReceivedType,
 		IsVirtualStatus:        pi.IsVirtualStatus,
 		IsLegacyMIGtask:        pi.IsLegacyMIGtask,
+		IsResizeStandIn:        pi.IsResizeStandIn,
 		storageClaims:          pi.storageClaims,
 		ownedStorageClaims:     pi.ownedStorageClaims,
 	}

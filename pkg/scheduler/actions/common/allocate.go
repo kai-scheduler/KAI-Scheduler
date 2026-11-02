@@ -5,6 +5,7 @@ package common
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
@@ -24,6 +25,10 @@ func AllocateJob(ssn *framework.Session, stmt *framework.Statement, nodes []*nod
 	tasksToAllocate := podgroup_info.GetTasksToAllocate(job, ssn.SubGroupOrderFn, ssn.TaskOrderFn, allocationMode)
 	if len(tasksToAllocate) == 0 {
 		return false
+	}
+	// A resize stand-in's target size is already charged on its node, and start-time checks do not apply.
+	if job.IsResizeStandIn() {
+		return isResizeStandInAllocatable(nodes, tasksToAllocate)
 	}
 	isPipelineOnly := allocationMode != podgroup_info.RealTaskAllocation
 
@@ -320,4 +325,15 @@ func orderedMembers(ssn *framework.Session, subGroupMembers []subgroup_info.SubG
 		return ssn.SubGroupOrderFn(subGroupMembers[i], subGroupMembers[j])
 	})
 	return subGroupMembers
+}
+
+func isResizeStandInAllocatable(nodes []*node_info.NodeInfo, tasks []*pod_info.PodInfo) bool {
+	for _, task := range tasks {
+		if !slices.ContainsFunc(nodes, func(node *node_info.NodeInfo) bool {
+			return node.IsInPlaceResizeAllocatable(task)
+		}) {
+			return false
+		}
+	}
+	return true
 }
