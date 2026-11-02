@@ -6,9 +6,10 @@ Related issues: [#2464](https://github.com/kai-scheduler/KAI-Scheduler/issues/24
 
 ## Summary
 
-Node assignments aim to provide better guarantees for queues.
+Node assignments aim to associate nodes to queues, in order to provide stronger guarantees beyond nominal resource quotas.
 Today, while the deserved and fair share resources are a strong guarantee the scheduler attempts to provide for queues, fragmentation often makes that difficult or impossible.
 Consider a cluster of two 8-GPU nodes and two queues with an 8-GPU quota each: both queues expect to be able to run an 8-GPU non-preemptible job, but it's possible (and, in some cases, likely) that a non-preemptible 1-GPU pod of one queue runs on each node, preventing the other queue from running a full-node job.
+A similar situation can happen at a topology-domain level: a 2-rack cluster can be nearly empty, except for several scattered non-preemptible pods, which could easily prevent full-rack, topology-constrained workloads from running, even though the cluster can be very under-utilized.
 
 Node assignments let admins assign nodes to queues.
 Once a node is assigned, the owning queue's pods will prefer it, foreign pods will prefer not to run on it, and foreign non-preemptible pods will not be allowed on it.
@@ -20,11 +21,12 @@ Admins do not have to assign every node, and not every queue has to own nodes.
 
 While the quota guarantee by the scheduler is useful, it's still mainly a nominal resource guarantee: an 8-GPU quota guarantees the scheduler will find 8 GPUs, but it doesn't guarantee their shape (for example, 2x4, 6+2, or a full 8-GPU node).
 Clusters naturally get fragmented over time, and large jobs get hurt the most: the larger a job is, the more likely it is to be unschedulable due to fragmentation.
-Reclaim cannot always fix this: when the free capacity is spread across nodes, or held by non-preemptible pods, there may be no valid reclaim scenario even though the queue is below its quota ([#2285](https://github.com/kai-scheduler/KAI-Scheduler/issues/2285)).
+Reclaim cannot always fix this: when the free capacity is spread across nodes, topology domains, or held by non-preemptible pods, there may be no valid reclaim scenario even though the queue is below its quota ([#2285](https://github.com/kai-scheduler/KAI-Scheduler/issues/2285)).
 
 One especially important use case is "hero jobs".
 While not a clearly defined term in the industry, it generally refers to large, high-priority, long-running jobs, such as pretraining a flagship model.
 Hero jobs are usually planned ahead rather than urgent: they are tested at smaller scales, their capacity is planned in advance, and they are closely monitored.
+They are also typically full-node pods, or have a strong anti-affinity to co-locating their pods with other workloads, due to performance, stability or security concerns.
 Admins want to guarantee their capacity whenever they require it, but today's scheduler logic cannot always provide that guarantee without human intervention when a reclaim scenario isn't possible.
 
 ## Goals
@@ -32,14 +34,14 @@ Admins want to guarantee their capacity whenever they require it, but today's sc
 - Let cluster admins assign nodes to queues, keeping those nodes unfragmented for their owning queues
 - Keep assigned nodes clean of foreign non-preemptible pods
 - Keep assigned nodes usable by other queues while their owner doesn't need them
-- Keep the assignment "soft" - allow non-preemptible foreign pods to use assigned resources opportunistically, when possible
+- Keep the assignment "soft" - allow preemptible foreign pods to use assigned resources opportunistically, when possible
 
 ## Non-Goals
 
 - Asserting a "good" division of the cluster at the KAI level
   - We do not aim to validate or enforce the assignment of nodes in the cluster: over-provisioned nodes, under-provisioned queues, leftover squatter pods, etc.
 - Preventing a queue from fragmenting its own assigned nodes
-- Changing how quota, deserved share or fair share are calculated
+- Full backwards compatibility - no changes to how quota, deserved share or fair share are calculated
 
 ## User Stories
 
@@ -56,11 +58,14 @@ When the run is submitted, it reclaims the borrowed pods and starts, without an 
 An inference team runs 8-GPU replicas that must not be preempted, next to research teams that submit many small, non-preemptible jobs.
 The admin assigns enough full nodes to the inference queue for its quota, so a scale-up always finds whole free nodes, while research teams can still run preemptible work on them when inference traffic is low.
 
-### Story 3: Shared ownership
+### Story 3: Topology constrained workloads
 
-Several teams fund parts of a shared cluster.
-Each team's queue owns the nodes it paid for, and unassigned nodes form a shared pool.
-Teams can always run non-preemptible work on their own nodes, and any team can borrow idle nodes from others with preemptible work.
+Several teams fund parts of a shared cluster, one of them, queue A, occasionally runs a high priority, topology-sensitive workload (periodic training, or occasional inference scale-up, doesn't really matter).
+This workload is high priority, there's enough quota for the queue, and it needs to be colocated on a single rack for performance.
+The other teams run different workloads on the cluster constantly, including non-preemptible interactive workloads. 
+The admin assigns a full rack to queue A, and assigns it a quota that covers it. 
+This guarantees to queue A that it will always have a non-fragmented rack to run its workload on. 
+(Except for hardware failures or self-fragmentation by queue A on its own nodes).
 
 ## Background
 
