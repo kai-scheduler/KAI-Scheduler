@@ -253,6 +253,30 @@ This proposal is the KAI input to [gpu-fractioning#163](https://github.com/kai-s
 
 ## Design
 
+### End-to-end flow
+
+From `kubectl apply` to a running container, for `min-guaranteed: "0.2"` in `sm-sharing` on an 8-chunk node:
+
+```mermaid
+flowchart TD
+  U["kubectl apply<br/>gpu-fraction: 0.5<br/>.gpu-compute.min-guaranteed: 0.2"] --> A{"Admission<br/>range, exclusive, needs memory,<br/>mode, container, gate"}
+  A -- invalid --> X["Rejected at apply time"]
+  A -- valid --> P["Pod pending"]
+  P --> F{"Node filter<br/>Ready condition +<br/>compute.sm-sharing.min-guaranteed.chunks label?"}
+  F -- "no capable node" --> W1["Pending: node does not support<br/>GPU compute fractions"]
+  F -- "label N = 8" --> R["Rounding<br/>ceil(0.2 · 8) = 2 chunks"]
+  R --> L{"GPU fit<br/>memory fits and<br/>8 − allocated + releasing − 2 ≥ 0?"}
+  L -- no --> W2["Pending: not enough GPU compute<br/>(2/8 chunks, free 1/8)"]
+  L -- yes --> BR["BindRequest<br/>ComputeChunks 2, ComputeTotalChunks 8"]
+  BR --> B["Binder PreBind<br/>.gpu-compute.granted: 0.25<br/>event: Granted GPU compute 0.25"]
+  B --> K["Bind → kubelet"]
+  K --> G{"fractiond at container creation<br/>round(0.25 · 8) = 2 chunks<br/>MPS accepts?"}
+  G -- no --> E["Container creation fails"]
+  G -- yes --> OK["Running<br/>.gpu-compute.applied: 0.25"]
+```
+
+W1 and W2 are retried every session; W2 clears when compute is released on a GPU of that node.
+
 ### Request parsing
 
 `NvFractionsContainerRequest` and `PodGPUFractionRequest` in the api module gain the policy and the share. `PodInfo.updatePodAdditionalFields` (`pkg/scheduler/api/pod_info/pod_info.go`) carries them into the task's GPU requirement. Shares are parsed as fixed-point integers (units of `1e-5`), never as floats, so `0.29 × 100` is exactly `29`.
