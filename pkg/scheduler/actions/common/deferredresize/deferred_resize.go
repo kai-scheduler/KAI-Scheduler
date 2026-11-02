@@ -63,7 +63,7 @@ func AttemptForJob(
 			if shouldStopForResult(result) {
 				return true
 			}
-			log.InfraLogger.V(3).Infof("Didn't find a %s strategy for deferred resize of <%s/%s> on node <%s>",
+			log.InfraLogger.V(3).Infof("Couldn't find a %s strategy for deferred resize of <%s/%s> on node <%s>",
 				actionType, task.Namespace, task.Name, node.Name)
 			continue
 		}
