@@ -50,6 +50,7 @@ func (alloc *consolidationAction) Execute(ssn *framework.Session) {
 		FilterUnready:               true,
 		FilterNonPreemptible:        true,
 		FilterWithinPreemptionDelay: true,
+		FilterWaitingForVictims:     true,
 		MaxJobsQueueDepth:           ssn.GetJobsDepth(framework.Consolidation),
 	})
 	jobsOrderByQueues.InitializeWithJobs(ssn.ClusterInfo.PodGroupInfos)

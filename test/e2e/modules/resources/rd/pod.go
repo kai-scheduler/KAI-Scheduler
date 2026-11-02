@@ -241,6 +241,21 @@ func createPodWithGpuClaim(ctx context.Context, client *kubernetes.Clientset, co
 	return pod
 }
 
+// PodAntiAffinity keeps a pod off the nodes running pods, in namespaces, that match labels.
+func PodAntiAffinity(labels map[string]string, namespaces ...string) *v1.Affinity {
+	return &v1.Affinity{
+		PodAntiAffinity: &v1.PodAntiAffinity{
+			RequiredDuringSchedulingIgnoredDuringExecution: []v1.PodAffinityTerm{
+				{
+					LabelSelector: &metav1.LabelSelector{MatchLabels: labels},
+					Namespaces:    namespaces,
+					TopologyKey:   constant.NodeNamePodLabelName,
+				},
+			},
+		},
+	}
+}
+
 func NodeAffinity(nodeName string, operator v1.NodeSelectorOperator) *v1.Affinity {
 	return &v1.Affinity{
 		NodeAffinity: &v1.NodeAffinity{

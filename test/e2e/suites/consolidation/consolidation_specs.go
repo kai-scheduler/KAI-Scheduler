@@ -207,5 +207,21 @@ func DescribeConsolidationSpecs() bool {
 				}
 			}
 		})
+
+		It("Moves one pod for a job anti-affine to it, and no other while it terminates", func(ctx context.Context) {
+			capacity.SkipIfInsufficientClusterTopologyResources(testCtx.KubeClientset, []capacity.ResourceList{
+				{Gpu: resource.MustParse("8"), PodCount: 2},
+				{Gpu: resource.MustParse("8"), PodCount: 2},
+			})
+
+			tierLabels := map[string]string{"tier": utils.GenerateRandomK8sName(10)}
+			// Half a node each, so that one can move beside another.
+			victims := fillers.FillGPUNodesWithSlowTerminatingPods(ctx, testCtx, testCtx.Queues[0], tierLabels,
+				priorityClass, 4)
+			pending := rd.CreatePodObject(testCtx.Queues[0], fillers.GPURequirements(2))
+			pending.Spec.PriorityClassName = priorityClass
+			pending = fillers.CreatePodRepellingVictims(ctx, testCtx, pending, tierLabels, namespace)
+			fillers.ExpectEvictionsUntilScheduled(ctx, testCtx, victims, 1, pending)
+		})
 	})
 }
