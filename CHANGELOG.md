@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v0.18.7] - 2026-11-02
+
+### Changed
+- gpu-fractioning chart dependency declared as a ~0.1.0 range, resolved at build time [#2364](https://github.com/kai-scheduler/KAI-Scheduler/issues/2364) [natasharomm](https://github.com/natasharomm)
+- Bump bundled gpu-fractioning; exact version in the subcharts.yaml release asset
+
+### Fixed
+- Preserve GPU reservations while binding requests remain retryable [#2358](https://github.com/kai-scheduler/KAI-Scheduler/issues/2358) [NVGreg](https://github.com/NVGreg)
+- Allow the kai-config-deployer hook job to run on OpenShift [#2441](https://github.com/kai-scheduler/KAI-Scheduler/issues/2441) [gshaibi](https://github.com/gshaibi)
+- Binder no longer panics on nil data when updating an existing GPU-sharing ConfigMap
+- pass podGrouper args through Helm values [saileshd1402](https://github.com/saileshd1402)
+
 ## [v0.18.6] - 2026-10-15
 
 ### Changed
