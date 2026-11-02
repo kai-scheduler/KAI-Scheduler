@@ -1,0 +1,6 @@
+kind: Added
+body: |-
+  Opt-in backoff that stops reclaim, preempt and consolidation from repeating a failed scenario search every cycle
+custom:
+  Author: "sam-huang1223"
+  Issue: "2301"
