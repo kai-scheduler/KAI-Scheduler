@@ -68,6 +68,7 @@ func (alloc *preemptAction) Execute(ssn *framework.Session) {
 		jobsOrderByQueues.Len(), ssn.CountLeafQueues())
 
 	smallestFailedJobsByQueue := map[common_info.QueueID]*common.MinimalJobRepresentatives{}
+	failedResizes := deferredresize.FailedResizes{}
 
 	for !jobsOrderByQueues.IsEmpty() {
 		job := jobsOrderByQueues.PopNextJob()
@@ -78,7 +79,7 @@ func (alloc *preemptAction) Execute(ssn *framework.Session) {
 
 		// Pending pods get the first pick of victims.
 		if shouldStop := deferredresize.AttemptForJob(ssn, job, framework.Preempt,
-			solveDeferredResize(ssn, actionBudget), shouldStopActionForSearchResult); shouldStop {
+			solveDeferredResize(ssn, actionBudget), shouldStopActionForSearchResult, failedResizes); shouldStop {
 			return
 		}
 	}

@@ -9,6 +9,7 @@ import (
 	"sort"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
@@ -19,6 +20,17 @@ import (
 )
 
 type Solve func(job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo) (*framework.Statement, *solvers.SearchResult)
+
+// FailedResizes holds the resize attempts that found no victims in one action run. A later resize with
+// the same key gets the same victims and the same node-wide fit check, so it is skipped.
+type FailedResizes map[failedResizeKey]bool
+
+type failedResizeKey struct {
+	queue       common_info.QueueID
+	priority    int32
+	preemptible bool
+	node        string
+}
 
 func NonPendingJobFilter(ssn *framework.Session) func(*podgroup_info.PodGroupInfo) bool {
 	if !ssn.DeferredResizePreemptionEnabled() {
@@ -46,6 +58,7 @@ func HasActiveAllocatedTaskOnNode(job *podgroup_info.PodGroupInfo, nodeName stri
 func AttemptForJob(
 	ssn *framework.Session, job *podgroup_info.PodGroupInfo,
 	actionType framework.ActionType, solve Solve, shouldStopForResult func(*solvers.SearchResult) bool,
+	failed FailedResizes,
 ) (shouldStop bool) {
 	// A job below its gang minimum must not evict others so one of its pods can grow.
 	if !ssn.DeferredResizePreemptionEnabled() || !job.RootSubGroupSet.IsMinRequirementSatisfied() {
@@ -57,6 +70,10 @@ func AttemptForJob(
 		if node.IsInPlaceResizeAllocatable(task) {
 			continue
 		}
+		key := failedResizeKey{job.Queue, job.Priority, job.IsPreemptibleJob(), node.Name}
+		if ssn.UseSchedulingSignatures() && failed[key] {
+			continue
+		}
 		metrics.IncPodgroupsConsideredByAction()
 		statement, result := solve(resizeRepresentative(job, task), node)
 		if statement == nil {
@@ -65,6 +82,7 @@ func AttemptForJob(
 			}
 			log.InfraLogger.V(3).Infof("Couldn't find a %s strategy for deferred resize of <%s/%s> on node <%s>",
 				actionType, task.Namespace, task.Name, node.Name)
+			failed[key] = true
 			continue
 		}
 		if err := statement.Commit(); err != nil {

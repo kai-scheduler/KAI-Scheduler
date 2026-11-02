@@ -101,7 +101,8 @@ func TestAttemptForJob_SolvesEachDeferredTaskWithAStandIn(t *testing.T) {
 	job := ssn.ClusterInfo.PodGroupInfos["resizer"]
 
 	var calls []solveCall
-	require.False(t, deferredresize.AttemptForJob(ssn, job, framework.Preempt, recordingSolve(&calls), neverStop))
+	require.False(t, deferredresize.AttemptForJob(ssn, job, framework.Preempt, recordingSolve(&calls), neverStop,
+		deferredresize.FailedResizes{}))
 
 	require.Len(t, calls, 2)
 	assert.Equal(t, "node1", calls[0].node, "tasks are tried in task order")
@@ -158,7 +159,8 @@ func TestAttemptForJob_Skips(t *testing.T) {
 			}
 			var calls []solveCall
 			job := ssn.ClusterInfo.PodGroupInfos["resizer"]
-			require.False(t, deferredresize.AttemptForJob(ssn, job, framework.Preempt, recordingSolve(&calls), neverStop))
+			require.False(t, deferredresize.AttemptForJob(ssn, job, framework.Preempt, recordingSolve(&calls), neverStop,
+				deferredresize.FailedResizes{}))
 			assert.Empty(t, calls)
 		})
 	}
@@ -174,7 +176,7 @@ func TestAttemptForJob_CommitsTheVictimsOnly(t *testing.T) {
 	}
 
 	job := ssn.ClusterInfo.PodGroupInfos["resizer"]
-	require.False(t, deferredresize.AttemptForJob(ssn, job, framework.Preempt, solve, neverStop))
+	require.False(t, deferredresize.AttemptForJob(ssn, job, framework.Preempt, solve, neverStop, deferredresize.FailedResizes{}))
 
 	assert.Equal(t, pod_status.Releasing, victim.Status)
 	resizing := taskByName(job, "resizer-0")
@@ -189,8 +191,40 @@ func TestAttemptForJob_StopsWhenTheSearchMustStop(t *testing.T) {
 	var calls []solveCall
 	stop := func(*solvers.SearchResult) bool { return true }
 	job := ssn.ClusterInfo.PodGroupInfos["resizer"]
-	require.True(t, deferredresize.AttemptForJob(ssn, job, framework.Preempt, recordingSolve(&calls), stop))
+	require.True(t, deferredresize.AttemptForJob(ssn, job, framework.Preempt, recordingSolve(&calls), stop,
+		deferredresize.FailedResizes{}))
 	assert.Len(t, calls, 1)
+}
+
+// A second resize on the same node with the same queue and priority gets the same victims and the
+// same node-wide fit check, so it is not solved again in the same action.
+func TestAttemptForJob_SkipsResizesThatAlreadyFailedOnTheNode(t *testing.T) {
+	tests := []struct {
+		name       string
+		nodes      []string
+		signatures bool
+		wantSolves int
+	}{
+		{name: "same node", nodes: []string{"node0", "node0"}, signatures: true, wantSolves: 1},
+		{name: "same node, scheduling signatures off", nodes: []string{"node0", "node0"}, wantSolves: 2},
+		{name: "different nodes", nodes: []string{"node0", "node1"}, signatures: true, wantSolves: 2},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resizer := &jobs_fake.TestJobBasic{}
+			for _, node := range tt.nodes {
+				resizer.Tasks = append(resizer.Tasks, deferredTask(node))
+			}
+			ssn := buildSession(t, resizer, true)
+			ssn.SchedulerParams.UseSchedulingSignatures = tt.signatures
+
+			var calls []solveCall
+			job := ssn.ClusterInfo.PodGroupInfos["resizer"]
+			require.False(t, deferredresize.AttemptForJob(ssn, job, framework.Preempt, recordingSolve(&calls), neverStop,
+				deferredresize.FailedResizes{}))
+			assert.Len(t, calls, tt.wantSolves)
+		})
+	}
 }
 
 func taskByName(job *podgroup_info.PodGroupInfo, name string) *pod_info.PodInfo {
