@@ -33,3 +33,5 @@ jobs:
           # Backports carry the original PR's changie fragment (a new file, so no conflict).
           # Propagate changelog-exemption labels so exempt PRs still pass validate-changelog.
           copy_labels_pattern: "skip-changelog|dependencies"
+          # On conflict, open a draft PR (authored by the bot) with the conflict committed, so a maintainer resolves it on the branch instead of opening a PR of their own.
+          experimental: '{"conflict_resolution": "draft_commit_conflicts"}'
