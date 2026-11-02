@@ -67,31 +67,33 @@ func reportDivisionResult(queues map[common_info.QueueID]*rs.QueueAttributes) {
 			gpuResourceShare.GetUsage(),
 		)
 
-		log.InfraLogger.V(3).Infof("Resource division result for queue <%v>: "+
-			"Queue Priority: <%d>, "+
-			"GPU: deserved: <%v>, requested: <%v>, maxAllowed: <%v>, allocated: <%v>, historicalUsage: <%v>, fairShare: <%v> "+
-			"CPU (cores): deserved: <%v>, requested: <%v>, maxAllowed: <%v>, allocated: <%v>, historicalUsage: <%v>, fairShare: <%v> "+
-			"memory (GB): deserved: <%v>, requested: <%v>, maxAllowed: <%v>, allocated: <%v>, historicalUsage: <%v>, fairShare: <%v> ",
-			queue.Name,
-			queue.Priority,
-			resource_info.HumanizeResource(gpuResourceShare.Deserved, 1),
-			resource_info.HumanizeResource(gpuResourceShare.GetRequestableShare(), 1),
-			resource_info.HumanizeResource(gpuResourceShare.MaxAllowed, 1),
-			resource_info.HumanizeResource(gpuResourceShare.Allocated, 1),
-			resource_info.HumanizeResource(gpuResourceShare.GetUsage(), 1),
-			resource_info.HumanizeResource(gpuResourceShare.FairShare, 1),
-			resource_info.HumanizeResource(cpuResourceShare.Deserved, resource_info.MilliCPUToCores),
-			resource_info.HumanizeResource(cpuResourceShare.GetRequestableShare(), resource_info.MilliCPUToCores),
-			resource_info.HumanizeResource(cpuResourceShare.MaxAllowed, resource_info.MilliCPUToCores),
-			resource_info.HumanizeResource(cpuResourceShare.Allocated, resource_info.MilliCPUToCores),
-			resource_info.HumanizeResource(cpuResourceShare.GetUsage(), resource_info.MilliCPUToCores),
-			resource_info.HumanizeResource(cpuResourceShare.FairShare, resource_info.MilliCPUToCores),
-			resource_info.HumanizeResource(memoryResourceShare.Deserved, resource_info.MemoryToGB),
-			resource_info.HumanizeResource(memoryResourceShare.GetRequestableShare(), resource_info.MemoryToGB),
-			resource_info.HumanizeResource(memoryResourceShare.MaxAllowed, resource_info.MemoryToGB),
-			resource_info.HumanizeResource(memoryResourceShare.Allocated, resource_info.MemoryToGB),
-			resource_info.HumanizeResource(memoryResourceShare.GetUsage(), resource_info.MemoryToGB),
-			resource_info.HumanizeResource(memoryResourceShare.FairShare, resource_info.MemoryToGB))
+		log.InfraLogger.V(5).Do(func() {
+			log.InfraLogger.Infof("Resource division result for queue <%v>: "+
+				"Queue Priority: <%d>, "+
+				"GPU: deserved: <%v>, requested: <%v>, maxAllowed: <%v>, allocated: <%v>, historicalUsage: <%v>, fairShare: <%v> "+
+				"CPU (cores): deserved: <%v>, requested: <%v>, maxAllowed: <%v>, allocated: <%v>, historicalUsage: <%v>, fairShare: <%v> "+
+				"memory (GB): deserved: <%v>, requested: <%v>, maxAllowed: <%v>, allocated: <%v>, historicalUsage: <%v>, fairShare: <%v> ",
+				queue.Name,
+				queue.Priority,
+				resource_info.HumanizeResource(gpuResourceShare.Deserved, 1),
+				resource_info.HumanizeResource(gpuResourceShare.GetRequestableShare(), 1),
+				resource_info.HumanizeResource(gpuResourceShare.MaxAllowed, 1),
+				resource_info.HumanizeResource(gpuResourceShare.Allocated, 1),
+				resource_info.HumanizeResource(gpuResourceShare.GetUsage(), 1),
+				resource_info.HumanizeResource(gpuResourceShare.FairShare, 1),
+				resource_info.HumanizeResource(cpuResourceShare.Deserved, resource_info.MilliCPUToCores),
+				resource_info.HumanizeResource(cpuResourceShare.GetRequestableShare(), resource_info.MilliCPUToCores),
+				resource_info.HumanizeResource(cpuResourceShare.MaxAllowed, resource_info.MilliCPUToCores),
+				resource_info.HumanizeResource(cpuResourceShare.Allocated, resource_info.MilliCPUToCores),
+				resource_info.HumanizeResource(cpuResourceShare.GetUsage(), resource_info.MilliCPUToCores),
+				resource_info.HumanizeResource(cpuResourceShare.FairShare, resource_info.MilliCPUToCores),
+				resource_info.HumanizeResource(memoryResourceShare.Deserved, resource_info.MemoryToGB),
+				resource_info.HumanizeResource(memoryResourceShare.GetRequestableShare(), resource_info.MemoryToGB),
+				resource_info.HumanizeResource(memoryResourceShare.MaxAllowed, resource_info.MemoryToGB),
+				resource_info.HumanizeResource(memoryResourceShare.Allocated, resource_info.MemoryToGB),
+				resource_info.HumanizeResource(memoryResourceShare.GetUsage(), resource_info.MemoryToGB),
+				resource_info.HumanizeResource(memoryResourceShare.FairShare, resource_info.MemoryToGB))
+		})
 	}
 }
 
