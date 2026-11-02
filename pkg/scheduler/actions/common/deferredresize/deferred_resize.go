@@ -22,10 +22,10 @@ import (
 type Solve func(job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo) (*framework.Statement, *solvers.SearchResult)
 
 // FailedResizes holds the resize attempts that found no victims in one action run. A later resize with
-// the same key gets the same victims and the same node-wide fit check, so it is skipped.
-type FailedResizes map[failedResizeKey]bool
+// the same signature gets the same victims and the same node-wide fit check, so it is skipped.
+type FailedResizes map[resizeSignature]bool
 
-type failedResizeKey struct {
+type resizeSignature struct {
 	queue       common_info.QueueID
 	priority    int32
 	preemptible bool
@@ -70,8 +70,8 @@ func AttemptForJob(
 		if node.IsInPlaceResizeAllocatable(task) {
 			continue
 		}
-		key := failedResizeKey{job.Queue, job.Priority, job.IsPreemptibleJob(), node.Name}
-		if ssn.UseSchedulingSignatures() && failed[key] {
+		signature := resizeSignature{job.Queue, job.Priority, job.IsPreemptibleJob(), node.Name}
+		if ssn.UseSchedulingSignatures() && failed[signature] {
 			continue
 		}
 		metrics.IncPodgroupsConsideredByAction()
@@ -82,7 +82,7 @@ func AttemptForJob(
 			}
 			log.InfraLogger.V(3).Infof("Couldn't find a %s strategy for deferred resize of <%s/%s> on node <%s>",
 				actionType, task.Namespace, task.Name, node.Name)
-			failed[key] = true
+			failed[signature] = true
 			continue
 		}
 		if err := statement.Commit(); err != nil {
