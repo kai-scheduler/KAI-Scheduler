@@ -61,7 +61,7 @@ function createChart(config, observations, migrationTimestamp) {
   const datasets = groups.map((group, index) => ({
     label: group.seriesLabel,
     data: group.observations.map(observation => ({
-      x: Date.parse(observation.timestamp),
+      x: new Date(observation.timestamp),
       y: observation.timingSeconds,
       observation,
     })),
@@ -79,9 +79,6 @@ function createChart(config, observations, migrationTimestamp) {
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      animation: false,
-      parsing: false,
-      normalized: true,
       interaction: { mode: 'nearest', intersect: false },
       plugins: {
         legend: {
@@ -91,13 +88,9 @@ function createChart(config, observations, migrationTimestamp) {
         },
         migrationLine: { timestamp: migrationTimestamp },
         tooltip: {
-          padding: 8,
-          caretPadding: 10,
-          titleFont: { size: 11 },
-          bodyFont: { size: 11 },
           callbacks: {
             title: items => items.length ? new Date(items[0].raw.x).toLocaleString() : '',
-            label: context => ScaleTestMetrics.formatDuration(context.raw.y),
+            label: context => `${context.dataset.label}: ${context.raw.observation.rawTiming}`,
             afterLabel: tooltipDetails,
           },
         },
@@ -136,9 +129,9 @@ function initializeMetrics() {
   const observations = ScaleTestMetrics.extractChartObservations(window.allRuns);
   const migrationTimestamp = ScaleTestMetrics.findMigrationTimestamp(window.allRuns);
 
-  const byChart = Map.groupBy(observations, observation => observation.chartId);
   ScaleTestMetrics.CHART_CONFIGS.forEach(config => {
-    createChart(config, byChart.get(config.id) || [], migrationTimestamp);
+    const chartObservations = observations.filter(observation => observation.chartId === config.id);
+    createChart(config, chartObservations, migrationTimestamp);
   });
 }
 
@@ -161,7 +154,6 @@ function initializeTabs() {
       tabs.forEach(item => item.classList.remove('active'));
       tab.classList.add('active');
       contents.forEach(content => content.classList.toggle('hidden', content.dataset.content !== targetTab));
-      window.dispatchEvent(new CustomEvent('scale-tests:tab-changed', { detail: targetTab }));
 
       if (targetTab === 'metrics' && !window._metricsInitialized) initializeVisibleMetrics();
     });

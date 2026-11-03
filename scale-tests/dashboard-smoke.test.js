@@ -85,7 +85,7 @@ function createBrowserContext(scalePayload, ginkgoPayload) {
 
   const context = {
     Chart,
-    CustomEvent: class CustomEvent { constructor(type, init) { this.type = type; this.detail = init?.detail; } },
+    CustomEvent: class CustomEvent { constructor(type) { this.type = type; } },
     Date: class MockDate extends Date {
       static now() { return Date.parse('2026-06-29T12:00:00Z'); }
     },
@@ -111,7 +111,7 @@ function createBrowserContext(scalePayload, ginkgoPayload) {
   context.window.addEventListener = (type, listener) => { windowListeners[type] = listener; };
   context.window.dispatchEvent = event => windowListeners[event.type]?.(event);
 
-  return { context: vm.createContext(context), elements, runsTab, metricsTab, renderedCharts };
+  return { context: vm.createContext(context), elements, metricsTab, renderedCharts };
 }
 
 async function waitFor(predicate) {
@@ -154,8 +154,6 @@ test('renders both result formats and fifteen unified charts', async () => {
   await waitFor(() => browser.context.window.allRuns?.length === 2);
   assert.equal(browser.renderedCharts.length, 0);
   vm.runInContext(readFileSync(join(__dirname, 'metrics.js'), 'utf8'), browser.context, { filename: 'metrics.js' });
-  assert.equal(browser.elements.get('main').innerHTML, '', 'runs list is not rendered while the metrics tab is active');
-  browser.runsTab.click();
   assert.match(browser.elements.get('main').innerHTML, /source-results/);
   assert.match(browser.elements.get('main').innerHTML, /source-legacy/);
   assert.match(browser.elements.get('main').innerHTML, /total requested gpus/);
@@ -164,7 +162,7 @@ test('renders both result formats and fifteen unified charts', async () => {
   assert.doesNotMatch(browser.elements.get('main').innerHTML, /kai_commit_hash/);
   assert.doesNotMatch(browser.elements.get('main').innerHTML, /test_focus/);
 
-  assert.equal(browser.renderedCharts.length, 17);
+  assert.equal(browser.renderedCharts.length, 19);
   assert.ok(browser.renderedCharts.every(chart => (
     chart.config.options.plugins.migrationLine.timestamp === '2026-06-29T08:42:33Z'
   )));
