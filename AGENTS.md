@@ -207,3 +207,10 @@ PRs trigger: `make validate` → `make test` → `make build` → E2E tests
 - Design documents for major features are in [`docs/developer/designs/`](docs/developer/designs/):
 
 - Usage Examples are in [`examples`](/examples/)
+
+## Cursor Cloud specific instructions
+
+- `start` brings up Docker (`fuse-overlayfs`, legacy iptables). Wait for `docker info` before `make builder`, `make lint`, or `make test`.
+- Container images for CI targets are prefetched from `mirror.gcr.io` when Docker Hub layer CDN fails; `hack/cloud-agent/install.sh` retags them to the names the Makefile expects.
+- Run `rm -f deployments/kai-scheduler/Chart.lock` before `helm dependency build` so the gpu-fractioning sub-chart range can resolve (see sub-chart notes above).
+- Typical verification: `make lint`, `make test-chart`, `make build-go SERVICE_NAME=scheduler`, and `make envtest-docker-go` (or full `make test`).
