@@ -12,7 +12,9 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/scores"
 )
 
-type nodeAvailabilityPlugin struct{}
+type nodeAvailabilityPlugin struct {
+	session *framework.Session
+}
 
 // New function returns nodeAvailabilityPlugin object
 func New(_ framework.PluginArguments) framework.Plugin {
@@ -24,13 +26,20 @@ func (pp *nodeAvailabilityPlugin) Name() string {
 }
 
 func (pp *nodeAvailabilityPlugin) OnSessionOpen(ssn *framework.Session) {
+	pp.session = ssn
 	ssn.AddNodeOrderFn(pp.nodeOrderFn)
 }
 
 func (pp *nodeAvailabilityPlugin) nodeOrderFn(task *pod_info.PodInfo, node *node_info.NodeInfo) (float64, error) {
 	score := 0.0
 	if taskAllocatable := node.IsTaskAllocatable(task); taskAllocatable {
-		score = scores.Availability
+		ready, err := pp.session.IsTaskReadyForBinding(task, node)
+		if err != nil {
+			return 0, err
+		}
+		if ready {
+			score = scores.Availability
+		}
 	}
 
 	log.InfraLogger.V(7).Do(func() {
@@ -45,4 +54,6 @@ func (pp *nodeAvailabilityPlugin) nodeOrderFn(task *pod_info.PodInfo, node *node
 	return score, nil
 }
 
-func (pp *nodeAvailabilityPlugin) OnSessionClose(_ *framework.Session) {}
+func (pp *nodeAvailabilityPlugin) OnSessionClose(_ *framework.Session) {
+	pp.session = nil
+}

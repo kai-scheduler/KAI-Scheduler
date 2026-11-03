@@ -93,8 +93,6 @@ func (s *Statement) Evict(reclaimeeTask *pod_info.PodInfo, message string,
 			reclaimeeTask.Namespace, reclaimeeTask.Name, pod_status.Releasing, s.sessionID, err)
 		return fmt.Errorf("failed to update task status for <%v/%v>", reclaimeeTask.Namespace, reclaimeeTask.Name)
 	}
-	// Mark the eviction as this session's before re-indexing, so the node leaves the victim
-	// out of its inter-pod affinity index (see node_info.excludedFromPodAffinity).
 	reclaimeeTask.IsVirtualStatus = true
 	if err := node.UpdateTask(reclaimeeTask); err != nil {
 		reclaimeeTask.IsVirtualStatus = previousIsVirtualStatus

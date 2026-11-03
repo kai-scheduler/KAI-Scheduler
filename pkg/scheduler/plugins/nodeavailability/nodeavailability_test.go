@@ -4,6 +4,7 @@
 package nodeavailability_test
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 
@@ -53,6 +54,31 @@ func TestNodeOrderFnDoesNotAllocateWhenVerboseLoggingIsDisabled(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, float64(scores.Availability), score)
 	require.Zero(t, allocations)
+}
+
+func TestNodeAvailabilityRequiresBindingReadiness(t *testing.T) {
+	failure := errors.New("readiness failed")
+	for _, tc := range []struct {
+		name  string
+		ready bool
+		err   error
+		score float64
+	}{
+		{name: "ready", ready: true, score: scores.Availability},
+		{name: "deferred"},
+		{name: "error", err: failure},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ssn := &framework.Session{}
+			ssn.AddBindReadyFn(func(*pod_info.PodInfo, *node_info.NodeInfo) (bool, error) { return tc.ready, tc.err })
+			nodeavailability.New(nil).OnSessionOpen(ssn)
+			task := createFakeTask("task")
+			setTaskResources(task, 1)
+			score, err := ssn.NodeOrderFns[0](task, createFakeNode("node", 1))
+			require.Equal(t, tc.score, score)
+			require.ErrorIs(t, err, tc.err)
+		})
+	}
 }
 
 var _ = Describe("NodeAvailability", func() {

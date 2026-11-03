@@ -20,9 +20,6 @@ import (
 
 const hostnameTopologyKey = "kubernetes.io/hostname"
 
-// A pending job with a required pod anti-affinity against the running victims must
-// still be reclaimable: evicted victims become Releasing, and a Releasing pod must not
-// keep satisfying the anti-affinity selector or every reclaim scenario is rejected.
 func TestReclaimWithRequiredAntiAffinityAgainstVictims(t *testing.T) {
 	test_utils.InitTestingInfrastructure()
 	controller := NewController(t)
@@ -93,8 +90,7 @@ func getReclaimPodAntiAffinityTestsMetadata() []integration_tests_utils.TestTopo
 			},
 		},
 		{
-			// Control: a matching pod that is NOT a victim (its queue is within quota) keeps
-			// blocking the node. The fix only ignores Releasing pods, not every match.
+			// A running pod in a protected queue still blocks the node.
 			TestTopologyBasic: test_utils.TestTopologyBasic{
 				Name: "Do not reclaim when a non-victim pod still matches the required anti-affinity",
 				Jobs: []*jobs_fake.TestJobBasic{
