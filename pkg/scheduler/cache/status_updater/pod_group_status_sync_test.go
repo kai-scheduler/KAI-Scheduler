@@ -231,8 +231,24 @@ var _ = Describe("Status Updater - Pod Groups Syncing", func() {
 	It("should accept newer pod group versions as synced", func() {
 		close(finishUpdatesChan)
 		wg.Wait()
+		// The reactor finishes before the worker moves the update between caches.
+		Eventually(func(g Gomega) {
+			appliedUpdates := 0
+			statusUpdater.appliedPodGroupUpdates.Range(func(_, _ any) bool {
+				appliedUpdates++
+				return true
+			})
+			g.Expect(appliedUpdates).To(Equal(len(podGroupsOriginals)))
+			inFlightUpdates := 0
+			statusUpdater.inFlightPodGroups.Range(func(_, _ any) bool {
+				inFlightUpdates++
+				return true
+			})
+			g.Expect(inFlightUpdates).To(BeZero())
+		}, 5*time.Second).Should(Succeed())
 
-		podGroupsList, _ := kubeAiSchedClient.SchedulingV2alpha2().PodGroups("default").List(context.TODO(), metav1.ListOptions{})
+		podGroupsList, err := kubeAiSchedClient.SchedulingV2alpha2().PodGroups("default").List(context.TODO(), metav1.ListOptions{})
+		Expect(err).To(Succeed())
 		podGroupsFromCluster := make([]*schedulingv2alpha2.PodGroup, 0, len(podGroupsList.Items))
 		for _, podGroup := range podGroupsList.Items {
 			podGroupCopy := podGroup.DeepCopy()
