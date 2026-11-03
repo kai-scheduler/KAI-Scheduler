@@ -214,3 +214,4 @@ PRs trigger: `make validate` → `make test` → `make build` → E2E tests
 - Container images for CI targets are prefetched from `mirror.gcr.io` when Docker Hub layer CDN fails; `hack/cloud-agent/install.sh` retags them to the names the Makefile expects.
 - Run `rm -f deployments/kai-scheduler/Chart.lock` before `helm dependency build` so the gpu-fractioning sub-chart range can resolve (see sub-chart notes above).
 - Typical verification: `make lint`, `make test-chart`, `make build-go SERVICE_NAME=scheduler`, and `make envtest-docker-go` (or full `make test`).
+- If `docker info` fails right after boot, run `bash hack/cloud-agent/start.sh` and retry. Docker-backed `go test` in the builder container needs `-e GOCACHE=/tmp/.cache` (and the Makefile’s cache volume mounts) when using a raw `docker run`.
