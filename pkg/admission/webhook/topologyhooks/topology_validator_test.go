@@ -77,6 +77,31 @@ var _ = Describe("Topology Validator", func() {
 	})
 
 	Context("ValidateUpdate", func() {
+		DescribeTable("should reject changes to the nodeLabel structure", func(levels []kaiv1alpha1.TopologyLevel) {
+			oldT := topologyWith(
+				kaiv1alpha1.TopologyLevel{NodeLabel: "accelerator.nvidia.com/rack"},
+				kaiv1alpha1.TopologyLevel{NodeLabel: "kubernetes.io/hostname"},
+			)
+			_, err := validator.ValidateUpdate(ctx, oldT, topologyWith(levels...))
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("nodeLabel structure is immutable"))
+		},
+			Entry("adding a level", []kaiv1alpha1.TopologyLevel{
+				{NodeLabel: "accelerator.nvidia.com/zone"},
+				{NodeLabel: "accelerator.nvidia.com/rack"},
+				{NodeLabel: "kubernetes.io/hostname"},
+			}),
+			Entry("removing a level", []kaiv1alpha1.TopologyLevel{{NodeLabel: "kubernetes.io/hostname"}}),
+			Entry("reordering levels", []kaiv1alpha1.TopologyLevel{
+				{NodeLabel: "kubernetes.io/hostname"},
+				{NodeLabel: "accelerator.nvidia.com/rack"},
+			}),
+			Entry("changing a nodeLabel", []kaiv1alpha1.TopologyLevel{
+				{NodeLabel: "accelerator.nvidia.com/zone"},
+				{NodeLabel: "kubernetes.io/hostname"},
+			}),
+		)
+
 		It("should allow re-pointing an alias to a different level", func() {
 			oldT := topologyWith(
 				kaiv1alpha1.TopologyLevel{NodeLabel: "accelerator.nvidia.com/rack", Alias: "rack"},
@@ -92,7 +117,10 @@ var _ = Describe("Topology Validator", func() {
 		})
 
 		It("should reject an update that introduces a duplicate alias", func() {
-			oldT := topologyWith(kaiv1alpha1.TopologyLevel{NodeLabel: "accelerator.nvidia.com/rack", Alias: "rack"})
+			oldT := topologyWith(
+				kaiv1alpha1.TopologyLevel{NodeLabel: "accelerator.nvidia.com/rack", Alias: "rack"},
+				kaiv1alpha1.TopologyLevel{NodeLabel: "kubernetes.io/hostname", Alias: "node"},
+			)
 			newT := topologyWith(
 				kaiv1alpha1.TopologyLevel{NodeLabel: "accelerator.nvidia.com/rack", Alias: "rack"},
 				kaiv1alpha1.TopologyLevel{NodeLabel: "kubernetes.io/hostname", Alias: "rack"},
