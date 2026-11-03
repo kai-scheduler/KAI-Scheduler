@@ -2,7 +2,7 @@
 
 The default local runner and the PR, upgrade and GitOps jobs install NVIDIA GPU Operator v26.7.2 with Mokka instead of FGO. Production charts are unchanged. GPU sharing remains `NonMemoryEnforced`; this PR does not switch the Scheduler tests to NvFractions.
 
-`install-mokka-gpu-operator.sh` builds a pinned public Mokka commit: PR 1109's GPU Operator integration at c7605a7 plus the NVML memory-limit acknowledgement from PR 1130. The source is pinned to `fe859af25b05f1ea4e4e91e56c89491b8e6dc7b4` on the public `JRosenboimNVIDIA/mokka` fork until the integration is released upstream. It builds the unmodified Mokka Dockerfile and loads the image into kind. Set `MOKKA_REPOSITORY`, `MOKKA_REF` or `GPU_OPERATOR_VERSION` to test a different revision.
+`install-mokka-gpu-operator.sh` builds public Mokka commit `2ab593fd866e84a24e21a456e901fa9e8eb6292a` from the `JRosenboimNVIDIA/mokka` fork. It includes Roman's PR 1109 GPU Operator integration, the NVML memory-limit acknowledgement from PR 1130, and the current NUMA changes from PR 1147. It builds the unmodified Mokka Dockerfile and loads the image into kind. Set `MOKKA_REPOSITORY`, `MOKKA_REF` or `GPU_OPERATOR_VERSION` to test a different revision. The dedicated NUMA workflow uses the setup in `README-mokka-numa.md`; standard suites keep NUMA simulation disabled.
 
 The driver and toolkit operands stay enabled and use NVIDIA images. Mokka uses its kernel simulation mode and NRI integration. The driver image is the multi-architecture Ubuntu 24.04 digest, so the new CI jobs use Ubuntu 24.04. CUDA workload validation is disabled because simulated GPUs cannot execute CUDA. MIG is disabled, matching the existing test setup.
 

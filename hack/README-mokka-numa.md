@@ -1,6 +1,6 @@
 # Mokka NUMA CI experiment
 
-This change extends upstream draft PR #2543. The dedicated workflow builds KAI
+This setup is part of upstream draft PR #2543. The dedicated workflow builds KAI
 from the PR and runs on a GitHub-hosted runner, without adding a VM.
 
 ## Stack
