@@ -25,13 +25,16 @@ import (
 	podresourcesv1 "k8s.io/kubelet/pkg/apis/podresources/v1"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	commonpod "github.com/kai-scheduler/KAI-scheduler/pkg/common/pod"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/npe/consts"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/npe/cputopology"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/npe/placement"
 	"github.com/kai-scheduler/api/constants"
+	"github.com/kai-scheduler/api/scheduling/v1alpha2"
 )
 
 // +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch;patch
+// +kubebuilder:rbac:groups=core,resources=nodes,verbs=get
 
 // resourceLister lists per-pod resource allocations from the local kubelet. *podresources.Client
 // satisfies it; the interface keeps the exporter testable without a real podresources socket.
@@ -43,6 +46,7 @@ type resourceLister interface {
 type Exporter struct {
 	nodeName     string
 	pollInterval time.Duration
+	fakeGPUNode  bool
 
 	resources resourceLister
 	cpuToNUMA cputopology.CPUToNUMA
@@ -73,6 +77,9 @@ func New(nodeName string, pollInterval, _ time.Duration, resources resourceListe
 // Reconciliation runs on a single goroutine, so observation history needs no locking.
 func (a *Exporter) Run(ctx context.Context) error {
 	logger := log.FromContext(ctx)
+	if err := a.configureNode(ctx); err != nil {
+		return err
+	}
 	logger.Info("Starting NUMA placement exporter", "node", a.nodeName,
 		"pollInterval", a.pollInterval)
 	factory := informers.NewSharedInformerFactoryWithOptions(a.clientset, 0, informers.WithTweakListOptions(func(options *metav1.ListOptions) {
@@ -116,6 +123,18 @@ func (a *Exporter) Run(ctx context.Context) error {
 	}
 }
 
+func (a *Exporter) configureNode(ctx context.Context) error {
+	node, err := a.clientset.CoreV1().Nodes().Get(ctx, a.nodeName, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("reading exporter node %q: %w", a.nodeName, err)
+	}
+	a.fakeGPUNode = node.Labels["run.ai/fake.gpu"] == "true"
+	if a.fakeGPUNode {
+		log.FromContext(ctx).Info("Fake GPU node: mirroring predicted memory groups instead of observing allocations", "node", a.nodeName)
+	}
+	return nil
+}
+
 func (a *Exporter) reconcile(ctx context.Context) error {
 	logger := log.FromContext(ctx)
 
@@ -136,15 +155,18 @@ func (a *Exporter) reconcile(ctx context.Context) error {
 	for _, pod := range apiPods {
 		key := pod.Namespace + "/" + pod.Name
 		seen[pod.UID] = struct{}{}
-		annotations := map[string]string{}
+		annotations := map[string]any{}
 		value, ok := a.placementValue(ctx, observed[key])
 		if ok && pod.Annotations[consts.NumaPlacementAnnotation] != value {
 			annotations[consts.NumaPlacementAnnotation] = value
 		}
 		_, previouslyWritten := a.writtenGroups[pod.UID]
-		groupValue := placement.MemoryGroupsValue(ctx, pod, observed[key], pod.Annotations[constants.NumaMemoryGroupsObserved] != "" || previouslyWritten)
+		groupValue := a.memoryGroupsValue(ctx, pod, observed[key], previouslyWritten)
 		if groupValue != "" && pod.Annotations[constants.NumaMemoryGroupsObserved] != groupValue {
 			annotations[constants.NumaMemoryGroupsObserved] = groupValue
+		}
+		if _, exists := pod.Annotations[constants.NumaMemoryGroupsObserved]; a.fakeGPUNode && groupValue == "" && exists {
+			annotations[constants.NumaMemoryGroupsObserved] = nil
 		}
 		if len(annotations) != 0 {
 			if err := a.patchAnnotations(ctx, pod, annotations); err != nil {
@@ -167,6 +189,25 @@ func (a *Exporter) reconcile(ctx context.Context) error {
 	return nil
 }
 
+func (a *Exporter) memoryGroupsValue(ctx context.Context, pod *corev1.Pod, observed *podresourcesv1.PodResources, previouslyWritten bool) string {
+	if !a.fakeGPUNode {
+		return placement.MemoryGroupsValue(ctx, pod, observed, pod.Annotations[constants.NumaMemoryGroupsObserved] != "" || previouslyWritten)
+	}
+	if !commonpod.IsGuaranteed(pod) {
+		return "[]"
+	}
+	prediction := pod.Annotations[constants.NumaMemoryGroupsPredicted]
+	if prediction == "" {
+		return ""
+	}
+	var groups []v1alpha2.NUMAMemoryGroupPlacement
+	if err := json.Unmarshal([]byte(prediction), &groups); err != nil || groups == nil {
+		log.FromContext(ctx).Info("Skipping invalid predicted memory groups on fake GPU node", "pod", pod.Namespace+"/"+pod.Name)
+		return ""
+	}
+	return prediction
+}
+
 // placementValue computes a pod's observed placement and marshals it to the annotation value.
 // Returns ok=false when the pod holds no topology-aligned resources or marshaling fails.
 func (a *Exporter) placementValue(ctx context.Context, pod *podresourcesv1.PodResources) (string, bool) {
@@ -183,7 +224,7 @@ func (a *Exporter) placementValue(ctx context.Context, pod *podresourcesv1.PodRe
 	return value, true
 }
 
-func (a *Exporter) patchAnnotations(ctx context.Context, pod *corev1.Pod, annotations map[string]string) error {
+func (a *Exporter) patchAnnotations(ctx context.Context, pod *corev1.Pod, annotations map[string]any) error {
 	patch := map[string]any{
 		"metadata": map[string]any{
 			"annotations":     annotations,

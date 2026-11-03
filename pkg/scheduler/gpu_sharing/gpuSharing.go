@@ -30,17 +30,17 @@ func (n *nodeGpuForSharing) GroupIDs() []string {
 }
 
 func AllocateFractionalGPUTaskToNode(ssn *framework.Session, stmt *framework.Statement, pod *pod_info.PodInfo,
-	node *node_info.NodeInfo, isPipelineOnly bool) bool {
+	node *node_info.NodeInfo, isSimulation bool) bool {
 	fittingGPUs := ssn.FittingGPUs(node, pod)
-	gpuForSharing := GetNodePreferableGpuForSharing(fittingGPUs, node, pod, isPipelineOnly)
+	gpuForSharing := GetNodePreferableGpuForSharing(fittingGPUs, node, pod, isSimulation)
 	if gpuForSharing == nil {
 		return false
 	}
 
 	pod.SetFractionalGpuGroups(gpuForSharing.FractionalGpuGroups)
 
-	isPipelineOnly = isPipelineOnly || gpuForSharing.IsReleasing
-	success := allocateSharedGPUTask(ssn, stmt, node, pod, isPipelineOnly)
+	isSimulation = isSimulation || gpuForSharing.IsReleasing
+	success := allocateSharedGPUTask(ssn, stmt, node, pod, isSimulation)
 	if !success {
 		pod.FractionalGpuGroups = nil
 	}
@@ -48,7 +48,7 @@ func AllocateFractionalGPUTaskToNode(ssn *framework.Session, stmt *framework.Sta
 }
 
 func GetNodePreferableGpuForSharing(fittingGPUsOnNode []string, node *node_info.NodeInfo, pod *pod_info.PodInfo,
-	isPipelineOnly bool) *nodeGpuForSharing {
+	isSimulation bool) *nodeGpuForSharing {
 
 	nodeGpusSharing := &nodeGpuForSharing{
 		FractionalGpuGroups: []schedulingv1alpha2.FractionalGpuGroup{},
@@ -58,7 +58,7 @@ func GetNodePreferableGpuForSharing(fittingGPUsOnNode []string, node *node_info.
 	deviceCounts := pod.GpuRequirement.GetNumOfGpuDevices()
 	for _, gpuIdx := range fittingGPUsOnNode {
 		if gpuIdx == pod_info.WholeGpuIndicator {
-			if wholeGpuForSharing := findGpuForSharingOnNode(pod, node, isPipelineOnly); wholeGpuForSharing != nil {
+			if wholeGpuForSharing := findGpuForSharingOnNode(pod, node, isSimulation); wholeGpuForSharing != nil {
 				nodeGpusSharing.IsReleasing =
 					nodeGpusSharing.IsReleasing || wholeGpuForSharing.IsReleasing
 				nodeGpusSharing.FractionalGpuGroups = append(
@@ -86,9 +86,9 @@ func GetNodePreferableGpuForSharing(fittingGPUsOnNode []string, node *node_info.
 	return nil
 }
 
-func findGpuForSharingOnNode(task *pod_info.PodInfo, node *node_info.NodeInfo, isPipelineOnly bool) *nodeGpuForSharing {
+func findGpuForSharingOnNode(task *pod_info.PodInfo, node *node_info.NodeInfo, isSimulation bool) *nodeGpuForSharing {
 	isReleasing := true
-	if !isPipelineOnly {
+	if !isSimulation {
 		if taskAllocatable := node.IsTaskAllocatable(task); taskAllocatable {
 			isReleasing = false
 		}
@@ -105,15 +105,15 @@ func findGpuForSharingOnNode(task *pod_info.PodInfo, node *node_info.NodeInfo, i
 }
 
 func allocateSharedGPUTask(ssn *framework.Session, stmt *framework.Statement, node *node_info.NodeInfo,
-	task *pod_info.PodInfo, isPipelineOnly bool) bool {
-	if isPipelineOnly {
+	task *pod_info.PodInfo, isSimulation bool) bool {
+	if isSimulation {
 		log.InfraLogger.V(6).Do(func() {
 			log.InfraLogger.Infof(
 				"Pipelining Task <%v/%v> to node <%v> gpuGroup: <%v>, requires: <%v, %v mb> GPUs",
 				task.Namespace, task.Name, node.Name,
 				task.GPUGroupIDs(), task.GpuRequirement.GPUs(), task.GpuRequirement.GpuMemory())
 		})
-		if err := stmt.Pipeline(task, node.Name, !isPipelineOnly); err != nil {
+		if err := stmt.Pipeline(task, node.Name, true); err != nil {
 			log.InfraLogger.V(6).Do(func() {
 				log.InfraLogger.Infof("Failed to pipeline Task: <%s/%s> on Node: <%s>, due to an error: %v",
 					task.Namespace, task.Name, node.Name, err)
