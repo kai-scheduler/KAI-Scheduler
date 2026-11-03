@@ -28,10 +28,11 @@ This design lets a fractional workload state how much *compute* it needs, on top
 - A named contract between KAI and [gpu-fractioning](https://github.com/kai-scheduler/gpu-fractioning) for capability discovery and enforcement.
 - Zero behaviour change for existing memory-only fractional workloads.
 
-**Non-Goals (deferred to P1)**
+**Non-Goals**
 
-- GPU-compute queue `quota` / `limit` parameters. Quota stays counted on GPU memory only.
-- Heterogeneous resources.
+- GPU-compute queue `quota` / `limit` parameters (deferred to P1). Quota stays counted on GPU memory only.
+- Heterogeneous resources (deferred to P1).
+- Resizing a running fractional pod in place, for memory or compute. It is not supported, and the user docs say so.
 
 **Out of scope**
 
@@ -55,6 +56,7 @@ This design lets a fractional workload state how much *compute* it needs, on top
 | **Compute sharing mode** | `time-slicing` (default) or `sm-sharing` (MPS), set by `.gpu-compute.mode`. Pods of different modes never share a GPU. |
 | **Best-effort** | A memory-only fractional pod. It holds no compute guarantee and runs on whatever capacity the guarantees leave. |
 | **Capability label** | A node label published by gpu-fractioning stating that a (mode, policy) combination is supported. |
+| **Node tier** | `none`, `memory` or `full`: what fraction sharing a node supports, from its CUDA and driver versions. |
 
 ## Background: fractions today
 
@@ -72,7 +74,7 @@ flowchart LR
 - **Scheduler** keeps a per-GPU-group memory ledger in `GpuSharingNodeInfo` (`UsedSharedGPUsMemory`, `AllocatedSharedGPUsMemory`, `ReleasingSharedGPUsMemory`, in `pkg/scheduler/api/node_info/gpu_sharing_node_info.go`). `IsTaskFitOnGpuGroup` checks memory and, via `IsGpuGroupComputeSharingModeCompatible`, keeps `time-slicing` and `sm-sharing` pods on separate GPUs. `gpusharingnodevalidation` requires the node condition `gpu-fractioning.nvidia.com/Ready`.
 - **BindRequest** carries `ReceivedGPU{Count, Portion}` and `SelectedFractionalGpuGroups[{ID, ComputeSharingMode}]` (`createBindRequest` in `pkg/scheduler/cache/cache.go`).
 - **Binder** (`pkg/binder/plugins/nvfractions/nv_fractions.go`) writes `.gpu-memory.request` (only when the pod has none) and the binder-only `.gpus.devices`. The mode is persisted on the GPU reservation pod.
-- **gpu-fractioning** reads the per-container annotations, enforces the memory limit, and routes all `sm-sharing` containers to one shared MPS server with no compute cap. It publishes the node condition above and the label `gpu-fractioning.kai.scheduler/nvidia-driver-version.major`.
+- **gpu-fractioning** reads the per-container annotations, enforces the memory limit, and routes all `sm-sharing` containers to one shared MPS server with no compute cap. It publishes the node condition above and the label `gpu-fractioning.kai.scheduler/nvidia-driver-version.major`. Its only version threshold is a driver-major floor (615) that explains an already-failing node rather than gating one (see [Node support tiers](#node-support-tiers)).
 
 There is no compute accounting anywhere in the path today.
 
@@ -87,13 +89,13 @@ There is no compute accounting anywhere in the path today.
 | 5 | Who validates and rejects | Admission rejects every statically invalid submission. Co-location that exceeds the device or mixes modes is prevented by construction in the scheduler. | [Validation](#validation) |
 | 6 | Device selection and fragmentation | Any memory:compute ratio is allowed. Quota stays memory-only. Enforcing fair ratios is left to the cluster admin. | [Fragmentation and fairness](#fragmentation-and-fairness) |
 | 7 | Enforcement per mode | Specified as a per-row contract on gpu-fractioning. The KAI ledger guarantees the sum of requested shares on a GPU never exceeds 1; gpu-fractioning must honour any such set after rounding. | [gpu-fractioning contract](#gpu-fractioning-contract) |
-| 8 | Defaults and backward compatibility | Memory-only requests are unchanged and remain the default. Nodes without compute capability (e.g. below CUDA 13.5) offer only the existing modes. | [Backward compatibility](#backward-compatibility-and-version-skew) |
+| 8 | Defaults and backward compatibility | Memory-only requests are unchanged and remain the default. Nodes are in one of three tiers, computed by gpu-fractioning from the CUDA and driver versions (ANDed): `none` (< CUDA 13.4), `memory` (CUDA 13.4), `full` (≥ CUDA 13.5). `memory`-tier nodes keep offering memory fractions. | [Node support tiers](#node-support-tiers) |
 | 9 | Observability | Applied share on the pod, compute-specific fit reasons, capability node labels, a per-GPU allocation gauge. Usage is device-level only. | [Observability](#observability) |
 | — | Co-location with memory-only pods | Allowed in the same mode. Memory-only pods are best-effort: charged zero compute. | [Compute ledger](#compute-ledger) |
-| — | Capability API | Presence-only node labels published by gpu-fractioning `mpsd`, one per supported (mode, policy). | [Capability discovery](#capability-discovery) |
+| — | Capability API | The tier travels on signals KAI already reads: `Ready=False` for `none`, `Ready=True` for `memory` and `full`. Compute rows are presence-only node labels published by gpu-fractioning `mpsd` on `full` nodes, one per supported (mode, policy). | [Capability discovery](#capability-discovery) |
 | — | KAI ⇄ gpu-fractioning API | Request (user) → capability (node label) → applied share (gpu-fractioning). The request key is read by both sides as is; KAI adds no compute key. | [KAI ⇄ gpu-fractioning API](#kai--gpu-fractioning-api) |
 | — | Spec changes and tamper resistance | **Major concern.** Compute keys are immutable after binding. gpu-fractioning is the only path to MPS; no container, root or not, may alter limits. | [Major concern](#major-concern-who-owns-a-spec-change) |
-| — | Alpha gating | **Open.** | [Rollout and gating](#rollout-and-gating-open) |
+| — | Alpha gating | No KAI switch. Alpha is marked in the docs only. Compute keys take effect when the scheduler runs in `NvFractions` GPU sharing mode, on nodes with the capability label. | [Rollout and gating](#rollout-and-gating) |
 
 ## User API
 
@@ -195,7 +197,7 @@ Example c is the "20% resolves to more than 20%" case raised in #2192. KAI keeps
 
 **Pending, with a reason** (scheduler fit errors, surfaced as events and PodGroup conditions):
 
-- `node n1 does not support GPU compute fractions (sm-sharing, max-allowed)`: the node has no capability label, for example because its driver is below CUDA 13.5.
+- `node n1 does not support GPU compute fractions (sm-sharing, max-allowed)`: the node has no capability label, for example because it is a `memory`-tier node (CUDA 13.4, or a driver below r620).
 - `node n1 has enough GPU memory but not enough GPU compute (requested 0.2, free 0.1)`
 
 A request gpu-fractioning cannot honour after rounding, e.g. a `max-allowed` smaller than one chunk, fails at container creation (see [gpu-fractioning contract](#gpu-fractioning-contract)).
@@ -222,7 +224,6 @@ All static rules are enforced in one place, the admission webhook, so they fail 
 | Mode | `max-allowed` is set and the mode is `time-slicing`, explicitly or by default. |
 | Container | The compute key names a container other than the fraction container. |
 | Sharing mode | The cluster is not in `NvFractions` mode. The `gpusharing` admission plugin accepts `.gpu-compute.mode` today, so the rejection of compute keys there is new and explicit (it shares `ValidateGPUFractionRequest` with `nvfractions`). |
-| Gate | The Alpha switch is off, if one is adopted (see [Rollout and gating](#rollout-and-gating-open)). |
 | Immutable | A compute key is added, changed or removed on a pod that is already bound. The runtime cannot apply a live change; see [Major concern](#major-concern-who-owns-a-spec-change). |
 
 The third rejection listed in #2191, a co-location whose guarantees exceed the device or that mixes sharing modes, is not a property of a single submission and cannot be checked at admission. The scheduler prevents it by construction: mode separation already exists (`IsGpuGroupComputeSharingModeCompatible`), and the compute ledger below never lets the sum of requested shares on a GPU exceed 1. A pod that cannot be placed waits with an explicit compute reason, like any pod waiting for capacity.
@@ -231,7 +232,43 @@ Rejecting a compute pod at admission when no node in the cluster is capable was 
 
 ## Capability discovery
 
-gpu-fractioning's `mpsd` DaemonSet already labels each node with its driver version. It is extended to query the driver and MPS for compute-sharing capability and to publish one label per supported (mode, policy) row:
+### Node support tiers
+
+Compute fractions need a newer CUDA and driver than memory fractions. A single "supported or not" threshold would drop memory fractions on every node not yet upgraded for compute. Each node is therefore placed in one of three tiers:
+
+| Tier | CUDA driver version | NVIDIA driver version | Offers |
+|---|---|---|---|
+| `none` | `< 13.4` | `< r615` | No `NvFractions` sharing |
+| `memory` | `≥ 13.4` and `< 13.5` | `≥ r615` and `< r620` | Memory fractions only, in both modes, as today |
+| `full` | `≥ 13.5` | `≥ r620` | Memory and compute fractions |
+
+The CUDA and driver checks are ANDed: a node's tier is the lower of the two. The `memory` driver floor is today's (`minGPUDriverMajor = 615`). Both driver thresholds are whole branches, so the existing major-only label is enough.
+
+**Today.** gpu-fractioning has one threshold, and it is not a gate:
+
+- `mpsd` reads the driver version via NVML at startup and labels the node with the major branch only (`gpu-fractioning.kai.scheduler/nvidia-driver-version.major`, `mpsd/internal/driverlabel`). The CUDA version is not read anywhere.
+- The operator's floor (`minGPUDriverMajor = 615`, `operator/internal/controller/dependency_checker.go`) only *refines the reason* on a `gpu-fractioning.nvidia.com/Ready` condition that is already `False`. The condition itself is driven by daemon-pod readiness.
+- KAI reads only the condition (`gpusharingnodevalidation`). It never sees a version.
+
+**Proposal.** gpu-fractioning computes the tier. KAI reads it through the two signals it already has or gains in this design, and still never parses a version:
+
+| Tier | `Ready` condition | Compute capability labels | What KAI does |
+|---|---|---|---|
+| `none` | `False`, reason `GPUDriverVersionUnsupported` / `CUDAVersionUnsupported` | none | Rejects every fractional pod on the node (unchanged code path) |
+| `memory` | `True` | none | Places memory-only pods; compute pods get "does not support GPU compute fractions" |
+| `full` | `True` | one per row gpu-fractioning can honour | Places both |
+
+Changes in gpu-fractioning:
+
+- **Discovery.** `mpsd` also reads the CUDA driver version (`nvml.SystemGetCudaDriverVersion_v2`, e.g. `13050` → `13.5`) and publishes it next to the driver major as `gpu-fractioning.kai.scheduler/cuda-driver-version`. It is for operators and debugging; KAI does not read it.
+- **`none` becomes a real gate.** Below the `memory` tier `mpsd` stays not-ready, so the existing path sets `Ready=False`. `GpuDriverDependencyChecker` then sets the reason, extended to the CUDA version. Today a node below the floor whose daemons happen to start still reports `Ready=True`.
+- **`full` gates the labels.** Compute capability labels are published only on `full` nodes (and the `sm-sharing` rows only when gpu-fractioning's `supportSmSharing` is on).
+
+The tier is recomputed when `mpsd` starts. A driver upgrade already drains and restarts `mpsd` (the `nvidia.com/gpu-driver-upgrade-state` node affinity), so the labels follow driver changes.
+
+### Compute capability labels
+
+gpu-fractioning's `mpsd` DaemonSet is extended to query the driver and MPS for compute-sharing capability on `full`-tier nodes and to publish one label per supported (mode, policy) row:
 
 ```yaml
 gpu-fractioning.kai.scheduler/compute.sm-sharing.max-allowed: "true"
@@ -240,7 +277,7 @@ gpu-fractioning.kai.scheduler/compute.time-slicing.min-guaranteed: "true"
 ```
 
 - **Presence is all KAI reads.** The value carries no granularity: chunks stay internal to gpu-fractioning, as MiB rounding does for memory.
-- **Absence means not capable.** A node below CUDA 13.5, a node with MIG-enabled GPUs, or a node whose gpu-fractioning cannot honour a row simply has no label for it. This is the per-node CUDA version check: KAI never parses driver versions.
+- **Absence means not capable.** A `memory`-tier node, a node with MIG-enabled GPUs, or a node whose gpu-fractioning cannot honour a row simply has no label for it. Together with the `Ready` condition this is the whole per-node version check: KAI never parses driver or CUDA versions.
 - **Per-row gating** lets a row ship as soon as gpu-fractioning can honour it. `sm-sharing` + `max-allowed` is already proven ([gpu-fractioning#147](https://github.com/kai-scheduler/gpu-fractioning/pull/147)); `min-guaranteed` with burst can follow.
 - **Mixed GPU models on one node** need nothing from KAI: fractiond rounds against the granularity of the device it is configuring.
 - **Discoverable:** `kubectl get nodes -L gpu-fractioning.kai.scheduler/compute.sm-sharing.max-allowed`.
@@ -257,7 +294,7 @@ From `kubectl apply` to a running container, for `min-guaranteed: "0.2"` in `sm-
 
 ```mermaid
 flowchart TD
-  U["kubectl apply<br/>gpu-fraction: 0.5<br/>.gpu-compute.min-guaranteed: 0.2"] --> A{"Admission<br/>range, exclusive, needs memory,<br/>mode, container, gate"}
+  U["kubectl apply<br/>gpu-fraction: 0.5<br/>.gpu-compute.min-guaranteed: 0.2"] --> A{"Admission<br/>range, exclusive, needs memory,<br/>mode, container, sharing mode"}
   A -- invalid --> X["Rejected at apply time"]
   A -- valid --> P["Pod pending"]
   P --> F{"Node filter<br/>Ready condition +<br/>compute.sm-sharing.min-guaranteed label?"}
@@ -343,8 +380,9 @@ Every value travels on the pod or the node: no new types, and no runtime calls b
 
 | # | Direction | What | Where | Written by |
 |---|---|---|---|---|
+| 0 | gpu-fractioning → KAI | Node tier ≥ `memory` | node condition `gpu-fractioning.nvidia.com/Ready` (existing) | operator, from `mpsd` readiness |
 | 1 | user → KAI and gpu-fractioning | Request | `nvidia.com/container.<c>.gpu-compute.min-guaranteed` / `.max-allowed` | user |
-| 2 | gpu-fractioning → KAI | Capability | node label `gpu-fractioning.kai.scheduler/compute.<mode>.<policy>` (presence) | `mpsd` |
+| 2 | gpu-fractioning → KAI | Capability (tier `full`) | node label `gpu-fractioning.kai.scheduler/compute.<mode>.<policy>` (presence) | `mpsd` |
 | 3 | gpu-fractioning → user | Applied share | `nvidia.com/container.<c>.gpu-compute.applied` | fractiond |
 
 - **Request (1)** is read by KAI for accounting and by fractiond for enforcement. Admission makes it immutable once the pod is bound, so both sides see the same value for the pod's lifetime.
@@ -363,7 +401,7 @@ Every value travels on the pod or the node: no new types, and no runtime calls b
 **Across all rows:**
 
 - **Best-effort containers** on the same GPU must not reduce any container below its guarantee.
-- **Graceful reclaim.** When a burst must be given back, SMs are drained and the in-flight operation completes first. The latency cost is documented by gpu-fractioning.
+- **Graceful reclaim.** When a burst must be given back, SMs are drained and the in-flight operation completes first. The latency cost is documented by gpu-fractioning. Feasibility and the bound on the wait are [open question 3](#open-questions).
 - **Sole owner of MPS.** Only gpu-fractioning applies or changes a share. No container, root or not, can raise its own share or alter a neighbour's. See [Major concern](#major-concern-who-owns-a-spec-change).
 - **Advertise honestly.** A row's label is published only when every guarantee of that row holds on that node.
 - **Honour what KAI admits.** KAI places a set of shares on a GPU only if they sum to at most `1`. gpu-fractioning must honour every such set after rounding. Rounding floors up can push the sum over the device (five floors of `0.2` on an 8-chunk GPU need 10 chunks); how that is avoided is gpu-fractioning's choice and is [open question 1](#open-questions). Until it is solved, the overflowing container fails at creation rather than running unguaranteed.
@@ -405,7 +443,7 @@ The scheduler and the runtime therefore disagree. Shrinking the annotation frees
 
 **Separate fix (not part of this design):** make the memory keys immutable after binding, or account bound pods from what the BindRequest granted, so memory fractions stop drifting from what the runtime enforces.
 
-In-place changes of a compute share are out of scope for the Alpha. If they are added, they follow the same path: KAI admits and re-accounts the change, and gpu-fractioning applies it, restarting the container where MPS requires it.
+Resizing a running pod is a [non-goal](#goals--non-goals). If it is added later, they follow the same path: KAI admits and re-accounts the change, and gpu-fractioning applies it, restarting the container where MPS requires it.
 
 ## Observability
 
@@ -458,27 +496,22 @@ The structural fix is P1: a `gpu-compute` queue resource, along the lines of the
 ## Backward compatibility and version skew
 
 - **Memory-only pods** are unchanged: same placement, same quota, same runtime behaviour. They remain the default.
-- **Nodes without capability** (below CUDA 13.5, older gpu-fractioning, MIG) only offer the existing `1/n` modes.
+- **Nodes without capability** (`memory` tier, older gpu-fractioning, MIG) only offer the existing `1/n` modes.
+- **Unsupported nodes.** `NvFractions` requires CUDA ≥ 13.4 and driver ≥ r615. A node below either is not supported and is in the `none` tier.
 - **New KAI, old gpu-fractioning:** no labels, so compute pods stay pending with an explicit reason. Fail safe: a compute share is never accepted and then left unenforced.
 - **Old KAI, new gpu-fractioning:** admission already rejects unknown `nvidia.com/container.` suffixes, so compute keys fail at submission.
 - **Downgrade and partial upgrade.** An older scheduler's `ExtractNvFractionsData` fails on unknown `nvidia.com/container.` suffixes, and `updatePodAdditionalFields` then drops the pod's GPU requirement: a bound compute pod is charged zero GPU memory, and a pending one is scheduled as CPU-only. Two mitigations:
   - A preparatory release in which scheduler-side parsing ignores unknown suffixes, while admission stays strict. Downgrading below that release with compute pods running is unsupported.
-  - Compute keys are admitted only once every component runs the new release. A KAI switch enabled after the upgrade gives this for free (see [Rollout and gating](#rollout-and-gating-open)); without one, the operator must upgrade the scheduler before admission.
+  - The scheduler is upgraded before admission. There is no KAI switch (see [Rollout and gating](#rollout-and-gating)), so admission accepts compute keys as soon as it runs the new release.
 - **node-scale-adjuster** is unchanged. Scale-up stays GPU-count based; a new node becomes eligible once `mpsd` labels it.
 
-## Rollout and gating (open)
+## Rollout and gating
 
-The capability labels already gate *where* compute pods can run. Open question: should KAI also have its own Alpha switch?
+There is no KAI switch, as with fractions today. Alpha is marked in the docs only.
 
-| | KAI switch (default off) + capability labels | Capability labels only |
-|---|---|---|
-| Opt-in | Explicit cluster-wide opt-in to an Alpha API | Implicit, once gpu-fractioning advertises |
-| Off switch | Admins can disable on the KAI side alone | Requires reconfiguring gpu-fractioning |
-| Clusters with no capable nodes | Rejected at admission with "feature disabled" | Accepted, then pending with a reason |
-| Upgrade window | Compute keys are admitted only after the admin enables the switch, i.e. after every component is upgraded | Admission may accept compute keys while an older scheduler is still running; needs a strict upgrade order |
-| Cost | Two switches to keep aligned. KAI registers no feature gates of its own today: `--feature-gates` is wired on scheduler, admission and binder, but only upstream gates are defined. A KAI gate or a Config/Helm field would be the first. | None |
-
-Current lean: a KAI switch, default off, plus capability labels.
+- **Opt-in** is the existing GPU sharing mode. Compute keys take effect only when the scheduler runs in `NvFractions` mode; in any other mode admission rejects them (see [Validation](#validation)).
+- **Where** compute pods run is gated by the capability labels (see [Capability discovery](#capability-discovery)).
+- **Upgrade order:** scheduler before admission (see [Backward compatibility](#backward-compatibility-and-version-skew)).
 
 ## Alternatives considered
 
@@ -494,6 +527,9 @@ Current lean: a KAI switch, default off, plus capability labels.
 | Enforcing a memory:compute ratio in KAI | Out of scope; admins can do it with native policy. |
 | Charging memory-only pods compute equal to their memory share | Changes how many memory-only pods fit next to compute pods, which breaks "unchanged". |
 | Segregating memory-only and compute pods on separate GPUs | Worst fragmentation. |
+| A KAI Alpha switch (feature gate or Config/Helm field), default off | `NvFractions` mode and the capability labels already gate the feature. KAI defines no feature gates of its own today, and a second switch would have to be kept aligned with gpu-fractioning. |
+| KAI compares CUDA/driver version labels against thresholds | Puts gpu-fractioning's support matrix in the scheduler; every threshold change would need a KAI release. |
+| One "supported" threshold at CUDA 13.5 | Drops memory fractions on every node not yet upgraded for compute. |
 | Per-node CRD for capability | New CRD, informer and RBAC for a few scalars per node. |
 | DRA ResourceSlice attributes for capability | Pulls in DRA, which is out of scope. |
 | Synchronous query to gpu-fractioning | The scheduler session cannot do network I/O. |
@@ -503,8 +539,14 @@ Current lean: a KAI switch, default off, plus capability labels.
 ## Open questions
 
 1. **Rounding overflow (gpu-fractioning).** KAI admits shares summing to at most `1`, but rounding floors up can need more chunks than the GPU has. gpu-fractioning has to choose how to close this, for example: a granularity fine enough that the overflow cannot happen in practice; letting the last floor on a GPU absorb the remainder; or a cluster-wide step, validated at admission, that requests must be multiples of. Until then the overflowing container fails at creation.
-2. **Alpha gating:** KAI switch plus capability, or capability only (see above).
-3. **MPS burst and graceful reclaim feasibility.** MPS cannot currently tell which client is using more than its floor ([comment on #2191](https://github.com/kai-scheduler/KAI-Scheduler/issues/2191#issuecomment-6373696283)). Whether CUDA 13.5 gives gpu-fractioning what it needs for `sm-sharing` + `min-guaranteed` is unconfirmed. Per-row labels let `max-allowed` ship regardless.
+2. **MPS burst feasibility.** MPS cannot currently tell which client is using more than its floor ([comment on #2191](https://github.com/kai-scheduler/KAI-Scheduler/issues/2191#issuecomment-6373696283)). Whether CUDA 13.5 gives gpu-fractioning what it needs for `sm-sharing` + `min-guaranteed` is unconfirmed. Per-row labels let `max-allowed` ship regardless.
+3. **Graceful reclaim.** The contract requires that when a workload that has burst above its floor must give capacity back to a newly placed guarantee, its SMs are drained and in-flight work completes first. Open:
+   - **Mechanism.** MPS rejects a limit change while a client is attached, and #147 restarts the container to change a share, which is not graceful.
+   - **Bound.** A long-running or persistent kernel (e.g. an NCCL collective) does not yield its SMs, so the wait is unbounded.
+   - **On hitting the bound**, one promise gives: either the newcomer's floor arrives late, or the bursting workload is preempted, which is abrupt.
+   - **Scope.** Only `sm-sharing` + `min-guaranteed`, plus uncapped memory-only `sm-sharing` pods. `max-allowed` never bursts, and `time-slicing` context-switches transparently.
+
+   Until this is answered, user docs should promise only that running work is not killed, not when the newcomer reaches its floor.
 4. **Root and best-effort containers under MPS.** How gpu-fractioning keeps root containers and memory-only `sm-sharing` containers from eroding guarantees (see [Major concern](#major-concern-who-owns-a-spec-change)).
 5. **MIG.** Confirm that MIG-enabled GPUs are invisible to fractions and that `mpsd` never advertises them.
 6. **Time-slicing period.** Which lower-level API fixes it, and whether its length should be documented to users.
@@ -518,8 +560,8 @@ Each item becomes a sub-issue of #2191 and is independently mergeable, in order:
 1. **api module:** annotation constants, parsing, validation rules; tag and `go.mod` bump.
 2. **Admission:** wire the new rules, immutable keys, rejection in `gpusharing` mode.
 3. **Scheduler:** capability filter, compute ledger, fit errors, gauge.
-4. **gpu-fractioning:** capability labels, reading the request keys, rounding, per-row enforcement and `.gpu-compute.applied` (separate repository).
-5. **Docs:** a "Compute fractions" section in `docs/gpu-sharing/nv-fraction`.
+4. **gpu-fractioning:** CUDA version discovery and node tiers (`mpsd` not-ready below `memory`, CUDA reasons in `GpuDriverDependencyChecker`), capability labels on `full` nodes, reading the request keys, rounding, per-row enforcement and `.gpu-compute.applied` (separate repository).
+5. **Docs:** a "Compute fractions" section in `docs/gpu-sharing/nv-fraction`. It is marked Alpha and states the known limitations: resizing is not supported, and guarantees assume non-root tenants.
 6. **E2E:** see the test plan.
 
 ## Test plan
@@ -528,4 +570,5 @@ Each item becomes a sub-issue of #2191 and is independently mergeable, in order:
 - **Unit (scheduler):** ledger add/remove/release/rollback; fit with mixed `min-guaranteed`, `max-allowed` and memory-only pods summing to exactly `1`; the capability filter.
 - **Scheduler action tests** with fake nodes carrying capability labels (`pkg/scheduler/test_utils/nodes_fake`).
 - **Admission:** compute keys immutable after binding.
-- **E2E:** the capability labels are stamped on simulated nodes (as `stampNvFractionsNodes` in `test/e2e/scale/kwok_fraction_scenarios.go` stamps the readiness condition today), covering placement, rejection and pending reasons. Enforcement itself is covered by gpu-fractioning's own tests on real GPUs.
+- **gpu-fractioning:** the tier matrix: each CUDA × driver combination, with the lower one winning.
+- **E2E:** all three tiers are simulated (no condition; condition only; condition plus labels). The capability labels are stamped on simulated nodes (as `stampNvFractionsNodes` in `test/e2e/scale/kwok_fraction_scenarios.go` stamps the readiness condition today), covering placement, rejection and pending reasons. Enforcement itself is covered by gpu-fractioning's own tests on real GPUs.
