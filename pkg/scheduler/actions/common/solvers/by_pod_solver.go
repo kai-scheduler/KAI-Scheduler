@@ -165,11 +165,10 @@ func (s *byPodSolver) tryScenarioWithEvictedVictims(ssn *framework.Session, scen
 	if s.actionType == framework.Preempt || s.actionType == framework.Reclaim {
 		originalPods := make(map[*pod_info.PodInfo]*v1.Pod)
 		for _, task := range victimTasks {
-			if task.Status == pod_status.Releasing && task.IsVirtualStatus && task.NodeName != "" {
-				originalPods[task] = task.Pod
-				task.Pod = task.Pod.DeepCopy()
-				task.Pod.Status.NominatedNodeName = task.NodeName
-			}
+			originalPods[task] = task.Pod
+			podCopy := *task.Pod
+			podCopy.Status.NominatedNodeName = task.NodeName
+			task.Pod = &podCopy
 		}
 		defer func() {
 			for task, pod := range originalPods {
