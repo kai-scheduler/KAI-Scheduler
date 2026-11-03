@@ -23,7 +23,7 @@ func Test_getNodePreferableGpuForSharing(t *testing.T) {
 		node              *node_info.NodeInfo
 		nodeSharingInfo   *node_info.GpuSharingNodeInfo
 		pod               *pod_info.PodInfo
-		isSimulation      bool
+		pipelineOnly      bool
 	}
 	type want struct {
 		groupLength          int
@@ -80,7 +80,7 @@ func Test_getNodePreferableGpuForSharing(t *testing.T) {
 						},
 					},
 				}, resource_info.NewResourceVectorMap()),
-				isSimulation: false,
+				pipelineOnly: false,
 			},
 			want: want{
 				groupLength:          1,
@@ -131,7 +131,7 @@ func Test_getNodePreferableGpuForSharing(t *testing.T) {
 						},
 					},
 				}, resource_info.NewResourceVectorMap()),
-				isSimulation: false,
+				pipelineOnly: false,
 			},
 			want: want{
 				groupLength:          1,
@@ -194,7 +194,7 @@ func Test_getNodePreferableGpuForSharing(t *testing.T) {
 						},
 					},
 				}, resource_info.NewResourceVectorMap()),
-				isSimulation: false,
+				pipelineOnly: false,
 			},
 			want: want{
 				groupLength:          1,
@@ -258,7 +258,7 @@ func Test_getNodePreferableGpuForSharing(t *testing.T) {
 						},
 					},
 				}, resource_info.NewResourceVectorMap()),
-				isSimulation: false,
+				pipelineOnly: false,
 			},
 			want: want{
 				groupLength:          2,
@@ -270,7 +270,7 @@ func Test_getNodePreferableGpuForSharing(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			gpusForSharing := GetNodePreferableGpuForSharing(
-				tt.args.fittingGPUsOnNode, tt.args.node, tt.args.pod, tt.args.isSimulation)
+				tt.args.fittingGPUsOnNode, tt.args.node, tt.args.pod, tt.args.pipelineOnly)
 
 			if gpusForSharing == nil {
 				if tt.want.groupLength > 0 {
