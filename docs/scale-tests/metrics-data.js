@@ -26,11 +26,19 @@
     { id: 'elastic-job-reclaim', title: 'Elastic Distributed Job Reclaim', label: 'Duration' },
     { id: 'fractions-saturation-allocation', title: 'Mixed Fraction Saturation: Allocation Time', label: 'Duration' },
     { id: 'fractions-saturation-scheduling', title: 'Mixed Fraction Saturation: Scheduling Time', label: 'Duration' },
+    { id: 'research-decision-p95', title: 'Research Workloads: p95 Decision Latency', label: 'Duration' },
+    { id: 'research-decision-max', title: 'Research Workloads: Max Decision Latency', label: 'Duration' },
   ];
 
   const SATURATION_DERIVED_FIELDS = [
     'pods', 'allocated_pods', 'unschedulable_pods', 'gpu_utilization_pct', 'allocation_seconds', 'scheduling_seconds',
     'bind_lag_p50_seconds', 'bind_lag_p95_seconds', 'bind_lag_max_seconds',
+  ];
+
+  const RESEARCH_DERIVED_FIELDS = [
+    'pods', 'scheduled_workloads', 'unschedulable_workloads', 'gpu_utilization_pct', 'decision_p50_seconds',
+    'decision_p95_seconds', 'decision_max_seconds', 'experiment_decision_p95_seconds', 'rl_decision_p95_seconds',
+    'preprocess_decision_p95_seconds',
   ];
 
   const TEST_CASES = [
@@ -134,6 +142,18 @@
       id: 'fractions-saturation-scheduling', chartId: 'fractions-saturation-scheduling',
       timingField: 'scheduling_seconds', ignoredSeriesFields: SATURATION_DERIVED_FIELDS,
       scale: name => name === 'Mixed fractions saturation - scheduling',
+      legacy: () => false,
+    },
+    {
+      id: 'research-decision-p95', chartId: 'research-decision-p95',
+      timingField: 'decision_p95_seconds', ignoredSeriesFields: RESEARCH_DERIVED_FIELDS,
+      scale: name => name === 'Research workloads - decision latency p95',
+      legacy: () => false,
+    },
+    {
+      id: 'research-decision-max', chartId: 'research-decision-max',
+      timingField: 'decision_max_seconds', ignoredSeriesFields: RESEARCH_DERIVED_FIELDS,
+      scale: name => name === 'Research workloads - decision latency max',
       legacy: () => false,
     },
   ];
