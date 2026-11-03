@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
 set -euo pipefail
 
 if docker info >/dev/null 2>&1; then

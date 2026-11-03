@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
 set -euo pipefail
 
 cd "$(dirname "$0")/../.."

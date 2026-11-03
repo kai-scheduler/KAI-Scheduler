@@ -1,3 +1,6 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
 FROM ubuntu:24.04
 
 ARG GO_VERSION=1.26.8
