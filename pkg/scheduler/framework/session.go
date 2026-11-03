@@ -236,13 +236,13 @@ func (ssn *Session) sortGPUs(filteredGPUs []string, pod *pod_info.PodInfo, node 
 
 // FittingNode reports whether the task fits the node, and whether it fits only once the node's
 // terminating pods are gone, in which case the task must be pipelined rather than bound.
-// A pipeline-only allocation always evaluates predicates in pipeline mode. A real allocation first
+// A simulation always evaluates predicates in pipeline mode. A real allocation first
 // evaluates them in strict mode, and falls back to pipeline mode only where releasing pods could
 // change the result.
 func (ssn *Session) FittingNode(
-	task *pod_info.PodInfo, node *node_info.NodeInfo, isPipelineOnly bool,
+	task *pod_info.PodInfo, node *node_info.NodeInfo, isSimulation bool,
 ) (fits bool, pipelineOnly bool) {
-	writeFittingDelta := !isPipelineOnly
+	writeFittingDelta := !isSimulation
 	var fitErrors *common_info.TasksFitErrors
 	if writeFittingDelta {
 		fitErrors = common_info.NewFitErrors()
@@ -267,7 +267,7 @@ func (ssn *Session) FittingNode(
 		log.InfraLogger.Infof("Running predicates for task <%v/%v> on node <%v>",
 			task.Namespace, task.Name, node.Name)
 	})
-	if isPipelineOnly {
+	if isSimulation {
 		if err := ssn.PredicateFn(task, job, node, api.PipelinePredicate); err != nil {
 			logPredicateFailure(task, node, err)
 			return false, false
@@ -585,6 +585,14 @@ func (ssn *Session) OverrideMaxNumberConsolidationPreemptees(maxPreemptees int) 
 
 func (ssn *Session) UseSchedulingSignatures() bool {
 	return ssn.SchedulerParams.UseSchedulingSignatures
+}
+
+func (ssn *Session) DeferredResizePreemptionEnabled() bool {
+	return ssn.SchedulerParams.DeferredResizePreemption
+}
+
+func (ssn *Session) OverrideDeferredResizePreemption(enabled bool) {
+	ssn.SchedulerParams.DeferredResizePreemption = enabled
 }
 
 func (ssn *Session) GetJobsDepth(action ActionType) int {
