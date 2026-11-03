@@ -233,13 +233,13 @@ func (ssn *Session) sortGPUs(filteredGPUs []string, pod *pod_info.PodInfo, node 
 	return sortedGPUs
 }
 
-// FittingNode reports whether the task fits the node. A simulation evaluates predicates against the
-// future view. A real allocation evaluates them against the current view first, and falls back to the
-// future view only where terminating pods can change the result: waitsForTerminatingPods reports such
-// a fit, which must be pipelined rather than bound.
+// FittingNode reports whether the task fits the node, and whether the fit must be pipelined rather than
+// bound. A simulation evaluates predicates against the future view and always pipelines. A real
+// allocation evaluates them against the current view first, and falls back to the future view only
+// where terminating pods can change the result; a fit found there must be pipelined.
 func (ssn *Session) FittingNode(
 	task *pod_info.PodInfo, node *node_info.NodeInfo, isSimulation bool,
-) (fits bool, waitsForTerminatingPods bool) {
+) (fits bool, mustPipeline bool) {
 	writeFittingDelta := !isSimulation
 	var fitErrors *common_info.TasksFitErrors
 	if writeFittingDelta {
@@ -270,7 +270,7 @@ func (ssn *Session) FittingNode(
 			logPredicateFailure(task, node, err)
 			return false, false
 		}
-		return true, false
+		return true, true
 	}
 
 	err := ssn.PredicateFn(task, job, node, ssn.CurrentClusterView())

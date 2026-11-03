@@ -30,7 +30,7 @@ func (n *nodeGpuForSharing) GroupIDs() []string {
 }
 
 func AllocateFractionalGPUTaskToNode(ssn *framework.Session, stmt *framework.Statement, pod *pod_info.PodInfo,
-	node *node_info.NodeInfo, isSimulation, waitsForTerminatingPods bool) bool {
+	node *node_info.NodeInfo, isSimulation, mustPipeline bool) bool {
 	fittingGPUs := ssn.FittingGPUs(node, pod)
 	gpuForSharing := GetNodePreferableGpuForSharing(fittingGPUs, node, pod, isSimulation)
 	if gpuForSharing == nil {
@@ -39,7 +39,7 @@ func AllocateFractionalGPUTaskToNode(ssn *framework.Session, stmt *framework.Sta
 
 	pod.SetFractionalGpuGroups(gpuForSharing.FractionalGpuGroups)
 
-	isPipelineOnly := isSimulation || waitsForTerminatingPods || gpuForSharing.IsReleasing
+	isPipelineOnly := mustPipeline || gpuForSharing.IsReleasing
 	success := allocateSharedGPUTask(ssn, stmt, node, pod, isPipelineOnly, isSimulation)
 	if !success {
 		pod.FractionalGpuGroups = nil
