@@ -9,24 +9,29 @@ The `numa-full` kind layout has four GPU workers, with eight A100 GPUs each,
 split 4+4 between two zones. Two workers use `single-numa-node`; one uses
 `restricted`; one uses `best-effort`. A CPU worker runs the control services.
 
-Mokka is pinned to `39ef93e09eb1c637b374109f27647faa43f5c0ee` in the public
+Mokka is pinned to `2ab593fd866e84a24e21a456e901fa9e8eb6292a` in the public
 `JRosenboimNVIDIA/mokka` fork. It includes Roman's GPU Operator support, the
-memory-limit fix, and the opt-in NUMA extension. Each selected node uses:
+memory-limit fix, the current NUMA review changes, and the node-bus fix that lets
+NFD read memory capacity in every simulated zone. Each selected node uses:
 
 ```yaml
-numaSimulation:
-  enabled: true
-  configureKubelet: true
-  topologyManagerPolicy: restricted # varies by pool
-  cpuManagerPolicy: static
-  memoryManagerPolicy: Static
-  systemReservedMemory: 256Mi
-  systemReservedCPU: 100m
+nodeAgent:
+  numa:
+    enabled: true
+    configureKubelet: true
+    topologyManagerPolicy: restricted # varies by pool
+    cpuManagerPolicy: static
+    memoryManagerPolicy: static
+    systemReservedMemory: 256Mi
+    systemReservedCPU: 100m
 ```
 
 Mokka configures a fractional CPU reservation and whole shared-pool CPU IDs, configures memory
-reservations, backs up manager checkpoints, and restarts kubelet. Restore
-simulation before changing active policies; use fresh or drained test nodes.
+reservations, backs up manager checkpoints, and restarts kubelet. The privileged
+pod applies simulation and bind-mounts the modified kubelet configuration. A boot
+helper clears registered manager checkpoints before kubelet starts after a node
+reboot. Restore simulation before changing active policies; use fresh or drained
+test nodes.
 
 CPU Manager assigns real CPU IDs. Memory Manager keeps simulated memory groups
 in its own state, exposed by the real kubelet pod-resources socket. Mokka's NRI

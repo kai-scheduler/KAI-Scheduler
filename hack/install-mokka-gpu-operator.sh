@@ -16,7 +16,7 @@ fi
 # PR 1109, the memory-limit fix, and opt-in NUMA sysfs/kubelet simulation.
 # Keep this commit pinned until the integration is available in an upstream release.
 : "${MOKKA_REPOSITORY:=https://github.com/JRosenboimNVIDIA/mokka.git}"
-: "${MOKKA_REF:=39ef93e09eb1c637b374109f27647faa43f5c0ee}"
+: "${MOKKA_REF:=2ab593fd866e84a24e21a456e901fa9e8eb6292a}"
 : "${MOKKA_IMAGE_REPOSITORY:=mokka-e2e}"
 : "${MOKKA_IMAGE_TAG:=${MOKKA_REF:0:12}}"
 
@@ -40,10 +40,10 @@ if [[ "$FEATURE_CONFIG" = numa-full ]]; then
   for policy in single-numa-node restricted best-effort; do
     helm upgrade --install "nvml-mock-$policy" "$SOURCE_DIR/deployments/nvml-mock/helm/nvml-mock" \
       --namespace mokka --create-namespace "${MOKKA_VALUES[@]}" \
-      --set 'numaSimulation.enabled=true' --set 'numaSimulation.configureKubelet=true' \
-      --set 'numaSimulation.cpuManagerPolicy=static' --set 'numaSimulation.memoryManagerPolicy=Static' \
-      --set 'numaSimulation.systemReservedCPU=100m' \
-      --set "numaSimulation.topologyManagerPolicy=$policy" \
+      --set 'nodeAgent.numa.enabled=true' --set 'nodeAgent.numa.configureKubelet=true' \
+      --set 'nodeAgent.numa.cpuManagerPolicy=static' --set 'nodeAgent.numa.memoryManagerPolicy=static' \
+      --set 'nodeAgent.numa.systemReservedCPU=100m' \
+      --set "nodeAgent.numa.topologyManagerPolicy=$policy" \
       --set "nodeSelector.mokka\\.nvidia\\.com/numa-policy=$policy" \
       --wait --timeout 10m
   done
