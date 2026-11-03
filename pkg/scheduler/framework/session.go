@@ -233,15 +233,14 @@ func (ssn *Session) sortGPUs(filteredGPUs []string, pod *pod_info.PodInfo, node 
 	return sortedGPUs
 }
 
-// FittingNode reports whether the task fits the node, and whether it fits only once the cluster's
-// terminating pods are gone, in which case the task must be pipelined rather than bound.
-// A pipeline-only allocation evaluates predicates against the future view. A real allocation
-// evaluates them against the current view first, and falls back to the future view only where
-// terminating pods can change the result.
+// FittingNode reports whether the task fits the node. A simulation evaluates predicates against the
+// future view. A real allocation evaluates them against the current view first, and falls back to the
+// future view only where terminating pods can change the result: waitsForTerminatingPods reports such
+// a fit, which must be pipelined rather than bound.
 func (ssn *Session) FittingNode(
-	task *pod_info.PodInfo, node *node_info.NodeInfo, isPipelineOnly bool,
-) (fits bool, pipelineOnly bool) {
-	writeFittingDelta := !isPipelineOnly
+	task *pod_info.PodInfo, node *node_info.NodeInfo, isSimulation bool,
+) (fits bool, waitsForTerminatingPods bool) {
+	writeFittingDelta := !isSimulation
 	var fitErrors *common_info.TasksFitErrors
 	if writeFittingDelta {
 		fitErrors = common_info.NewFitErrors()
@@ -266,12 +265,12 @@ func (ssn *Session) FittingNode(
 		log.InfraLogger.Infof("Running predicates for task <%v/%v> on node <%v>",
 			task.Namespace, task.Name, node.Name)
 	})
-	if isPipelineOnly {
+	if isSimulation {
 		if err := ssn.PredicateFn(task, job, node, ssn.FutureClusterView()); err != nil {
 			logPredicateFailure(task, node, err)
 			return false, false
 		}
-		return true, true
+		return true, false
 	}
 
 	err := ssn.PredicateFn(task, job, node, ssn.CurrentClusterView())
