@@ -131,8 +131,7 @@ func (t *terminatingPods) mayChangeAffinity(pod *v1.Pod) bool {
 	if t.hasRequiredAntiAffinity || len(requiredAntiAffinityTerms(pod)) > 0 {
 		return true
 	}
-	return pod.Spec.Affinity != nil && pod.Spec.Affinity.PodAffinity != nil &&
-		len(pod.Spec.Affinity.PodAffinity.RequiredDuringSchedulingIgnoredDuringExecution) > 0
+	return len(requiredAffinityTerms(pod)) > 0
 }
 
 func requiredAntiAffinityTerms(pod *v1.Pod) []v1.PodAffinityTerm {
@@ -140,6 +139,13 @@ func requiredAntiAffinityTerms(pod *v1.Pod) []v1.PodAffinityTerm {
 		return nil
 	}
 	return pod.Spec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution
+}
+
+func requiredAffinityTerms(pod *v1.Pod) []v1.PodAffinityTerm {
+	if pod.Spec.Affinity == nil || pod.Spec.Affinity.PodAffinity == nil {
+		return nil
+	}
+	return pod.Spec.Affinity.PodAffinity.RequiredDuringSchedulingIgnoredDuringExecution
 }
 
 func liveK8sNodeInfo(node *node_info.NodeInfo) *k8sframework.NodeInfo {
