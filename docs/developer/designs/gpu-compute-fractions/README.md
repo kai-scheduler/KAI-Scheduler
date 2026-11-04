@@ -389,7 +389,6 @@ Every value travels on the pod or the node: no new types, and no runtime calls b
 
 - **Best-effort containers** on the same GPU must not reduce any container below its guarantee.
 - **Graceful reclaim.** When a burst must be given back, SMs are drained and the in-flight operation completes first. MPS provides this in the driver release that compute fractions require (r620, not yet published). The latency cost is documented by gpu-fractioning.
-- **Sole owner of MPS.** Only gpu-fractioning applies or changes a share. No container, root or not, can raise its own share or alter a neighbour's. See [open question 3](#open-questions).
 - **Advertise honestly.** A node is reported `Full` only when every guarantee below holds on it.
 - **Honour what KAI admits.** KAI places a set of shares on a GPU only if they sum to at most `1`. gpu-fractioning must honour every such set after rounding. Rounding floors up can push the sum over the device (five floors of `0.2` on an 8-chunk GPU need 10 chunks); how that is avoided is gpu-fractioning's choice and is [open question 1](#open-questions). Until it is solved, the overflowing container fails at creation rather than running unguaranteed.
 - **Rounding direction.** Floors round up, ceilings round down, as in [Rounding](#rounding).
@@ -502,10 +501,9 @@ There is no KAI switch, as with fractions today. Alpha is marked in the docs onl
 
 1. **Rounding overflow (gpu-fractioning).** KAI admits shares summing to at most `1`, but rounding floors up can need more chunks than the GPU has. gpu-fractioning has to choose how to close this, for example: a granularity fine enough that the overflow cannot happen in practice; letting the last floor on a GPU absorb the remainder; or a cluster-wide step, validated at admission, that requests must be multiples of. Until then the overflowing container fails at creation.
 2. **MPS burst feasibility.** MPS cannot currently tell which client is using more than its floor ([comment on #2191](https://github.com/kai-scheduler/KAI-Scheduler/issues/2191#issuecomment-6373696283)). The `full` tier assumes r620 gives gpu-fractioning what it needs for `sm-sharing` + `min-guaranteed`; this is unconfirmed.
-3. **Root and best-effort containers under MPS.** Root is owner-equivalent on the MPS control socket, and under `time-slicing` the whole `/run/nvidia-mps` directory is mounted read-write, so a root container could raise its own cap or delete a neighbour's. Memory-only `sm-sharing` containers are unpartitioned. One tenant that escapes voids the guarantees of all its neighbours. How gpu-fractioning prevents this is its choice (not exposing the control socket, per-tenant servers, user namespaces, refusing root clients). Until then, the docs state that guarantees assume non-root tenants.
-4. **MIG.** Confirm that MIG-enabled GPUs are invisible to fractions and that `mpsd` never advertises them.
-5. **Time-slicing period.** Which lower-level API fixes it, and whether its length should be documented to users.
-6. **Named owner** for the gpu-fractioning work.
+3. **MIG.** Confirm that MIG-enabled GPUs are invisible to fractions and that `mpsd` never advertises them.
+4. **Time-slicing period.** Which lower-level API fixes it, and whether its length should be documented to users.
+5. **Named owner** for the gpu-fractioning work.
 
 ## Implementation breakdown
 
@@ -516,7 +514,7 @@ Each item becomes a sub-issue of #2191 and is independently mergeable, in order:
 2. **Admission:** wire the new rules, immutable keys, rejection in `gpusharing` mode.
 3. **Scheduler:** capability filter, compute ledger, fit errors, gauge.
 4. **gpu-fractioning:** CUDA version discovery and node tiers (`mpsd` not-ready below `memory`, CUDA reasons in `GpuDriverDependencyChecker`), the tier as the `Ready` reason, reading the request keys, rounding, per-row enforcement and `.gpu-compute.applied` (separate repository).
-5. **Docs:** a "Compute fractions" section in `docs/gpu-sharing/nv-fraction`. It is marked Alpha and states the known limitations: resizing is not supported, and guarantees assume non-root tenants.
+5. **Docs:** a "Compute fractions" section in `docs/gpu-sharing/nv-fraction`. It is marked Alpha and states the known limitation: resizing is not supported.
 6. **E2E:** see the test plan.
 
 ## Test plan
