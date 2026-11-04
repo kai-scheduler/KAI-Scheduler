@@ -4,10 +4,16 @@
 package scale
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 
 	. "github.com/onsi/ginkgo/v2"
+	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/kai-scheduler/api/constants"
+	kaiv1 "github.com/kai-scheduler/api/kai/v1"
+	kaiv1common "github.com/kai-scheduler/api/kai/v1/common"
 )
 
 const (
@@ -20,9 +26,54 @@ type TestResult struct {
 	Details  interface{} `json:"details"`
 }
 
+// ServiceClientConfig holds the effective throughput settings of a KAI service.
+type ServiceClientConfig struct {
+	K8sClientConfig         *kaiv1common.K8sClientConfig `json:"k8sClientConfig,omitempty"`
+	MaxConcurrentReconciles *int                         `json:"maxConcurrentReconciles,omitempty"`
+}
+
 type SuiteResult struct {
-	Status string       `json:"status"`
-	Tests  []TestResult `json:"tests"`
+	Status              string                         `json:"status"`
+	Tests               []TestResult                   `json:"tests"`
+	ServiceClientConfig map[string]ServiceClientConfig `json:"service_client_config,omitempty"`
+}
+
+// recordServiceClientConfig stores the kai-config client settings the operator passes to each service.
+// Defaults are applied so a field dropped by the API server shows up as the value actually in use.
+func recordServiceClientConfig(ctx context.Context, kubeClient runtimeClient.Client) error {
+	kaiConfig := &kaiv1.Config{}
+	if err := kubeClient.Get(ctx, runtimeClient.ObjectKey{Name: constants.DefaultKAIConfigSingeltonInstanceName},
+		kaiConfig); err != nil {
+		return err
+	}
+	return updateSuiteResult(func(suiteResult *SuiteResult) {
+		suiteResult.ServiceClientConfig = serviceClientConfig(&kaiConfig.Spec)
+	})
+}
+
+func serviceClientConfig(spec *kaiv1.ConfigSpec) map[string]ServiceClientConfig {
+	spec = spec.DeepCopy()
+	spec.SetDefaultsWhereNeeded()
+	return map[string]ServiceClientConfig{
+		"binder": {
+			K8sClientConfig:         spec.Binder.Service.K8sClientConfig,
+			MaxConcurrentReconciles: spec.Binder.MaxConcurrentReconciles,
+		},
+		"podGrouper": {
+			K8sClientConfig:         spec.PodGrouper.K8sClientConfig,
+			MaxConcurrentReconciles: spec.PodGrouper.MaxConcurrentReconciles,
+		},
+		"podGroupController": {
+			K8sClientConfig:         spec.PodGroupController.Service.K8sClientConfig,
+			MaxConcurrentReconciles: spec.PodGroupController.MaxConcurrentReconciles,
+		},
+		"queueController": {
+			K8sClientConfig: spec.QueueController.Service.K8sClientConfig,
+		},
+		"admission": {
+			K8sClientConfig: spec.Admission.Service.K8sClientConfig,
+		},
+	}
 }
 
 func writeTestResults(testName string, success bool, data interface{}) error {
@@ -38,7 +89,15 @@ func writeTestResults(testName string, success bool, data interface{}) error {
 		suiteResult = "success"
 	}
 
-	// write to file
+	return updateSuiteResult(func(previousData *SuiteResult) {
+		previousData.Status = suiteResult
+		if testName != "" {
+			previousData.Tests = append(previousData.Tests, testResult)
+		}
+	})
+}
+
+func updateSuiteResult(update func(*SuiteResult)) error {
 	file, err := os.OpenFile(outputFileName, os.O_RDWR|os.O_CREATE, 0666)
 	if err != nil {
 		GinkgoLogr.Error(err, "Failed to open file")
@@ -65,15 +124,12 @@ func writeTestResults(testName string, success bool, data interface{}) error {
 	if err != nil {
 		GinkgoLogr.Info("Failed to unmarshal file", "error", err)
 		previousData = SuiteResult{
-			Status: suiteResult,
+			Status: "success",
 			Tests:  []TestResult{},
 		}
 	}
 
-	previousData.Status = suiteResult
-	if testName != "" {
-		previousData.Tests = append(previousData.Tests, testResult)
-	}
+	update(&previousData)
 	bytes, err := json.Marshal(previousData)
 	if err != nil {
 		return err
