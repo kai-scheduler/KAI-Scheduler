@@ -53,7 +53,13 @@ func (t *topologyPlugin) subSetNodesFn(
 	}
 
 	t.treeAllocatableCleanup(topologyTree)
-	calcSubTreeFreeResources(domain)
+	// Include remaining shared GPU fractions in domain capacity only when at least one task requests 0 < GPU < 1.
+	// This avoids false rejections while keeping pre-filtering permissive; per-pod allocation checks enforce device-level fit.
+	includeSharedFractions := slices.ContainsFunc(tasks, func(task *pod_info.PodInfo) bool {
+		gpuRequest := task.ResReqVector.Get(resource_info.GPUIndex)
+		return gpuRequest > 0 && gpuRequest < 1
+	})
+	calcSubTreeFreeResources(domain, includeSharedFractions)
 	if useRepresentorPodsAccounting(tasks) {
 		if err := t.calcTreeAllocatable(tasks, domain); err != nil {
 			return nil, err
@@ -193,7 +199,7 @@ func (t *topologyPlugin) calcSubTreeAllocatable(
 	return domain.AllocatablePods, nil
 }
 
-func calcSubTreeFreeResources(domain *DomainInfo) resource_info.ResourceVector {
+func calcSubTreeFreeResources(domain *DomainInfo, includeSharedFractions bool) resource_info.ResourceVector {
 	if domain == nil {
 		return nil
 	}
@@ -202,13 +208,17 @@ func calcSubTreeFreeResources(domain *DomainInfo) resource_info.ResourceVector {
 		for _, node := range domain.Nodes {
 			domain.IdleOrReleasingVector.Add(node.IdleVector)
 			domain.IdleOrReleasingVector.Add(node.ReleasingVector)
-			// Ignore fractions of GPUs for now
+			if includeSharedFractions {
+				// Sum-based pre-filtering must not omit capacity usable by fractional tasks.
+				domain.IdleOrReleasingVector.Set(resource_info.GPUIndex,
+					domain.IdleOrReleasingVector.Get(resource_info.GPUIndex)+node.AvailableSharedGPUFractions())
+			}
 		}
 		return domain.IdleOrReleasingVector
 	}
 
 	for _, child := range domain.Children {
-		subdomainFreeResources := calcSubTreeFreeResources(child)
+		subdomainFreeResources := calcSubTreeFreeResources(child, includeSharedFractions)
 		domain.IdleOrReleasingVector.Add(subdomainFreeResources)
 	}
 	return domain.IdleOrReleasingVector
@@ -594,35 +604,19 @@ func sortDomainInfos(topologyTree *Info, domainInfos []*DomainInfo) []*DomainInf
 }
 
 // useRepresentorPodsAccounting checks if the tasks are using representor pods accounting.
-// If all the tasks are homogeneous, i.e. all the tasks have the same type of resource requirements, then use representor pods accounting (AllocatablePods).
-// If the tasks are heterogeneous, i.e. some of the tasks require resources that other tasks do not require,
+// If all the tasks are homogeneous, i.e. all the tasks have the same resource types and quantities, then use representor pods accounting (AllocatablePods).
+// If the tasks are heterogeneous, i.e. some of the tasks require different resource types or quantities,
 // then use the job resources sum to see if a domain can allocate the job.
 func useRepresentorPodsAccounting(tasks []*pod_info.PodInfo) bool {
 	if len(tasks) == 0 {
 		return true
 	}
-	vectorMap := tasks[0].VectorMap
-	extendedResources := map[int]int{}
-	podsUsingGpu := 0
-	for _, task := range tasks {
-		for i := 0; i < vectorMap.Len(); i++ {
-			if i == resource_info.CPUIndex || i == resource_info.MemoryIndex || i == resource_info.GPUIndex {
-				continue
+	request := tasks[0].ResReqVector
+	for _, task := range tasks[1:] {
+		for i := 0; i < max(len(request), len(task.ResReqVector)); i++ {
+			if request.Get(i) != task.ResReqVector.Get(i) {
+				return false
 			}
-			if task.ResReqVector.Get(i) > 0 {
-				extendedResources[i] += 1
-			}
-		}
-		if task.GpuRequirement.GPUs() > 0 {
-			podsUsingGpu += 1
-		}
-	}
-	if podsUsingGpu != len(tasks) && podsUsingGpu != 0 {
-		return false
-	}
-	for _, count := range extendedResources {
-		if count != len(tasks) {
-			return false
 		}
 	}
 	return true
