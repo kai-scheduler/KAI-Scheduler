@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Pipeline onto DRA devices of terminating pods instead of evicting more pods
+custom:
+  Author: "gshaibi"
+  Issue: "2412"

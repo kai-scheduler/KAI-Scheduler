@@ -180,10 +180,11 @@ func allocateTask(ssn *framework.Session, stmt *framework.Statement, nodes []*no
 
 	orderedNodes := ssn.OrderedNodesByTask(nodes, task)
 	for _, node := range orderedNodes {
-		if !ssn.FittingNode(task, node, !isSimulation) {
+		fits, pipelineOnly := ssn.FittingNode(task, node, isSimulation)
+		if !fits {
 			continue
 		}
-		success = allocateTaskToNode(ssn, stmt, task, node, isSimulation)
+		success = allocateTaskToNode(ssn, stmt, task, node, pipelineOnly)
 		if success {
 			break
 		}

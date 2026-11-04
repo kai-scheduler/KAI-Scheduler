@@ -479,9 +479,11 @@ func (ssn *Session) VictimInvariantPrePredicateFailure(
 	return nil
 }
 
-func (ssn *Session) PredicateFn(task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo) error {
+func (ssn *Session) PredicateFn(
+	task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo, mode api.PredicateMode,
+) error {
 	for _, pfn := range ssn.PredicateFns {
-		err := pfn(task, job, node)
+		err := pfn(task, job, node, mode)
 		if err != nil {
 			log.InfraLogger.V(6).Do(func() {
 				log.InfraLogger.Infof(

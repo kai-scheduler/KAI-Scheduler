@@ -14,6 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 
+	schedapi "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
@@ -395,7 +396,7 @@ func TestUnifiedSolverUnknownMemoryState(t *testing.T) {
 					task := makeGuaranteedTask("unknown", map[string]string{"memory": "40Gi"})
 					_, err := plugin.evaluate(task, node)
 					require.ErrorIs(t, err, errMemoryStateUnknown)
-					require.ErrorIs(t, plugin.predicate(task, nil, node), errMemoryStateUnknown)
+					require.ErrorIs(t, plugin.predicate(task, nil, node, schedapi.StrictPredicate), errMemoryStateUnknown)
 					_, err = plugin.evaluate(task, node)
 					require.ErrorIs(t, err, errMemoryStateUnknown)
 				})
@@ -420,7 +421,7 @@ func TestUnifiedSolverUnknownMemoryDoesNotBlockUnmanagedRequests(t *testing.T) {
 					placement, err := plugin.evaluate(task, node)
 					require.NoError(t, err)
 					require.Empty(t, placement.MemoryGroups)
-					require.NoError(t, plugin.predicate(task, nil, node))
+					require.NoError(t, plugin.predicate(task, nil, node, schedapi.StrictPredicate))
 				}
 			})
 		}
@@ -566,10 +567,10 @@ func TestIgnoredMemoryRequiresObservedManagerEvidence(t *testing.T) {
 		plugin.seedMemoryGroups(session)
 		incoming := memoryTestTask("incoming", "40Gi")
 		if observed {
-			require.Error(t, plugin.predicate(incoming, nil, node))
+			require.Error(t, plugin.predicate(incoming, nil, node, schedapi.StrictPredicate))
 			continue
 		}
-		require.NoError(t, plugin.predicate(incoming, nil, node))
+		require.NoError(t, plugin.predicate(incoming, nil, node, schedapi.StrictPredicate))
 	}
 }
 
@@ -581,10 +582,10 @@ func TestMemoryLedgerIndependentOfZoneReconstruction(t *testing.T) {
 	node.PodInfos = pod_info.PodsMap{owner.UID: owner}
 	plugin.seedMemoryGroups(session)
 	require.Equal(t, int64(80<<30), node.NumaTopology.MemoryGroups.Available(node.NumaTopology, 3, v1.ResourceMemory))
-	require.Error(t, plugin.predicate(memoryTestTask("small", "40Gi"), nil, node))
+	require.Error(t, plugin.predicate(memoryTestTask("small", "40Gi"), nil, node, schedapi.StrictPredicate))
 	node.NumaTopology.Policy = node_info.TopologyPolicyBestEffort
-	require.NoError(t, plugin.predicate(memoryTestTask("small", "40Gi"), nil, node))
-	require.Error(t, plugin.predicate(memoryTestTask("large", "90Gi"), nil, node))
+	require.NoError(t, plugin.predicate(memoryTestTask("small", "40Gi"), nil, node, schedapi.StrictPredicate))
+	require.Error(t, plugin.predicate(memoryTestTask("large", "90Gi"), nil, node, schedapi.StrictPredicate))
 }
 
 func TestExternalPodMemoryConflictsMakeNodeUnknown(t *testing.T) {
@@ -632,7 +633,7 @@ func TestNonePolicySkipsEvaluation(t *testing.T) {
 				placement, err := plugin.evaluate(task, node)
 				require.NoError(t, err)
 				require.True(t, placement.IsEmpty())
-				require.NoError(t, plugin.predicate(task, nil, node))
+				require.NoError(t, plugin.predicate(task, nil, node, schedapi.StrictPredicate))
 				placement, err = plugin.evaluate(task, node)
 				require.NoError(t, err)
 				require.True(t, placement.IsEmpty())
