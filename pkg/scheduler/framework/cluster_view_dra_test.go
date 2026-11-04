@@ -20,13 +20,6 @@ import (
 	"k8s.io/utils/ptr"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/k8s_utils"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
-	schedulingv1alpha2 "github.com/kai-scheduler/api/scheduling/v1alpha2"
 )
 
 const terminatingPodUID = "terminating"
@@ -78,7 +71,6 @@ func newTestDRAOverlay(t *testing.T, claims ...*resourceapi.ResourceClaim) (*dra
 		terminating: &terminatingPods{uids: sets.New[types.UID](terminatingPodUID)},
 		claims:      tracker,
 		releasing:   sets.New(releasingDevice),
-		pinned:      sets.New[string](),
 	}, tracker
 }
 
@@ -127,18 +119,11 @@ func TestDRAOverlayAllocatedState(t *testing.T) {
 		overlay, _ := newTestDRAOverlay(t, testClaim("shared-claim", deviceAllocation(), terminatingPodUID))
 		assert.True(t, allocatedDevices(t, overlay, testPod("pending", "shared-claim", "own-claim"), true).Has(releasingDevice))
 	})
-
-	t.Run("a pinned claim is not freed", func(t *testing.T) {
-		overlay, _ := newTestDRAOverlay(t, testClaim("releasing-claim", deviceAllocation(), terminatingPodUID))
-		overlay.pinned.Insert(claimKey("test", "releasing-claim"))
-		assert.True(t, allocatedDevices(t, overlay, pending, true).Has(releasingDevice))
-	})
 }
 
 func TestDRAOverlayIsFreedWithTerminatingPods(t *testing.T) {
 	overlay := &draOverlay{
 		terminating: &terminatingPods{uids: sets.New[types.UID](terminatingPodUID)},
-		pinned:      sets.New[string](),
 	}
 	standalone := testClaim("standalone", deviceAllocation(), terminatingPodUID)
 	standalone.Finalizers = nil
@@ -154,32 +139,4 @@ func TestDRAOverlayIsFreedWithTerminatingPods(t *testing.T) {
 	assert.False(t, overlay.isFreedWithTerminatingPods(testClaim("unallocated", nil, terminatingPodUID)))
 	assert.False(t, overlay.isFreedWithTerminatingPods(
 		testClaim("shared", deviceAllocation(), terminatingPodUID, "running")))
-}
-
-// A pod whose bind is in flight is not in ReservedFor yet, so its claim looks held only by the
-// terminating pod. Bound pods keep their BindRequest and are already in ReservedFor.
-func TestPinnedClaims(t *testing.T) {
-	for _, test := range []struct {
-		name       string
-		podName    string
-		wantPinned bool
-	}{
-		{name: "in-flight consumer pins the claim", podName: "consumer", wantPinned: true},
-		{name: "consumer already in ReservedFor does not", podName: terminatingPodUID, wantPinned: false},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			claim := testClaim("shared-claim", deviceAllocation(), terminatingPodUID)
-			task := pod_info.NewTaskInfo(testPod(test.podName, "shared-claim"), resource_info.NewResourceVectorMap())
-			task.BindRequest = &bindrequest_info.BindRequestInfo{BindRequest: &schedulingv1alpha2.BindRequest{
-				Spec: schedulingv1alpha2.BindRequestSpec{ResourceClaimAllocations: []schedulingv1alpha2.ResourceClaimAllocation{
-					{Name: "shared-claim", Allocation: deviceAllocation()},
-				}},
-			}}
-			ssn := &Session{ClusterInfo: &api.ClusterInfo{PodGroupInfos: map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{
-				"pg": podgroup_info.NewPodGroupInfo("pg", task),
-			}}}
-			pinned := pinnedClaims(ssn, map[string]*resourceapi.ResourceClaim{claimKey("test", "shared-claim"): claim})
-			assert.Equal(t, test.wantPinned, pinned.Has(claimKey("test", "shared-claim")))
-		})
-	}
 }

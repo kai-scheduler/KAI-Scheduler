@@ -11,7 +11,6 @@ import (
 	resourceapi "k8s.io/api/resource/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/dynamic-resource-allocation/resourceclaim"
 	"k8s.io/dynamic-resource-allocation/structured"
 	"k8s.io/utils/ptr"
 
@@ -27,8 +26,6 @@ type draOverlay struct {
 	claims      *k8s_utils.SessionClaimTracker
 	// releasing are the devices of claims freed with terminating pods when the session opened.
 	releasing sets.Set[structured.DeviceID]
-	// pinned are claims whose consumer has an in-flight bind and is not in ReservedFor yet.
-	pinned sets.Set[string]
 	// sharedPool is set when a releasing device is in a pool reachable from more than one node.
 	sharedPool bool
 }
@@ -50,7 +47,6 @@ func newDRAOverlay(ssn *Session, terminating *terminatingPods) *draOverlay {
 	overlay := &draOverlay{
 		terminating: terminating,
 		releasing:   sets.New[structured.DeviceID](),
-		pinned:      sets.New[string](),
 	}
 	if ssn.Cache == nil {
 		return overlay
@@ -61,12 +57,6 @@ func newDRAOverlay(ssn *Session, terminating *terminatingPods) *draOverlay {
 	if terminating.isEmpty() || overlay.claims == nil || ssn.ClusterInfo == nil {
 		return overlay
 	}
-
-	claimsByKey := map[string]*resourceapi.ResourceClaim{}
-	for _, claim := range ssn.ClusterInfo.ResourceClaims {
-		claimsByKey[claimKey(claim.Namespace, claim.Name)] = claim
-	}
-	overlay.pinned = pinnedClaims(ssn, claimsByKey)
 
 	sharedPools := sets.New[devicePool]()
 	for _, slice := range ssn.ClusterInfo.ResourceSlices {
@@ -88,44 +78,12 @@ func newDRAOverlay(ssn *Session, terminating *terminatingPods) *draOverlay {
 	return overlay
 }
 
-// pinnedClaims returns the allocated claims of pods with an in-flight BindRequest that are not in
-// the claim's ReservedFor yet: such a claim may look held only by terminating pods.
-func pinnedClaims(ssn *Session, claimsByKey map[string]*resourceapi.ResourceClaim) sets.Set[string] {
-	pinned := sets.New[string]()
-	for _, podGroup := range ssn.ClusterInfo.PodGroupInfos {
-		for _, task := range podGroup.GetAllPodsMap() {
-			if task.BindRequest == nil || task.Pod.Status.Phase == v1.PodSucceeded ||
-				task.Pod.Status.Phase == v1.PodFailed {
-				continue
-			}
-			for _, allocation := range task.BindRequest.BindRequest.Spec.ResourceClaimAllocations {
-				for _, podClaim := range task.Pod.Spec.ResourceClaims {
-					if podClaim.Name != allocation.Name {
-						continue
-					}
-					claimName, err := resources.GetResourceClaimName(task.Pod, &podClaim)
-					if err != nil {
-						continue
-					}
-					key := claimKey(task.Namespace, claimName)
-					claim := claimsByKey[key]
-					if claim != nil && claim.Status.Allocation != nil && !resourceclaim.IsReservedForPod(task.Pod, claim) {
-						pinned.Insert(key)
-					}
-				}
-			}
-		}
-	}
-	return pinned
-}
-
 // isFreedWithTerminatingPods reports whether the claim's devices are freed once the terminating
 // pods exit: it is reserved only for them, and the claim controller deallocates it (it carries the
 // controller's finalizer) or deletes it with its owning pod. KAI's binder never adds the finalizer
 // to standalone claims, which stay allocated after their last consumer leaves.
 func (o *draOverlay) isFreedWithTerminatingPods(claim *resourceapi.ResourceClaim) bool {
-	if claim.Status.Allocation == nil || len(claim.Status.ReservedFor) == 0 ||
-		o.pinned.Has(claimKey(claim.Namespace, claim.Name)) {
+	if claim.Status.Allocation == nil || len(claim.Status.ReservedFor) == 0 {
 		return false
 	}
 	for _, consumer := range claim.Status.ReservedFor {
