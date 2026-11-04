@@ -57,43 +57,60 @@ func InitializeInternalPlugins(
 		initiatedPlugins.ResourceSliceTracker = tracker
 	}
 
-	features := k8s_utils.GetK8sFeatures()
-	initiatedPlugins.Features = features
-
-	if plugin, err := nodeports.New(context.Background(), nil, k8sFrameworkHandle, features); err != nil {
-		log.InfraLogger.Errorf("Failed to create nodeports plugin: %v", err)
-		initiatedPlugins.NodePorts = nil
-	} else {
-		initiatedPlugins.NodePorts = plugin
-	}
-
-	if plugin, err := tainttoleration.New(context.Background(), nil, k8sFrameworkHandle, features); err != nil {
-		log.InfraLogger.Errorf("Failed to create tainttoleration plugin: %v", err)
-		initiatedPlugins.TaintToleration = nil
-	} else {
-		initiatedPlugins.TaintToleration = plugin
-	}
-
-	if plugin, err := nodeaffinity.New(context.Background(), &config.NodeAffinityArgs{}, k8sFrameworkHandle, features); err != nil {
-		log.InfraLogger.Errorf("Failed to create nodeaffinity plugin: %v", err)
-		initiatedPlugins.NodeAffinity = nil
-	} else {
-		initiatedPlugins.NodeAffinity = plugin
-	}
-
-	if plugin, err := interpodaffinity.New(context.Background(), &config.InterPodAffinityArgs{}, k8sFrameworkHandle, features); err != nil {
-		log.InfraLogger.Errorf("Failed to create interpodaffinity plugin: %v", err)
-		initiatedPlugins.PodAffinity = nil
-	} else {
-		initiatedPlugins.PodAffinity = plugin
-	}
-
-	if plugin, err := volumebinding.New(context.Background(), &config.VolumeBindingArgs{}, k8sFrameworkHandle, features); err != nil {
-		log.InfraLogger.Errorf("Failed to create volumebinding plugin: %v", err)
-		initiatedPlugins.VolumeBinding = nil
-	} else {
-		initiatedPlugins.VolumeBinding = plugin
-	}
+	initiatedPlugins.Features = k8s_utils.GetK8sFeatures()
+	initiatedPlugins.createFrameworkPlugins()
 
 	return initiatedPlugins
+}
+
+// WithNodeInfoLister returns a copy whose framework plugins read nodes from the given lister.
+// The DRA tracker and informers are shared.
+func (p *K8sPlugins) WithNodeInfoLister(nodeInfoLister ksf.NodeInfoLister) *K8sPlugins {
+	copied := &K8sPlugins{
+		FrameworkHandle: k8s_utils.NewFrameworkHandle(
+			p.FrameworkHandle.ClientSet(), p.InformerFactory, nodeInfoLister),
+		Features:             p.Features,
+		InformerFactory:      p.InformerFactory,
+		ResourceSliceTracker: p.ResourceSliceTracker,
+	}
+	copied.createFrameworkPlugins()
+	return copied
+}
+
+func (p *K8sPlugins) createFrameworkPlugins() {
+	if plugin, err := nodeports.New(context.Background(), nil, p.FrameworkHandle, p.Features); err != nil {
+		log.InfraLogger.Errorf("Failed to create nodeports plugin: %v", err)
+		p.NodePorts = nil
+	} else {
+		p.NodePorts = plugin
+	}
+
+	if plugin, err := tainttoleration.New(context.Background(), nil, p.FrameworkHandle, p.Features); err != nil {
+		log.InfraLogger.Errorf("Failed to create tainttoleration plugin: %v", err)
+		p.TaintToleration = nil
+	} else {
+		p.TaintToleration = plugin
+	}
+
+	if plugin, err := nodeaffinity.New(context.Background(), &config.NodeAffinityArgs{}, p.FrameworkHandle, p.Features); err != nil {
+		log.InfraLogger.Errorf("Failed to create nodeaffinity plugin: %v", err)
+		p.NodeAffinity = nil
+	} else {
+		p.NodeAffinity = plugin
+	}
+
+	if plugin, err := interpodaffinity.New(context.Background(), &config.InterPodAffinityArgs{}, p.FrameworkHandle, p.Features); err != nil {
+		log.InfraLogger.Errorf("Failed to create interpodaffinity plugin: %v", err)
+		p.PodAffinity = nil
+	} else {
+		p.PodAffinity = plugin
+	}
+
+	if plugin, err := volumebinding.New(context.Background(), &config.VolumeBindingArgs{}, p.FrameworkHandle, p.Features); err != nil {
+		log.InfraLogger.Errorf("Failed to create volumebinding plugin: %v", err)
+		p.VolumeBinding = nil
+	} else {
+		p.VolumeBinding = plugin
+	}
+
 }

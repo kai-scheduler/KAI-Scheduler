@@ -108,6 +108,10 @@ func BuildPod(
 		},
 	}
 	maps.Copy(pod.Annotations, task.Annotations)
+	if task.State == pod_status.Releasing && pod.DeletionTimestamp == nil {
+		deletionTime := metav1.Now()
+		pod.DeletionTimestamp = &deletionTime
+	}
 	if gpuMemoryMiB > 0 {
 		pod.Annotations[resources.CalcGpuFractionAnnotationForContainer("main")] = resources.GpuMemoryAnnotationToNvFractionsMemoryRequest(gpuMemoryMiB).String()
 	}

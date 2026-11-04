@@ -113,6 +113,7 @@ type Session struct {
 	mux             *http.ServeMux
 
 	k8sResourceStateCache  sync.Map
+	futureState            *futureSession
 	nodeScoringPool        *ants.Pool
 	scoringPoolWorkerCount int
 }
@@ -232,7 +233,13 @@ func (ssn *Session) sortGPUs(filteredGPUs []string, pod *pod_info.PodInfo, node 
 	return sortedGPUs
 }
 
-func (ssn *Session) FittingNode(task *pod_info.PodInfo, node *node_info.NodeInfo, writeFittingDelta bool) bool {
+// FittingNode reports whether the task fits the node, and whether the fit must be pipelined rather
+// than bound. Predicates run on the cluster as it is, then on a disposable copy without the releasing
+// pods; a fit found only on the copy must be pipelined. A simulation always pipelines.
+func (ssn *Session) FittingNode(
+	task *pod_info.PodInfo, node *node_info.NodeInfo, isSimulation bool,
+) (fits bool, mustPipeline bool) {
+	writeFittingDelta := !isSimulation
 	var fitErrors *common_info.TasksFitErrors
 	if writeFittingDelta {
 		fitErrors = common_info.NewFitErrors()
@@ -250,25 +257,30 @@ func (ssn *Session) FittingNode(task *pod_info.PodInfo, node *node_info.NodeInfo
 			fitErrors.AddNodeError(fitError)
 			job.AddTaskFitErrors(task, fitErrors)
 		}
-		return false
+		return false, false
 	}
 
 	log.InfraLogger.V(6).Do(func() {
 		log.InfraLogger.Infof("Running predicates for task <%v/%v> on node <%v>",
 			task.Namespace, task.Name, node.Name)
 	})
-	if err := ssn.PredicateFn(task, job, node); err != nil {
-		log.InfraLogger.V(6).Do(func() {
-			log.InfraLogger.Infof("Predicates failed for task <%s/%s> on node <%s>: %v",
-				task.Namespace, task.Name, node.Name, err)
-		})
-		if writeFittingDelta {
-			fitErrors.AddNodeError(err)
-			job.AddTaskFitErrors(task, fitErrors)
-		}
-		return false
+	err := ssn.PredicateFn(task, job, node)
+	if err == nil {
+		return true, isSimulation
 	}
-	return true
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("Predicates failed for task <%s/%s> on node <%s>: %v",
+			task.Namespace, task.Name, node.Name, err)
+	})
+	if ssn.fitsInFuture(task, job, node) == nil {
+		logFutureFit(task, node)
+		return true, true
+	}
+	if writeFittingDelta {
+		fitErrors.AddNodeError(err)
+		job.AddTaskFitErrors(task, fitErrors)
+	}
+	return false, false
 }
 
 // OrderedNodesByTask scores nodes for a task and returns them in order of their scores
