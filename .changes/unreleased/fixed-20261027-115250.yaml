@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  PodGroup allocated GPU status counts every device of multi-device fractional pods
+custom:
+  Author: "ZeXi0308"
+  Issue: "2528"
