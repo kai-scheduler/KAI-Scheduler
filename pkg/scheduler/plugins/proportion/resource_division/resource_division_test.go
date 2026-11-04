@@ -546,6 +546,68 @@ var _ = Describe("Proportion", func() {
 			Expect(highShare2).To(BeNumerically(">=", 2.0),
 				"high-priority queue 2 must receive at least its floored fair-share, got %.2f", highShare2)
 		})
+
+		Context("remainder handout is capped at what the queue can still take", func() {
+			// Queues share one creation time so equal fractional remainders are
+			// handed out in UID order ("1", then "2", then "3").
+			newQueue := func(id string, request, maxAllowed float64) *rs.QueueAttributes {
+				return &rs.QueueAttributes{
+					UID:               common_info.QueueID(id),
+					Name:              "queue-" + id,
+					CreationTimestamp: v1.Unix(0, 0),
+					QueueResourceShare: rs.QueueResourceShare{
+						GPU: rs.ResourceShare{
+							Deserved:        0,
+							FairShare:       0,
+							OverQuotaWeight: 1,
+							MaxAllowed:      maxAllowed,
+							Allocated:       0,
+							Request:         request,
+						},
+						CPU:    rs.EmptyResource(),
+						Memory: rs.EmptyResource(),
+					},
+				}
+			}
+
+			It("does not give a whole remainder unit past a fractional request", func() {
+				queues := map[common_info.QueueID]*rs.QueueAttributes{
+					"1": newQueue("1", 3.5, commonconstants.UnlimitedResourceQuantity),
+					"2": newQueue("2", 3.5, commonconstants.UnlimitedResourceQuantity),
+					"3": newQueue("3", 3.5, commonconstants.UnlimitedResourceQuantity),
+				}
+
+				remaining := divideOverQuotaResource(10.2, 0, queues, rs.GpuResource)
+
+				Expect(remaining).To(Equal(0.0))
+				Expect(queues["1"].GPU.FairShare).To(Equal(3.5),
+					"queue 1 fair share got %.4f", queues["1"].GPU.FairShare)
+				Expect(queues["2"].GPU.FairShare).To(Equal(3.5),
+					"queue 2 fair share got %.4f", queues["2"].GPU.FairShare)
+				// 10.2 is not exact in float64; the last queue receives whatever is left (~3.2).
+				Expect(queues["3"].GPU.FairShare).To(BeNumerically("~", 3.2, 1e-9),
+					"queue 3 fair share got %.4f", queues["3"].GPU.FairShare)
+			})
+
+			It("does not give a whole remainder unit past maxAllowed", func() {
+				queues := map[common_info.QueueID]*rs.QueueAttributes{
+					"1": newQueue("1", 5, 0.5),
+					"2": newQueue("2", 0.5, commonconstants.UnlimitedResourceQuantity),
+					"3": newQueue("3", 0.5, commonconstants.UnlimitedResourceQuantity),
+				}
+
+				remaining := divideOverQuotaResource(1.2, 0, queues, rs.GpuResource)
+
+				Expect(remaining).To(Equal(0.0))
+				Expect(queues["1"].GPU.FairShare).To(Equal(0.5),
+					"queue 1 fair share got %.4f, above MaxAllowed", queues["1"].GPU.FairShare)
+				Expect(queues["2"].GPU.FairShare).To(Equal(0.5),
+					"queue 2 fair share got %.4f", queues["2"].GPU.FairShare)
+				// 1.2 is not exact in float64; the last queue receives whatever is left (~0.2).
+				Expect(queues["3"].GPU.FairShare).To(BeNumerically("~", 0.2, 1e-9),
+					"queue 3 fair share got %.4f", queues["3"].GPU.FairShare)
+			})
+		})
 	})
 
 	Describe("setResourceShare - CPU", func() {

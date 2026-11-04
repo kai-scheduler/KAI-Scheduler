@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Fair share remainder cannot exceed a queue's request or MaxAllowed
+custom:
+  Author: "cursoragent"
+  Issue: "2522"

@@ -270,8 +270,13 @@ func divideRemainingResource(totalResourceAmount float64, remainingRequested map
 
 		largestRemaining := sortedQueues.Pop().(*remainingRequestedResource)
 
-		// totalResourceAmount can be fraction (less than 1) if some queue requested a fraction of GPU
+		// totalResourceAmount can be a fraction if some queue requested a fraction of GPU.
+		// Cap the unit at the remaining request (already limited by MaxAllowed).
 		resourceToGive := math.Min(1, totalResourceAmount)
+		resourceToGive = math.Min(resourceToGive, getRemainingRequested(largestRemaining.queue, resourceName))
+		if resourceToGive <= 0 {
+			continue
+		}
 		largestRemaining.queue.AddResourceShare(resourceName, resourceToGive)
 		totalResourceAmount -= resourceToGive
 	}
