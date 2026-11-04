@@ -16,6 +16,7 @@ global:
   # docs/fips/README.md. Setting "only" is the user's responsibility.
   # Valid values: "on" | "only" | "off"
   fipsMode: "off"
+  # Used when a component image.pullPolicy is empty.
   imagePullPolicy: IfNotPresent
   securityContext: {}
   podSecurityContext: {}
@@ -32,7 +33,7 @@ global:
   # (oci://ghcr.io/kai-scheduler/gpu-fractioning) as a subchart and selects the NvFractions
   # GPU sharing mode. Setting it together with a global.gpuSharingMode other than
   # NvFractions is rejected at render time.
-  # KAI's global.imagePullSecrets/nodeSelector/affinity/tolerations are NOT propagated to
+  # KAI's global imagePullPolicy/imagePullSecrets/nodeSelector/affinity/tolerations are NOT propagated to
   # the subchart; override them under the top-level `gpu-fractioning:` key.
   nvFractions:
     set: false
@@ -75,7 +76,7 @@ global:
 operator:
   image:
     name: operator
-    pullPolicy: IfNotPresent
+    pullPolicy: ""
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
   replicaCount: 1
   metricsBindAddress: ":8080"
@@ -96,7 +97,7 @@ podgrouper:
   enabled: true
   image:
     name: podgrouper
-    pullPolicy: IfNotPresent
+    pullPolicy: ""
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
   queueLabelKey: "kai.scheduler/queue"
   # Flat podgrouper.genericKartaFallback overrides this map.
@@ -113,7 +114,7 @@ podgroupcontroller:
   enabled: true
   image:
     name: podgroupcontroller
-    pullPolicy: IfNotPresent
+    pullPolicy: ""
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
   affinity: {}
 binder:
@@ -121,11 +122,11 @@ binder:
   name: binder
   image:
     name: binder
-    pullPolicy: IfNotPresent
+    pullPolicy: ""
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
   resourceReservationImage:
     name: resourcereservation
-    pullPolicy: IfNotPresent
+    pullPolicy: ""
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
   # resourceReservationPodResources specifies CPU and memory resource requests and limits
   # for GPU reservation pods created by the binder.
@@ -161,7 +162,7 @@ scheduler:
   enabled: true
   image:
     name: scheduler
-    pullPolicy: IfNotPresent
+    pullPolicy: ""
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
   placementStrategy: binpack
   ports:
@@ -225,7 +226,7 @@ defaultShard:
 numaPlacementExporter:
   image:
     name: numa-placement-exporter
-    pullPolicy: IfNotPresent
+    pullPolicy: ""
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
   # nodeSelector targets the DaemonSet at specific nodes (e.g. GPU/NUMA nodes). The global
   # nodeSelector is intentionally NOT applied to this DaemonSet.
@@ -247,7 +248,7 @@ queuecontroller:
   enabled: true
   image:
     name: queuecontroller
-    pullPolicy: IfNotPresent
+    pullPolicy: ""
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
   affinity: {}
   # PDB is created only when queue-controller replicas > 1 (operator.replicaCount / queueController.replicas).
@@ -261,7 +262,7 @@ admission:
   name: kai-admission
   image:
     name: admission
-    pullPolicy: IfNotPresent
+    pullPolicy: ""
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
   ports:
     webhookPort: 9443
@@ -278,11 +279,11 @@ admission:
 nodescaleadjuster:
   image:
     name: nodescaleadjuster
-    pullPolicy: IfNotPresent
+    pullPolicy: ""
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
   scalingPodImage:
     name: scalingpod
-    pullPolicy: IfNotPresent
+    pullPolicy: ""
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
   scalingPodNamespace: kai-scale-adjust
   affinity: {}
@@ -291,7 +292,7 @@ nodescaleadjuster:
 crdupgrader:
   image:
     name: helm-hooks
-    pullPolicy: IfNotPresent
+    pullPolicy: ""
     # registry: ""  # Optional: Override global.registry (e.g. to mirror only the hook image)
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
   resources:
@@ -316,7 +317,7 @@ kaiConfigDeployer:
   enabled: true
   image:
     name: helm-hooks
-    pullPolicy: IfNotPresent
+    pullPolicy: ""
     # registry: ""  # Optional: Override global.registry (e.g. to mirror only the hook image)
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
   resources:
@@ -335,7 +336,7 @@ topologyMigration:
   enabled: true
   image:
     name: helm-hooks
-    pullPolicy: IfNotPresent
+    pullPolicy: ""
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
   resources:
     requests:
@@ -348,7 +349,7 @@ postCleanup:
   enabled: true
   image:
     name: helm-hooks
-    pullPolicy: IfNotPresent
+    pullPolicy: ""
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
   # Name of the ServiceAccount used by the post-delete hook Job.
   serviceAccountName: post-delete-cleanup
