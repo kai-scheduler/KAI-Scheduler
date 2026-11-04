@@ -17,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/safe_to_disrupt"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
@@ -40,6 +41,7 @@ type TestJobBasic struct {
 	Priority                            int32
 	Preemptibility                      enginev2alpha2.Preemptibility
 	PreemptionDelay                     *metav1.Duration
+	SafeToDisrupt                       *bool
 	Name                                string
 	Namespace                           string
 	QueueName                           string
@@ -96,6 +98,12 @@ func BuildJobsAndTasksMaps(Jobs []*TestJobBasic, vectorMap *resource_info.Resour
 			job.Priority, job.Preemptibility, queueUID, jobCreationTime, job.StaleDuration, job.PerJobStalenessGracePeriod, vectorMap,
 		)
 		jobInfo.PodGroup.Spec.PreemptionDelay = job.PreemptionDelay
+		if job.SafeToDisrupt != nil {
+			if jobInfo.PodGroup.Annotations == nil {
+				jobInfo.PodGroup.Annotations = map[string]string{}
+			}
+			jobInfo.PodGroup.Annotations[safe_to_disrupt.AnnotationKey] = strconv.FormatBool(*job.SafeToDisrupt)
+		}
 		jobsInfoMap[jobUID] = jobInfo
 	}
 
