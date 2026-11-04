@@ -86,11 +86,16 @@ func (lwsg *LwsGrouper) GetPodGroupMetadata(
 		return nil, fmt.Errorf("unknown startupPolicy: %s", startupPolicy)
 	}
 
-	subGroups, err := lwsg.buildSubGroups(lwsJob, pod, int(podGroupMetadata.MinAvailable))
-	if err != nil {
-		return nil, err
+	if startupPolicy == startupPolicyLeaderReady && isUnscheduledLeader(pod) {
+		// Only the leader is gated for scheduling, so there is nothing to segment yet.
+		podGroupMetadata.SubGroups = buildSubGroupsWithoutSegmentation(leaderSubGroupSize, pod)
+	} else {
+		subGroups, err := lwsg.buildSubGroups(lwsJob, pod, int(podGroupMetadata.MinAvailable))
+		if err != nil {
+			return nil, err
+		}
+		podGroupMetadata.SubGroups = subGroups
 	}
-	podGroupMetadata.SubGroups = subGroups
 
 	if groupIndexStr, ok := pod.Labels[lwsGroupIndexLabel]; ok {
 		if groupIndex, err := strconv.Atoi(groupIndexStr); err == nil {
@@ -152,16 +157,16 @@ func calcLeaderReadyMinAvailable(pod *v1.Pod, fallbackSize int32) int32 {
 		}
 	}
 
-	workerIndex, hasWorkerIndex := pod.Labels[lwsWorkerIndexLabel]
-	isLeader := hasWorkerIndex && workerIndex == "0"
-	isScheduled := pod.Spec.NodeName != ""
-
-	if isLeader && !isScheduled {
+	if isUnscheduledLeader(pod) {
 		// Leader pod not yet scheduled, only need leader to be available
 		return 1
 	}
 	// Either worker pod or leader is already scheduled
 	return groupSize
+}
+
+func isUnscheduledLeader(pod *v1.Pod) bool {
+	return isLeaderPod(pod) && pod.Spec.NodeName == ""
 }
 
 func (lwsg *LwsGrouper) buildSubGroups(lwsJob *unstructured.Unstructured, pod *v1.Pod, replicasSize int) ([]*podgroup.SubGroupMetadata, error) {
