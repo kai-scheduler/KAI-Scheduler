@@ -392,7 +392,16 @@ func fixLastSegmentSize(replicasSize int, segmentSize int, subGroups []*podgroup
 	lastSegment := subGroups[len(subGroups)-1]
 	lastSegmentWorkersCount := 0
 	maxWorkerIndex := replicasSize - leaderSubGroupSize
-	for workerIndex := maxWorkerIndex; workerIndex >= 0; workerIndex-- {
+	// Worker index 0 is the leader. Where it is an extra pod on top of the
+	// segment's workers, handleLeaderInFirstSegment and addExcludedLeaderSegments
+	// count it separately, so counting it here as well asks the segment for one
+	// pod more than the set ever creates. It only reaches this loop when the last
+	// segment is also the first, which is replicasSize == segmentSize+1.
+	minWorkerIndex := 0
+	if isReplicasSizeDivisibleBySubGroupSize(replicasSize, segmentSize) {
+		minWorkerIndex = leaderSubGroupSize
+	}
+	for workerIndex := maxWorkerIndex; workerIndex >= minWorkerIndex; workerIndex-- {
 		segmentIndex := getSegmentIndex(workerIndex, replicasSize, segmentSize)
 		if segmentIndex == len(subGroups)-1 {
 			lastSegmentWorkersCount++

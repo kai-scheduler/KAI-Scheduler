@@ -1,0 +1,3 @@
+kind: Fixed
+body: |-
+  PodGrouper stops counting the LWS leader twice when leaderWorkerTemplate.size is subGroupSize+1, which asked the gang for one pod more than the LeaderWorkerSet creates and left it pending forever
