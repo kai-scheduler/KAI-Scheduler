@@ -2,7 +2,7 @@ ENVTEST_K8S_VERSION = 1.35.0
 ENVTEST_VERSION=release-0.23
 
 E2E_TESTS_DIR = "test/e2e/"
-TEST_TARGETS = $(shell go list ./... github.com/kai-scheduler/KAI-scheduler/pkg/fairshare/... | grep -v "${E2E_TESTS_DIR}")
+TEST_TARGETS = $(shell go list ./... | grep -v "${E2E_TESTS_DIR}")
 DOCKER_GO_TEST_COMMAND=${DOCKER_GO_BASE_COMMAND} -e GOFLAGS="-buildvcs=false" builder:${GO_IMAGE_VERSION}
 
 envtest-docker-go: builder gocache
@@ -15,6 +15,7 @@ envtest-go: envtest
 	mkdir -p coverage
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path --bin-dir $(LOCALBIN))" \
     go test ${TEST_TARGETS} -timeout 30m -coverprofile=coverage/coverage.out || ${FAILURE_MESSAGE_HANDLER}
+	cd pkg/fairshare && go test ./... -coverprofile=../../coverage/fairshare.out || ${FAILURE_MESSAGE_HANDLER}
 	${SUCCESS_MESSAGE_HANDLER}
 
 ENVTEST = $(LOCALBIN)/setup-envtest

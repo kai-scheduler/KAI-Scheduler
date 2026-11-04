@@ -3,7 +3,6 @@ module github.com/kai-scheduler/KAI-scheduler
 go 1.26.8
 
 require (
-	github.com/kai-scheduler/KAI-scheduler/pkg/fairshare v0.0.0
 	github.com/KimMachineGun/automemlimit v0.7.5
 	github.com/NVIDIA/go-nvml v0.13.0-1
 	github.com/aptible/supercronic v0.2.44
@@ -232,5 +231,3 @@ tool (
 	github.com/onsi/ginkgo/v2/ginkgo
 	golang.org/x/perf/cmd/benchstat
 )
-
-replace github.com/kai-scheduler/KAI-scheduler/pkg/fairshare => ./pkg/fairshare
