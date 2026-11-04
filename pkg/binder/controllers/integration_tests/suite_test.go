@@ -114,6 +114,7 @@ var _ = BeforeSuite(func() {
 		resourceReservationNameSpace, resourceReservationServiceAccount, resourceReservationAppLabelValue, scalingPodsNamespace, "",
 		nil, nil, nil, false)
 	podBinder := binding.NewBinder(k8sManager.GetClient(), rrs, binderPlugins)
+	podBinder.SetPodReader(k8sManager.GetAPIReader())
 
 	err = controllers.NewBindRequestReconciler(
 		k8sManager.GetClient(), k8sManager.GetScheme(), k8sManager.GetEventRecorderFor("binder"), params,

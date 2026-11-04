@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Retain GPU sharing settings when a binding response is lost after assignment
+custom:
+  Author: "ai-pilot"
+  Issue: "2472"

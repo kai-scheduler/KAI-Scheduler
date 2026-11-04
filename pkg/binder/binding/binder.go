@@ -27,6 +27,7 @@ var InvalidCrdWarning = errors.New("invalid binding request")
 
 type Binder struct {
 	kubeClient                 client.Client
+	podReader                  client.Reader
 	resourceReservationService resourcereservation.Interface
 	plugins                    *plugins.BinderPlugins
 }
@@ -34,8 +35,18 @@ type Binder struct {
 func NewBinder(kubeClient client.Client, rrs resourcereservation.Interface, plugins *plugins.BinderPlugins) *Binder {
 	return &Binder{
 		kubeClient:                 kubeClient,
+		podReader:                  kubeClient,
 		resourceReservationService: rrs,
 		plugins:                    plugins,
+	}
+}
+
+// SetPodReader selects the reader used to confirm placement after a binding error.
+// The binder client reads pods from the informer cache, which can still show a pod
+// as unassigned after the apiserver has stored the binding. Pass an API reader.
+func (b *Binder) SetPodReader(reader client.Reader) {
+	if reader != nil {
+		b.podReader = reader
 	}
 }
 
@@ -93,11 +104,46 @@ func (b *Binder) Bind(ctx context.Context, pod *v1.Pod, node *v1.Node, bindReque
 		},
 	}
 	if err = b.kubeClient.SubResource("binding").Create(ctx, pod, binding); err != nil {
+		// The apiserver can commit the assignment and still drop the response.
+		// Cleaning up after that removes settings the assigned Pod still needs.
+		if b.podHasPlacement(ctx, pod, node.Name) {
+			logger.Info("Binding response lost after the pod was assigned; keeping the placement",
+				"namespace", pod.Namespace, "name", pod.Name, "node", node.Name, "error", err)
+			b.plugins.PostBind(ctx, pod, node, bindRequest, bindingState)
+			return nil
+		}
 		return fmt.Errorf("failed to bind pod <%s/%s> to node <%s>: %w", pod.Namespace, pod.Name, node.Name, err)
 	}
 
 	b.plugins.PostBind(ctx, pod, node, bindRequest, bindingState)
 	return nil
+}
+
+// podHasPlacement reports whether the apiserver has assigned this pod to nodeName.
+// The in-memory pod and the informer cache can both lag that write.
+func (b *Binder) podHasPlacement(ctx context.Context, pod *v1.Pod, nodeName string) bool {
+	logger := log.FromContext(ctx)
+	latest := &v1.Pod{}
+	if err := b.podReader.Get(ctx, client.ObjectKey{Namespace: pod.Namespace, Name: pod.Name}, latest); err != nil {
+		logger.Error(err, "Failed to read pod after binding error",
+			"namespace", pod.Namespace, "name", pod.Name)
+		return false
+	}
+	if latest.UID != pod.UID {
+		logger.Info("Pod identity changed after binding error",
+			"namespace", pod.Namespace, "name", pod.Name,
+			"expectedUID", pod.UID, "actualUID", latest.UID)
+		return false
+	}
+	if latest.Spec.NodeName == nodeName {
+		return true
+	}
+	if latest.Spec.NodeName != "" {
+		logger.Info("Pod is assigned to an unexpected node after binding error",
+			"namespace", pod.Namespace, "name", pod.Name,
+			"expectedNode", nodeName, "actualNode", latest.Spec.NodeName)
+	}
+	return false
 }
 
 func (b *Binder) Rollback(ctx context.Context, pod *v1.Pod, node *v1.Node, bindRequest *v1alpha2.BindRequest) error {

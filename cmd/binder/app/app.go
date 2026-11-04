@@ -168,6 +168,8 @@ func (app *App) Run(ctx context.Context) error {
 	}
 
 	binder := binding.NewBinder(app.Client, app.rrs, app.plugins)
+	// Confirm placement against the API server. app.Client serves pod reads from the cache.
+	binder.SetPodReader(app.manager.GetAPIReader())
 
 	app.InformerFactory.Start(ctx.Done())
 	app.InformerFactory.WaitForCacheSync(ctx.Done())
