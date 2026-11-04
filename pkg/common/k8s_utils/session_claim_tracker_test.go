@@ -60,6 +60,9 @@ func TestSessionClaimTrackerDeviceHolders(t *testing.T) {
 	// Un-assuming one claim keeps the other holder, unlike the upstream allocated set.
 	tracker.AssumedClaimRestore("test", "pending")
 	assert.ElementsMatch(t, []string{"releasing"}, holderNames(tracker))
+	state, err := tracker.GatherAllocatedState()
+	require.NoError(t, err)
+	assert.True(t, state.AllocatedDevices.Has(device), "the remaining holder keeps the device allocated")
 
 	inFlight := claim("in-flight", allocation(false))
 	require.NoError(t, tracker.SignalClaimPendingAllocation(inFlight.UID, inFlight))

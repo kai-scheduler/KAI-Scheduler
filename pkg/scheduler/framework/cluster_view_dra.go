@@ -103,39 +103,28 @@ func (o *draOverlay) allocatedState(pod *v1.Pod, future bool) (*structured.Alloc
 		return nil, fmt.Errorf("DRA claim tracker is not initialized")
 	}
 	state, err := o.claims.GatherAllocatedState()
-	if err != nil {
-		return nil, err
+	if err != nil || !future || o.releasing.Len() == 0 {
+		return state, err
 	}
-	if o.releasing.Len() == 0 {
-		return state, nil
-	}
-
-	var ownClaims sets.Set[string]
-	if future {
-		ownClaims = podClaimKeys(pod)
-	}
-	// The tracker's allocated set is not reference counted, so the live holders decide, in both views.
+	ownClaims := podClaimKeys(pod)
 	for device := range o.releasing {
-		if o.isTaken(device, future, ownClaims) {
-			state.AllocatedDevices.Insert(device)
-		} else {
+		if o.isFreeInFuture(device, ownClaims) {
 			state.AllocatedDevices.Delete(device)
 		}
 	}
 	return state, nil
 }
 
-// isTaken reports whether a live claim keeps the device in the view. In the future view, claims
-// freed with terminating pods do not, unless they are the pod's own claims: a pod's allocated
-// claims keep their devices from its other claims.
-func (o *draOverlay) isTaken(device structured.DeviceID, future bool, ownClaims sets.Set[string]) bool {
+// isFreeInFuture reports whether every claim holding the device is freed with the terminating pods.
+// The pod's own claims keep their devices: its allocated claims hold them from its other claims.
+func (o *draOverlay) isFreeInFuture(device structured.DeviceID, ownClaims sets.Set[string]) bool {
 	for _, holder := range o.claims.DeviceHolders(device) {
-		if !future || holder.InFlight || !o.isFreedWithTerminatingPods(holder.Claim) ||
+		if holder.InFlight || !o.isFreedWithTerminatingPods(holder.Claim) ||
 			ownClaims.Has(claimKey(holder.Claim.Namespace, holder.Claim.Name)) {
-			return true
+			return false
 		}
 	}
-	return false
+	return true
 }
 
 func podClaimKeys(pod *v1.Pod) sets.Set[string] {

@@ -8,6 +8,7 @@ import (
 
 	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/dynamic-resource-allocation/structured"
 	ksf "k8s.io/kube-scheduler/framework"
 	"k8s.io/utils/ptr"
@@ -42,9 +43,12 @@ type SessionClaimTracker struct {
 
 	mutex    sync.RWMutex
 	inFlight map[types.UID]*resourceapi.ResourceClaim
-	// holders is built on first use, so sessions that never ask pay nothing.
+	// holders is built on first use, so sessions that never ask pay nothing. A device gets a second
+	// holder only after the future view frees it, which builds the index first.
 	holders      map[structured.DeviceID]map[holderKey]*resourceapi.ResourceClaim
 	claimDevices map[holderKey][]structured.DeviceID
+	// shared are the devices that had more than one holder: the only ones the upstream set can drop.
+	shared sets.Set[structured.DeviceID]
 }
 
 type sessionDRAManager struct {
@@ -64,6 +68,22 @@ func newSessionDRAManager(manager ksf.SharedDRAManager) ksf.SharedDRAManager {
 			inFlight:             map[types.UID]*resourceapi.ResourceClaim{},
 		},
 	}
+}
+
+// GatherAllocatedState adds back the shared devices that a claim still holds.
+func (t *SessionClaimTracker) GatherAllocatedState() (*structured.AllocatedState, error) {
+	state, err := t.ResourceClaimTracker.GatherAllocatedState()
+	if err != nil {
+		return nil, err
+	}
+	t.mutex.RLock()
+	defer t.mutex.RUnlock()
+	for device := range t.shared {
+		if len(t.holders[device]) > 0 {
+			state.AllocatedDevices.Insert(device)
+		}
+	}
+	return state, nil
 }
 
 // DeviceHolders returns the claims allocated to the device.
@@ -139,6 +159,7 @@ func (t *SessionClaimTracker) ensureIndex() {
 	}
 	t.holders = map[structured.DeviceID]map[holderKey]*resourceapi.ResourceClaim{}
 	t.claimDevices = map[holderKey][]structured.DeviceID{}
+	t.shared = sets.New[structured.DeviceID]()
 	for _, claim := range claims {
 		t.indexClaim(cacheClaimKey(claim), claim)
 	}
@@ -170,6 +191,9 @@ func (t *SessionClaimTracker) indexClaim(key holderKey, claim *resourceapi.Resou
 			t.holders[device] = map[holderKey]*resourceapi.ResourceClaim{}
 		}
 		t.holders[device][key] = claim
+		if len(t.holders[device]) > 1 {
+			t.shared.Insert(device)
+		}
 	}
 }
 
