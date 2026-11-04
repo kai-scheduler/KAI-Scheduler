@@ -12,6 +12,7 @@ import (
 	argov1alpha1 "github.com/argoproj/argo-workflows/v3/pkg/apis/workflow/v1alpha1"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/multierr"
+	batchv1 "k8s.io/api/batch/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -375,4 +376,42 @@ func compareMetadata(expected, got *podgroup.Metadata) error {
 	}
 
 	return err
+}
+
+func TestGetPodOwners_FetchesTopOwnerWithoutCache(t *testing.T) {
+	scheme := runtime.NewScheme()
+	assert.Nil(t, v1.AddToScheme(scheme))
+	assert.Nil(t, batchv1.AddToScheme(scheme))
+
+	isController := true
+	job := &batchv1.Job{
+		TypeMeta:   metav1.TypeMeta{Kind: "Job", APIVersion: "batch/v1"},
+		ObjectMeta: metav1.ObjectMeta{Name: "job", Namespace: "namespace", UID: "job-uid"},
+	}
+	pod := &v1.Pod{
+		TypeMeta: metav1.TypeMeta{Kind: "Pod", APIVersion: "v1"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "job-pod",
+			Namespace: "namespace",
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: "batch/v1",
+				Kind:       "Job",
+				Name:       "job",
+				UID:        "job-uid",
+				Controller: &isController,
+			}},
+		},
+	}
+
+	cachedClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(pod).Build()
+	uncachedClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(pod, job).Build()
+	pluginsHub := pluginshub.NewDefaultPluginsHub(uncachedClient, false, true, false, false,
+		queueLabelKey, nodePoolLabelKey, "", "")
+	grouper := podgrouper.NewPodgrouper(cachedClient, uncachedClient, pluginsHub)
+
+	topOwner, owners, err := grouper.GetPodOwners(context.Background(), pod)
+	assert.Nil(t, err)
+	assert.Equal(t, "Job", topOwner.GetKind())
+	assert.Equal(t, "job", topOwner.GetName())
+	assert.Len(t, owners, 1)
 }
