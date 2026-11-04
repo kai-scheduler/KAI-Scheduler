@@ -1,0 +1,104 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+name: E2E - Mokka NUMA experiment
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/e2e-mokka-numa.yaml'
+      - 'hack/**'
+      - 'test/e2e/suites/numa/**'
+      - 'test/e2e/modules/resources/rd/numa/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mokka-numa-memory-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  numa:
+    # This experiment can run on a fork without the upstream CNCF runner pool.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      CLUSTER_NAME: mokka-numa-ci
+      FEATURE_CONFIG: numa-full
+      GPU_STACK: mokka
+      DOCKER_BUILDX_ADDITIONAL_ARGS: --load
+      PACKAGE_VERSION: 0.0.0-numa-${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.19.0
+      - uses: helm/kind-action@v1.14.0
+        with:
+          install_only: true
+          version: v0.32.0
+      - name: Prepare runner
+        run: |
+          sudo sysctl -w fs.inotify.max_user_instances=1280 fs.inotify.max_user_watches=655360
+          # Leave space for source builds, six kind nodes, and the real GPU stack.
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          df -h
+      - name: Validate KAI chart configuration before building images
+        run: |
+          helm dependency build ./deployments/kai-scheduler
+          helm template kai-scheduler ./deployments/kai-scheduler \
+            --namespace kai-scheduler \
+            --values hack/kai-scheduler-mokka-values.yaml \
+            --values hack/kai-scheduler-mokka-numa-values.yaml \
+            --set global.registry=localhost:30100 --set prometheus.enabled=true > /tmp/kai-numa-rendered.yaml
+      - name: Build KAI from this PR and install Mokka, GPU Operator, and NRT reporter
+        run: |
+          ./hack/setup-e2e-cluster.sh --local-images-build --skip-kai-install --feature-config numa-full
+      - name: Check NRT topology and policies
+        run: python3 hack/check-mokka-numa.py
+      - name: Install KAI with NUMA scheduling and the real kubelet socket
+        run: |
+          helm upgrade --install kai-scheduler "./charts/kai-scheduler-$PACKAGE_VERSION.tgz" \
+            --namespace kai-scheduler --create-namespace \
+            --values hack/kai-scheduler-mokka-values.yaml \
+            --values hack/kai-scheduler-mokka-numa-values.yaml \
+            --set global.registry=localhost:30100 --set prometheus.enabled=true \
+            --wait --timeout 10m
+          kubectl -n kai-scheduler rollout status deployment/kai-operator --timeout=5m
+      - name: Run all NUMA cases, including nightly cases
+        run: |
+          mkdir -p numa-results
+          go tool ginkgo --keep-going --trace -vv --label-filter numa --timeout 45m \
+            --output-dir=numa-results --json-report=report.json --junit-report=junit.xml \
+            ./test/e2e/suites/numa
+      - name: Collect cluster state and logs
+        if: always()
+        run: |
+          mkdir -p numa-results
+          kubectl get nodes -o yaml > numa-results/nodes.yaml 2>&1 || true
+          kubectl get noderesourcetopologies -o yaml > numa-results/nrt.yaml 2>&1 || true
+          kubectl get pods -A -o yaml > numa-results/pods.yaml 2>&1 || true
+          kubectl get events -A --sort-by=.lastTimestamp > numa-results/events.txt 2>&1 || true
+          kubectl get config -o yaml > numa-results/kai-config.yaml 2>&1 || true
+          helm list -A > numa-results/helm.txt 2>&1 || true
+          kind export logs numa-results/kind --name "$CLUSTER_NAME" || true
+          {
+            echo '### Mokka NUMA experiment'
+            echo 'Real driver, toolkit, device plugin, NFD topology updater, and kubelet pod-resources socket.'
+            echo 'Four GPU nodes: two single-numa-node, one restricted, one best-effort; eight GPUs per node, split 4+4.'
+            echo 'Static CPU and Memory Managers are enabled. Mokka NRI maps simulated memory affinity onto host-allowed nodes.'
+            echo 'The unchanged Burstable cross-zone case expects admission; real kubelet enforcement can reject it.'
+            echo 'See numa-results for test results, skip reasons, and cluster logs.'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mokka-numa-results
+          path: numa-results
+      - name: Delete disposable cluster
+        if: always()
+        run: kind delete cluster --name "$CLUSTER_NAME"

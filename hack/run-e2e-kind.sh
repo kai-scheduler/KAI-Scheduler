@@ -64,7 +64,11 @@ fi
 # Run the cluster setup script
 ${REPO_ROOT}/hack/setup-e2e-cluster.sh $SETUP_ARGS
 
-(cd ${REPO_ROOT} && go tool ginkgo -r --keep-going --randomize-all --randomize-suites --label-filter '!autoscale && !scale && !upgrade && !gitops' --trace -vv ${REPO_ROOT}/test/e2e/suites)
+LABEL_FILTER='!autoscale && !scale && !upgrade && !gitops'
+if [ "${GPU_STACK:-mokka}" = "mokka" ]; then
+    LABEL_FILTER="$LABEL_FILTER && !numa && !kwok"
+fi
+(cd ${REPO_ROOT} && go tool ginkgo -r --keep-going --randomize-all --randomize-suites --label-filter "$LABEL_FILTER" --trace -vv ${REPO_ROOT}/test/e2e/suites)
 
 if [ "$PRESERVE_CLUSTER" != "true" ]; then
     kind delete cluster --name $CLUSTER_NAME

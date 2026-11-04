@@ -81,11 +81,13 @@ EOF
 # install in the other e2e paths (see setup-e2e-cluster.sh). KAI is installed
 # later here by the ArgoCD Application, so the reservation namespace is
 # pre-created and adopted by ArgoCD on sync (ServerSideApply).
-kubectl create namespace kai-resource-reservation --dry-run=client -o yaml | kubectl apply -f -
-kubectl create clusterrole pods-patcher --verb=patch --resource=pods --dry-run=client -o yaml | kubectl apply -f -
-kubectl create rolebinding fake-status-updater --clusterrole=pods-patcher \
-  --serviceaccount=gpu-operator:status-updater -n kai-resource-reservation \
-  --dry-run=client -o yaml | kubectl apply -f -
+if [ "${GPU_STACK:-mokka}" = "fake" ]; then
+  kubectl create namespace kai-resource-reservation --dry-run=client -o yaml | kubectl apply -f -
+  kubectl create clusterrole pods-patcher --verb=patch --resource=pods --dry-run=client -o yaml | kubectl apply -f -
+  kubectl create rolebinding fake-status-updater --clusterrole=pods-patcher \
+    --serviceaccount=gpu-operator:status-updater -n kai-resource-reservation \
+    --dry-run=client -o yaml | kubectl apply -f -
+fi
 
 echo "Deploying in-cluster chart repo serving $(basename "$CHART_TGZ")..."
 STAGING=$(mktemp -d)

@@ -1,0 +1,27 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+toolkit:
+  env:
+    # Keep the existing kind containerd configuration in one file.
+    - name: RUNTIME_CONFIG_SOURCE
+      value: file
+node-feature-discovery:
+  topologyUpdater:
+    enable: true
+    createCRDs: true
+    kubeletConfigPath: /var/lib/kubelet/config.yaml
+    updateInterval: 3s
+    nodeSelector:
+      mokka.nvidia.com/e2e-gpu: "true"
+    annotations:
+      nvml-mock.nvidia.com/inject: "false"
+    config:
+      # Both managers publish allocations through the real kubelet socket.
+      excludeList: {}
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        memory: 128Mi
