@@ -54,14 +54,14 @@ func DivideHierarchy(total, kValue float64, roots []*Queue) {
 // Divide divides total between queues and returns what is left. Queues keep their existing FairShare and receive
 // their share on top of it.
 func Divide(total, kValue float64, queues []*Queue) (remaining float64) {
-	remaining = setDeserved(total, queues)
+	remaining = setDeservedResource(total, queues)
 	if remaining <= 0 {
 		return 0
 	}
 	return DivideOverQuota(remaining, kValue, queues)
 }
 
-func setDeserved(total float64, queues []*Queue) (remaining float64) {
+func setDeservedResource(total float64, queues []*Queue) (remaining float64) {
 	remaining = total
 	for _, q := range queues {
 		deserved := q.Deserved
@@ -75,46 +75,51 @@ func setDeserved(total float64, queues []*Queue) (remaining float64) {
 	return remaining
 }
 
-type leftover struct {
-	queue  *Queue
-	amount float64
+type remainingRequestedResource struct {
+	queue           *Queue
+	remainingAmount float64
 }
 
 // DivideOverQuota divides total between queues by priority, highest first, and by weight within a priority, without
 // a deserved phase. Fractions left by rounding go one unit at a time, highest priority first.
 func DivideOverQuota(total, kValue float64, queues []*Queue) (remaining float64) {
-	byPriority := map[int][]*Queue{}
-	for _, q := range queues {
-		byPriority[q.Priority] = append(byPriority[q.Priority], q)
-	}
-	priorities := make([]int, 0, len(byPriority))
-	for p := range byPriority {
-		priorities = append(priorities, p)
-	}
-	sort.Sort(sort.Reverse(sort.IntSlice(priorities)))
+	byPriority, priorities := getQueuesByPriority(queues)
 
 	remaining = total
 	for _, p := range priorities {
 		if remaining <= 0 {
 			break
 		}
-		var left map[string]*leftover
-		remaining, left = divideUpToFairShare(remaining, kValue, byPriority[p])
-		if remaining <= 0 || len(left) == 0 {
+		var remainingRequested map[string]*remainingRequestedResource
+		remaining, remainingRequested = divideUpToFairShare(remaining, kValue, byPriority[p])
+		if remaining <= 0 || len(remainingRequested) == 0 {
 			continue
 		}
-		remaining = divideLeftovers(remaining, left)
+		remaining = divideRemainingResource(remaining, remainingRequested)
 	}
 	return remaining
 }
 
-func divideUpToFairShare(total, kValue float64, queues []*Queue) (float64, map[string]*leftover) {
-	left := map[string]*leftover{}
+func getQueuesByPriority(queues []*Queue) (map[int][]*Queue, []int) {
+	queuesByPriority := map[int][]*Queue{}
+	for _, q := range queues {
+		queuesByPriority[q.Priority] = append(queuesByPriority[q.Priority], q)
+	}
+	priorities := make([]int, 0, len(queuesByPriority))
+	for priority := range queuesByPriority {
+		priorities = append(priorities, priority)
+	}
+	sort.Sort(sort.Reverse(sort.IntSlice(priorities)))
+	return queuesByPriority, priorities
+}
+
+func divideUpToFairShare(total, kValue float64, queues []*Queue) (float64, map[string]*remainingRequestedResource) {
+	remainingRequested := map[string]*remainingRequestedResource{}
 	for {
 		anotherRound := false
 		amountThisRound := total
 
-		weights, weightsSum := shareWeights(queues, kValue)
+		weights, weightsSum := calcShareWeights(queues, kValue)
 		if weightsSum == 0 {
 			break
 		}
@@ -122,12 +127,12 @@ func divideUpToFairShare(total, kValue float64, queues []*Queue) (float64, map[s
 			if total == 0 {
 				break
 			}
-			if isSatisfied(q) || q.OverQuotaWeight == 0 {
+			if isQueueSatisfied(q) || q.OverQuotaWeight == 0 {
 				continue
 			}
-			requested := remainingRequested(q)
+			requested := getRemainingRequested(q)
 			fairShare := amountThisRound * weights[q.ID] / weightsSum
-			give := amountToGive(fairShare, requested, q, left)
+			give := getResourceToGiveInCurrentRound(fairShare, requested, q, remainingRequested)
 			if give == 0 {
 				continue
 			}
@@ -140,13 +145,13 @@ func divideUpToFairShare(total, kValue float64, queues []*Queue) (float64, map[s
 			break
 		}
 	}
-	return total, left
+	return total, remainingRequested
 }
 
-func shareWeights(queues []*Queue, kValue float64) (map[string]float64, float64) {
+func calcShareWeights(queues []*Queue, kValue float64) (map[string]float64, float64) {
 	totalWeights := 0.0
 	for _, q := range queues {
-		if remainingRequested(q) > 0 {
+		if getRemainingRequested(q) > 0 {
 			totalWeights += q.OverQuotaWeight
 		}
 	}
@@ -156,7 +161,7 @@ func shareWeights(queues []*Queue, kValue float64) (map[string]float64, float64)
 	weights := map[string]float64{}
 	sum := 0.0
 	for _, q := range queues {
-		if isSatisfied(q) {
+		if isQueueSatisfied(q) {
 			continue
 		}
 		normalized := q.OverQuotaWeight / totalWeights
@@ -167,11 +172,12 @@ func shareWeights(queues []*Queue, kValue float64) (map[string]float64, float64)
 	return weights, sum
 }
 
-// amountToGive hands out whole units when the queue asks for more than its share, keeping the fraction for the
-// leftover round.
-func amountToGive(fairShare, requested float64, q *Queue, left map[string]*leftover) float64 {
+// getResourceToGiveInCurrentRound hands out whole units when the queue asks for more than its share, keeping the
+// fraction for the leftover round.
+func getResourceToGiveInCurrentRound(fairShare, requested float64, q *Queue,
+	remainingRequested map[string]*remainingRequestedResource) float64 {
 	if requested <= fairShare {
-		delete(left, q.ID)
+		delete(remainingRequested, q.ID)
 		return requested
 	}
 	give := 0.0
@@ -179,22 +185,22 @@ func amountToGive(fairShare, requested float64, q *Queue, left map[string]*lefto
 		give = rounded
 	}
 	if fairShare-give > 0 {
-		left[q.ID] = &leftover{queue: q, amount: fairShare - give}
+		remainingRequested[q.ID] = &remainingRequestedResource{queue: q, remainingAmount: fairShare - give}
 	}
 	return give
 }
 
-// divideLeftovers gives at most one unit to each queue, the largest leftover first, then the oldest queue, then by
-// ID, so the result doesn't depend on map order.
-func divideLeftovers(total float64, left map[string]*leftover) float64 {
-	sorted := make([]*leftover, 0, len(left))
-	for _, l := range left {
+// divideRemainingResource gives at most one unit to each queue, the largest leftover first, then the oldest queue,
+// then by ID, so the result doesn't depend on map order.
+func divideRemainingResource(total float64, remainingRequested map[string]*remainingRequestedResource) float64 {
+	sorted := make([]*remainingRequestedResource, 0, len(remainingRequested))
+	for _, l := range remainingRequested {
 		sorted = append(sorted, l)
 	}
 	sort.Slice(sorted, func(i, j int) bool {
 		a, b := sorted[i], sorted[j]
-		if a.amount != b.amount {
-			return a.amount > b.amount
+		if a.remainingAmount != b.remainingAmount {
+			return a.remainingAmount > b.remainingAmount
 		}
 		if !a.queue.CreationTimestamp.Equal(b.queue.CreationTimestamp) {
 			return a.queue.CreationTimestamp.Before(b.queue.CreationTimestamp)
@@ -212,14 +218,14 @@ func divideLeftovers(total float64, left map[string]*leftover) float64 {
 	return total
 }
 
-func isSatisfied(q *Queue) bool {
+func isQueueSatisfied(q *Queue) bool {
 	if q.Request <= q.FairShare {
 		return true
 	}
 	return q.MaxAllowed != Unlimited && q.MaxAllowed <= q.FairShare
 }
 
-func remainingRequested(q *Queue) float64 {
+func getRemainingRequested(q *Queue) float64 {
 	requested := q.RequestableShare()
 	if requested < q.FairShare {
 		return 0
