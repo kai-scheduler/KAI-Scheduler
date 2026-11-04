@@ -30,7 +30,7 @@ func (n *nodeGpuForSharing) GroupIDs() []string {
 }
 
 func AllocateFractionalGPUTaskToNode(ssn *framework.Session, stmt *framework.Statement, pod *pod_info.PodInfo,
-	node *node_info.NodeInfo, isSimulation bool) bool {
+	node *node_info.NodeInfo, isSimulation, mustPipeline bool) bool {
 	fittingGPUs := ssn.FittingGPUs(node, pod)
 	gpuForSharing := GetNodePreferableGpuForSharing(fittingGPUs, node, pod, isSimulation)
 	if gpuForSharing == nil {
@@ -39,8 +39,8 @@ func AllocateFractionalGPUTaskToNode(ssn *framework.Session, stmt *framework.Sta
 
 	pod.SetFractionalGpuGroups(gpuForSharing.FractionalGpuGroups)
 
-	isSimulation = isSimulation || gpuForSharing.IsReleasing
-	success := allocateSharedGPUTask(ssn, stmt, node, pod, isSimulation)
+	pipeline := mustPipeline || gpuForSharing.IsReleasing
+	success := allocateSharedGPUTask(ssn, stmt, node, pod, pipeline, isSimulation)
 	if !success {
 		pod.FractionalGpuGroups = nil
 	}
@@ -105,15 +105,15 @@ func findGpuForSharingOnNode(task *pod_info.PodInfo, node *node_info.NodeInfo, i
 }
 
 func allocateSharedGPUTask(ssn *framework.Session, stmt *framework.Statement, node *node_info.NodeInfo,
-	task *pod_info.PodInfo, isSimulation bool) bool {
-	if isSimulation {
+	task *pod_info.PodInfo, pipeline, canUndoEviction bool) bool {
+	if pipeline {
 		log.InfraLogger.V(6).Do(func() {
 			log.InfraLogger.Infof(
 				"Pipelining Task <%v/%v> to node <%v> gpuGroup: <%v>, requires: <%v, %v mb> GPUs",
 				task.Namespace, task.Name, node.Name,
 				task.GPUGroupIDs(), task.GpuRequirement.GPUs(), task.GpuRequirement.GpuMemory())
 		})
-		if err := stmt.Pipeline(task, node.Name, true); err != nil {
+		if err := stmt.Pipeline(task, node.Name, canUndoEviction); err != nil {
 			log.InfraLogger.V(6).Do(func() {
 				log.InfraLogger.Infof("Failed to pipeline Task: <%s/%s> on Node: <%s>, due to an error: %v",
 					task.Namespace, task.Name, node.Name, err)
