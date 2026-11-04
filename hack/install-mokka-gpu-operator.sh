@@ -16,7 +16,7 @@ fi
 # PR 1109, the memory-limit fix, and opt-in NUMA sysfs/kubelet simulation.
 # Keep this commit pinned until the integration is available in an upstream release.
 : "${MOKKA_REPOSITORY:=https://github.com/JRosenboimNVIDIA/mokka.git}"
-: "${MOKKA_REF:=2ab593fd866e84a24e21a456e901fa9e8eb6292a}"
+: "${MOKKA_REF:=a62adccb7d3334c902c644e89f28950af751b647}"
 : "${MOKKA_IMAGE_REPOSITORY:=mokka-e2e}"
 : "${MOKKA_IMAGE_TAG:=${MOKKA_REF:0:12}}"
 

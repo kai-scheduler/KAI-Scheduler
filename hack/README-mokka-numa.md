@@ -9,10 +9,12 @@ The `numa-full` kind layout has four GPU workers, with eight A100 GPUs each,
 split 4+4 between two zones. Two workers use `single-numa-node`; one uses
 `restricted`; one uses `best-effort`. A CPU worker runs the control services.
 
-Mokka is pinned to `2ab593fd866e84a24e21a456e901fa9e8eb6292a` in the public
+Mokka is pinned to `a62adccb7d3334c902c644e89f28950af751b647` in the public
 `JRosenboimNVIDIA/mokka` fork. It includes Roman's GPU Operator support, the
 memory-limit fix, the current NUMA review changes, and the node-bus fix that lets
-NFD read memory capacity in every simulated zone. Each selected node uses:
+NFD read memory capacity in every simulated zone. It also includes bidirectional
+host mounts, the PodResources socket health check, and preparation owned by the
+NUMA simulator before all staging. Each selected node uses:
 
 ```yaml
 nodeAgent:
