@@ -69,7 +69,6 @@ gocache:
 lint-go: gocache
 	@ ${ECHO_COMMAND} ${GREEN_CONSOLE} "${CONSOLE_PREFIX} Running golangci linter" ${BASE_CONSOLE}
 	${DOCKER_GO_LINTER_COMMAND} golangci-lint run -v -c ${GOLANG_LINTER_CONFIG_PATH} || ${FAILURE_MESSAGE_HANDLER}
-	${DOCKER_GO_LINTER_COMMAND} sh -c "cd pkg/fairshare && golangci-lint run -v -c ../../${GOLANG_LINTER_CONFIG_PATH}" || ${FAILURE_MESSAGE_HANDLER}
 	${SUCCESS_MESSAGE_HANDLER}
 .PHONY: lint-go
 

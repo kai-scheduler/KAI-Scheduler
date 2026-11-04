@@ -15,7 +15,6 @@ envtest-go: envtest
 	mkdir -p coverage
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path --bin-dir $(LOCALBIN))" \
     go test ${TEST_TARGETS} -timeout 30m -coverprofile=coverage/coverage.out || ${FAILURE_MESSAGE_HANDLER}
-	cd pkg/fairshare && go test ./... -coverprofile=../../coverage/fairshare.out || ${FAILURE_MESSAGE_HANDLER}
 	${SUCCESS_MESSAGE_HANDLER}
 
 ENVTEST = $(LOCALBIN)/setup-envtest

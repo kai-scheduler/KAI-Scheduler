@@ -1,5 +1,5 @@
 kind: Added
-body: Fair share division is available as a dependency-free Go module, github.com/kai-scheduler/KAI-scheduler/pkg/fairshare, so external tools can compute the scheduler's fair share without importing the scheduler
+body: Fair share division is available as a dependency-free Go package, github.com/kai-scheduler/KAI-scheduler/pkg/fairshare, so external tools can compute the scheduler's fair share without importing the scheduler
 time: 2026-11-03T17:00:00.000000+02:00
 custom:
     Author: barakle1
