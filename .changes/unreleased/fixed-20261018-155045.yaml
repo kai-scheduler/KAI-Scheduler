@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Preserve allocations until uncertain Binding attempts are excluded by Pod resourceVersion preconditions
+custom:
+  Author: "NVGreg"
+  Issue: "2453"

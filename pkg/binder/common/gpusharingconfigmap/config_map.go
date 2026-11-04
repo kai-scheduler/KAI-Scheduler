@@ -27,6 +27,15 @@ const (
 	configMapNameExtraChars       = configMapNameNumRandomChars + 6
 )
 
+// IsOwnedByPod excludes unowned and shared configuration from allocation-scoped mutations.
+func IsOwnedByPod(configMap *v1.ConfigMap, pod *v1.Pod) bool {
+	if pod.UID == "" || len(configMap.OwnerReferences) != 1 {
+		return false
+	}
+	owner := configMap.OwnerReferences[0]
+	return owner.APIVersion == "v1" && owner.Kind == "Pod" && owner.Name == pod.Name && owner.UID == pod.UID
+}
+
 func UpsertJobConfigMap(ctx context.Context,
 	kubeClient client.Client, pod *v1.Pod, configMapName string, data map[string]string) (err error) {
 	logger := log.FromContext(ctx)
@@ -68,7 +77,7 @@ func UpsertJobConfigMap(ctx context.Context,
 		"namespace", pod.Namespace, "name", pod.Name, "configMapName", desiredConfigMap.Name)
 	err = patchConfigMap(ctx, kubeClient, desiredConfigMap, existingCm)
 	if err != nil {
-		err = fmt.Errorf("failed to patch configmap for pod %s/%s, error: %v", pod.Namespace, pod.Name, err)
+		err = fmt.Errorf("failed to patch configmap for pod %s/%s, error: %w", pod.Namespace, pod.Name, err)
 	}
 	return err
 }
@@ -81,9 +90,14 @@ func patchConfigMap(
 		logger.Info("Going to override configmap, different owner",
 			"namespace", desiredConfigMap.Namespace, "name", desiredConfigMap.Name, "reason", reason)
 
-		err := kubeClient.Patch(ctx, desiredConfigMap, client.MergeFrom(existingConfigMap))
+		updatedConfigMap := existingConfigMap.DeepCopy()
+		updatedConfigMap.OwnerReferences = desiredConfigMap.OwnerReferences
+		updatedConfigMap.Data = desiredConfigMap.Data
+		updatedConfigMap.BinaryData = desiredConfigMap.BinaryData
+		err := kubeClient.Patch(ctx, updatedConfigMap,
+			client.MergeFromWithOptions(existingConfigMap, client.MergeFromWithOptimisticLock{}))
 		if err != nil {
-			return fmt.Errorf("failed to patch existing configmap %s/%s, error: %v",
+			return fmt.Errorf("failed to patch existing configmap %s/%s, error: %w",
 				desiredConfigMap.Namespace, desiredConfigMap.Name, err)
 		}
 	} else {
@@ -99,9 +113,10 @@ func patchConfigMap(
 				updatedConfigMap.Data[k] = v
 			}
 		}
-		err := kubeClient.Patch(ctx, updatedConfigMap, client.MergeFrom(existingConfigMap))
+		err := kubeClient.Patch(ctx, updatedConfigMap,
+			client.MergeFromWithOptions(existingConfigMap, client.MergeFromWithOptimisticLock{}))
 		if err != nil {
-			return fmt.Errorf("failed to patch existing configmap %s/%s, error: %v",
+			return fmt.Errorf("failed to patch existing configmap %s/%s, error: %w",
 				desiredConfigMap.Namespace, desiredConfigMap.Name, err)
 		}
 	}

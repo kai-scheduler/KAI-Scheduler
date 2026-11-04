@@ -38,6 +38,7 @@ var happyFlowObjectsBc = []runtime.Object{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: "my-ns",
 			Name:      "my-pod",
+			UID:       "my-pod-uid",
 			Annotations: map[string]string{
 				gpuSharingConfigMapAnnotation: "my-configmap-shared-gpu",
 			},
@@ -89,6 +90,7 @@ var happyFlowObjects = []runtime.Object{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: "my-ns",
 			Name:      "my-pod",
+			UID:       "my-pod-uid",
 			Annotations: map[string]string{
 				gpuSharingConfigMapAnnotation: "my-configmap-shared-gpu",
 			},
@@ -185,7 +187,7 @@ var _ = Describe("FractionBinder", func() {
 				bindingGpuSharingPlugin := bindinggpusharing.New(fakeClient, false, false)
 				binderPlugins.RegisterPlugin(bindingGpuSharingPlugin)
 
-				testedBinder := NewBinder(fakeClient, rrs, binderPlugins)
+				testedBinder := NewBinder(fakeClient, nil, rrs, binderPlugins)
 
 				pod := testData.kubeObjects[0].(*v1.Pod)
 
@@ -250,7 +252,7 @@ var _ = Describe("FractionBinder", func() {
 		bindingGpuSharingPlugin := bindinggpusharing.New(fakeClient, false, false)
 		binderPlugins.RegisterPlugin(bindingGpuSharingPlugin)
 
-		testedBinder := NewBinder(fakeClient, rrs, binderPlugins)
+		testedBinder := NewBinder(fakeClient, nil, rrs, binderPlugins)
 
 		pod := happyFlowObjects[0].(*v1.Pod)
 
