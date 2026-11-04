@@ -84,12 +84,23 @@ func (s *Scaler) DeleteScalingPod(scalingPod *corev1.Pod) error {
 	return nil
 }
 
-func (s *Scaler) IsScalingPodExistsForUnschedulablePod(unschedulablePod *corev1.Pod) bool {
+func (s *Scaler) IsScalingPodExistsForUnschedulablePod(unschedulablePod *corev1.Pod) (bool, error) {
 	podName := scalingPodName(unschedulablePod.Namespace, unschedulablePod.Name)
 	key := types.NamespacedName{Namespace: s.namespace, Name: podName}
 	pod := &corev1.Pod{}
 	err := s.client.Get(context.TODO(), key, pod)
-	return err == nil
+	if errors.IsNotFound(err) {
+		key.Name = fmt.Sprintf("%s-%s", unschedulablePod.Namespace, unschedulablePod.Name)
+		err = s.client.Get(context.TODO(), key, pod)
+	}
+	if errors.IsNotFound(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return pod.Labels[consts.SharedGpuPodName] == unschedulablePod.Name &&
+		pod.Labels[consts.SharedGpuPodNamespace] == unschedulablePod.Namespace, nil
 }
 
 func (s *Scaler) IsScalingPodStillNeeded(scalingPod *corev1.Pod) bool {

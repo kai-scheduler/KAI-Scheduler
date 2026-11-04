@@ -45,6 +45,9 @@ func TestScaleAdjuster(t *testing.T) {
 }
 
 var _ = Describe("Scale Adjuster Test Suite", func() {
+	legacyScalingPod := testutils.CreateScalingPod("team", "train-worker", 1)
+	legacyScalingPod.Name = "team-train-worker"
+
 	var numInterceptedCalls int
 	BeforeEach(func() {
 		numInterceptedCalls = 0
@@ -128,17 +131,76 @@ var _ = Describe("Scale Adjuster Test Suite", func() {
 					},
 					{
 						namespace:  testutils.ScalingPodNamespace,
-						name:       "ns1-pod1",
+						name:       "scaling.ns1.pod1",
 						numDevices: ptr.To(int64(1)),
 					},
 					{
 						namespace:  testutils.ScalingPodNamespace,
-						name:       "ns2-pod2",
+						name:       "scaling.ns2.pod2",
 						numDevices: ptr.To(int64(1)),
 					},
 				},
 				wantErr:      false,
 				isInCoolDown: false,
+			},
+		),
+		Entry(
+			"pods with colliding names - create the missing scaling pod",
+			testData{
+				unschedulablePods: []*corev1.Pod{
+					testutils.CreateUnschedulableFractionPod("train-worker", "team", "0.7", 1),
+					testutils.CreateUnschedulableFractionPod("worker", "team-train", "0.7", 2),
+				},
+				scalingPods: []*corev1.Pod{
+					legacyScalingPod,
+				},
+				remainingPods: []remainingPod{
+					{
+						namespace: "team",
+						name:      "train-worker",
+					},
+					{
+						namespace: "team-train",
+						name:      "worker",
+					},
+					{
+						namespace:  testutils.ScalingPodNamespace,
+						name:       "team-train-worker",
+						numDevices: ptr.To(int64(1)),
+					},
+					{
+						namespace:  testutils.ScalingPodNamespace,
+						name:       "scaling.team-train.worker",
+						numDevices: ptr.To(int64(2)),
+					},
+				},
+			},
+		),
+		Entry(
+			"legacy scaling pod lookup fails - continue with other pods",
+			testData{
+				unschedulablePods: []*corev1.Pod{
+					testutils.CreateUnschedulableFractionPod("train-worker", "team", "0.7", 1),
+					testutils.CreateUnschedulableFractionPod("worker", "team-train", "0.7", 2),
+				},
+				scalingPods: []*corev1.Pod{legacyScalingPod},
+				remainingPods: []remainingPod{
+					{namespace: "team", name: "train-worker"},
+					{namespace: "team-train", name: "worker"},
+					{namespace: testutils.ScalingPodNamespace, name: "team-train-worker", numDevices: ptr.To(int64(1))},
+					{namespace: testutils.ScalingPodNamespace, name: "scaling.team-train.worker", numDevices: ptr.To(int64(2))},
+				},
+				interceptFuncs: &interceptor.Funcs{
+					Get: func(ctx context.Context, client runtimeClient.WithWatch, key runtimeClient.ObjectKey,
+						obj runtimeClient.Object, opts ...runtimeClient.GetOption) error {
+						if key.Namespace == testutils.ScalingPodNamespace && key.Name == "team-train-worker" && numInterceptedCalls == 0 {
+							numInterceptedCalls++
+							return fmt.Errorf("failed to get legacy scaling pod")
+						}
+						return client.Get(ctx, key, obj, opts...)
+					},
+				},
+				wantErr: false,
 			},
 		),
 		Entry(
@@ -158,7 +220,7 @@ var _ = Describe("Scale Adjuster Test Suite", func() {
 					},
 					{
 						namespace:  testutils.ScalingPodNamespace,
-						name:       "ns1-pod1",
+						name:       "scaling.ns1.pod1",
 						numDevices: ptr.To(int64(1)),
 					},
 				},
@@ -180,7 +242,7 @@ var _ = Describe("Scale Adjuster Test Suite", func() {
 					},
 					{
 						namespace:  testutils.ScalingPodNamespace,
-						name:       "ns1-pod1",
+						name:       "scaling.ns1.pod1",
 						numDevices: ptr.To(int64(1)),
 					},
 				},
@@ -202,7 +264,7 @@ var _ = Describe("Scale Adjuster Test Suite", func() {
 					},
 					{
 						namespace:  testutils.ScalingPodNamespace,
-						name:       "ns1-pod1",
+						name:       "scaling.ns1.pod1",
 						numDevices: ptr.To(int64(1)),
 					},
 				},
@@ -229,7 +291,7 @@ var _ = Describe("Scale Adjuster Test Suite", func() {
 					},
 					{
 						namespace:  testutils.ScalingPodNamespace,
-						name:       "ns1-pod1",
+						name:       "scaling.ns1.pod1",
 						numDevices: ptr.To(int64(1)),
 					},
 				},
@@ -256,12 +318,12 @@ var _ = Describe("Scale Adjuster Test Suite", func() {
 					},
 					{
 						namespace:  testutils.ScalingPodNamespace,
-						name:       "ns1-pod1",
+						name:       "scaling.ns1.pod1",
 						numDevices: ptr.To(int64(1)),
 					},
 					{
 						namespace:  testutils.ScalingPodNamespace,
-						name:       "ns2-pod2",
+						name:       "scaling.ns2.pod2",
 						numDevices: ptr.To(int64(1)),
 					},
 				},
@@ -290,12 +352,12 @@ var _ = Describe("Scale Adjuster Test Suite", func() {
 					},
 					{
 						namespace:  testutils.ScalingPodNamespace,
-						name:       "ns1-pod1",
+						name:       "scaling.ns1.pod1",
 						numDevices: ptr.To(int64(1)),
 					},
 					{
 						namespace:  testutils.ScalingPodNamespace,
-						name:       "ns2-pod2",
+						name:       "scaling.ns2.pod2",
 						numDevices: ptr.To(int64(1)),
 					},
 				},
@@ -317,7 +379,7 @@ var _ = Describe("Scale Adjuster Test Suite", func() {
 					},
 					{
 						namespace:  testutils.ScalingPodNamespace,
-						name:       "ns1-pod1",
+						name:       "scaling.ns1.pod1",
 						numDevices: ptr.To(int64(2)),
 					},
 				},
@@ -339,7 +401,7 @@ var _ = Describe("Scale Adjuster Test Suite", func() {
 					},
 					{
 						namespace:  testutils.ScalingPodNamespace,
-						name:       "ns1-pod1",
+						name:       "scaling.ns1.pod1",
 						numDevices: ptr.To(int64(2)),
 					},
 				},
@@ -366,7 +428,7 @@ var _ = Describe("Scale Adjuster Test Suite", func() {
 					},
 					{
 						namespace:  testutils.ScalingPodNamespace,
-						name:       "ns1-pod1",
+						name:       "scaling.ns1.pod1",
 						numDevices: ptr.To(int64(2)),
 					},
 				},
@@ -393,7 +455,7 @@ var _ = Describe("Scale Adjuster Test Suite", func() {
 					},
 					{
 						namespace:  testutils.ScalingPodNamespace,
-						name:       "ns1-pod1",
+						name:       "scaling.ns1.pod1",
 						numDevices: ptr.To(int64(2)),
 					},
 				},
@@ -420,12 +482,12 @@ var _ = Describe("Scale Adjuster Test Suite", func() {
 					},
 					{
 						namespace:  testutils.ScalingPodNamespace,
-						name:       "ns1-pod1",
+						name:       "scaling.ns1.pod1",
 						numDevices: ptr.To(int64(2)),
 					},
 					{
 						namespace:  testutils.ScalingPodNamespace,
-						name:       "ns2-pod2",
+						name:       "scaling.ns2.pod2",
 						numDevices: ptr.To(int64(2)),
 					},
 				},
@@ -452,12 +514,12 @@ var _ = Describe("Scale Adjuster Test Suite", func() {
 					},
 					{
 						namespace:  testutils.ScalingPodNamespace,
-						name:       "ns1-pod1",
+						name:       "scaling.ns1.pod1",
 						numDevices: ptr.To(int64(2)),
 					},
 					{
 						namespace:  testutils.ScalingPodNamespace,
-						name:       "ns2-pod2",
+						name:       "scaling.ns2.pod2",
 						numDevices: ptr.To(int64(3)),
 					},
 				},
@@ -510,12 +572,12 @@ var _ = Describe("Scale Adjuster Test Suite", func() {
 					},
 					{
 						namespace:  testutils.ScalingPodNamespace,
-						name:       "ns1-pod1",
+						name:       "scaling.ns1.pod1",
 						numDevices: ptr.To(int64(1)),
 					},
 					{
 						namespace:  testutils.ScalingPodNamespace,
-						name:       "ns2-pod2",
+						name:       "scaling.ns2.pod2",
 						numDevices: ptr.To(int64(1)),
 					},
 				},
@@ -551,12 +613,12 @@ var _ = Describe("Scale Adjuster Test Suite", func() {
 					},
 					{
 						namespace:  testutils.ScalingPodNamespace,
-						name:       "ns1-pod1",
+						name:       "scaling.ns1.pod1",
 						numDevices: ptr.To(int64(1)),
 					},
 					{
 						namespace:  testutils.ScalingPodNamespace,
-						name:       "ns2-pod2",
+						name:       "scaling.ns2.pod2",
 						numDevices: ptr.To(int64(1)),
 					},
 				},
@@ -575,7 +637,7 @@ var _ = Describe("Scale Adjuster Test Suite", func() {
 				remainingPods: []remainingPod{
 					{
 						namespace:  testutils.ScalingPodNamespace,
-						name:       "ns1-pod1",
+						name:       "scaling.ns1.pod1",
 						numDevices: ptr.To(int64(1)),
 					},
 				},
@@ -603,7 +665,7 @@ var _ = Describe("Scale Adjuster Test Suite", func() {
 				remainingPods: []remainingPod{
 					{
 						namespace:  testutils.ScalingPodNamespace,
-						name:       "ns1-pod1",
+						name:       "scaling.ns1.pod1",
 						numDevices: ptr.To(int64(1)),
 					},
 				},
@@ -724,7 +786,7 @@ var _ = Describe("Scale Adjuster Test Suite", func() {
 					},
 					{
 						namespace: testutils.ScalingPodNamespace,
-						name:      "ns2-pod2",
+						name:      "scaling.ns2.pod2",
 					},
 				},
 				wantErr:      false,
@@ -847,7 +909,7 @@ var _ = Describe("Scale Adjuster Test Suite", func() {
 					},
 					{
 						namespace: testutils.ScalingPodNamespace,
-						name:      "ns2-pod2",
+						name:      "scaling.ns2.pod2",
 					},
 				},
 				wantErr:      false,
