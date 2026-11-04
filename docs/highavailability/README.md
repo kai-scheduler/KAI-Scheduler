@@ -31,3 +31,4 @@ In order to spread replicas of each individual service across cluster nodes, set
 --set global.requireDefaultPodAntiAffinityTerm=true
 ```
 This will add a required podAntiAffinityTerm to all deployments, requiring the scheduler to not place multiple pods of the same service on the same node.
+Make sure each service has more eligible nodes than replicas, so that rolling updates can place the new pods.

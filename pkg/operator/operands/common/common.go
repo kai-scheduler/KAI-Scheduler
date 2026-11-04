@@ -414,12 +414,13 @@ func MergeAffinities(localAffinity *v1.Affinity,
 	globalAffinity *v1.Affinity,
 	podAntiAffinityLabel map[string]string,
 	requireDefaultPodAntiAffinityTerm bool) *v1.Affinity {
+	// Unset affinities are merged as empty ones so the default podAntiAffinity term is still added.
 	if localAffinity == nil {
-		return globalAffinity
+		localAffinity = &v1.Affinity{}
 	}
 
 	if globalAffinity == nil {
-		return localAffinity
+		globalAffinity = &v1.Affinity{}
 	}
 
 	affinity := &v1.Affinity{}
