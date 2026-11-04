@@ -30,13 +30,20 @@ var futurePlugins = map[string]bool{"predicates": true, "dynamicresources": true
 
 // futureSession is a disposable copy of the session's cluster without the pods that are releasing:
 // those that were terminating when the session opened and those this session evicted. Predicates
-// run on the copy, so the live session is never changed by the check. Any allocate or deallocate
-// event on the live session marks the copy stale, and the next check rebuilds it.
+// run on the copy, so the live session is never changed by the check. The copy follows the live
+// session's allocate and deallocate events: the next check re-copies the nodes they touched, or
+// rebuilds the whole copy when DRA claims changed.
 type futureSession struct {
 	ssn        *Session
 	lister     *cache.K8sClusterPodAffinityInfo
 	k8sPlugins *k8splugins.K8sPlugins
-	stale      bool
+	dirtyNodes map[string]bool
+	rebuild    bool
+	// version changes whenever the copy does; the prefilter result is kept per task and version.
+	version         int
+	prefilteredTask common_info.PodID
+	prefilterResult error
+	prefilterOf     int
 
 	terminatingByNode       map[string]bool
 	hasRequiredAntiAffinity bool
@@ -64,7 +71,7 @@ func (ssn *Session) future() *futureSession {
 }
 
 func (ssn *Session) newFutureSession() *futureSession {
-	f := &futureSession{terminatingByNode: map[string]bool{}, stale: true}
+	f := &futureSession{terminatingByNode: map[string]bool{}, dirtyNodes: map[string]bool{}, rebuild: true}
 	for _, node := range ssn.ClusterInfo.Nodes {
 		for _, task := range node.PodInfos {
 			if !isTerminating(task) {
@@ -88,16 +95,27 @@ func (ssn *Session) newFutureSession() *futureSession {
 	if livePlugins := ssn.InternalK8sPlugins(); livePlugins != nil {
 		f.k8sPlugins = livePlugins.WithNodeInfoLister(f.lister)
 	}
-	markStale := func(*Event) { f.stale = true }
-	ssn.AddEventHandler(&EventHandler{AllocateFunc: markStale, DeallocateFunc: markStale})
+	markChanged := func(event *Event) {
+		if UsesDRA(event.Task) {
+			f.rebuild = true
+		}
+		f.dirtyNodes[event.Task.NodeName] = true
+	}
+	ssn.AddEventHandler(&EventHandler{AllocateFunc: markChanged, DeallocateFunc: markChanged})
 	return f
 }
 
-// session returns the copy, rebuilding it if the live session changed since it was built.
+// session returns the copy, brought up to date with the live session.
 func (f *futureSession) session(live *Session) *Session {
-	if !f.stale {
+	if !f.rebuild {
+		if len(f.dirtyNodes) > 0 {
+			f.refreshNodes(live)
+			f.version++
+		}
 		return f.ssn
 	}
+	clear(f.dirtyNodes)
+	f.version++
 	*f.lister = *cache.NewK8sClusterPodAffinityInfo()
 	clusterInfo := *live.ClusterInfo
 	clusterInfo.Nodes = make(map[string]*node_info.NodeInfo, len(live.ClusterInfo.Nodes))
@@ -129,8 +147,24 @@ func (f *futureSession) session(live *Session) *Session {
 			}
 		}
 	}
-	f.stale = false
+	f.rebuild = false
 	return f.ssn
+}
+
+// refreshNodes re-copies the nodes the live session changed and re-indexes the others as they are.
+func (f *futureSession) refreshNodes(live *Session) {
+	*f.lister = *cache.NewK8sClusterPodAffinityInfo()
+	nodes := f.ssn.ClusterInfo.Nodes
+	for name, liveNode := range live.ClusterInfo.Nodes {
+		if f.dirtyNodes[name] {
+			nodes[name] = futureNode(liveNode, f.lister)
+			continue
+		}
+		affinityInfo := nodes[name].PodAffinityInfo.(*cluster_info.K8sNodePodAffinityInfo)
+		f.lister.AddNode(name, affinityInfo.NodeInfo)
+		f.lister.UpdateNodeAffinity(affinityInfo)
+	}
+	clear(f.dirtyNodes)
 }
 
 // futureNode shares the live node's resource accounting, which already treats releasing resources
@@ -206,7 +240,7 @@ func (ssn *Session) fitsInFuture(
 	}
 	future := f.session(ssn)
 	futureNode := future.ClusterInfo.Nodes[node.Name]
-	if err := future.PrePredicateFn(task, job); err != nil {
+	if err := f.prePredicate(future, task, job); err != nil {
 		return err
 	}
 	if err := future.PredicateFn(task, job, futureNode); err != nil {
@@ -217,6 +251,15 @@ func (ssn *Session) fitsInFuture(
 			fmt.Sprintf("node does not have enough capacity. Reason: %s, Details: %s", result.Reason, result.Message))
 	}
 	return nil
+}
+
+// prePredicate runs the task's prefilter on the copy once per version of the copy, not per node.
+func (f *futureSession) prePredicate(future *Session, task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo) error {
+	if f.prefilteredTask != task.UID || f.prefilterOf != f.version {
+		f.prefilterResult = future.PrePredicateFn(task, job)
+		f.prefilteredTask, f.prefilterOf = task.UID, f.version
+	}
+	return f.prefilterResult
 }
 
 // canChange reports whether removing the terminating pods can change the task's predicates on the
