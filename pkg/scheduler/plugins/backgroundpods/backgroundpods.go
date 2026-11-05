@@ -152,7 +152,7 @@ func (p *backgroundPodsPlugin) canRestore(
 		return false
 	}
 
-	if err := ssn.PredicateFn(podInfo, job, node); err != nil {
+	if err := ssn.PredicateFn(podInfo, job, node, ssn.CurrentClusterView()); err != nil {
 		log.InfraLogger.V(5).Infof("Background pod <%s/%s> no longer fits node <%s>, not restoring: %v",
 			podInfo.Namespace, podInfo.Name, node.Name, err)
 		return false

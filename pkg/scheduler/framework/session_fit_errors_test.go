@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -30,6 +31,7 @@ func TestFittingNodeAggregatesCompactReasonCounts(t *testing.T) {
 		task *pod_info.PodInfo,
 		_ *podgroup_info.PodGroupInfo,
 		node *node_info.NodeInfo,
+		_ api.ClusterView,
 	) error {
 		if node.Name == "node-a" {
 			return common_info.NewFitError(task.Name, task.Namespace, node.Name, "NodeAffinityMismatch")
@@ -38,7 +40,8 @@ func TestFittingNodeAggregatesCompactReasonCounts(t *testing.T) {
 	})
 
 	for _, nodeName := range []string{"node-a", "node-b"} {
-		require.False(t, ssn.FittingNode(task, ssn.ClusterInfo.Nodes[nodeName], true))
+		fits, _ := ssn.FittingNode(task, ssn.ClusterInfo.Nodes[nodeName], false)
+		require.False(t, fits)
 	}
 
 	fitErrors := job.TasksFitErrors[task.UID]
@@ -54,6 +57,7 @@ func TestRecomputeDetailedFitErrorsRunsPredicatesForEveryNode(t *testing.T) {
 		task *pod_info.PodInfo,
 		_ *podgroup_info.PodGroupInfo,
 		node *node_info.NodeInfo,
+		_ api.ClusterView,
 	) error {
 		if node.Name == "node-a" {
 			return common_info.NewFitErrorWithDetailedMessage(
@@ -83,7 +87,7 @@ func TestRecomputeDetailedFitErrorsStopsAtPrePredicate(t *testing.T) {
 		return &common_info.NotFoundError{Name: "missing-pvc"}
 	})
 	predicateCalls := 0
-	ssn.AddPredicateFn(func(*pod_info.PodInfo, *podgroup_info.PodGroupInfo, *node_info.NodeInfo) error {
+	ssn.AddPredicateFn(func(*pod_info.PodInfo, *podgroup_info.PodGroupInfo, *node_info.NodeInfo, api.ClusterView) error {
 		predicateCalls++
 		return nil
 	})
@@ -99,7 +103,8 @@ func TestRecomputeDetailedFitErrorsBuildsCurrentResourceDetails(t *testing.T) {
 	for _, node := range ssn.ClusterInfo.Nodes {
 		node.IdleVector.Set(resource_info.GPUIndex, 0)
 		node.UsedVector.Set(resource_info.GPUIndex, 1)
-		require.False(t, ssn.FittingNode(task, node, true))
+		fits, _ := ssn.FittingNode(task, node, false)
+		require.False(t, fits)
 
 		node.IdleVector.Set(resource_info.GPUIndex, 0.5)
 		node.UsedVector.Set(resource_info.GPUIndex, 0.5)
@@ -123,6 +128,7 @@ func TestRecomputeDetailedFitErrorsSkipsTypedNilFitError(t *testing.T) {
 		task *pod_info.PodInfo,
 		_ *podgroup_info.PodGroupInfo,
 		node *node_info.NodeInfo,
+		_ api.ClusterView,
 	) error {
 		if node.Name == "node-a" {
 			return common_info.NewFitError(task.Name, task.Namespace, node.Name, "NodeAffinityMismatch")

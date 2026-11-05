@@ -49,7 +49,7 @@ func emptyPredicatePreFilter(predicateName string) k8s_internal.FitPredicatePreF
 }
 
 func emptyPredicateFilter(predicateName string) k8s_internal.FitPredicateFilter {
-	return func(pod *v1.Pod, nodeInfo *k8sframework.NodeInfo) (bool, []string, error) {
+	return func(_ k8s_internal.SessionState, pod *v1.Pod, nodeInfo *k8sframework.NodeInfo) (bool, []string, error) {
 		log.InfraLogger.V(6).Do(func() {
 			log.InfraLogger.Infof(
 				"Checking pod %s/%s on node %s with failed predicate: %s",
@@ -82,7 +82,7 @@ func NewSessionPredicates(ssn *framework.Session) k8s_internal.SessionPredicates
 			IsPreFilterRequired: predicateRequired,
 			PreFilter:           k8s_internal.FitPrePredicateConverter(ssn, ssn, plugin.(*nodeports.NodePorts)),
 			IsFilterRequired:    predicateRequired,
-			Filter:              k8s_internal.FitPredicateConverter(ssn, plugin.(*nodeports.NodePorts)),
+			Filter:              k8s_internal.FitPredicateConverter(plugin.(*nodeports.NodePorts)),
 		}
 	}
 
@@ -94,7 +94,7 @@ func NewSessionPredicates(ssn *framework.Session) k8s_internal.SessionPredicates
 			IsPreFilterRequired: predicateNotRequired,
 			PreFilter:           nil,
 			IsFilterRequired:    predicateRequired,
-			Filter:              k8s_internal.FitPredicateConverter(ssn, plugin.(*tainttoleration.TaintToleration)),
+			Filter:              k8s_internal.FitPredicateConverter(plugin.(*tainttoleration.TaintToleration)),
 		}
 	}
 
@@ -106,7 +106,7 @@ func NewSessionPredicates(ssn *framework.Session) k8s_internal.SessionPredicates
 			IsPreFilterRequired: predicateRequired,
 			PreFilter:           k8s_internal.FitPrePredicateConverter(ssn, ssn, plugin.(*nodeaffinity.NodeAffinity)),
 			IsFilterRequired:    predicateRequired,
-			Filter:              k8s_internal.FitPredicateConverter(ssn, plugin.(*nodeaffinity.NodeAffinity)),
+			Filter:              k8s_internal.FitPredicateConverter(plugin.(*nodeaffinity.NodeAffinity)),
 		}
 	}
 
@@ -118,7 +118,7 @@ func NewSessionPredicates(ssn *framework.Session) k8s_internal.SessionPredicates
 			IsPreFilterRequired: predicateRequired,
 			PreFilter:           k8s_internal.FitPrePredicateConverter(ssn, ssn, plugin.(*interpodaffinity.InterPodAffinity)),
 			IsFilterRequired:    predicateRequired,
-			Filter:              k8s_internal.FitPredicateConverter(ssn, plugin.(*interpodaffinity.InterPodAffinity)),
+			Filter:              k8s_internal.FitPredicateConverter(plugin.(*interpodaffinity.InterPodAffinity)),
 		}
 	}
 
@@ -130,7 +130,7 @@ func NewSessionPredicates(ssn *framework.Session) k8s_internal.SessionPredicates
 			IsPreFilterRequired: predicateRequired,
 			PreFilter:           k8s_internal.FitPrePredicateConverter(ssn, ssn, plugin.(*volumebinding.VolumeBinding)),
 			IsFilterRequired:    predicateRequired,
-			Filter:              NewVolumeBindingFilter(ssn, plugin, ssn.ScheduleCSIStorage()),
+			Filter:              NewVolumeBindingFilter(plugin, ssn.ScheduleCSIStorage()),
 		}
 	}
 

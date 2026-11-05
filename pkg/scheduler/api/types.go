@@ -33,8 +33,8 @@ import (
 type SubsetNodesFn func(podGroup *podgroup_info.PodGroupInfo, subGroup *subgroup_info.SubGroupInfo,
 	podSets map[string]*subgroup_info.PodSet, tasks []*pod_info.PodInfo, nodeSet node_info.NodeSet) ([]node_info.NodeSet, error)
 
-// PredicateFn is used to predicate node for task.
-type PredicateFn func(*pod_info.PodInfo, *podgroup_info.PodGroupInfo, *node_info.NodeInfo) error
+// PredicateFn is used to predicate node for task, reading cluster state from the given view.
+type PredicateFn func(*pod_info.PodInfo, *podgroup_info.PodGroupInfo, *node_info.NodeInfo, ClusterView) error
 
 // PrePredicateFn is used to prepare for predicate on pod.
 type PrePredicateFn func(*pod_info.PodInfo, *podgroup_info.PodGroupInfo) error

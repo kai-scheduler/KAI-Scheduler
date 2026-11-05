@@ -105,9 +105,9 @@ func TestDelayedBindMemoryGroupRestrictsNextPod(t *testing.T) {
 	first.NUMAPlacement = placement
 	pp.allocate(&framework.Event{Task: first})
 	second := memoryTestTask("second", "40Gi")
-	assert.Error(t, pp.predicate(second, nil, node))
+	assert.Error(t, pp.predicate(second, nil, node, nil))
 	pp.deallocate(&framework.Event{Task: first})
-	assert.NoError(t, pp.predicate(second, nil, node))
+	assert.NoError(t, pp.predicate(second, nil, node, nil))
 
 	first.Status = pod_status.Binding
 	first.Pod.Spec.NodeName = ""
@@ -116,7 +116,7 @@ func TestDelayedBindMemoryGroupRestrictsNextPod(t *testing.T) {
 		bindrequest_info.NewKeyFromPod(first.Pod): {BindRequest: &schedulingv1alpha2.BindRequest{Spec: schedulingv1alpha2.BindRequestSpec{PredictedNUMAMemoryGroups: memoryRecord("120Gi", "node-0", "node-1")}}},
 	}
 	pp.seedMemoryGroups(session)
-	assert.Error(t, pp.predicate(second, nil, node), "a delayed bind remains an owner in the next cycle")
+	assert.Error(t, pp.predicate(second, nil, node, nil), "a delayed bind remains an owner in the next cycle")
 }
 
 func TestMemoryOwnersRetainedAndLastOwnerRemoved(t *testing.T) {
@@ -159,7 +159,7 @@ func TestSeedMemoryPlacementRestoresCanonicalGroups(t *testing.T) {
 	plugin.seedMemoryGroups(session)
 	require.Len(t, owner.NUMAPlacement.MemoryGroups, 1)
 	require.True(t, clone.NUMAPlacement.Equal(owner.NUMAPlacement))
-	require.NoError(t, plugin.predicate(memoryTestTask("next", "1Gi"), nil, node))
+	require.NoError(t, plugin.predicate(memoryTestTask("next", "1Gi"), nil, node, nil))
 	before := node.NumaTopology.MemoryGroups.Clone()
 	plugin.deallocate(&framework.Event{Task: owner})
 	require.Empty(t, node.NumaTopology.MemoryGroups.Groups)
