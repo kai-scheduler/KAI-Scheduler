@@ -27,8 +27,8 @@ Read the file for your task before starting; load only what you need.
 | If you are... | Read |
 |---|---|
 | Writing or testing Go code (style, commands, logging) | [CONTRIBUTING.md](CONTRIBUTING.md) |
-| Opening or triaging an issue | [ISSUES.md](ISSUES.md) |
-| Opening a PR, adding a changelog fragment | [PR.md](PR.md) |
+| Opening or triaging an issue | [ISSUES.md](docs/contributing/ISSUES.md) |
+| Opening a PR, adding a changelog fragment | [PR.md](docs/contributing/PR.md) |
 | Editing `pkg/scheduler` (plugins, actions, hot path) | [pkg/scheduler/README.md](pkg/scheduler/README.md) |
 | Editing `test/` or writing e2e tests | [test/README.md](test/README.md) |
 | Editing `pkg/operator` | [docs/developer/operator.md](docs/developer/operator.md) |

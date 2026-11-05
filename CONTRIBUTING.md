@@ -21,7 +21,7 @@ We recommend reviewing these documents to understand the system architecture bef
 
 ## How to Contribute
 ### Reporting Issues
-Open an issue with a clear description, steps to reproduce, and relevant environment details. See [ISSUES.md](ISSUES.md) for what to include in bug reports and feature requests.
+Open an issue with a clear description, steps to reproduce, and relevant environment details. See [ISSUES.md](docs/contributing/ISSUES.md) for what to include in bug reports and feature requests.
 
 ### Improving Documentation
 Help us keep the docs clear and useful by fixing typos, updating outdated information, or adding examples.

@@ -2,7 +2,7 @@
 
 Open an issue before a PR for features, behavior or API changes and non-trivial fixes, so maintainers can confirm the direction. Typos, docs and trivial fixes do not need one. Search existing issues first.
 
-Use one of the [issue templates](.github/ISSUE_TEMPLATE/).
+Use one of the [issue templates](../../.github/ISSUE_TEMPLATE/).
 
 ## Bug
 
