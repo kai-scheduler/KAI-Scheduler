@@ -98,6 +98,7 @@ func TestBindApplyResourceReceivedType(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: "my-ns",
 			Name:      "my-pod",
+			UID:       "my-pod-uid",
 			Annotations: map[string]string{
 				gpuSharingConfigMapAnnotation: "my-config",
 			},
