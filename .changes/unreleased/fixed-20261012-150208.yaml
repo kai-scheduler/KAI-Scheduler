@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Persist consecutive binder failures so retry budgets are exhausted and failure reasons stay current
+custom:
+  Author: "NVGreg"
+  Issue: "2358"
