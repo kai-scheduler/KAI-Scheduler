@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Add delete-protection finalizer to standalone DRA ResourceClaims so preempted devices are released
+custom:
+  Author: "gaoyk19"
+  Issue: "2582"
