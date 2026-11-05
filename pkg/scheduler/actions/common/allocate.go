@@ -210,11 +210,11 @@ func allocateTask(ssn *framework.Session, stmt *framework.Statement, nodes []*no
 
 func allocateTaskToNode(ssn *framework.Session, stmt *framework.Statement, task *pod_info.PodInfo, node *node_info.NodeInfo,
 	isSimulation, mustPipeline bool) bool {
-	if !mustPipeline || !framework.UsesDRA(task) {
+	if !mustPipeline {
 		return placeTaskOnNode(ssn, stmt, task, node, isSimulation, mustPipeline)
 	}
-	// DRA allocates the task's claims when it is pipelined; let it take the devices the terminating
-	// pods will release.
+	// The fit may rely on what the terminating pods release (NUMA zones, DRA devices), so place the
+	// task in the same view the fit was checked in.
 	var success bool
 	ssn.WithoutTerminatingPods(task, node, func() {
 		success = placeTaskOnNode(ssn, stmt, task, node, isSimulation, mustPipeline)

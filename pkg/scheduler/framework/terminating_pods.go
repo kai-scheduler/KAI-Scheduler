@@ -98,7 +98,7 @@ func (t *terminatingPods) mayChangeAffinity(pod *v1.Pod) bool {
 // affinity looks past the node too, but its filter reads only the prefilter counts.
 func (ssn *Session) terminatingPodsFor(task *pod_info.PodInfo, node *node_info.NodeInfo) []*pod_info.PodInfo {
 	t := ssn.terminating()
-	if t.hasSharedDevicePool && UsesDRA(task) {
+	if t.hasSharedDevicePool && usesDRA(task) {
 		return t.all
 	}
 	return t.byNode[node.Name]
@@ -204,7 +204,7 @@ func requiredAffinityTerms(pod *v1.Pod) []v1.PodAffinityTerm {
 	return pod.Spec.Affinity.PodAffinity.RequiredDuringSchedulingIgnoredDuringExecution
 }
 
-// UsesDRA reports whether the task needs DRA devices.
-func UsesDRA(task *pod_info.PodInfo) bool {
+// usesDRA reports whether the task needs DRA devices.
+func usesDRA(task *pod_info.PodInfo) bool {
 	return len(task.Pod.Spec.ResourceClaims) > 0 || task.ExtendedResourceClaim != nil
 }
