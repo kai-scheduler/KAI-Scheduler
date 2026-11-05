@@ -17,7 +17,7 @@ import (
 	"k8s.io/utils/ptr"
 )
 
-func TestSessionClaimTrackerDeviceHolders(t *testing.T) {
+func TestSessionClaimTrackerKeepsSharedDevices(t *testing.T) {
 	device := structured.MakeDeviceID("driver", "node0", "0")
 	allocation := func(adminAccess bool) *resourceapi.AllocationResult {
 		return &resourceapi.AllocationResult{
@@ -34,12 +34,10 @@ func TestSessionClaimTrackerDeviceHolders(t *testing.T) {
 			Status:     resourceapi.ResourceClaimStatus{Allocation: allocation},
 		}
 	}
-	holderNames := func(tracker *SessionClaimTracker) []string {
-		var names []string
-		for _, holder := range tracker.DeviceHolders(device) {
-			names = append(names, holder.Claim.Name)
-		}
-		return names
+	isAllocated := func(tracker *SessionClaimTracker) bool {
+		state, err := tracker.GatherAllocatedState()
+		require.NoError(t, err)
+		return state.AllocatedDevices.Has(device)
 	}
 
 	releasing := claim("releasing", allocation(false))
@@ -50,28 +48,21 @@ func TestSessionClaimTrackerDeviceHolders(t *testing.T) {
 	tracker, ok := manager.ResourceClaims().(*SessionClaimTracker)
 	require.True(t, ok)
 
-	assert.ElementsMatch(t, []string{"releasing"}, holderNames(tracker), "admin access does not hold a device")
-
+	// A pipelined claim takes the device of a claim that is deallocated and then restored, as a
+	// terminating pod's claim is around a check without the terminating pods.
+	deallocated := releasing.DeepCopy()
+	deallocated.Status.Allocation = nil
+	require.NoError(t, tracker.AssumeClaimAfterAPICall(deallocated))
+	assert.False(t, isAllocated(tracker))
 	pipelined := pending.DeepCopy()
 	pipelined.Status.Allocation = allocation(false)
 	require.NoError(t, tracker.AssumeClaimAfterAPICall(pipelined))
-	assert.ElementsMatch(t, []string{"releasing", "pending"}, holderNames(tracker))
+	require.NoError(t, tracker.AssumeClaimAfterAPICall(releasing.DeepCopy()))
 
-	// Un-assuming one claim keeps the other holder, unlike the upstream allocated set.
+	// Un-assuming one holder keeps the device allocated, unlike the upstream allocated set.
 	tracker.AssumedClaimRestore("test", "pending")
-	assert.ElementsMatch(t, []string{"releasing"}, holderNames(tracker))
-	state, err := tracker.GatherAllocatedState()
-	require.NoError(t, err)
-	assert.True(t, state.AllocatedDevices.Has(device), "the remaining holder keeps the device allocated")
+	assert.True(t, isAllocated(tracker), "the remaining holder keeps the device allocated")
 
-	inFlight := claim("in-flight", allocation(false))
-	require.NoError(t, tracker.SignalClaimPendingAllocation(inFlight.UID, inFlight))
-	holders := tracker.DeviceHolders(device)
-	require.Len(t, holders, 2)
-	for _, holder := range holders {
-		assert.Equal(t, holder.Claim.Name == "in-flight", holder.InFlight)
-	}
-
-	tracker.RemoveClaimPendingAllocation(inFlight.UID)
-	assert.ElementsMatch(t, []string{"releasing"}, holderNames(tracker))
+	require.NoError(t, tracker.AssumeClaimAfterAPICall(deallocated))
+	assert.False(t, isAllocated(tracker), "no claim holds the device")
 }

@@ -12,7 +12,6 @@ import (
 
 	commonpod "github.com/kai-scheduler/KAI-scheduler/pkg/common/pod"
 	commonresources "github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -234,9 +233,7 @@ func (pp *numaPlugin) wantsNuma(task *pod_info.PodInfo) bool {
 	return false
 }
 
-func (pp *numaPlugin) predicate(
-	task *pod_info.PodInfo, _ *podgroup_info.PodGroupInfo, node *node_info.NodeInfo, _ api.ClusterView,
-) error {
+func (pp *numaPlugin) predicate(task *pod_info.PodInfo, _ *podgroup_info.PodGroupInfo, node *node_info.NodeInfo) error {
 	_, err := pp.evaluate(task, node)
 	return err
 }

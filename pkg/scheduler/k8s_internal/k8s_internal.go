@@ -66,8 +66,12 @@ func FitPrePredicateConverter(
 	}
 }
 
-func FitPredicateConverter(nodeFilter NodeFilter) FitPredicateFilter {
-	return func(state SessionState, pod *v1.Pod, nodeInfo *k8sframework.NodeInfo) (bool, []string, error) {
+func FitPredicateConverter(
+	stateProvider SessionStateProvider,
+	nodeFilter NodeFilter,
+) FitPredicateFilter {
+	return func(pod *v1.Pod, nodeInfo *k8sframework.NodeInfo) (bool, []string, error) {
+		state := stateProvider.GetSessionStateForResource(pod.UID)
 		result := nodeFilter.Filter(context.Background(), state, pod, nodeInfo)
 		if result == nil {
 			return true, nil, nil

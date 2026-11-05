@@ -113,7 +113,7 @@ type Session struct {
 	mux             *http.ServeMux
 
 	k8sResourceStateCache  sync.Map
-	views                  clusterViews
+	terminatingPods        *terminatingPods
 	nodeScoringPool        *ants.Pool
 	scoringPoolWorkerCount int
 }
@@ -234,9 +234,9 @@ func (ssn *Session) sortGPUs(filteredGPUs []string, pod *pod_info.PodInfo, node 
 }
 
 // FittingNode reports whether the task fits the node, and whether the fit must be pipelined rather than
-// bound. A simulation evaluates predicates against the future view and always pipelines. A real
-// allocation evaluates them against the current view first, and falls back to the future view only
-// where terminating pods can change the result; a fit found there must be pipelined.
+// bound. A simulation checks predicates without the pods that were already terminating, and always
+// pipelines. A real allocation checks the cluster as it is first, and falls back to the cluster
+// without them; a fit found only there must be pipelined.
 func (ssn *Session) FittingNode(
 	task *pod_info.PodInfo, node *node_info.NodeInfo, isSimulation bool,
 ) (fits bool, mustPipeline bool) {
@@ -266,19 +266,19 @@ func (ssn *Session) FittingNode(
 			task.Namespace, task.Name, node.Name)
 	})
 	if isSimulation {
-		if err := ssn.PredicateFn(task, job, node, ssn.FutureClusterView()); err != nil {
+		if err := ssn.fitsWithoutTerminatingPods(task, job, node); err != nil {
 			logPredicateFailure(task, node, err)
 			return false, false
 		}
 		return true, true
 	}
 
-	err := ssn.PredicateFn(task, job, node, ssn.CurrentClusterView())
+	err := ssn.PredicateFn(task, job, node)
 	if err == nil {
 		return true, false
 	}
 	logPredicateFailure(task, node, err)
-	if ssn.futureMayDiffer(task, node) && ssn.PredicateFn(task, job, node, ssn.FutureClusterView()) == nil {
+	if len(ssn.terminatingPodsFor(task, node)) > 0 && ssn.fitsWithoutTerminatingPods(task, job, node) == nil {
 		log.InfraLogger.V(6).Do(func() {
 			log.InfraLogger.Infof("Task <%s/%s> fits node <%s> once the terminating pods are gone",
 				task.Namespace, task.Name, node.Name)
@@ -387,7 +387,7 @@ func (ssn *Session) RecomputeDetailedFitErrors(
 			}
 			continue
 		}
-		if err := ssn.PredicateFn(task, job, node, ssn.CurrentClusterView()); err != nil {
+		if err := ssn.PredicateFn(task, job, node); err != nil {
 			if fitError := taskFitErrorFromError(task, node, err); fitError != nil {
 				nodeErrors = append(nodeErrors, fitError)
 			}

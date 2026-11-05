@@ -14,13 +14,6 @@ import (
 	"k8s.io/utils/ptr"
 )
 
-// DeviceHolder is a claim allocated a device in the session: a claim of the cache, or an
-// in-flight allocation signaled with SignalClaimPendingAllocation.
-type DeviceHolder struct {
-	Claim    *resourceapi.ResourceClaim
-	InFlight bool
-}
-
 // holderKey identifies a cache claim by namespace/name, and an in-flight allocation by claim UID.
 type holderKey struct {
 	id       string
@@ -43,8 +36,7 @@ type SessionClaimTracker struct {
 
 	mutex    sync.RWMutex
 	inFlight map[types.UID]*resourceapi.ResourceClaim
-	// holders is built on first use, so sessions that never ask pay nothing. A device gets a second
-	// holder only after the future view frees it, which builds the index first.
+	// holders is built on the first change to the tracker, so sessions that only read pay nothing.
 	holders      map[structured.DeviceID]map[holderKey]*resourceapi.ResourceClaim
 	claimDevices map[holderKey][]structured.DeviceID
 	// shared are the devices that had more than one holder: the only ones the upstream set can drop.
@@ -86,19 +78,8 @@ func (t *SessionClaimTracker) GatherAllocatedState() (*structured.AllocatedState
 	return state, nil
 }
 
-// DeviceHolders returns the claims allocated to the device.
-func (t *SessionClaimTracker) DeviceHolders(device structured.DeviceID) []DeviceHolder {
-	t.ensureIndex()
-	t.mutex.RLock()
-	defer t.mutex.RUnlock()
-	holders := make([]DeviceHolder, 0, len(t.holders[device]))
-	for key, claim := range t.holders[device] {
-		holders = append(holders, DeviceHolder{Claim: claim, InFlight: key.inFlight})
-	}
-	return holders
-}
-
 func (t *SessionClaimTracker) AssumeClaimAfterAPICall(claim *resourceapi.ResourceClaim) error {
+	t.ensureIndex()
 	if err := t.ResourceClaimTracker.AssumeClaimAfterAPICall(claim); err != nil {
 		return err
 	}
@@ -109,6 +90,7 @@ func (t *SessionClaimTracker) AssumeClaimAfterAPICall(claim *resourceapi.Resourc
 }
 
 func (t *SessionClaimTracker) AssumedClaimRestore(namespace, claimName string) {
+	t.ensureIndex()
 	t.ResourceClaimTracker.AssumedClaimRestore(namespace, claimName)
 	claim, err := t.Get(namespace, claimName)
 	if err != nil {
@@ -122,6 +104,7 @@ func (t *SessionClaimTracker) AssumedClaimRestore(namespace, claimName string) {
 func (t *SessionClaimTracker) SignalClaimPendingAllocation(
 	claimUID types.UID, allocatedClaim *resourceapi.ResourceClaim,
 ) error {
+	t.ensureIndex()
 	if err := t.ResourceClaimTracker.SignalClaimPendingAllocation(claimUID, allocatedClaim); err != nil {
 		return err
 	}
@@ -133,6 +116,7 @@ func (t *SessionClaimTracker) SignalClaimPendingAllocation(
 }
 
 func (t *SessionClaimTracker) RemoveClaimPendingAllocation(claimUID types.UID) bool {
+	t.ensureIndex()
 	deleted := t.ResourceClaimTracker.RemoveClaimPendingAllocation(claimUID)
 	t.mutex.Lock()
 	defer t.mutex.Unlock()

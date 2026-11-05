@@ -32,7 +32,7 @@ var _ = Describe("InitializeInternalPlugins", func() {
 		})
 	})
 
-	// The future cluster view removes terminating pods from prefilter state by calling only the pod
+	// WithoutTerminatingPods removes terminating pods from prefilter state by calling only the pod
 	// affinity plugin's RemovePod. A new plugin with prefilter extensions must be handled there too.
 	It("has prefilter extensions only on the pod affinity plugin", func() {
 		fakeClient := fake.NewSimpleClientset()
@@ -47,6 +47,6 @@ var _ = Describe("InitializeInternalPlugins", func() {
 			}
 		}
 		Expect(withExtensions).To(Equal([]string{"PodAffinity"}),
-			"handle the new plugin's RemovePod in futureClusterView.CycleState")
+			"handle the new plugin's RemovePod in Session.removeFromAffinityState")
 	})
 })

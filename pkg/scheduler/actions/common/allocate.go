@@ -210,6 +210,20 @@ func allocateTask(ssn *framework.Session, stmt *framework.Statement, nodes []*no
 
 func allocateTaskToNode(ssn *framework.Session, stmt *framework.Statement, task *pod_info.PodInfo, node *node_info.NodeInfo,
 	isSimulation, mustPipeline bool) bool {
+	if !mustPipeline || !framework.UsesDRA(task) {
+		return placeTaskOnNode(ssn, stmt, task, node, isSimulation, mustPipeline)
+	}
+	// DRA allocates the task's claims when it is pipelined; let it take the devices the terminating
+	// pods will release.
+	var success bool
+	ssn.WithoutTerminatingPods(task, node, func() {
+		success = placeTaskOnNode(ssn, stmt, task, node, isSimulation, mustPipeline)
+	})
+	return success
+}
+
+func placeTaskOnNode(ssn *framework.Session, stmt *framework.Statement, task *pod_info.PodInfo, node *node_info.NodeInfo,
+	isSimulation, mustPipeline bool) bool {
 	placement, err := ssn.GetNumaPlacement(task, node)
 	if err != nil {
 		log.InfraLogger.V(6).Do(func() {

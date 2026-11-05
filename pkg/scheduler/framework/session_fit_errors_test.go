@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -31,7 +30,6 @@ func TestFittingNodeAggregatesCompactReasonCounts(t *testing.T) {
 		task *pod_info.PodInfo,
 		_ *podgroup_info.PodGroupInfo,
 		node *node_info.NodeInfo,
-		_ api.ClusterView,
 	) error {
 		if node.Name == "node-a" {
 			return common_info.NewFitError(task.Name, task.Namespace, node.Name, "NodeAffinityMismatch")
@@ -57,7 +55,6 @@ func TestRecomputeDetailedFitErrorsRunsPredicatesForEveryNode(t *testing.T) {
 		task *pod_info.PodInfo,
 		_ *podgroup_info.PodGroupInfo,
 		node *node_info.NodeInfo,
-		_ api.ClusterView,
 	) error {
 		if node.Name == "node-a" {
 			return common_info.NewFitErrorWithDetailedMessage(
@@ -87,7 +84,7 @@ func TestRecomputeDetailedFitErrorsStopsAtPrePredicate(t *testing.T) {
 		return &common_info.NotFoundError{Name: "missing-pvc"}
 	})
 	predicateCalls := 0
-	ssn.AddPredicateFn(func(*pod_info.PodInfo, *podgroup_info.PodGroupInfo, *node_info.NodeInfo, api.ClusterView) error {
+	ssn.AddPredicateFn(func(*pod_info.PodInfo, *podgroup_info.PodGroupInfo, *node_info.NodeInfo) error {
 		predicateCalls++
 		return nil
 	})
@@ -128,7 +125,6 @@ func TestRecomputeDetailedFitErrorsSkipsTypedNilFitError(t *testing.T) {
 		task *pod_info.PodInfo,
 		_ *podgroup_info.PodGroupInfo,
 		node *node_info.NodeInfo,
-		_ api.ClusterView,
 	) error {
 		if node.Name == "node-a" {
 			return common_info.NewFitError(task.Name, task.Namespace, node.Name, "NodeAffinityMismatch")

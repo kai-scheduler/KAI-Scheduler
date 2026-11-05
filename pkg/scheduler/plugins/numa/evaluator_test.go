@@ -395,7 +395,7 @@ func TestUnifiedSolverUnknownMemoryState(t *testing.T) {
 					task := makeGuaranteedTask("unknown", map[string]string{"memory": "40Gi"})
 					_, err := plugin.evaluate(task, node)
 					require.ErrorIs(t, err, errMemoryStateUnknown)
-					require.ErrorIs(t, plugin.predicate(task, nil, node, nil), errMemoryStateUnknown)
+					require.ErrorIs(t, plugin.predicate(task, nil, node), errMemoryStateUnknown)
 					_, err = plugin.evaluate(task, node)
 					require.ErrorIs(t, err, errMemoryStateUnknown)
 				})
@@ -420,7 +420,7 @@ func TestUnifiedSolverUnknownMemoryDoesNotBlockUnmanagedRequests(t *testing.T) {
 					placement, err := plugin.evaluate(task, node)
 					require.NoError(t, err)
 					require.Empty(t, placement.MemoryGroups)
-					require.NoError(t, plugin.predicate(task, nil, node, nil))
+					require.NoError(t, plugin.predicate(task, nil, node))
 				}
 			})
 		}
@@ -566,10 +566,10 @@ func TestIgnoredMemoryRequiresObservedManagerEvidence(t *testing.T) {
 		plugin.seedMemoryGroups(session)
 		incoming := memoryTestTask("incoming", "40Gi")
 		if observed {
-			require.Error(t, plugin.predicate(incoming, nil, node, nil))
+			require.Error(t, plugin.predicate(incoming, nil, node))
 			continue
 		}
-		require.NoError(t, plugin.predicate(incoming, nil, node, nil))
+		require.NoError(t, plugin.predicate(incoming, nil, node))
 	}
 }
 
@@ -581,10 +581,10 @@ func TestMemoryLedgerIndependentOfZoneReconstruction(t *testing.T) {
 	node.PodInfos = pod_info.PodsMap{owner.UID: owner}
 	plugin.seedMemoryGroups(session)
 	require.Equal(t, int64(80<<30), node.NumaTopology.MemoryGroups.Available(node.NumaTopology, 3, v1.ResourceMemory))
-	require.Error(t, plugin.predicate(memoryTestTask("small", "40Gi"), nil, node, nil))
+	require.Error(t, plugin.predicate(memoryTestTask("small", "40Gi"), nil, node))
 	node.NumaTopology.Policy = node_info.TopologyPolicyBestEffort
-	require.NoError(t, plugin.predicate(memoryTestTask("small", "40Gi"), nil, node, nil))
-	require.Error(t, plugin.predicate(memoryTestTask("large", "90Gi"), nil, node, nil))
+	require.NoError(t, plugin.predicate(memoryTestTask("small", "40Gi"), nil, node))
+	require.Error(t, plugin.predicate(memoryTestTask("large", "90Gi"), nil, node))
 }
 
 func TestExternalPodMemoryConflictsMakeNodeUnknown(t *testing.T) {
@@ -632,7 +632,7 @@ func TestNonePolicySkipsEvaluation(t *testing.T) {
 				placement, err := plugin.evaluate(task, node)
 				require.NoError(t, err)
 				require.True(t, placement.IsEmpty())
-				require.NoError(t, plugin.predicate(task, nil, node, nil))
+				require.NoError(t, plugin.predicate(task, nil, node))
 				placement, err = plugin.evaluate(task, node)
 				require.NoError(t, err)
 				require.True(t, placement.IsEmpty())
