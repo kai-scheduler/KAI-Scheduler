@@ -240,23 +240,16 @@ func (ssn *Session) sortGPUs(filteredGPUs []string, pod *pod_info.PodInfo, node 
 func (ssn *Session) FittingNode(
 	task *pod_info.PodInfo, node *node_info.NodeInfo, isSimulation bool,
 ) (fits bool, mustPipeline bool) {
-	writeFittingDelta := !isSimulation
-	var fitErrors *common_info.TasksFitErrors
-	if writeFittingDelta {
-		fitErrors = common_info.NewFitErrors()
-	}
-
 	job := ssn.ClusterInfo.PodGroupInfos[task.Job]
 
 	log.InfraLogger.V(6).Do(func() {
 		log.InfraLogger.Infof("Checking if task <%v/%v> is allocatable on node <%v>: <%v> vs. <%v>",
 			task.Namespace, task.Name, node.Name, task.ResReqVector, node.IdleVector)
 	})
-	allocatable, fitError := ssn.isTaskAllocatableOnNode(task, job, node, writeFittingDelta)
+	allocatable, fitError := ssn.isTaskAllocatableOnNode(task, job, node, !isSimulation)
 	if !allocatable {
-		if fitError != nil && writeFittingDelta {
-			fitErrors.AddNodeError(fitError)
-			job.AddTaskFitErrors(task, fitErrors)
+		if fitError != nil && !isSimulation {
+			addNodeFitError(task, job, fitError)
 		}
 		return false, false
 	}
@@ -265,29 +258,37 @@ func (ssn *Session) FittingNode(
 		log.InfraLogger.Infof("Running predicates for task <%v/%v> on node <%v>",
 			task.Namespace, task.Name, node.Name)
 	})
-	if isSimulation {
-		if err := ssn.fitsWithoutTerminatingPods(task, job, node); err != nil {
-			logPredicateFailure(task, node, err)
+	var currentErr error
+	if !isSimulation {
+		if currentErr = ssn.PredicateFn(task, job, node); currentErr == nil {
+			return true, false
+		}
+		logPredicateFailure(task, node, currentErr)
+		if !ssn.mayChangeFit(task, node) {
+			addNodeFitError(task, job, currentErr)
 			return false, false
 		}
-		return true, true
 	}
 
-	err := ssn.PredicateFn(task, job, node)
-	if err == nil {
-		return true, false
+	if err := ssn.fitsWithoutTerminatingPods(task, job, node); err != nil {
+		logPredicateFailure(task, node, err)
+		if !isSimulation {
+			// The error against the cluster as it is explains the failure better.
+			addNodeFitError(task, job, currentErr)
+		}
+		return false, false
 	}
-	logPredicateFailure(task, node, err)
-	if ssn.mayChangeFit(task, node) && ssn.fitsWithoutTerminatingPods(task, job, node) == nil {
-		log.InfraLogger.V(6).Do(func() {
-			log.InfraLogger.Infof("Task <%s/%s> fits node <%s> once the terminating pods are gone",
-				task.Namespace, task.Name, node.Name)
-		})
-		return true, true
-	}
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("Task <%s/%s> fits node <%s> once the terminating pods are gone",
+			task.Namespace, task.Name, node.Name)
+	})
+	return true, true
+}
+
+func addNodeFitError(task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo, err error) {
+	fitErrors := common_info.NewFitErrors()
 	fitErrors.AddNodeError(err)
 	job.AddTaskFitErrors(task, fitErrors)
-	return false, false
 }
 
 func logPredicateFailure(task *pod_info.PodInfo, node *node_info.NodeInfo, err error) {
