@@ -67,6 +67,17 @@ func TestGetAllocatableShareUnlimited(t *testing.T) {
 	assert.Equal(t, r.FairShare, allocatable)
 }
 
+func TestGetSteadyAllocatableShare(t *testing.T) {
+	r := ResourceShare{Deserved: 20, FairShare: 50, SteadyFairShare: 30, MaxAllowed: commonconstants.UnlimitedResourceQuantity}
+	assert.Equal(t, float64(30), r.GetSteadyAllocatableShare(), "the steady fair share, not the fair share")
+	r.Deserved = 40
+	assert.Equal(t, float64(40), r.GetSteadyAllocatableShare(), "at least the quota")
+	r.MaxAllowed = 35
+	assert.Equal(t, float64(35), r.GetSteadyAllocatableShare(), "at most the limit")
+	r.Deserved = commonconstants.UnlimitedResourceQuantity
+	assert.Equal(t, float64(35), r.GetSteadyAllocatableShare(), "the limit, with unlimited quota")
+}
+
 func createResourceShare() ResourceShare {
 	return ResourceShare{
 		Deserved:                21,
