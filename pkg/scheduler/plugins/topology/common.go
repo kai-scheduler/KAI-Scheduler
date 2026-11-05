@@ -52,9 +52,11 @@ func lowestCommonDomainID(nodeSet node_info.NodeSet, levels []kaiv1alpha1.Topolo
 
 		domainParts = append(domainParts, value)
 
-		if leastCommonLevel == level.NodeLabel {
+		if leastCommonLevel == level.NodeLabel || topologyConstraint.RequiredLevel == level.NodeLabel {
 			// There is no reason to try and find a lower level then the preferred level because
-			//  it's the lowest level that we will look at for the topology allocation
+			//  it's the lowest level that we will look at for the topology allocation.
+			// Stop at the required level too: its domains are checked against the free resources computed for
+			//  this domain's subtree, so this domain must not be below them.
 			break
 		}
 	}
