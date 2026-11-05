@@ -25,6 +25,8 @@ const (
 
 func TestPodSchedulingConstraintsSignature(t *testing.T) {
 	pod := getRandomPod()
+	pod.Namespace = "test-namespace"
+	pod.Labels = map[string]string{"key": "val"}
 	pod.Spec.NodeSelector = map[string]string{
 		"key": "val",
 	}
@@ -123,7 +125,7 @@ func TestPodSchedulingConstraintsSignature(t *testing.T) {
 	}
 	key := podInfo.GetSchedulingConstraintsSignature()
 
-	assert.Equal(t, common_info.SchedulingConstraintsSignature("6b58b34a1ca5d08254aaab7c8705a822bd824322b2547d2c64824cde270c2312"), key)
+	assert.Equal(t, common_info.SchedulingConstraintsSignature("1a9a90cb2d9c26473d6d85e503e72c8566021b91df7c0414a4259deef2d65e04"), key)
 }
 
 func TestPodSchedulingConstraintsSignature_NodeSelector(t *testing.T) {
@@ -220,6 +222,44 @@ func TestPodSchedulingConstraintsSignature_TopologySpreadConstraints_nodeTaintsP
 	newPodInfo := NewTaskInfo(&pod, resource_info.NewResourceVectorMap())
 	newKey := newPodInfo.GetSchedulingConstraintsSignature()
 	assert.NotEqualf(t, key, newKey, "Expected topology spread constraints to affect signature, got same")
+}
+
+func TestPodSchedulingConstraintsSignature_TopologySpreadConstraints_Namespace(t *testing.T) {
+	pod := getRandomPod()
+
+	podInfo := NewTaskInfo(&pod, resource_info.NewResourceVectorMap())
+	key := podInfo.GetSchedulingConstraintsSignature()
+
+	pod.Namespace = pod.Namespace + "-other"
+	newPodInfo := NewTaskInfo(&pod, resource_info.NewResourceVectorMap())
+	newKey := newPodInfo.GetSchedulingConstraintsSignature()
+	assert.NotEqualf(t, key, newKey, "Expected namespace to affect signature of a pod with topology spread constraints, got same")
+}
+
+func TestPodSchedulingConstraintsSignature_TopologySpreadConstraints_Labels(t *testing.T) {
+	pod := getRandomPod()
+
+	podInfo := NewTaskInfo(&pod, resource_info.NewResourceVectorMap())
+	key := podInfo.GetSchedulingConstraintsSignature()
+
+	pod.Labels = map[string]string{"app": randomString(8)}
+	newPodInfo := NewTaskInfo(&pod, resource_info.NewResourceVectorMap())
+	newKey := newPodInfo.GetSchedulingConstraintsSignature()
+	assert.NotEqualf(t, key, newKey, "Expected labels to affect signature of a pod with topology spread constraints, got same")
+}
+
+func TestPodSchedulingConstraintsSignature_NoTopologySpreadConstraints_NamespaceAndLabelsIgnored(t *testing.T) {
+	pod := getRandomPod()
+	pod.Spec.TopologySpreadConstraints = nil
+
+	podInfo := NewTaskInfo(&pod, resource_info.NewResourceVectorMap())
+	key := podInfo.GetSchedulingConstraintsSignature()
+
+	pod.Namespace = pod.Namespace + "-other"
+	pod.Labels = map[string]string{"app": randomString(8)}
+	newPodInfo := NewTaskInfo(&pod, resource_info.NewResourceVectorMap())
+	newKey := newPodInfo.GetSchedulingConstraintsSignature()
+	assert.Equalf(t, key, newKey, "Expected namespace and labels not to affect signature without topology spread constraints")
 }
 
 func TestPodSchedulingConstraintsSignature_ContainerPorts(t *testing.T) {

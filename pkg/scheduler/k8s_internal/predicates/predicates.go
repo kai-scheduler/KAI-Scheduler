@@ -11,6 +11,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/interpodaffinity"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/nodeaffinity"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/nodeports"
+	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/podtopologyspread"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/tainttoleration"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/volumebinding"
 
@@ -24,6 +25,7 @@ const (
 	PodToleratesNodeTaints = "PodToleratesNodeTaints"
 	NodeAffinity           = "NodeAffinity"
 	PodAffinity            = "PodAffinity"
+	PodTopologySpread      = "PodTopologySpread"
 	VolumeBinding          = "VolumeBinding"
 	NodeScheduler          = "NodeScheduler"
 	MaxNodePoolResources   = "MaxNodePoolResources"
@@ -119,6 +121,18 @@ func NewSessionPredicates(ssn *framework.Session) k8s_internal.SessionPredicates
 			PreFilter:           k8s_internal.FitPrePredicateConverter(ssn, ssn, plugin.(*interpodaffinity.InterPodAffinity)),
 			IsFilterRequired:    predicateRequired,
 			Filter:              k8s_internal.FitPredicateConverter(ssn, plugin.(*interpodaffinity.InterPodAffinity)),
+		}
+	}
+
+	if plugin := initiatedPlugins.PodTopologySpread; plugin == nil {
+		predicates[PodTopologySpread] = emptyPredicate(PodTopologySpread)
+	} else {
+		predicates[PodTopologySpread] = k8s_internal.SessionPredicate{
+			Name:                PodTopologySpread,
+			IsPreFilterRequired: predicateRequired,
+			PreFilter:           k8s_internal.FitPrePredicateConverter(ssn, ssn, plugin.(*podtopologyspread.PodTopologySpread)),
+			IsFilterRequired:    predicateRequired,
+			Filter:              k8s_internal.FitPredicateConverter(ssn, plugin.(*podtopologyspread.PodTopologySpread)),
 		}
 	}
 
