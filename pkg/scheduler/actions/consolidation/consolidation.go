@@ -4,6 +4,8 @@
 package consolidation
 
 import (
+	"time"
+
 	"golang.org/x/exp/maps"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common"
@@ -20,7 +22,10 @@ import (
 
 const noConsolidationPreempteesRestrcition = -1
 
-type consolidationAction struct{}
+type consolidationAction struct {
+	now                 func() time.Time
+	lastDefragmentation time.Time
+}
 
 func New() *consolidationAction {
 	return &consolidationAction{}
@@ -42,9 +47,16 @@ func (alloc *consolidationAction) Execute(ssn *framework.Session) {
 
 	if ssn.GetMaxNumberConsolidationPreemptees() == 0 {
 		log.InfraLogger.V(4).Infof("Consolidation is disabled, skipping")
-		return
+	} else {
+		alloc.consolidatePending(ssn, actionBudget)
 	}
 
+	if err := alloc.defragment(ssn, actionBudget); err != nil {
+		log.InfraLogger.Errorf("Defragmentation failed: %v", err)
+	}
+}
+
+func (alloc *consolidationAction) consolidatePending(ssn *framework.Session, actionBudget *solvers.ActionSearchBudget) {
 	jobsOrderByQueues := utils.NewJobsOrderByQueues(ssn, utils.JobsOrderInitOptions{
 		FilterNonPending:            true,
 		FilterUnready:               true,

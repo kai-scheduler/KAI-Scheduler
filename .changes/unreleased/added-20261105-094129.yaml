@@ -1,0 +1,6 @@
+kind: Added
+body: |-
+  Opt-in interval to repack running workloads onto fewer nodes
+custom:
+  Author: "eladb"
+  Issue: "1311"

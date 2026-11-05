@@ -102,6 +102,7 @@ func BuildSchedulerParams(opt *options.ServerOption) *conf.SchedulerParams {
 		RestrictSchedulingNodes:           opt.RestrictSchedulingNodes,
 		PartitionParams:                   schedulingPartitionParams,
 		MaxNumberConsolidationPreemptees:  opt.MaxNumberConsolidationPreemptees,
+		DefragmentationInterval:           opt.DefragmentationInterval,
 		ScheduleCSIStorage:                opt.ScheduleCSIStorage,
 		UseSchedulingSignatures:           opt.UseSchedulingSignatures,
 		DeferredResizePreemption:          opt.DeferredResizePreemption,

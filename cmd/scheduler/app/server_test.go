@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
@@ -39,6 +40,28 @@ func TestUnauthorizedRoundTripper_PassesNonUnauthorizedResponses(t *testing.T) {
 
 			assert.NoError(t, err)
 			assert.Equal(t, tc.statusCode, resp.StatusCode)
+		})
+	}
+}
+
+func TestBuildSchedulerParamsDefragmentationInterval(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want time.Duration
+	}{
+		{name: "default is disabled", want: 0},
+		{name: "enabled", args: []string{"--defragmentation-interval=15m"}, want: 15 * time.Minute},
+		{name: "explicitly disabled", args: []string{"--defragmentation-interval=0"}, want: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opt := options.NewServerOption()
+			fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
+			opt.AddFlags(fs)
+			require.NoError(t, fs.Parse(tt.args))
+
+			assert.Equal(t, tt.want, BuildSchedulerParams(opt).DefragmentationInterval)
 		})
 	}
 }
