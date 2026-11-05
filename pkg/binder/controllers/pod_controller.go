@@ -81,7 +81,7 @@ func (r *PodReconciler) eventHandlers() handler.Funcs {
 			h.Update(ctx, updateEvent, q)
 		},
 		DeleteFunc: func(ctx context.Context, deleteEvent event.DeleteEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
-			if !r.isRelevantPod(deleteEvent.Object) {
+			if !r.isRelevantPod(deleteEvent.Object) && !isReservationPod(deleteEvent.Object) {
 				return
 			}
 			r.syncReservationIfNeeded(ctx, deleteEvent.Object)
@@ -118,6 +118,13 @@ func (r *PodReconciler) isRelevantPod(object client.Object) bool {
 		return pod.Spec.SchedulerName == r.SchedulerName
 	}
 	return false
+}
+
+// Reservation pods are created without the KAI schedulerName, so their deletion
+// must be matched separately to resync the GPU group.
+func isReservationPod(object client.Object) bool {
+	pod, isPod := object.(*corev1.Pod)
+	return isPod && resourcereservation.IsGPUReservationPod(pod)
 }
 
 func isCompletionEvent(oldObject client.Object, newObject client.Object) bool {
