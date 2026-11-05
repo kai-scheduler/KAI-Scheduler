@@ -140,7 +140,7 @@ func TestBinderReservationLifecycle(t *testing.T) {
 				hideWorkload = false
 				return err
 			}})
-			binder := binding.NewBinder(binderClient, rrs, binderPlugins)
+			binder := binding.NewBinder(binderClient, nil, rrs, binderPlugins)
 			reconciler := NewBindRequestReconciler(apiClient, scheme, record.NewFakeRecorder(20), &ReconcilerParams{}, binder, rrs)
 			req := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(request)}
 			result, err := reconciler.Reconcile(ctx, req)

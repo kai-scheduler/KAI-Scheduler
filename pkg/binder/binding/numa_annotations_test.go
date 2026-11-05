@@ -29,7 +29,7 @@ func TestPredictedMemoryGroupsAnnotation(t *testing.T) {
 	kubeClient := fake.NewClientBuilder().WithObjects(pod).WithInterceptorFuncs(test_utils.EmptyBind).Build()
 	reservationService := rrmock.NewMockInterface(gomock.NewController(t))
 	reservationService.EXPECT().SyncForNode(gomock.Any(), "node").Return(nil)
-	binder := NewBinder(kubeClient, reservationService, plugins.New())
+	binder := NewBinder(kubeClient, nil, reservationService, plugins.New())
 	groups := []v1alpha2.NUMAMemoryGroupPlacement{{MemoryNodes: []string{"node-0", "node-1"}, Amount: v1.ResourceList{v1.ResourceMemory: resource.MustParse("120Gi")}}}
 	request := &v1alpha2.BindRequest{Spec: v1alpha2.BindRequestSpec{PredictedNUMAMemoryGroups: groups, SelectedNode: "node", ReceivedResourceType: common.ReceivedTypeRegular}}
 	require.NoError(t, binder.Bind(context.Background(), pod, &v1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node"}}, request))

@@ -74,7 +74,7 @@ func TestBind(t *testing.T) {
 	bindingGpuSharingPlugin := bindinggpusharing.New(kubeClient, false, false)
 	binderPlugins.RegisterPlugin(bindingGpuSharingPlugin)
 
-	binder := NewBinder(kubeClient, rrs, binderPlugins)
+	binder := NewBinder(kubeClient, nil, rrs, binderPlugins)
 
 	err := binder.Bind(
 		context.TODO(),
@@ -178,7 +178,7 @@ func TestBindApplyResourceReceivedType(t *testing.T) {
 	bindingGpuSharingPlugin := bindinggpusharing.New(kubeClient, false, false)
 	binderPlugins.RegisterPlugin(bindingGpuSharingPlugin)
 
-	binder := NewBinder(kubeClient, rrs, binderPlugins)
+	binder := NewBinder(kubeClient, nil, rrs, binderPlugins)
 
 	err := binder.Bind(context.TODO(), pod, &v1.Node{ObjectMeta: metav1.ObjectMeta{
 		Name: "my-node",
@@ -228,7 +228,7 @@ func TestBindFail(t *testing.T) {
 	bindingGpuSharingPlugin := bindinggpusharing.New(kubeClient, false, false)
 	binderPlugins.RegisterPlugin(bindingGpuSharingPlugin)
 
-	binder := NewBinder(kubeClient, rrs, binderPlugins)
+	binder := NewBinder(kubeClient, nil, rrs, binderPlugins)
 
 	err := binder.Bind(context.TODO(), pod, &v1.Node{ObjectMeta: metav1.ObjectMeta{
 		Name: "my-node",
