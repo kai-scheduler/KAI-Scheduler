@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Binder resyncs the GPU group when a GPU reservation pod is deleted externally
+custom:
+  Author: "pujitha24"
+  Issue: "2578"

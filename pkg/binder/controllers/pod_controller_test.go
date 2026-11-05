@@ -89,4 +89,14 @@ var _ = Describe("Pod Controller", func() {
 
 		Expect(queue.Len()).To(Equal(0))
 	})
+
+	It("syncs the GPU group when a reservation Pod is deleted", func() {
+		reservationPod := completedPod.DeepCopy()
+		reservationPod.Name = constants.GPUReservationPodPrefix + "-node-abc"
+		reservationPod.Spec.SchedulerName = ""
+
+		resourceReservation.EXPECT().SyncForGpuGroup(gomock.Any(), "group").Return(nil).Times(1)
+
+		reconciler.eventHandlers().DeleteFunc(context.TODO(), event.DeleteEvent{Object: reservationPod}, queue)
+	})
 })
