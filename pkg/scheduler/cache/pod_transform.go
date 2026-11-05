@@ -75,12 +75,13 @@ func compactContainerStatuses(statuses []v1.ContainerStatus) []v1.ContainerStatu
 	return compact
 }
 
-// compactConditions keeps PodResizePending for resize accounting and PodScheduled, which the status
-// updater compares against so it patches the condition only when it changes.
+// compactConditions returns only the pod conditions the scheduler uses: PodResizePending, PodScheduled
+// and DisruptionTarget.
 func compactConditions(conditions []v1.PodCondition) []v1.PodCondition {
 	var compact []v1.PodCondition
 	for _, c := range conditions {
-		if c.Type == v1.PodResizePending || c.Type == v1.PodScheduled {
+		switch c.Type {
+		case v1.PodResizePending, v1.PodScheduled, v1.DisruptionTarget:
 			compact = append(compact, c)
 		}
 	}

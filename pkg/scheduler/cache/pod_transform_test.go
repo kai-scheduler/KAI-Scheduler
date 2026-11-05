@@ -168,5 +168,24 @@ var _ = Describe("compactSchedulerPod", func() {
 			compact := transformed.(*v1.Pod)
 			Expect(compact.Status.Conditions).To(Equal([]v1.PodCondition{unschedulable, resizePending}))
 		})
+
+		It("keeps DisruptionTarget, which the evictor compares before patching it", func() {
+			pod := succeededPod()
+			pod.Status.Phase = v1.PodRunning
+			disruption := v1.PodCondition{
+				Type:               v1.DisruptionTarget,
+				Status:             v1.ConditionTrue,
+				Reason:             v1.PodReasonPreemptionByScheduler,
+				Message:            "preempted by team-b/pg-2",
+				LastTransitionTime: metav1.Unix(1767323045, 0),
+			}
+			pod.Status.Conditions = []v1.PodCondition{{Type: v1.PodReady}, disruption, {Type: v1.ContainersReady}}
+
+			transformed, err := compactSchedulerPod(pod)
+			Expect(err).NotTo(HaveOccurred())
+
+			compact := transformed.(*v1.Pod)
+			Expect(compact.Status.Conditions).To(Equal([]v1.PodCondition{disruption}))
+		})
 	})
 })
