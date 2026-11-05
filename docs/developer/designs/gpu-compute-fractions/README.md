@@ -460,9 +460,8 @@ The structural fix is P1: a `gpu-compute` queue resource, along the lines of the
 - **Unsupported nodes.** `NvFractions` requires CUDA ≥ 13.4 and driver ≥ r615. A node below either is not supported and is in the `none` tier.
 - **New KAI, old gpu-fractioning:** no `Full` reason, so compute pods stay pending with an explicit reason. Fail safe: a compute share is never accepted and then left unenforced.
 - **Old KAI, new gpu-fractioning:** admission already rejects unknown `nvidia.com/container.` suffixes, so compute keys fail at submission.
-- **Downgrade and partial upgrade.** An older scheduler's `ExtractNvFractionsData` fails on unknown `nvidia.com/container.` suffixes, and `updatePodAdditionalFields` then drops the pod's GPU requirement: a bound compute pod is charged zero GPU memory, and a pending one is scheduled as CPU-only. Two mitigations:
-  - A preparatory release in which scheduler-side parsing ignores unknown suffixes, while admission stays strict. Downgrading below that release with compute pods running is unsupported.
-  - The scheduler is upgraded before admission. There is no KAI switch (see [Rollout and gating](#rollout-and-gating)), so admission accepts compute keys as soon as it runs the new release.
+- **Downgrade.** Compute pods are supported from v0.20 onwards. Downgrading below v0.20 with compute pods running is unsupported: an older scheduler's `ExtractNvFractionsData` fails on the unknown suffixes, and `updatePodAdditionalFields` then drops the pod's GPU requirement.
+- **Partial upgrade.** The scheduler is upgraded before admission. There is no KAI switch (see [Rollout and gating](#rollout-and-gating)), so admission accepts compute keys as soon as it runs the new release.
 - **node-scale-adjuster** is unchanged. Scale-up stays GPU-count based; a new node becomes eligible once its `Ready` condition reports `Full`.
 
 ## Rollout and gating
