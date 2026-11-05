@@ -38,13 +38,13 @@ In the example, the steady fair shares are A 100, B 100 and C 100.
 A new path, added to the existing ones, lets a queue below its steady fair share reclaim from queues above theirs. It applies to jobs that request GPUs (whole, fractional or MIG) and compares queues in GPUs. Let *keep* be what a queue may hold under this path: the larger of its quota and its steady fair share, capped at its limit (as `GetAllocatableShare` is for the fair share).
 
 1. **Reclaimer.** The job requests GPUs, and its queue holds fewer GPUs than its *keep*.
-2. **Victims.** Victims come from queues that hold more GPUs than their *keep*. Within a queue they are taken in the usual victim order.
+2. **Victims.** Victims come from queues that hold more GPUs than their *keep*, and from queues that may keep nothing: a *keep* of 0 in every resource, as for a queue with no quota and no weight. Jobs of such a queue that request no GPUs can still hold the CPU or memory beside free GPUs, and while the queue holds no GPUs, comparing GPUs alone would protect them. Within a queue they are taken in the usual victim order.
 3. **Floor.** A victim queue is never taken below its *keep*. A victim whose first eviction batch (a whole gang, or an elastic job's surplus pods) alone is larger than its queue's surplus is left out by the victim filter, so the search moves on to the queue's smaller jobs, even ones of higher priority. The total is checked again when the scenario is validated.
 4. **Overshoot.** A job larger than its queue's gap may take its queue above its *keep* when it remains less saturated than every queue it reclaims from. This is the existing saturation rule (`relcaimerSaturationMultiplier`), computed with steady fair shares: `(allocated + job) / steady × multiplier < remaining / steady`.
 
 In the example, C (90 of 100) may reclaim A's lowest-priority jobs as long as A keeps at least 100. C ends at 106, above its 100: allowed, because C's 1.06 stays below A's 1.64. C cannot reclaim again on this path once it is at or above its 100.
 
-**GPUs only.** A steady fair share is a fixed split rather than capped by demand, so comparing every resource would let a plentiful one decide: a queue above its split of CPU, which a GPU-heavy queue often is, would lose GPU jobs, a queue above its split of memory could not reclaim GPUs, and a CPU-only job could evict GPU jobs. CPU-only jobs keep today's behaviour.
+**GPUs only.** A steady fair share is a fixed split rather than capped by demand, so comparing every resource would let a plentiful one decide: a queue above its split of CPU, which a GPU-heavy queue often is, would lose GPU jobs, a queue above its split of memory could not reclaim GPUs, and a CPU-only job could evict GPU jobs. CPU-only reclaimers keep today's behaviour.
 
 ## 5. Relationship with the Existing Strategies
 
@@ -58,7 +58,7 @@ Replacing the fair share with the steady fair share in the existing path was con
 
 ## 6. No Reclaim Loops
 
-A queue loses GPUs on this path only down to its *keep*, so it never ends below its steady fair share, and rule 1 never lets it reclaim back on this path. A reclaimer's overshoot is bounded by the saturation rule: after any reclaim that takes the reclaimer above its steady fair share, it is less saturated than every queue it reclaimed from, so none of them can reclaim from it on this path. Every reclaim accepted on this path lowers `Σ allocated² / steady` over the queues involved, so such reclaims cannot cycle. On the existing path, the reclaimer's overshoot is reclaimable only when it also puts the reclaimer above its fair share, exactly as today.
+A queue loses GPUs on this path only down to its *keep*, so it never ends below its steady fair share, and rule 1 never lets it reclaim back on this path. A reclaimer's overshoot is bounded by the saturation rule: after any reclaim that takes the reclaimer above its steady fair share, it is less saturated than every queue it reclaimed from, so none of them can reclaim from it on this path. Every reclaim accepted on this path between queues with a steady fair share lowers `Σ allocated² / steady` over them, so such reclaims cannot cycle. A queue that may keep nothing never reclaims on this path (rule 1 would need it below a *keep* of 0), so what is taken from it is not taken back on this path. On the existing path, the reclaimer's overshoot is reclaimable only when it also puts the reclaimer above its fair share, exactly as today.
 
 What is reclaimed must also reach the reclaimer rather than the victim queue's re-created pods, see §8.
 
@@ -95,6 +95,7 @@ No change. Consolidation does not use the `proportion` reclaim strategies, and i
 - **Gangs and elastic jobs.** Victims are evicted in the same batches as today (whole gangs, elastic surplus first); the filter checks the first batch and the scenario validation the total.
 - **Non-preemptible jobs** are never victims. A queue above its steady fair share only through them gives nothing.
 - **Unlimited quota.** A queue with unlimited quota is never above what it may keep, so it is never a victim on this path; it may reclaim on it, but `GuaranteeDeservedQuotaStrategy` already lets it take more.
+- **Queues that may keep nothing.** Everything they hold is reclaimable on this path, as it is on the existing path, where their fair share is 0. A quota or weight in any resource gives a queue a *keep*, and with it the GPU comparison of rule 2.
 - **Unchanged protections.** Min-runtime, preemption delay and the non-preemptible quota check apply unchanged.
 - **Cost.** One more division per session, only when enabled. The victim filter computes a victim's first eviction batch only when the reclaimer is on this path and its other checks pass.
 

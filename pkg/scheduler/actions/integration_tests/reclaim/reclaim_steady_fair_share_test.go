@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"gopkg.in/h2non/gock.v1"
+	"k8s.io/utils/ptr"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/integration_tests_utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
@@ -215,6 +216,85 @@ func getReclaimSteadyFairShareTestsMetadata() []integration_tests_utils.TestTopo
 }
 
 // steadyRunning is a running job with a two-GPU pod on each of nodes.
+// A queue with no quota and no weight in any resource may keep nothing, yet its jobs that request no GPUs
+// can hold the CPU beside free GPUs: node3 below has 8 free GPUs and 1 free CPU. Demand exceeds the 32
+// GPUs, so queue-c's fair share is its weighted split of 16, and its pending 8-GPU job would take it from
+// 12 to 20: only steady fair-share reclaim can reclaim for it.
+func TestReclaimSteadyFairShareGPULessVictimIntegrationTest(t *testing.T) {
+	defer gock.Off()
+
+	integration_tests_utils.RunTests(t, getReclaimSteadyFairShareGPULessVictimTestsMetadata())
+}
+
+func getReclaimSteadyFairShareGPULessVictimTestsMetadata() []integration_tests_utils.TestTopologyMetadata {
+	steadyOn := map[string]string{"steadyFairShareReclaim": "true"}
+	topology := func(name string, cpuOverQuotaWeight float64, reclaimed bool) integration_tests_utils.TestTopologyMetadata {
+		nodes := map[string]nodes_fake.TestNodeBasic{}
+		for i := range 4 {
+			nodes["node"+strconv.Itoa(i)] = nodes_fake.TestNodeBasic{GPUs: 8, CPUMillis: 16}
+		}
+		expected := map[string]test_utils.TestExpectedResultBasic{
+			"a-1":       {NodeName: "node0", GPUsRequired: 8, Status: pod_status.Running},
+			"a-pending": {GPUsRequired: 24, Status: pod_status.Pending},
+			"c-1":       {NodeName: "node1", GPUsRequired: 8, Status: pod_status.Running},
+			"c-2":       {NodeName: "node2", GPUsRequired: 4, Status: pod_status.Running},
+			"backfill":  {NodeName: "node3", Status: pod_status.Running},
+			"c-pending": {GPUsRequired: 8, Status: pod_status.Pending},
+		}
+		mocks := steadyMocks(0, steadyOn)
+		if reclaimed {
+			expected["backfill"] = test_utils.TestExpectedResultBasic{Status: pod_status.Pending}
+			expected["c-pending"] = test_utils.TestExpectedResultBasic{NodeName: "node3", GPUsRequired: 8, Status: pod_status.Running}
+			mocks = steadyMocks(1, steadyOn)
+		}
+		return integration_tests_utils.TestTopologyMetadata{
+			TestTopologyBasic: test_utils.TestTopologyBasic{
+				Name: name,
+				Jobs: []*jobs_fake.TestJobBasic{
+					steadyPods("a-1", "queue-a", 8, 2, "node0"),
+					steadyPods("a-pending", "queue-a", 8, 2, "", "", ""),
+					steadyPods("c-1", "queue-c", 8, 2, "node1"),
+					steadyPods("c-2", "queue-c", 4, 2, "node2"),
+					steadyPods("backfill", "queue-backfill", 0, 15, "node3"),
+					steadyPods("c-pending", "queue-c", 8, 4, ""),
+				},
+				Nodes: nodes,
+				Queues: []test_utils.TestQueueBasic{
+					{Name: "queue-a", GPUOverQuotaWeight: 1},
+					{Name: "queue-c", GPUOverQuotaWeight: 1},
+					{
+						Name: "queue-backfill", DeservedCPUs: ptr.To(0.0), DeservedMemory: ptr.To(0.0),
+						CPUOverQuotaWeight: ptr.To(cpuOverQuotaWeight), MemoryOverQuotaWeight: ptr.To(0.0),
+					},
+				},
+				JobExpectedResults: expected,
+				Mocks:              mocks,
+			},
+		}
+	}
+
+	return []integration_tests_utils.TestTopologyMetadata{
+		topology("steady fair-share reclaim: evicts a job that requests no GPUs from a queue that may keep nothing, for the GPUs whose CPU it holds", 0, true),
+		topology("steady fair-share reclaim: keeps a job that requests no GPUs in a queue with a CPU share", 1, false),
+	}
+}
+
+// steadyPods returns a job with a pod on each of nodes; an empty node name is a pending pod.
+func steadyPods(name, queue string, gpusPerPod, cpusPerPod float64, nodes ...string) *jobs_fake.TestJobBasic {
+	job := &jobs_fake.TestJobBasic{
+		Name: name, QueueName: queue, Priority: constants.PriorityTrainNumber,
+		RequiredGPUsPerTask: gpusPerPod, RequiredCPUsPerTask: cpusPerPod,
+	}
+	for _, node := range nodes {
+		state := pod_status.Running
+		if node == "" {
+			state = pod_status.Pending
+		}
+		job.Tasks = append(job.Tasks, &tasks_fake.TestTaskBasic{NodeName: node, State: state})
+	}
+	return job
+}
+
 func steadyRunning(name, queue string, priority int32, nodes ...string) *jobs_fake.TestJobBasic {
 	job := &jobs_fake.TestJobBasic{Name: name, QueueName: queue, RequiredGPUsPerTask: 2, Priority: priority}
 	for _, node := range nodes {

@@ -1125,4 +1125,23 @@ func TestSteadyFairSharePredicates(t *testing.T) {
 		"a queue with unlimited quota is never above what it may keep")
 	assert(ReclaimerBelowSteadyFairShare(gpuJob, testVectorMap, unlimited), true,
 		"a queue with unlimited quota is always below what it may keep")
+
+	gpuLess := func(cpuDeserved, cpuSteady, memorySteady float64) *rs.QueueAttributes {
+		return &rs.QueueAttributes{Name: "gpu-less", QueueResourceShare: rs.QueueResourceShare{
+			GPU: rs.ResourceShare{MaxAllowed: commonconstants.UnlimitedResourceQuantity},
+			CPU: rs.ResourceShare{Deserved: cpuDeserved, SteadyFairShare: cpuSteady, Allocated: 500,
+				MaxAllowed: commonconstants.UnlimitedResourceQuantity},
+			Memory: rs.ResourceShare{SteadyFairShare: memorySteady, Allocated: 100e9,
+				MaxAllowed: commonconstants.UnlimitedResourceQuantity},
+		}}
+	}
+	withoutCPUJob := rs.ResourceQuantities{rs.GpuResource: 0, rs.CpuResource: 400, rs.MemoryResource: 90e9}
+	assert(ReclaimeeKeepsSteadyFairShare(gpuLess(0, 0, 0), withoutCPUJob), true,
+		"a queue that may keep nothing gives up a job that requests no GPUs")
+	assert(ReclaimeeKeepsSteadyFairShare(gpuLess(0, 1000, 0), withoutCPUJob), false,
+		"a queue that may keep CPU keeps a job that requests no GPUs")
+	assert(ReclaimeeKeepsSteadyFairShare(gpuLess(0, 0, 200e9), withoutCPUJob), false,
+		"a queue that may keep memory keeps a job that requests no GPUs")
+	assert(ReclaimeeKeepsSteadyFairShare(gpuLess(commonconstants.UnlimitedResourceQuantity, 0, 0), withoutCPUJob), false,
+		"a queue with unlimited CPU quota keeps a job that requests no GPUs")
 }

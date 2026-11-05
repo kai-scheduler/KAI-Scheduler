@@ -165,8 +165,21 @@ func ReclaimerBelowSteadyFairShare(
 }
 
 // ReclaimeeKeepsSteadyFairShare reports whether the reclaimee's queue holds more GPUs than it may keep
-// under steady fair-share reclaim and would still hold at least that many with remaining.
+// under steady fair-share reclaim and would still hold at least that many with remaining, or may keep
+// nothing at all: its jobs that request no GPUs can still hold the CPU or memory beside free GPUs.
 func ReclaimeeKeepsSteadyFairShare(reclaimeeQueue *rs.QueueAttributes, remaining rs.ResourceQuantities) bool {
+	if mayKeepNothing(reclaimeeQueue) {
+		return true
+	}
 	return reclaimeeQueue.CompareSteadyAllocatable(rs.GpuResource, reclaimeeQueue.GPU.Allocated) > 0 &&
 		reclaimeeQueue.CompareSteadyAllocatable(rs.GpuResource, remaining[rs.GpuResource]) >= 0
+}
+
+func mayKeepNothing(queue *rs.QueueAttributes) bool {
+	for _, resource := range rs.AllResources {
+		if queue.CompareSteadyAllocatable(resource, 0) < 0 {
+			return false
+		}
+	}
+	return true
 }
