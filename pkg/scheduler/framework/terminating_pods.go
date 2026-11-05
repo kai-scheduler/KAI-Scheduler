@@ -4,13 +4,9 @@
 package framework
 
 import (
-	"context"
 	"fmt"
 	"slices"
 
-	v1 "k8s.io/api/core/v1"
-	ksf "k8s.io/kube-scheduler/framework"
-	k8sframework "k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/utils/ptr"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
@@ -35,11 +31,6 @@ type terminatingPods struct {
 	hasRequiredAntiAffinity bool
 	// hasSharedDevicePool is set when a DRA device pool is reachable from more than one node.
 	hasSharedDevicePool bool
-}
-
-type k8sPod struct {
-	podInfo  ksf.PodInfo
-	nodeInfo *k8sframework.NodeInfo
 }
 
 func (ssn *Session) terminating() *terminatingPods {
@@ -92,55 +83,46 @@ func isTerminating(task *pod_info.PodInfo) bool {
 	return task.Status == pod_status.Releasing && !task.IsVirtualStatus
 }
 
-// withoutTerminating is what has to be set aside to see a task's fit on a node once the terminating
-// pods are gone.
-type withoutTerminating struct {
-	pods []*pod_info.PodInfo
-	// affinity is set when removing the terminating pods can change the task's inter-pod affinity
-	// result. Affinity is counted per topology domain, so it looks past the node.
-	affinity bool
-}
-
-func (w withoutTerminating) changesNothing() bool {
-	return len(w.pods) == 0 && !w.affinity
-}
-
-// withoutTerminatingPods picks the terminating pods to evict for the task on the node: the node's own
-// pods, plus the DRA holders elsewhere when the task's devices may come from a pool shared across
-// nodes. Inter-pod affinity looks past the node too, but its filter reads only the prefilter counts.
-func (ssn *Session) withoutTerminatingPods(task *pod_info.PodInfo, node *node_info.NodeInfo) withoutTerminating {
+// terminatingPodsFor returns the terminating pods to evict for the task on the node: the node's own
+// pods, plus the DRA holders on other nodes when the task's devices may come from a pool shared
+// across nodes. Inter-pod affinity looks past the node too, but its filter reads only the prefilter counts.
+func (ssn *Session) terminatingPodsFor(task *pod_info.PodInfo, node *node_info.NodeInfo) []*pod_info.PodInfo {
 	t := ssn.terminating()
 	pods := t.byNode[node.Name]
-	if t.hasSharedDevicePool && usesDRA(task) {
-		// The node's DRA holders appear twice; the second eviction is skipped.
-		pods = append(slices.Clip(pods), t.draHolders...)
+	if !t.hasSharedDevicePool || !usesDRA(task) {
+		return pods
 	}
-	return withoutTerminating{
-		pods:     pods,
-		affinity: len(t.k8sPods) > 0 && (t.hasRequiredAntiAffinity || hasRequiredPodAffinityTerms(task.Pod)),
+	pods = slices.Clip(pods)
+	for _, holder := range t.draHolders {
+		if holder.NodeName != node.Name {
+			pods = append(pods, holder)
+		}
 	}
+	return pods
+}
+
+// mayChangeFit reports whether setting the terminating pods aside can change the task's fit on the node.
+func (ssn *Session) mayChangeFit(task *pod_info.PodInfo, node *node_info.NodeInfo) bool {
+	return len(ssn.terminatingPodsFor(task, node)) > 0 || ssn.mayChangeAffinity(task.Pod)
 }
 
 // WithoutTerminatingPods runs fn on the session as it will be once the terminating pods relevant to
-// the task on the node are gone.
+// the task on the node are gone: it evicts them through the regular eviction path, then rolls back.
 func (ssn *Session) WithoutTerminatingPods(task *pod_info.PodInfo, node *node_info.NodeInfo, fn func()) {
-	ssn.runWithout(ssn.withoutTerminatingPods(task, node), task, fn)
-}
-
-// runWithout evicts the pods through the regular eviction path, runs fn, then rolls back.
-func (ssn *Session) runWithout(without withoutTerminating, task *pod_info.PodInfo, fn func()) {
-	if without.affinity {
+	if ssn.mayChangeAffinity(task.Pod) {
 		restore := ssn.removeFromAffinityState(task.Pod)
 		defer restore()
 	}
-	if len(without.pods) == 0 {
+	pods := ssn.terminatingPodsFor(task, node)
+	if len(pods) == 0 {
 		fn()
 		return
 	}
 
 	// A scratch statement leaves the caller's statement and checkpoints untouched.
 	stmt := ssn.Statement()
-	for _, pod := range without.pods {
+	for _, pod := range pods {
+		// The list is built once per session; the pod's status may have changed since.
 		if !isTerminating(pod) {
 			continue
 		}
@@ -155,45 +137,14 @@ func (ssn *Session) runWithout(without withoutTerminating, task *pod_info.PodInf
 	}
 }
 
-// removeFromAffinityState swaps the pod's prefilter state for a copy without the terminating pods in
-// its inter-pod affinity counts, as kube-scheduler does for preemption victims. Rerunning the
-// prefilter would be costlier, and a Skip it returns would stick for the rest of the session.
-func (ssn *Session) removeFromAffinityState(pod *v1.Pod) (restore func()) {
-	extensions := ssn.podAffinityExtensions()
-	if extensions == nil {
-		return func() {}
-	}
-	state := ssn.GetSessionStateForResource(pod.UID)
-	derived := state.Clone()
-	for _, terminating := range ssn.terminating().k8sPods {
-		// Fails when the prefilter was skipped: the pod has no affinity counts to adjust.
-		status := extensions.RemovePod(context.Background(), derived, pod, terminating.podInfo, terminating.nodeInfo)
-		if !status.IsSuccess() {
-			return func() {}
-		}
-	}
-	ssn.k8sResourceStateCache.Store(pod.UID, derived)
-	return func() { ssn.k8sResourceStateCache.Store(pod.UID, state) }
-}
-
-func (ssn *Session) podAffinityExtensions() ksf.PreFilterExtensions {
-	if ssn.Cache == nil || ssn.InternalK8sPlugins() == nil {
-		return nil
-	}
-	if plugin, ok := ssn.InternalK8sPlugins().PodAffinity.(ksf.PreFilterPlugin); ok {
-		return plugin.PreFilterExtensions()
-	}
-	return nil
-}
-
 // fitsWithoutTerminatingPods runs the task's predicates on the node with the terminating pods set
 // aside. Queue capacity is checked after the rollback: the evictions take the terminating pods off
 // their queues, which never counted them, so the queues look emptier than they are.
 func (ssn *Session) fitsWithoutTerminatingPods(
-	without withoutTerminating, task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo,
+	task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo,
 ) error {
 	var err error
-	ssn.runWithout(without, task, func() {
+	ssn.WithoutTerminatingPods(task, node, func() {
 		err = ssn.PredicateFn(task, job, node)
 	})
 	if err != nil {
@@ -204,15 +155,6 @@ func (ssn *Session) fitsWithoutTerminatingPods(
 			fmt.Sprintf("node does not have enough capacity. Reason: %s, Details: %s", result.Reason, result.Message))
 	}
 	return nil
-}
-
-func hasRequiredPodAffinityTerms(pod *v1.Pod) bool {
-	affinity := pod.Spec.Affinity
-	if affinity == nil {
-		return false
-	}
-	return (affinity.PodAffinity != nil && len(affinity.PodAffinity.RequiredDuringSchedulingIgnoredDuringExecution) > 0) ||
-		(affinity.PodAntiAffinity != nil && len(affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution) > 0)
 }
 
 // usesDRA reports whether the task needs DRA devices.

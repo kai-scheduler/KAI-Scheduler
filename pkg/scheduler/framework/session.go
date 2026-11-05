@@ -266,7 +266,7 @@ func (ssn *Session) FittingNode(
 			task.Namespace, task.Name, node.Name)
 	})
 	if isSimulation {
-		if err := ssn.fitsWithoutTerminatingPods(ssn.withoutTerminatingPods(task, node), task, job, node); err != nil {
+		if err := ssn.fitsWithoutTerminatingPods(task, job, node); err != nil {
 			logPredicateFailure(task, node, err)
 			return false, false
 		}
@@ -278,8 +278,7 @@ func (ssn *Session) FittingNode(
 		return true, false
 	}
 	logPredicateFailure(task, node, err)
-	if without := ssn.withoutTerminatingPods(task, node); !without.changesNothing() &&
-		ssn.fitsWithoutTerminatingPods(without, task, job, node) == nil {
+	if ssn.mayChangeFit(task, node) && ssn.fitsWithoutTerminatingPods(task, job, node) == nil {
 		log.InfraLogger.V(6).Do(func() {
 			log.InfraLogger.Infof("Task <%s/%s> fits node <%s> once the terminating pods are gone",
 				task.Namespace, task.Name, node.Name)
