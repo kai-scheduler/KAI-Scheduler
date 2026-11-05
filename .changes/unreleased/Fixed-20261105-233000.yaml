@@ -1,0 +1,3 @@
+kind: Fixed
+body: |-
+  Scheduler no longer re-patches the PodScheduled condition of every pending pod on every scheduling cycle. The pod informer transform added for in-place resize dropped all conditions except PodResizePending, so the status updater could not see the condition it had written and treated it as changed each cycle (a new lastTransitionTime on each patch).
