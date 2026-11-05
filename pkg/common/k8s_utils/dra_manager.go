@@ -36,6 +36,7 @@ func (si *snapshotInformer) AddEventHandler(handler cache.ResourceEventHandler) 
 // It populates a nil-informer AssumeCache from the provided claims snapshot, ensuring no
 // concurrent informer events can modify state during the scheduling session.
 // The resourceSliceTracker and informerFactory are shared live singletons (read-only).
+// Its claim tracker is a *SessionClaimTracker.
 func NewSessionDRAManager(
 	claims []*resourceapi.ResourceClaim,
 	tracker *resourceslicetracker.Tracker,
@@ -49,9 +50,9 @@ func NewSessionDRAManager(
 	logger := klog.LoggerWithName(klog.Background(), "SessionResourceClaimCache")
 	sessionCache := assumecache.NewAssumeCache(logger, &snapshotInformer{objects: objects}, "ResourceClaim", "", nil)
 
-	return dynamicresources.NewDRAManager(
+	return newSessionDRAManager(dynamicresources.NewDRAManager(
 		context.Background(), sessionCache, tracker, informerFactory,
-	)
+	))
 }
 
 // StartResourceSliceTracker creates a ResourceSliceTracker from the informer factory.

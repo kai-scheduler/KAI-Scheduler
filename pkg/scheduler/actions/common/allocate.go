@@ -180,10 +180,11 @@ func allocateTask(ssn *framework.Session, stmt *framework.Statement, nodes []*no
 
 	orderedNodes := ssn.OrderedNodesByTask(nodes, task)
 	for _, node := range orderedNodes {
-		if !ssn.FittingNode(task, node, !isSimulation) {
+		fits, mustPipeline := ssn.FittingNode(task, node, isSimulation)
+		if !fits {
 			continue
 		}
-		success = allocateTaskToNode(ssn, stmt, task, node, isSimulation)
+		success = allocateTaskToNode(ssn, stmt, task, node, isSimulation, mustPipeline)
 		if success {
 			break
 		}
@@ -207,7 +208,22 @@ func allocateTask(ssn *framework.Session, stmt *framework.Statement, nodes []*no
 	return success
 }
 
-func allocateTaskToNode(ssn *framework.Session, stmt *framework.Statement, task *pod_info.PodInfo, node *node_info.NodeInfo, isSimulation bool) bool {
+func allocateTaskToNode(ssn *framework.Session, stmt *framework.Statement, task *pod_info.PodInfo, node *node_info.NodeInfo,
+	isSimulation, mustPipeline bool) bool {
+	if !mustPipeline {
+		return placeTaskOnNode(ssn, stmt, task, node, isSimulation, mustPipeline)
+	}
+	// The fit may rely on what the terminating pods release (NUMA zones, DRA devices), so place the
+	// task in the same view the fit was checked in.
+	var success bool
+	ssn.WithoutTerminatingPods(task, node, func() {
+		success = placeTaskOnNode(ssn, stmt, task, node, isSimulation, mustPipeline)
+	})
+	return success
+}
+
+func placeTaskOnNode(ssn *framework.Session, stmt *framework.Statement, task *pod_info.PodInfo, node *node_info.NodeInfo,
+	isSimulation, mustPipeline bool) bool {
 	placement, err := ssn.GetNumaPlacement(task, node)
 	if err != nil {
 		log.InfraLogger.V(6).Do(func() {
@@ -218,10 +234,10 @@ func allocateTaskToNode(ssn *framework.Session, stmt *framework.Statement, task 
 	task.NUMAPlacement = placement
 
 	if task.IsFractionRequest() || task.IsGpuMemoryRequest() {
-		return gpu_sharing.AllocateFractionalGPUTaskToNode(ssn, stmt, task, node, isSimulation)
+		return gpu_sharing.AllocateFractionalGPUTaskToNode(ssn, stmt, task, node, isSimulation, mustPipeline)
 	}
 
-	if canBind := !isSimulation && node.IsTaskAllocatable(task); canBind {
+	if canBind := !mustPipeline && node.IsTaskAllocatable(task); canBind {
 		return bindTaskToNode(ssn, stmt, task, node)
 	}
 	return pipelineTaskToNode(ssn, stmt, task, node, isSimulation)
