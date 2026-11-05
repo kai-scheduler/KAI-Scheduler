@@ -5,11 +5,9 @@ package framework
 
 import (
 	"fmt"
-	"slices"
 
 	v1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/dynamic-resource-allocation/structured"
 	"k8s.io/utils/ptr"
@@ -48,9 +46,6 @@ func newDRAOverlay(ssn *Session, terminating *terminatingPods) *draOverlay {
 		terminating: terminating,
 		releasing:   sets.New[structured.DeviceID](),
 	}
-	if ssn.Cache == nil {
-		return overlay
-	}
 	if k8sPlugins := ssn.InternalK8sPlugins(); k8sPlugins != nil && k8sPlugins.SessionDRAManager != nil {
 		overlay.claims, _ = k8sPlugins.SessionDRAManager.ResourceClaims().(*k8s_utils.SessionClaimTracker)
 	}
@@ -78,10 +73,8 @@ func newDRAOverlay(ssn *Session, terminating *terminatingPods) *draOverlay {
 	return overlay
 }
 
-// isFreedWithTerminatingPods reports whether the claim's devices are freed once the terminating
-// pods exit: it is reserved only for them, and the claim controller deallocates it (it carries the
-// controller's finalizer) or deletes it with its owning pod. KAI's binder never adds the finalizer
-// to standalone claims, which stay allocated after their last consumer leaves.
+// isFreedWithTerminatingPods reports whether the claim is reserved only for terminating pods, matching
+// the eviction path that deallocates a claim once no consumer is left.
 func (o *draOverlay) isFreedWithTerminatingPods(claim *resourceapi.ResourceClaim) bool {
 	if claim.Status.Allocation == nil || len(claim.Status.ReservedFor) == 0 {
 		return false
@@ -91,11 +84,7 @@ func (o *draOverlay) isFreedWithTerminatingPods(claim *resourceapi.ResourceClaim
 			return false
 		}
 	}
-	if slices.Contains(claim.Finalizers, resourceapi.Finalizer) {
-		return true
-	}
-	owner := metav1.GetControllerOf(claim)
-	return owner != nil && owner.APIVersion == "v1" && owner.Kind == "Pod" && o.terminating.uids.Has(owner.UID)
+	return true
 }
 
 func (o *draOverlay) allocatedState(pod *v1.Pod, future bool) (*structured.AllocatedState, error) {

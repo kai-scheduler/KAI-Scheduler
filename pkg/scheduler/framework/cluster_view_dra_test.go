@@ -38,7 +38,6 @@ func testClaim(name string, allocation *resourceapi.AllocationResult, consumers 
 	claim := &resourceapi.ResourceClaim{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name, Namespace: "test", UID: types.UID(name), ResourceVersion: "1",
-			Finalizers: []string{resourceapi.Finalizer},
 		},
 		Status: resourceapi.ResourceClaimStatus{Allocation: allocation},
 	}
@@ -125,16 +124,7 @@ func TestDRAOverlayIsFreedWithTerminatingPods(t *testing.T) {
 	overlay := &draOverlay{
 		terminating: &terminatingPods{uids: sets.New[types.UID](terminatingPodUID)},
 	}
-	standalone := testClaim("standalone", deviceAllocation(), terminatingPodUID)
-	standalone.Finalizers = nil
-	owned := standalone.DeepCopy()
-	owned.OwnerReferences = []metav1.OwnerReference{
-		{APIVersion: "v1", Kind: "Pod", Name: terminatingPodUID, UID: terminatingPodUID, Controller: ptr.To(true)},
-	}
-
-	assert.True(t, overlay.isFreedWithTerminatingPods(testClaim("finalizer", deviceAllocation(), terminatingPodUID)))
-	assert.True(t, overlay.isFreedWithTerminatingPods(owned), "deleted with its owning pod")
-	assert.False(t, overlay.isFreedWithTerminatingPods(standalone), "stays allocated after its last consumer")
+	assert.True(t, overlay.isFreedWithTerminatingPods(testClaim("standalone", deviceAllocation(), terminatingPodUID)))
 	assert.False(t, overlay.isFreedWithTerminatingPods(testClaim("unreserved", deviceAllocation())))
 	assert.False(t, overlay.isFreedWithTerminatingPods(testClaim("unallocated", nil, terminatingPodUID)))
 	assert.False(t, overlay.isFreedWithTerminatingPods(
