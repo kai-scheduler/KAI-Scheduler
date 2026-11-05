@@ -220,3 +220,9 @@ table := supportedTypes{
     ...
 }
 ```
+
+### Things that are easy to miss
+- Embed or reuse `defaultgrouper` and `minmember` instead of reimplementing min-member and priority logic.
+- Add RBAC markers (`+kubebuilder:rbac`) for the new kind in `hub/hub.go`, including `/finalizers` with `patch;update;create`, then run `make manifests`. Without them the podgrouper cannot read the owner at runtime.
+- `plugins/skiptopowner` lets a workload stop owner traversal at a given kind; check it before special-casing in a new plugin.
+- Unit tests go next to the plugin. For workloads from a third-party operator, add an e2e under `test/e2e/suites/integrations` (setup scripts in `hack/third_party_integrations`). The controller's Ginkgo + envtest suite is `pod_controller_test.go` / `suite_test.go`.
