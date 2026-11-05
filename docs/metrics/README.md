@@ -26,6 +26,65 @@ To enable the Prometheus instance as a Grafana datasource, apply
 kubectl apply -f grafana-datasource.yaml
 ```
 
+## Admission autoscaling metrics
+
+Admission can be horizontally scaled using CPU utilization, in-flight webhook
+requests, or both.
+
+CPU-based autoscaling uses the Kubernetes resource metrics API and does not
+require Prometheus Adapter.
+
+In-flight request autoscaling requires the Kubernetes Custom Metrics API.
+KAI does not install or manage a custom metrics adapter. When
+`admission.autoscaling.targetInFlightRequests` is configured, the HPA expects
+the following per-pod custom metric:
+
+`kai_admission_requests_in_flight`
+
+Admission already exposes the controller-runtime metric
+`controller_runtime_webhook_requests_in_flight` on its metrics endpoint. The
+metric has one series per webhook path, so the adapter should sum these series
+for each Admission pod.
+
+For Prometheus Adapter, an example custom rule is:
+
+```yaml
+rules:
+  custom:
+    - seriesQuery: 'controller_runtime_webhook_requests_in_flight{namespace!="",pod!=""}'
+      resources:
+        overrides:
+          namespace:
+            resource: namespace
+          pod:
+            resource: pod
+      name:
+        matches: '^controller_runtime_webhook_requests_in_flight$'
+        as: 'kai_admission_requests_in_flight'
+      metricsQuery: 'sum(<<.Series>>{<<.LabelMatchers>>}) by (<<.GroupBy>>)'
+```
+
+This example assumes that the scraped series contain `namespace` and `pod`
+labels. Adjust the resource association if your Prometheus configuration uses
+different labels.
+
+First verify that the Custom Metrics API is installed:
+
+```sh
+kubectl get --raw /apis/custom.metrics.k8s.io/v1beta1
+```
+
+If this returns NotFound, a custom metrics adapter such as Prometheus Adapter
+is not installed or registered in the cluster. CPU-only autoscaling does not
+require this API.
+
+Once the adapter is configured, verify the Admission metric:
+
+```sh
+kubectl get --raw \
+  "/apis/custom.metrics.k8s.io/v1beta1/namespaces/kai-scheduler/pods/*/kai_admission_requests_in_flight"
+```
+
 # Grafana dashboards
 
 The `grafana/` directory contains importable dashboards for scale-test deep

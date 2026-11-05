@@ -1,0 +1,85 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+suite: admission autoscaling in kai-config
+
+set:
+  kaiConfigDeployer:
+    enabled: false
+  kaiConfig:
+    render: true
+
+templates:
+  - kai-config.yaml
+
+tests:
+  - it: disables admission autoscaling by default
+    asserts:
+      - equal:
+          path: spec.admission.autoscaling.enabled
+          value: false
+      - isNull:
+          path: spec.admission.autoscaling.maxReplicas
+      - isNull:
+          path: spec.admission.autoscaling.targetCPUUtilizationPercentage
+      - isNull:
+          path: spec.admission.autoscaling.targetInFlightRequests
+
+  - it: renders admission CPU autoscaling
+    set:
+      admission.autoscaling:
+        enabled: true
+        maxReplicas: 10
+        targetCPUUtilizationPercentage: 80
+    asserts:
+      - equal:
+          path: spec.admission.autoscaling.enabled
+          value: true
+      - equal:
+          path: spec.admission.autoscaling.maxReplicas
+          value: 10
+      - equal:
+          path: spec.admission.autoscaling.targetCPUUtilizationPercentage
+          value: 80
+      - isNull:
+          path: spec.admission.autoscaling.targetInFlightRequests
+
+  - it: renders admission in-flight request autoscaling
+    set:
+      admission.autoscaling:
+        enabled: true
+        maxReplicas: 10
+        targetInFlightRequests: 20
+    asserts:
+      - equal:
+          path: spec.admission.autoscaling.enabled
+          value: true
+      - equal:
+          path: spec.admission.autoscaling.maxReplicas
+          value: 10
+      - equal:
+          path: spec.admission.autoscaling.targetInFlightRequests
+          value: 20
+      - isNull:
+          path: spec.admission.autoscaling.targetCPUUtilizationPercentage
+
+  - it: renders both admission autoscaling metrics
+    set:
+      admission.autoscaling:
+        enabled: true
+        maxReplicas: 10
+        targetCPUUtilizationPercentage: 80
+        targetInFlightRequests: 20
+    asserts:
+      - equal:
+          path: spec.admission.autoscaling.enabled
+          value: true
+      - equal:
+          path: spec.admission.autoscaling.maxReplicas
+          value: 10
+      - equal:
+          path: spec.admission.autoscaling.targetCPUUtilizationPercentage
+          value: 80
+      - equal:
+          path: spec.admission.autoscaling.targetInFlightRequests
+          value: 20

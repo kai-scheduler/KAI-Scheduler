@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	admissionv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	v1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -153,6 +154,34 @@ func TestDeploymentForKAIConfig(t *testing.T) {
 				"--webhook-addr", "9443",
 				"--health-probe-bind-address", ":8081",
 				"--metrics-bind-address", ":8080",
+				"--leader-elect",
+			},
+		},
+		{
+			name: "autoscaling enables leader election when min replicas is one",
+			config: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Namespace: constants.DefaultKAINamespace,
+					Global: &kaiv1.GlobalConfig{
+						SchedulerName: ptr.To(constants.DefaultSchedulerName),
+					},
+					Admission: &admission.Admission{
+						Replicas: ptr.To(int32(1)),
+						Autoscaling: &admission.Autoscaling{
+							Enabled:                        ptr.To(true),
+							MaxReplicas:                    ptr.To(int32(10)),
+							TargetCPUUtilizationPercentage: ptr.To(int32(80)),
+						},
+						GPUSharing: ptr.To(false),
+						Webhook: &admission.Webhook{
+							TargetPort:  ptr.To(9443),
+							ProbePort:   ptr.To(8081),
+							MetricsPort: ptr.To(8080),
+						},
+					},
+				},
+			},
+			expectedArgs: []string{
 				"--leader-elect",
 			},
 		},
@@ -433,6 +462,7 @@ func TestDeploymentForKAIConfig(t *testing.T) {
 			assert.Equal(t, constants.DefaultKAINamespace, deploymentObj.GetNamespace())
 
 			deployment := deploymentObj.(*appsv1.Deployment)
+			assert.Equal(t, appsv1.RollingUpdateDeploymentStrategyType, deployment.Spec.Strategy.Type)
 			container := deployment.Spec.Template.Spec.Containers[0]
 			args := container.Args
 
@@ -445,6 +475,97 @@ func TestDeploymentForKAIConfig(t *testing.T) {
 			for _, notExpectedArg := range tt.notExpectedArgs {
 				assert.NotContains(t, args, notExpectedArg)
 			}
+		})
+	}
+}
+
+func TestDeploymentReplicaOwnership(t *testing.T) {
+	tests := []struct {
+		name             string
+		autoscaling      *admission.Autoscaling
+		currentReplicas  int32
+		configured       int32
+		expectedReplicas int32
+	}{
+		{
+			name: "preserves HPA controlled replicas",
+			autoscaling: &admission.Autoscaling{
+				Enabled:                        ptr.To(true),
+				MaxReplicas:                    ptr.To(int32(10)),
+				TargetCPUUtilizationPercentage: ptr.To(int32(80)),
+			},
+			currentReplicas:  6,
+			configured:       2,
+			expectedReplicas: 6,
+		},
+		{
+			name:             "reconciles replicas when autoscaling is absent",
+			autoscaling:      nil,
+			currentReplicas:  6,
+			configured:       2,
+			expectedReplicas: 2,
+		},
+		{
+			name: "reconciles replicas when autoscaling is disabled",
+			autoscaling: &admission.Autoscaling{
+				Enabled: ptr.To(false),
+			},
+			currentReplicas:  6,
+			configured:       2,
+			expectedReplicas: 2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			testScheme := scheme.Scheme
+			utilruntime.Must(nvidiav1.AddToScheme(testScheme))
+
+			existingDeployment := &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      defaultResourceName,
+					Namespace: constants.DefaultKAINamespace,
+				},
+				Spec: appsv1.DeploymentSpec{
+					Replicas: ptr.To(tt.currentReplicas),
+				},
+			}
+
+			client := fake.NewClientBuilder().
+				WithScheme(testScheme).
+				WithObjects(existingDeployment).
+				Build()
+
+			config := &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Namespace: constants.DefaultKAINamespace,
+					Global: &kaiv1.GlobalConfig{
+						SchedulerName: ptr.To(constants.DefaultSchedulerName),
+					},
+					Admission: &admission.Admission{
+						Replicas:    ptr.To(tt.configured),
+						Autoscaling: tt.autoscaling,
+						Webhook: &admission.Webhook{
+							TargetPort:  ptr.To(9443),
+							ProbePort:   ptr.To(8081),
+							MetricsPort: ptr.To(8080),
+						},
+					},
+				},
+			}
+
+			config.Spec.SetDefaultsWhereNeeded()
+
+			a := &Admission{BaseResourceName: defaultResourceName}
+			objects, err := a.deploymentForKAIConfig(ctx, client, config)
+
+			require.NoError(t, err)
+			require.Len(t, objects, 1)
+
+			deployment := objects[0].(*appsv1.Deployment)
+			require.NotNil(t, deployment.Spec.Replicas)
+			assert.Equal(t, tt.expectedReplicas, *deployment.Spec.Replicas)
 		})
 	}
 }
@@ -863,6 +984,203 @@ func TestPodDisruptionBudgetForKAIConfig(t *testing.T) {
 			assert.Equal(t, tt.maxUnavailable, pdb.Spec.MaxUnavailable.IntVal)
 			require.NotNil(t, pdb.Spec.Selector)
 			assert.Equal(t, "admission", pdb.Spec.Selector.MatchLabels["app"])
+		})
+	}
+}
+
+func TestHorizontalPodAutoscalerForKAIConfig(t *testing.T) {
+	tests := []struct {
+		name             string
+		replicas         int32
+		autoscaling      *admission.Autoscaling
+		expectHPA        bool
+		expectError      bool
+		expectedMax      int32
+		expectedCPU      *int32
+		expectedInFlight *int32
+	}{
+		{
+			name:     "autoscaling disabled",
+			replicas: 2,
+			autoscaling: &admission.Autoscaling{
+				Enabled:     ptr.To(false),
+				MaxReplicas: ptr.To(int32(10)),
+			},
+			expectHPA: false,
+		},
+		{
+			name:     "autoscaling enabled with CPU metric",
+			replicas: 2,
+			autoscaling: &admission.Autoscaling{
+				Enabled:                        ptr.To(true),
+				MaxReplicas:                    ptr.To(int32(10)),
+				TargetCPUUtilizationPercentage: ptr.To(int32(80)),
+			},
+			expectHPA:   true,
+			expectedMax: 10,
+			expectedCPU: ptr.To(int32(80)),
+		},
+		{
+			name:     "missing max replicas",
+			replicas: 2,
+			autoscaling: &admission.Autoscaling{
+				Enabled: ptr.To(true),
+			},
+			expectError: true,
+		},
+		{
+			name:     "max replicas less than min replicas",
+			replicas: 5,
+			autoscaling: &admission.Autoscaling{
+				Enabled:     ptr.To(true),
+				MaxReplicas: ptr.To(int32(3)),
+			},
+			expectError: true,
+		},
+		{
+			name:     "no autoscaling metrics",
+			replicas: 2,
+			autoscaling: &admission.Autoscaling{
+				Enabled:     ptr.To(true),
+				MaxReplicas: ptr.To(int32(10)),
+			},
+			expectError: true,
+		},
+		{
+			name:     "autoscaling enabled with in-flight metric",
+			replicas: 2,
+			autoscaling: &admission.Autoscaling{
+				Enabled:                ptr.To(true),
+				MaxReplicas:            ptr.To(int32(10)),
+				TargetInFlightRequests: ptr.To(int32(20)),
+			},
+			expectHPA:        true,
+			expectedMax:      10,
+			expectedInFlight: ptr.To(int32(20)),
+		},
+
+		{
+			name:     "autoscaling enabled with CPU and in-flight metrics",
+			replicas: 2,
+			autoscaling: &admission.Autoscaling{
+				Enabled:                        ptr.To(true),
+				MaxReplicas:                    ptr.To(int32(10)),
+				TargetInFlightRequests:         ptr.To(int32(20)),
+				TargetCPUUtilizationPercentage: ptr.To(int32(80)),
+			},
+			expectHPA:        true,
+			expectedMax:      10,
+			expectedCPU:      ptr.To(int32(80)),
+			expectedInFlight: ptr.To(int32(20)),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			client := fake.NewClientBuilder().
+				WithScheme(scheme.Scheme).
+				Build()
+
+			config := &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Namespace: constants.DefaultKAINamespace,
+					Admission: &admission.Admission{
+						Replicas:    ptr.To(tt.replicas),
+						Autoscaling: tt.autoscaling,
+					},
+				},
+			}
+
+			a := &Admission{BaseResourceName: defaultResourceName}
+
+			objects, err := a.horizontalPodAutoscalerForKAIConfig(
+				ctx,
+				client,
+				config,
+			)
+
+			if tt.expectError {
+				require.Error(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+
+			if !tt.expectHPA {
+				assert.Empty(t, objects)
+				return
+			}
+
+			require.Len(t, objects, 1)
+
+			hpa, ok := objects[0].(*autoscalingv2.HorizontalPodAutoscaler)
+			require.True(t, ok)
+
+			assert.Equal(t, defaultResourceName, hpa.Name)
+			assert.Equal(t, constants.DefaultKAINamespace, hpa.Namespace)
+
+			require.NotNil(t, hpa.Spec.MinReplicas)
+			assert.Equal(t, tt.replicas, *hpa.Spec.MinReplicas)
+			assert.Equal(t, tt.expectedMax, hpa.Spec.MaxReplicas)
+
+			assert.Equal(t, appsv1.SchemeGroupVersion.String(), hpa.Spec.ScaleTargetRef.APIVersion)
+			assert.Equal(t, "Deployment", hpa.Spec.ScaleTargetRef.Kind)
+			assert.Equal(t, defaultResourceName, hpa.Spec.ScaleTargetRef.Name)
+
+			expectedMetricCount := 0
+			if tt.expectedCPU != nil {
+				expectedMetricCount++
+			}
+			if tt.expectedInFlight != nil {
+				expectedMetricCount++
+			}
+
+			require.Len(t, hpa.Spec.Metrics, expectedMetricCount)
+
+			if tt.expectedCPU != nil {
+				var cpuMetric *autoscalingv2.MetricSpec
+
+				for i := range hpa.Spec.Metrics {
+					if hpa.Spec.Metrics[i].Type == autoscalingv2.ResourceMetricSourceType {
+						cpuMetric = &hpa.Spec.Metrics[i]
+						break
+					}
+				}
+
+				require.NotNil(t, cpuMetric)
+				require.NotNil(t, cpuMetric.Resource)
+
+				assert.Equal(t, v1.ResourceCPU, cpuMetric.Resource.Name)
+				assert.Equal(t, autoscalingv2.UtilizationMetricType, cpuMetric.Resource.Target.Type)
+
+				require.NotNil(t, cpuMetric.Resource.Target.AverageUtilization)
+				assert.Equal(t, *tt.expectedCPU, *cpuMetric.Resource.Target.AverageUtilization)
+			}
+
+			if tt.expectedInFlight != nil {
+				var inFlightMetric *autoscalingv2.MetricSpec
+
+				for i := range hpa.Spec.Metrics {
+					if hpa.Spec.Metrics[i].Type == autoscalingv2.PodsMetricSourceType {
+						inFlightMetric = &hpa.Spec.Metrics[i]
+						break
+					}
+				}
+
+				require.NotNil(t, inFlightMetric)
+				require.NotNil(t, inFlightMetric.Pods)
+
+				assert.Equal(t, admissionInFlightMetricName, inFlightMetric.Pods.Metric.Name)
+				assert.Equal(t, autoscalingv2.AverageValueMetricType, inFlightMetric.Pods.Target.Type)
+
+				require.NotNil(t, inFlightMetric.Pods.Target.AverageValue)
+				assert.Equal(
+					t,
+					int64(*tt.expectedInFlight),
+					inFlightMetric.Pods.Target.AverageValue.Value(),
+				)
+			}
 		})
 	}
 }
