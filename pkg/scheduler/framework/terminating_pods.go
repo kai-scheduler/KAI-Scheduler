@@ -80,9 +80,7 @@ func (ssn *Session) terminating() *terminatingPods {
 	return t
 }
 
-// fitsWithoutTerminatingPods runs the task's predicates on the node with the terminating pods set
-// aside. Queue capacity is checked after the rollback: the evictions take the terminating pods off
-// their queues, which never counted them, so the queues look emptier than they are.
+// fitsWithoutTerminatingPods runs the task's predicates on the node with the terminating pods set aside.
 func (ssn *Session) fitsWithoutTerminatingPods(
 	task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo,
 ) error {
@@ -93,6 +91,8 @@ func (ssn *Session) fitsWithoutTerminatingPods(
 	if err != nil {
 		return err
 	}
+	// Queue usage never counted the terminating pods, yet evicting them subtracts them, so the capacity
+	// check inside the predicates passes too easily. Recheck it against the restored usage.
 	if result := ssn.IsTaskAllocationOnNodeOverCapacityFn(task, job, node); !result.IsSchedulable {
 		return common_info.NewFitError(task.Name, task.Namespace, node.Name,
 			fmt.Sprintf("node does not have enough capacity. Reason: %s, Details: %s", result.Reason, result.Message))
