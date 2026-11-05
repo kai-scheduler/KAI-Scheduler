@@ -4,8 +4,6 @@
 package k8s_utils
 
 import (
-	"sync"
-
 	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -30,13 +28,11 @@ func inFlightKey(claimUID types.UID) holderKey {
 
 // SessionClaimTracker indexes, per dedicated device, the claims allocated to it. The upstream
 // allocated set is not reference counted: un-assuming one of two claims allocated to a device
-// drops the device although the other claim still holds it.
+// drops the device although the other claim still holds it. It is used by a single session, so
+// it needs no locking.
 type SessionClaimTracker struct {
 	ksf.ResourceClaimTracker
 
-	mutex    sync.RWMutex
-	inFlight map[types.UID]*resourceapi.ResourceClaim
-	// holders is built on the first change to the tracker, so sessions that only read pay nothing.
 	holders      map[structured.DeviceID]map[holderKey]*resourceapi.ResourceClaim
 	claimDevices map[holderKey][]structured.DeviceID
 	// shared are the devices that had more than one holder: the only ones the upstream set can drop.
@@ -53,13 +49,18 @@ func (m *sessionDRAManager) ResourceClaims() ksf.ResourceClaimTracker {
 }
 
 func newSessionDRAManager(manager ksf.SharedDRAManager) ksf.SharedDRAManager {
-	return &sessionDRAManager{
-		SharedDRAManager: manager,
-		claims: &SessionClaimTracker{
-			ResourceClaimTracker: manager.ResourceClaims(),
-			inFlight:             map[types.UID]*resourceapi.ResourceClaim{},
-		},
+	tracker := &SessionClaimTracker{
+		ResourceClaimTracker: manager.ResourceClaims(),
+		holders:              map[structured.DeviceID]map[holderKey]*resourceapi.ResourceClaim{},
+		claimDevices:         map[holderKey][]structured.DeviceID{},
+		shared:               sets.New[structured.DeviceID](),
 	}
+	if claims, err := tracker.List(); err == nil {
+		for _, claim := range claims {
+			tracker.indexClaim(cacheClaimKey(claim), claim)
+		}
+	}
+	return &sessionDRAManager{SharedDRAManager: manager, claims: tracker}
 }
 
 // GatherAllocatedState adds back the shared devices that a claim still holds.
@@ -68,8 +69,6 @@ func (t *SessionClaimTracker) GatherAllocatedState() (*structured.AllocatedState
 	if err != nil {
 		return nil, err
 	}
-	t.mutex.RLock()
-	defer t.mutex.RUnlock()
 	for device := range t.shared {
 		if len(t.holders[device]) > 0 {
 			state.AllocatedDevices.Insert(device)
@@ -79,84 +78,40 @@ func (t *SessionClaimTracker) GatherAllocatedState() (*structured.AllocatedState
 }
 
 func (t *SessionClaimTracker) AssumeClaimAfterAPICall(claim *resourceapi.ResourceClaim) error {
-	t.ensureIndex()
 	if err := t.ResourceClaimTracker.AssumeClaimAfterAPICall(claim); err != nil {
 		return err
 	}
-	t.mutex.Lock()
-	defer t.mutex.Unlock()
 	t.indexClaim(cacheClaimKey(claim), claim)
 	return nil
 }
 
 func (t *SessionClaimTracker) AssumedClaimRestore(namespace, claimName string) {
-	t.ensureIndex()
 	t.ResourceClaimTracker.AssumedClaimRestore(namespace, claimName)
 	claim, err := t.Get(namespace, claimName)
 	if err != nil {
 		return
 	}
-	t.mutex.Lock()
-	defer t.mutex.Unlock()
 	t.indexClaim(cacheClaimKey(claim), claim)
 }
 
 func (t *SessionClaimTracker) SignalClaimPendingAllocation(
 	claimUID types.UID, allocatedClaim *resourceapi.ResourceClaim,
 ) error {
-	t.ensureIndex()
 	if err := t.ResourceClaimTracker.SignalClaimPendingAllocation(claimUID, allocatedClaim); err != nil {
 		return err
 	}
-	t.mutex.Lock()
-	defer t.mutex.Unlock()
-	t.inFlight[claimUID] = allocatedClaim
 	t.indexClaim(inFlightKey(claimUID), allocatedClaim)
 	return nil
 }
 
 func (t *SessionClaimTracker) RemoveClaimPendingAllocation(claimUID types.UID) bool {
-	t.ensureIndex()
 	deleted := t.ResourceClaimTracker.RemoveClaimPendingAllocation(claimUID)
-	t.mutex.Lock()
-	defer t.mutex.Unlock()
-	delete(t.inFlight, claimUID)
 	t.indexClaim(inFlightKey(claimUID), nil)
 	return deleted
 }
 
-func (t *SessionClaimTracker) ensureIndex() {
-	t.mutex.RLock()
-	built := t.holders != nil
-	t.mutex.RUnlock()
-	if built {
-		return
-	}
-	claims, err := t.List()
-	if err != nil {
-		return
-	}
-	t.mutex.Lock()
-	defer t.mutex.Unlock()
-	if t.holders != nil {
-		return
-	}
-	t.holders = map[structured.DeviceID]map[holderKey]*resourceapi.ResourceClaim{}
-	t.claimDevices = map[holderKey][]structured.DeviceID{}
-	t.shared = sets.New[structured.DeviceID]()
-	for _, claim := range claims {
-		t.indexClaim(cacheClaimKey(claim), claim)
-	}
-	for uid, claim := range t.inFlight {
-		t.indexClaim(inFlightKey(uid), claim)
-	}
-}
-
 // indexClaim replaces the devices indexed for the key with those of the claim; nil unindexes it.
 func (t *SessionClaimTracker) indexClaim(key holderKey, claim *resourceapi.ResourceClaim) {
-	if t.holders == nil {
-		return
-	}
 	for _, device := range t.claimDevices[key] {
 		delete(t.holders[device], key)
 		if len(t.holders[device]) == 0 {
