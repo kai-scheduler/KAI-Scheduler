@@ -22,5 +22,5 @@ type ClusterView interface {
 	// CycleState returns the pod's k8s prefilter state.
 	CycleState(pod *v1.Pod) k8s_internal.SessionState
 	// DRAAllocatedState returns the DRA devices that are not available to the pod's claims.
-	DRAAllocatedState(pod *v1.Pod) (*structured.AllocatedState, error)
+	DRAAllocatedState() (*structured.AllocatedState, error)
 }

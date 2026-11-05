@@ -410,7 +410,7 @@ func (drap *draPlugin) OnSessionClose(_ *framework.Session) {}
 func (drap *draPlugin) allocate(
 	view api.ClusterView, pod *v1.Pod, node *v1.Node, claims []*resourceapi.ResourceClaim,
 ) ([]resourceapi.AllocationResult, error) {
-	allocatedState, err := view.DRAAllocatedState(pod)
+	allocatedState, err := view.DRAAllocatedState()
 	if err != nil {
 		return nil, fmt.Errorf("failed to gather allocated device state: %v", err)
 	}

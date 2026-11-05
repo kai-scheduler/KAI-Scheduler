@@ -182,43 +182,6 @@ func TestAllocateDRAWithSharedDeviceOfReleasingPodOnAnotherNode(t *testing.T) {
 
 // A pod sharing a claim with a releasing pod keeps that claim's device: pipelining must not also
 // give the device to the pod's own other claim.
-func TestAllocateDRAWithClaimSharedWithReleasingPod(t *testing.T) {
-	test_utils.InitTestingInfrastructure()
-	controller := NewController(t)
-	defer controller.Finish()
-	featuregates.SetDynamicResourcesEnabledForTest(true)
-	t.Cleanup(func() {
-		featuregates.SetDynamicResourcesEnabledForTest(false)
-	})
-
-	pendingJob := draJob("pending_job0", pod_status.Pending, "", "shared-claim")
-	pendingJob.Tasks[0].ResourceClaimNames = []string{"shared-claim", "own-claim"}
-	testMetadata := test_utils.TestTopologyBasic{
-		Name: "Pod sharing the only device's claim with a releasing pod, needing another device: stay pending",
-		Jobs: []*jobs_fake.TestJobBasic{
-			draJob("holder_job0", pod_status.Releasing, "node0", "shared-claim"),
-			pendingJob,
-		},
-		TestDRAObjects: draObjects(1,
-			dra_fake.NewTestResourceClaim("shared-claim", "test", "queue0").WithAllocation("node0", "0", "holder_job0-0"),
-			dra_fake.NewTestResourceClaim("own-claim", "test", "queue0"),
-		),
-		Nodes:  draNodes(),
-		Queues: draQueues(),
-		Mocks:  &test_utils.TestMock{CacheRequirements: &test_utils.CacheMocking{}},
-		JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
-			"holder_job0":  {Status: pod_status.Releasing, NodeName: "node0"},
-			"pending_job0": {Status: pod_status.Pending},
-		},
-	}
-
-	ssn := test_utils.BuildSession(testMetadata, controller)
-	// The DRA manager cache is populated asynchronously.
-	time.Sleep(time.Millisecond)
-	allocate.New().Execute(ssn)
-	test_utils.MatchExpectedAndRealTasks(t, 0, testMetadata, ssn)
-}
-
 func draJob(name string, state pod_status.PodStatus, nodeName string, claims ...string) *jobs_fake.TestJobBasic {
 	job := &jobs_fake.TestJobBasic{
 		Name:      name,

@@ -161,8 +161,8 @@ func (v *currentClusterView) CycleState(pod *v1.Pod) k8s_internal.SessionState {
 	return v.ssn.GetSessionStateForResource(pod.UID)
 }
 
-func (v *currentClusterView) DRAAllocatedState(pod *v1.Pod) (*structured.AllocatedState, error) {
-	return v.ssn.draOverlay().allocatedState(pod, false)
+func (v *currentClusterView) DRAAllocatedState() (*structured.AllocatedState, error) {
+	return v.ssn.draOverlay().allocatedState(false)
 }
 
 type futureClusterView struct {
@@ -228,6 +228,6 @@ func (v *futureClusterView) CycleState(pod *v1.Pod) k8s_internal.SessionState {
 	return derived
 }
 
-func (v *futureClusterView) DRAAllocatedState(pod *v1.Pod) (*structured.AllocatedState, error) {
-	return v.ssn.draOverlay().allocatedState(pod, true)
+func (v *futureClusterView) DRAAllocatedState() (*structured.AllocatedState, error) {
+	return v.ssn.draOverlay().allocatedState(true)
 }

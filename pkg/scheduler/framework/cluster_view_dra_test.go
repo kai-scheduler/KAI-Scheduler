@@ -73,51 +73,45 @@ func newTestDRAOverlay(t *testing.T, claims ...*resourceapi.ResourceClaim) (*dra
 	}, tracker
 }
 
-func allocatedDevices(t *testing.T, overlay *draOverlay, pod *v1.Pod, future bool) sets.Set[structured.DeviceID] {
-	state, err := overlay.allocatedState(pod, future)
+func allocatedDevices(t *testing.T, overlay *draOverlay, future bool) sets.Set[structured.DeviceID] {
+	state, err := overlay.allocatedState(future)
 	require.NoError(t, err)
 	return state.AllocatedDevices
 }
 
 func TestDRAOverlayAllocatedState(t *testing.T) {
-	pending := testPod("pending", "pending-claim")
-
 	t.Run("current view keeps a releasing device, future view frees it", func(t *testing.T) {
 		overlay, _ := newTestDRAOverlay(t, testClaim("releasing-claim", deviceAllocation(), terminatingPodUID))
-		assert.True(t, allocatedDevices(t, overlay, pending, false).Has(releasingDevice))
-		assert.False(t, allocatedDevices(t, overlay, pending, true).Has(releasingDevice))
+		assert.True(t, allocatedDevices(t, overlay, false).Has(releasingDevice))
+		assert.False(t, allocatedDevices(t, overlay, true).Has(releasingDevice))
 	})
 
 	t.Run("a claim allocated in the session holds the device until rolled back", func(t *testing.T) {
 		overlay, tracker := newTestDRAOverlay(t,
 			testClaim("releasing-claim", deviceAllocation(), terminatingPodUID), testClaim("pending-claim", nil))
 		require.NoError(t, tracker.AssumeClaimAfterAPICall(testClaim("pending-claim", deviceAllocation(), "pending")))
-		assert.True(t, allocatedDevices(t, overlay, testPod("other"), true).Has(releasingDevice))
+		assert.True(t, allocatedDevices(t, overlay, true).Has(releasingDevice))
 
 		require.NoError(t, tracker.AssumeClaimAfterAPICall(testClaim("pending-claim", nil)))
 		// The tracker dropped the device with the rolled back claim; the releasing claim still holds it.
-		assert.True(t, allocatedDevices(t, overlay, pending, false).Has(releasingDevice))
-		assert.False(t, allocatedDevices(t, overlay, pending, true).Has(releasingDevice))
+		assert.True(t, allocatedDevices(t, overlay, false).Has(releasingDevice))
+		assert.False(t, allocatedDevices(t, overlay, true).Has(releasingDevice))
 	})
 
 	t.Run("an in-flight allocation holds the device", func(t *testing.T) {
 		overlay, tracker := newTestDRAOverlay(t, testClaim("releasing-claim", deviceAllocation(), terminatingPodUID))
 		extended := testClaim("extended", deviceAllocation(), "pending")
 		require.NoError(t, tracker.SignalClaimPendingAllocation(extended.UID, extended))
-		assert.True(t, allocatedDevices(t, overlay, pending, true).Has(releasingDevice))
+		assert.True(t, allocatedDevices(t, overlay, true).Has(releasingDevice))
 	})
 
 	t.Run("a releasing claim joined by a running consumer holds the device", func(t *testing.T) {
 		overlay, tracker := newTestDRAOverlay(t, testClaim("shared-claim", deviceAllocation(), terminatingPodUID))
 		require.NoError(t, tracker.AssumeClaimAfterAPICall(
 			testClaim("shared-claim", deviceAllocation(), terminatingPodUID, "pending")))
-		assert.True(t, allocatedDevices(t, overlay, testPod("other"), true).Has(releasingDevice))
+		assert.True(t, allocatedDevices(t, overlay, true).Has(releasingDevice))
 	})
 
-	t.Run("the pod's own allocated claim keeps the device from its other claims", func(t *testing.T) {
-		overlay, _ := newTestDRAOverlay(t, testClaim("shared-claim", deviceAllocation(), terminatingPodUID))
-		assert.True(t, allocatedDevices(t, overlay, testPod("pending", "shared-claim", "own-claim"), true).Has(releasingDevice))
-	})
 }
 
 func TestDRAOverlayIsFreedWithTerminatingPods(t *testing.T) {

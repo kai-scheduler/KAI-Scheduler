@@ -6,14 +6,12 @@ package framework
 import (
 	"fmt"
 
-	v1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/dynamic-resource-allocation/structured"
 	"k8s.io/utils/ptr"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/k8s_utils"
-	"github.com/kai-scheduler/api/utilities/resources"
 )
 
 // draOverlay adjusts the session's allocated DRA devices to a view. The devices of claims that
@@ -87,7 +85,7 @@ func (o *draOverlay) isFreedWithTerminatingPods(claim *resourceapi.ResourceClaim
 	return true
 }
 
-func (o *draOverlay) allocatedState(pod *v1.Pod, future bool) (*structured.AllocatedState, error) {
+func (o *draOverlay) allocatedState(future bool) (*structured.AllocatedState, error) {
 	if o.claims == nil {
 		return nil, fmt.Errorf("DRA claim tracker is not initialized")
 	}
@@ -95,9 +93,8 @@ func (o *draOverlay) allocatedState(pod *v1.Pod, future bool) (*structured.Alloc
 	if err != nil || !future || o.releasing.Len() == 0 {
 		return state, err
 	}
-	ownClaims := podClaimKeys(pod)
 	for device := range o.releasing {
-		if o.isFreeInFuture(device, ownClaims) {
+		if o.isFreeInFuture(device) {
 			state.AllocatedDevices.Delete(device)
 		}
 	}
@@ -105,27 +102,11 @@ func (o *draOverlay) allocatedState(pod *v1.Pod, future bool) (*structured.Alloc
 }
 
 // isFreeInFuture reports whether every claim holding the device is freed with the terminating pods.
-// The pod's own claims keep their devices: its allocated claims hold them from its other claims.
-func (o *draOverlay) isFreeInFuture(device structured.DeviceID, ownClaims sets.Set[string]) bool {
+func (o *draOverlay) isFreeInFuture(device structured.DeviceID) bool {
 	for _, holder := range o.claims.DeviceHolders(device) {
-		if holder.InFlight || !o.isFreedWithTerminatingPods(holder.Claim) ||
-			ownClaims.Has(claimKey(holder.Claim.Namespace, holder.Claim.Name)) {
+		if holder.InFlight || !o.isFreedWithTerminatingPods(holder.Claim) {
 			return false
 		}
 	}
 	return true
-}
-
-func podClaimKeys(pod *v1.Pod) sets.Set[string] {
-	keys := sets.New[string]()
-	for _, podClaim := range pod.Spec.ResourceClaims {
-		if claimName, err := resources.GetResourceClaimName(pod, &podClaim); err == nil {
-			keys.Insert(claimKey(pod.Namespace, claimName))
-		}
-	}
-	return keys
-}
-
-func claimKey(namespace, name string) string {
-	return namespace + "/" + name
 }
