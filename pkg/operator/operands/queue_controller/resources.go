@@ -279,7 +279,9 @@ func (q *QueueController) webhookClientConfig(namespace, path string, cabundle [
 func buildArgsList(kaiConfig *kaiv1.Config) []string {
 	config := kaiConfig.Spec.QueueController
 	args := []string{
-		"--metrics-listen-address", fmt.Sprintf(":%d", *config.ControllerService.Metrics.Port),
+		// TargetPort is the container port the metrics Service routes to; Port
+		// is only the port it is published under.
+		"--metrics-listen-address", fmt.Sprintf(":%d", *config.ControllerService.Metrics.TargetPort),
 	}
 	if config.Replicas != nil && *config.Replicas > 1 {
 		args = append(args, "--leader-elect")
