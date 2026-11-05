@@ -26,11 +26,18 @@ import (
 // but not evicted by this session. Their resources already count as releasing, yet they still hold
 // their host ports, inter-pod affinity and DRA devices until they exit.
 type terminatingPods struct {
-	byNode                  map[string][]*pod_info.PodInfo
-	all                     []*pod_info.PodInfo
+	byNode map[string][]*pod_info.PodInfo
+	all    []*pod_info.PodInfo
+	// k8sPods are the pods as the inter-pod affinity plugin sees them, parsed once.
+	k8sPods                 []k8sPod
 	hasRequiredAntiAffinity bool
 	// hasSharedDevicePool is set when a DRA device pool is reachable from more than one node.
 	hasSharedDevicePool bool
+}
+
+type k8sPod struct {
+	podInfo  *k8sframework.PodInfo
+	nodeInfo *k8sframework.NodeInfo
 }
 
 func (ssn *Session) terminating() *terminatingPods {
@@ -58,6 +65,10 @@ func (ssn *Session) terminating() *terminatingPods {
 			}
 			t.byNode[node.Name] = append(t.byNode[node.Name], task)
 			t.all = append(t.all, task)
+			if podInfo, err := k8sframework.NewPodInfo(task.Pod); err == nil {
+				nodeInfo := node.PodAffinityInfo.(*cluster_info.K8sNodePodAffinityInfo).NodeInfo
+				t.k8sPods = append(t.k8sPods, k8sPod{podInfo: podInfo, nodeInfo: nodeInfo})
+			}
 			if len(requiredAntiAffinityTerms(task.Pod)) > 0 {
 				t.hasRequiredAntiAffinity = true
 			}
@@ -82,27 +93,33 @@ func (t *terminatingPods) mayChangeAffinity(pod *v1.Pod) bool {
 		len(requiredAffinityTerms(pod)) > 0)
 }
 
-// terminatingPodsFor returns the terminating pods whose exit can change the task's predicates on the
-// node: the node's own pods, or all of them when inter-pod affinity or a shared DRA pool is involved.
+// terminatingPodsFor returns the terminating pods to evict for the task on the node: the node's own
+// pods, or all of them when the task's DRA devices may come from a pool shared across nodes. Inter-pod
+// affinity looks past the node too, but its filter reads only the prefilter counts.
 func (ssn *Session) terminatingPodsFor(task *pod_info.PodInfo, node *node_info.NodeInfo) []*pod_info.PodInfo {
 	t := ssn.terminating()
-	if t.mayChangeAffinity(task.Pod) || (t.hasSharedDevicePool && UsesDRA(task)) {
+	if t.hasSharedDevicePool && UsesDRA(task) {
 		return t.all
 	}
 	return t.byNode[node.Name]
 }
 
+// mayFitWithoutTerminatingPods reports whether the terminating pods can change the task's predicates on the node.
+func (ssn *Session) mayFitWithoutTerminatingPods(task *pod_info.PodInfo, node *node_info.NodeInfo) bool {
+	return len(ssn.terminatingPodsFor(task, node)) > 0 || ssn.terminating().mayChangeAffinity(task.Pod)
+}
+
 // WithoutTerminatingPods runs fn on the session as it will be once the terminating pods relevant to
 // the task on the node are gone: it evicts them through the regular eviction path, then rolls back.
 func (ssn *Session) WithoutTerminatingPods(task *pod_info.PodInfo, node *node_info.NodeInfo, fn func()) {
+	if ssn.terminating().mayChangeAffinity(task.Pod) {
+		restore := ssn.removeFromAffinityState(task.Pod)
+		defer restore()
+	}
 	pods := ssn.terminatingPodsFor(task, node)
 	if len(pods) == 0 {
 		fn()
 		return
-	}
-	if ssn.terminating().mayChangeAffinity(task.Pod) {
-		restore := ssn.removeFromAffinityState(task.Pod, pods)
-		defer restore()
 	}
 
 	// A scratch statement leaves the caller's statement and checkpoints untouched.
@@ -122,28 +139,20 @@ func (ssn *Session) WithoutTerminatingPods(task *pod_info.PodInfo, node *node_in
 	}
 }
 
-// removeFromAffinityState swaps the pod's prefilter state for a copy without the given pods in its
-// inter-pod affinity counts, as kube-scheduler does for preemption victims. Rerunning the prefilter
-// would be costlier, and a Skip it returns would stick for the rest of the session.
-func (ssn *Session) removeFromAffinityState(pod *v1.Pod, pods []*pod_info.PodInfo) (restore func()) {
+// removeFromAffinityState swaps the pod's prefilter state for a copy without the terminating pods in
+// its inter-pod affinity counts, as kube-scheduler does for preemption victims. Rerunning the
+// prefilter would be costlier, and a Skip it returns would stick for the rest of the session.
+func (ssn *Session) removeFromAffinityState(pod *v1.Pod) (restore func()) {
 	extensions := ssn.podAffinityExtensions()
 	state := ssn.GetSessionStateForResource(pod.UID)
 	if extensions == nil {
 		return func() {}
 	}
 	derived := state.Clone()
-	for _, terminating := range pods {
-		node, found := ssn.ClusterInfo.Nodes[terminating.NodeName]
-		if !found {
-			continue
-		}
-		nodeInfo := node.PodAffinityInfo.(*cluster_info.K8sNodePodAffinityInfo).NodeInfo
-		podInfo, err := k8sframework.NewPodInfo(terminating.Pod)
-		if err != nil {
-			continue
-		}
+	for _, terminating := range ssn.terminating().k8sPods {
 		// Fails when the prefilter was skipped: the pod has no affinity counts to adjust.
-		if status := extensions.RemovePod(context.Background(), derived, pod, podInfo, nodeInfo); !status.IsSuccess() {
+		status := extensions.RemovePod(context.Background(), derived, pod, terminating.podInfo, terminating.nodeInfo)
+		if !status.IsSuccess() {
 			return func() {}
 		}
 	}

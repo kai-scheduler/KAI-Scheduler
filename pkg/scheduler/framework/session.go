@@ -278,7 +278,7 @@ func (ssn *Session) FittingNode(
 		return true, false
 	}
 	logPredicateFailure(task, node, err)
-	if len(ssn.terminatingPodsFor(task, node)) > 0 && ssn.fitsWithoutTerminatingPods(task, job, node) == nil {
+	if ssn.mayFitWithoutTerminatingPods(task, node) && ssn.fitsWithoutTerminatingPods(task, job, node) == nil {
 		log.InfraLogger.V(6).Do(func() {
 			log.InfraLogger.Infof("Task <%s/%s> fits node <%s> once the terminating pods are gone",
 				task.Namespace, task.Name, node.Name)
