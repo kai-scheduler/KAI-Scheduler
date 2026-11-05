@@ -188,5 +188,6 @@ Each scheduling cycle executes these actions in order:
 5. **StaleGangEviction** — Enforce gang scheduling requirements. Evict jobs that violate their minMember count.
 
 This is the default order: non-disruptive actions run first (allocate, consolidate), and disruptive actions run only when needed (reclaim, preempt). The action set, execution order, and which actions are enabled can be customized per shard via the `actions` field on the `SchedulingShard` CRD — see [Scheduler Configuration Customization](../developer/designs/scheduler-config-customization.md).
+Reclaim can also relocate running workloads as part of its solution, so disabling the consolidate action alone does not stop all consolidation; see [Fully disable consolidation](../operator/scheduler-config-customization.md#fully-disable-consolidation).
 
 For implementation details, see [Action Framework](../developer/action-framework.md).
