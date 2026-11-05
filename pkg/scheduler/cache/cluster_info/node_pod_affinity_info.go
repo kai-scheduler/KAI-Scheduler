@@ -44,17 +44,17 @@ func (ni *K8sNodePodAffinityInfo) AddPod(pod *v1.Pod) {
 
 func (ni *K8sNodePodAffinityInfo) RemovePod(pod *v1.Pod) error {
 
-	err := RemovePodKeepingSharedPorts(ni.NodeInfo, pod)
+	err := removePodKeepingSharedPorts(ni.NodeInfo, pod)
 	if err == nil {
 		ni.clusterPodAffinityInfo.UpdateNodeAffinity(ni)
 	}
 	return err
 }
 
-// RemovePodKeepingSharedPorts removes the pod from the node. k8s tracks used host ports as a set,
+// removePodKeepingSharedPorts removes the pod from the node. k8s tracks used host ports as a set,
 // so removing one of two pods holding a port frees it for both; the ports of the pods left on the
 // node are added back. Two pods hold one port when one is pipelined onto a terminating pod's port.
-func RemovePodKeepingSharedPorts(nodeInfo *k8sframework.NodeInfo, pod *v1.Pod) error {
+func removePodKeepingSharedPorts(nodeInfo *k8sframework.NodeInfo, pod *v1.Pod) error {
 	if err := nodeInfo.RemovePod(logger, pod); err != nil {
 		return err
 	}
