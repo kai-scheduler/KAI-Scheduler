@@ -7,26 +7,30 @@
 
 ## Summary
 
-Add a `balanced` strategy to the existing `nodeplacement` plugin, next to `binpack` and `spread`. It reduces cross-dimensional fragmentation by combining post-placement balance (standard deviation across dimensions, as in Kubernetes `BalancedAllocation`) with cosine alignment between the pod's request vector and the node's free capacity vector. The alignment term is applied to every node and steers pods toward nodes where their resource shape fills the gap.
+Add a `balanced` strategy to the existing `nodeplacement` plugin, next to `binpack` and `spread`. It reduces cross-dimensional fragmentation by combining post-placement balance (population standard deviation across dimensions) with cosine alignment between the pod's request vector and the node's free capacity vector. The alignment term is applied to every node and steers pods toward nodes where their resource shape fills the gap.
 
-The first version scores CPU and Memory only.
+The balance term uses the same population standard deviation as Kubernetes `balancedResourceScore` (`(1 - stddev)` scaled into the score). Upstream `BalancedAllocation` then blends that with the score from before placement (`balancedResourceScorer`). This proposal uses only the after-placement term. KAI does not run `BalancedAllocation`, `MostAllocated`, or `LeastAllocated`.
+
+The first version scores CPU and memory only. Weights below are candidates from an older formula and are not settled.
 
 ## Motivation
 
 ### The Problem
 
-KAI-Scheduler currently supports two node-ordering strategies:
+`nodeplacement` has two strategies, `binpack` and `spread` (`pkg/scheduler/constants/placementStrategy.go`). Each one scores a single resource.
 
-- **Bin-packing (MostAllocated):** Prefers nodes with the highest overall utilization. A node at 95% GPU-Memory / 15% CPU looks "mostly full" — bin-packing will avoid it, stranding CPU capacity.
-- **Spread (LeastAllocated):** Prefers nodes with the most free resources. The same node looks "partially used" — spread will send more pods to it, but those pods may need GPU-Memory that isn't there.
+`OnSessionOpen` installs one `NodeOrderFn` per job type (`pkg/scheduler/plugins/nodeplacement/nodeplacement.go`). A task that is not CPU-only (`!IsCPUOnlyRequest`) uses the GPU function. That includes whole-GPU, GPU-memory, MIG, and DRA GPU requests. The GPU function scores `nvidia.com/gpu` only. A CPU-only task uses the CPU function, which scores CPU only. Memory never enters either score, and GPU-memory percent never enters either score.
 
-Neither strategy considers the *shape* of resource usage across dimensions. Both treat a node at 50% CPU / 50% RAM identically to one at 90% CPU / 10% RAM. The second node has stranded RAM — you're paying for memory nobody can use.
+- **binpack** scores the free amount of that one resource, `NonAllocatedResource` (idle plus releasing). Across fitting nodes that have some of the resource, the score is `scores.MaxHighDensity` (9) times a min/max normalization that prefers less free resource (`pack.go`). It is not mean utilization. A node with none of the resource scores 0. When every fitting node has the same free amount, every node scores 9.
+- **spread** scores `nonAllocated / resourceCount` for that same resource (`spread.go`). For CPU, `resourceCount` is allocatable CPU. For GPU, it is `GetNumberOfGPUsInNode()` (the `nvidia.com/gpu.count` annotation, or allocatable GPU count when the annotation is missing). A larger free fraction ranks higher. Two CPU-only nodes with the same capacity and free CPU fractions 0.5 and 0.1 score 0.5 and 0.1. They are not tied, for any memory split.
 
-The existing **BalancedAllocation** strategy (minimize per-node variance between dimensions) is better, but it only asks "will this node be more even after placement?" It does not ask "does this pod's resource shape *match* what this node needs?" It ignores the shape of the pod's request. This proposal adds a directional alignment term so the pod goes to the node where it fills the gap.
+Shape across dimensions is invisible to both. A CPU-only pod can fill CPU and leave memory unused, and the score will not say so.
+
+Kubernetes `BalancedAllocation` asks how even a node is across resources. This proposal is an opt-in KAI score that asks that, and also whether the pod's request points the same way as the node's free capacity.
 
 ### Real-World Impact
 
-In GPU clusters running mixed inference workloads, cross-dimensional fragmentation is common:
+Mixed inference workloads are often described as lopsided across GPU memory, GPU compute, CPU, and RAM:
 
 | Workload Type | GPU-Mem | GPU-Compute | CPU | RAM | Stranded Resource |
 |---|---|---|---|---|---|
@@ -34,7 +38,7 @@ In GPU clusters running mixed inference workloads, cross-dimensional fragmentati
 | Batch small-model inference | ~30% | ~85% | ~70% | ~20% | GPU-Memory, RAM |
 | CPU preprocessing pipeline | ~0% | ~0% | ~90% | ~25% | RAM, all GPU |
 
-A CPU and Memory example without GPUs: pods requesting 2 CPU + 4Gi placed on nodes with 32 CPU + 128Gi free leave memory stranded in the same way. This case needs no new resource fields and is the scope of the first version.
+KAI cannot score that GPU-compute versus GPU-memory split today. Those are not separate request fields, and GPU tasks are ordered by GPU count only. The first version is the CPU and memory case: pods requesting 2 CPU + 4Gi placed on nodes with 32 CPU + 128Gi free leave memory stranded in the same way. That case needs no new resource fields.
 
 [#1311](https://github.com/kai-scheduler/KAI-Scheduler/issues/1311) is related but different. It is about defragmenting a cluster after small jobs end and leave whole-GPU holes. This proposal works at scheduling time on cross-dimensional shape. The two are complementary; this proposal does not solve #1311.
 
@@ -42,67 +46,81 @@ A CPU and Memory example without GPUs: pods requesting 2 CPU + 4Gi placed on nod
 
 ### Scope
 
-The first version scores **CPU and Memory** only. GPU sub-resources (`gpu`, `gpu-compute`, `gpu-memory`) are dependent on each other and users cannot request compute and memory separately today, so scoring across them is premature (raised by @davidLif in [#1373](https://github.com/kai-scheduler/KAI-Scheduler/issues/1373)).
+The first version scores **CPU and memory** only, and only when that dimension's node capacity is greater than zero. Capacity 0 is skipped, so the fraction does not divide by zero. A CPU-only node has GPU allocatable 0. Some nodes have no memory.
 
-The function itself is not limited to two dimensions. It operates on whatever resource vector is passed in, so further dimensions can be added once the resource model supports them without changing the formula.
+The resource vector already has GPU count at `GPUIndex` (`pkg/scheduler/api/resource_info/resource_vector.go`, stored as `gpu` and looked up for `nvidia.com/gpu`) and a pods entry at `PodsIndex`. v1 does not pass either into this formula. GPU memory is a `GpuResourceRequirement`, not a vector component, and those pods still take the GPU score path. Scoring `gpu`, `gpu-compute`, and `gpu-memory` as separate balance dimensions is premature until users can request compute and memory separately (@davidLif in [#1373](https://github.com/kai-scheduler/KAI-Scheduler/issues/1373)).
 
-### Score Function (V3 — Hybrid Variance-Alignment)
+`balanced` replaces the `NodeOrderFn` of the job type it is set on. The other job type is unchanged.
 
-For each candidate node, compute five components:
+- `cpu: balanced` runs only when `IsCPUOnlyRequest` is true. A GPU, GPU-memory, MIG, or DRA GPU task never consults the CPU strategy, so this setting does not change GPU placement. Those tasks stay ordered by free GPU count (`binpack` or `spread`). The same split applies anywhere the session scores a node, including preempt, reclaim, and consolidation simulations.
+- `gpu: balanced` would replace that free-GPU-count score with a CPU/memory score and would stop ordering GPU tasks by GPU count. That is not a v1 setting. `gpu` stays `binpack` or `spread` until a later phase adds GPU count as an active dimension.
+
+Further dimensions can be added later by passing more positive-capacity entries. The formula does not change.
+
+### Score Function (candidate weights, not settled)
+
+For each candidate node, compute five components. The coefficients are the retired search in the [appendix](#appendix-retired-variance-times-4-simulation-rerun-required). They are not chosen values.
 
 ```
-score = 0.6 × variance_score
+score = 0.6 × balance_score
       + 0.2 × alignment_score
       + 0.1 × headroom_score
       − pressure_penalty
       − strand_penalty
 ```
 
-#### Component 1: Post-Placement Balance Score (weight: 0.6)
+`nodeplacement` returns this score divided by 100 and clamped to `[0, 1]`, the same range `spread` returns. Penalties can drive the raw score negative; the clamp keeps the returned value at 0 or above.
+
+#### Component 1: Post-Placement Balance Score (candidate weight 0.6)
 
 ```
-after_frac[i] = (node.used[i] + pod.req[i]) / node.capacity[i]   for each active dimension
-mean          = average(after_frac)
-stddev        = sqrt(average((after_frac[i] - mean)² for each i))
-balance_score = (1.0 - stddev) × 100
+non_allocated[i] = idle[i] + releasing[i]     # NodeInfo.NonAllocatedResource
+after_frac[i]    = (capacity[i] - non_allocated[i] + pod.req[i]) / capacity[i]
+mean             = average(after_frac)
+stddev           = sqrt(average((after_frac[i] - mean)²))    # population stddev
+balance_score    = (1.0 - stddev) × 100
 ```
 
-This matches Kubernetes [BalancedAllocation](https://github.com/kubernetes/kubernetes/blob/master/pkg/scheduler/framework/plugins/noderesources/balanced_allocation.go), which uses standard deviation. An earlier draft used `variance × 4`, an empirical scaling; standard deviation is consistent with upstream and easier to reason about. It asks: "how evenly utilized will this node be across all dimensions after placing this pod?" A node at 60% CPU / 60% RAM after placement scores higher than one at 90% CPU / 30% RAM.
+Active dimensions only (`capacity > 0`). Free capacity here is idle plus releasing, the same quantity binpack and spread already treat as free, so a releasing pod counts as free.
 
-This component does the majority of the work (60% weight) because balance is the single strongest predictor of cluster-wide resource balance.
+This is the after-placement population standard deviation, scaled like Kubernetes `balancedResourceScore`. It asks how evenly utilized the node will be across the active dimensions after this pod. A node at 60% CPU / 60% RAM after placement scores higher than one at 90% CPU / 30% RAM. Upstream also folds in the before-placement score; this component does not.
 
-#### Component 2: Cosine Alignment Score (weight: 0.2)
+An earlier draft used `variance × 4`. That scaling is retired. At the candidate weight 0.6 this term would dominate the sum. That weight is not settled.
+
+#### Component 2: Cosine Alignment Score (candidate weight 0.2)
 
 ```
-node_free[i]  = free_capacity[i] / total_capacity[i]   for each active dimension
-pod_frac[i]   = pod.req[i] / node.capacity[i]          for each active dimension
+node_free[i]  = non_allocated[i] / capacity[i]   # idle + releasing, active dimensions
+pod_frac[i]   = pod.req[i] / capacity[i]
 
 alignment       = cosine_similarity(node_free, pod_frac)
 alignment_score = alignment × 100
 ```
 
-This asks: "does the pod's resource shape point in the same direction as the node's available capacity?" A CPU-heavy pod (large cpu_req, small ram_req) gets a high alignment score on a node with lots of free CPU and little free RAM. The pod "fills in" exactly what the node has to offer.
+This asks whether the pod's resource shape points the same way as the node's free capacity. A CPU-heavy pod (large cpu request, small memory request) scores higher on a node with a lot of free CPU and little free memory.
 
-This is the term that distinguishes this strategy from BalancedAllocation. It is applied to every node, not only on near-ties. A gated tiebreaker (apply alignment only when balance scores are within ε) was benchmarked and lost every configuration: stranding returned to the BalancedAllocation level ([details](https://github.com/koordinator-sh/koordinator/pull/2839)).
+This is the term Kubernetes `BalancedAllocation` does not have. It is applied to every node, not only on near-ties. In the retired simulation, applying alignment only when balance scores were within ε lost the stranding reduction on every ε that was tried ([details](https://github.com/koordinator-sh/koordinator/pull/2839)). That result is not a measurement of this formula.
 
-#### Component 3: Headroom Score (weight: 0.1)
+#### Component 3: Headroom Score (candidate weight 0.1)
 
 ```
-headroom_score = mean(node_free_frac) × 100
+headroom_score = mean(node_free) × 100
 ```
 
-A small bonus for nodes with more total free capacity. Prevents over-concentrating load on a single node while others sit idle.
+A small bonus for nodes with more total free capacity on the active dimensions. The intent is to avoid putting every pod on one node while others sit idle. The 0.1 coefficient is not settled.
 
-#### Component 4: Pressure Penalty (hard gate)
+#### Component 4: Pressure Penalty
 
 ```
 for each active dimension i:
-    used_after = (node.used[i] + pod.req[i]) / node.capacity[i]
-    if used_after > 0.92:  penalty += (used_after - 0.92) × 500   # hard cliff
-    elif used_after > 0.85: penalty += (used_after - 0.85) × 50   # gentle slope
+    used_after = (capacity[i] - non_allocated[i] + pod.req[i]) / capacity[i]
+    if used_after > 0.92:  penalty += (used_after - 0.92) × 500
+    elif used_after > 0.85: penalty += (used_after - 0.85) × 50
 ```
 
-This creates a two-stage back-pressure. Above 85% on any single dimension, the score starts declining. Above 92%, it drops sharply. This prevents the scheduler from packing one dimension to exhaustion while others have room.
+This subtracts from the score. It is not a filter and not a hard gate. A node above 92% on one dimension can still rank first when every other node scores lower.
+
+Comparisons are strict. Exactly 0.85 and exactly 0.92 add nothing from this penalty. A request equal to free is scored like any other request; predicates decide whether the pod fits. Fractions are not clamped at 1 (upstream `balancedResourceScore` does clamp). The 0.85 and 0.92 levels are candidates from the retired search.
 
 #### Component 5: Strand Penalty
 
@@ -112,26 +130,22 @@ for each pair of active dimensions (i, j):
         penalty += 15
 ```
 
-If placing this pod would cause one dimension to exceed 80% while another stays below 20%, that's a stranding risk. The penalty discourages placements that create lopsided utilization.
+If placing this pod would leave one active dimension above 80% and another below 20%, the penalty discourages that placement. Exactly 0.80 and exactly 0.20 add nothing. The thresholds are candidates from the retired search.
 
 ### Why These Weights
 
-The weights (0.6 / 0.2 / 0.1) were determined by grid search over 120 weight combinations across 5 heterogeneous cluster scenarios. Key findings:
+The numbers 0.6 / 0.2 / 0.1 were **not** measured for this formula. A 120-point search produced them for `variance × 4` over 6 simulated dimensions, including GPU sub-resources this design does not score. They have to be searched again with the standard-deviation base on CPU and memory before implementation.
 
-- Variance dominance (0.6) is essential — without it, cosine alignment over-steers and creates new imbalances.
-- Alignment at 0.2 is enough to change placement shape without overwhelming balance.
-- Headroom above 0.1 causes under-packing. Below 0.05 has no measurable effect.
-- The pressure cliff at 0.92 and strand threshold at 0.80/0.20 were determined empirically; they are the values where the composite score (balance − stranded × 0.5 − waste/10000) is maximized.
-
-The weights were searched with the earlier `variance × 4` base over 6 dimensions. They will be re-searched with the standard-deviation base on CPU and Memory before implementation (see [Benchmark Results](#benchmark-results)).
+Until that rerun, do not treat those weights, the 0.92 cliff, or the 0.80/0.20 strand pair as chosen. The appendix keeps the old tables so the search is not lost. There is no production data.
 
 ### Worked Numerical Example
 
-**Setup (CPU, Memory):**
+**Setup (CPU, memory).** Both nodes have the same capacity, so one request-fraction vector is valid for both. If the capacities differed, the fractions would differ by node. Free fractions are non-allocated (idle plus releasing) over capacity.
+
 - Node A free fractions: `[CPU: 0.45, RAM: 0.60]`
 - Node B free fractions: `[CPU: 0.80, RAM: 0.25]`
 - Pod request fractions: `[CPU: 0.20, RAM: 0.05]` (CPU-heavy pod)
-- Both nodes have the same mean free capacity (0.525), so headroom does not decide.
+- Both nodes have the same mean free fraction (0.525), so headroom does not decide.
 
 `after_frac[i] = (1 − free[i]) + req[i]`
 
@@ -140,33 +154,37 @@ The weights were searched with the earlier `variance × 4` base over 6 dimension
 - Alignment: cos([0.20, 0.05], [0.45, 0.60]) = 0.776 → alignment_score = 77.6
 - Headroom: 52.5
 - No pressure or strand penalties
-- **Score: 0.6×85.0 + 0.2×77.6 + 0.1×52.5 = 71.8**
+- **Score: 0.6×85.0 + 0.2×77.6 + 0.1×52.5 = 71.8** (candidate weights)
 
 **Node B:**
 - After placement: `[0.40, 0.80]` → stddev = 0.20 → balance_score = 80.0
 - Alignment: cos([0.20, 0.05], [0.80, 0.25]) = 0.998 → alignment_score = 99.8
 - Headroom: 52.5
 - No pressure or strand penalties
-- **Score: 0.6×80.0 + 0.2×99.8 + 0.1×52.5 = 73.2**
+- **Score: 0.6×80.0 + 0.2×99.8 + 0.1×52.5 = 73.2** (candidate weights)
 
-**Result:** Node B wins (73.2 > 71.8). Balance favors Node A; alignment favors Node B because the CPU-heavy pod matches Node B's free CPU. Node A's free memory stays available for a memory-heavy pod.
+**Result:** With these unsettled weights, Node B scores higher (73.2 > 71.8). The balance term favors Node A. Alignment favors Node B because the CPU-heavy pod matches Node B's free CPU. Node A's free memory stays available for a memory-heavy pod.
 
-**What other strategies would do:**
-- **binpack / spread:** Tie on mean utilization. Today they also score a single resource per job type (GPU count for GPU jobs, CPU for CPU-only jobs), so they do not see the memory dimension at all.
-- **BalancedAllocation:** Node A (lower post-placement stddev).
+**What binpack and spread do on this pod** (CPU-only, so CPU only; memory is ignored):
+
+- **spread** ranks Node B higher (free CPU fraction 0.80 versus 0.45).
+- **binpack** ranks Node A higher (less free CPU). The numeric score also depends on the min and max free CPU across the whole fitting set, so it is not a per-node utilization.
+- They do not tie on mean utilization.
+
+A Kubernetes after-placement standard deviation, on its own, would rank Node A higher (0.15 versus 0.20).
 
 ### Integration Point
 
-Following review, this is a new strategy inside the existing `nodeplacement` plugin rather than a separate plugin.
+This is a new strategy inside the existing `nodeplacement` plugin, not a separate plugin.
 
-Today `nodeplacement` takes one strategy per job type (`gpu`, `cpu`), each `binpack` or `spread`, and each strategy is an `api.NodeOrderFn` in its own file (`pack.go`, `spread.go`). The change:
+Today each job type (`gpu`, `cpu`) is `binpack` or `spread`, and each strategy is an `api.NodeOrderFn` (`pack.go`, `spread.go`). Anything other than `spread` selects binpack. The v1 change:
 
 - `constants/placementStrategy.go`: add `BalancedStrategy = "balanced"`.
-- `nodeplacement/balanced.go`: `nodeResourceBalanced() api.NodeOrderFn`, reading CPU and Memory from `node.AllocatableVector` / `NonAllocatedResource` and the task's request. Returns a score in `[0, 1]` (the formula above divided by 100, clamped), the same range `spread` returns.
-- `nodeplacement.go`: in `OnSessionOpen`, select `nodeResourceBalanced` when the argument for a job type is `balanced`. The pre-order function is `noopPreOrderFn`; no per-session min/max is needed.
-- `balanced_test.go`: table tests for the component scores, the worked example above, and an infeasible node. Existing `nodepack_test.go` and `nodespread_test.go` stay unchanged.
+- `nodeplacement/balanced.go`: `nodeResourceBalanced() api.NodeOrderFn`, reading CPU and memory from `AllocatableVector` and `NonAllocatedResource` (idle plus releasing) and the task request. Skip a dimension whose capacity is 0. Return a score in `[0, 1]` (the formula above divided by 100, clamped).
+- `nodeplacement.go`: in `OnSessionOpen`, select `nodeResourceBalanced` only when the **cpu** argument is `balanced`. The GPU argument stays `binpack` or `spread`, so GPU tasks keep the free-GPU-count function. The CPU pre-order function for `balanced` is `noopPreOrderFn`; the balance score does not need a per-session min/max. The GPU pre-order function stays whatever binpack or spread already uses.
+- `balanced_test.go`: table tests for the component scores, the worked example above, capacity 0, and an infeasible node. Existing `nodepack_test.go` and `nodespread_test.go` stay unchanged.
 
-Configuration:
+Scheduler plugin arguments for v1:
 
 ```yaml
 plugins:
@@ -176,19 +194,70 @@ plugins:
       gpu: binpack
 ```
 
+The user-facing field is `SchedulingShard.spec.placementStrategy`, not this map (`docs/operator/scheduling-shards.md`). The CRD text says `binpack` / `spread` for `gpu` and `cpu`. The string is not an enum.
+
+`SchedulingShardSpec.SetDefaultsWhereNeeded` lives in `github.com/kai-scheduler/api` (this repo depends on `v0.2.0`). It copies both strings into the `nodeplacement` arguments. Device plugins follow the GPU string only: `gpupack` and `gpusharingorder` are enabled when GPU equals `binpack`; any other GPU string enables `gpuspread` and disables those two. Consolidation is disabled only when GPU or CPU equals `spread`.
+
+For `placementStrategy.cpu: balanced`, the api change should:
+
+- copy `cpu: balanced` into `nodeplacement`
+- leave consolidation enabled (`balanced` is not `spread`; today's `!= spread` check already does this)
+- leave `gpupack`, `gpuspread`, and `gpusharingorder` on whatever `placementStrategy.gpu` selects
+
+`placementStrategy.gpu: balanced` is not a v1 value. If it were copied through today, the api would treat it as not-`binpack` (device spread on, `gpupack` and `gpusharingorder` off) and not-`spread` (consolidation stays on when CPU is not `spread`), while `nodeplacement` would still bin-pack GPU tasks because only `spread` switches the GPU function. The api change should not accept that combination. Accepting `balanced` on the CPU field, and keeping the consolidation and device-plugin behavior above, starts in `kai-scheduler/api`.
+
 The function is stateless, allocates nothing per call, and adds no CRDs or background goroutines. A larger overhaul of node scoring has been mentioned by maintainers; the function is independent of the plugin framework and can move into that design when it exists.
 
 ### Interaction with DRF
 
-In KAI, Dominant Resource Fairness is used in the `proportion` plugin (`queue_order.go`, `resource_share`) to order queues and jobs by dominant resource share. It does not score nodes. The `balanced` strategy only orders nodes for a task that has already been chosen.
+Dominant Resource Fairness in KAI is the `proportion` plugin. `OnSessionOpen` registers a queue-order function (`AddQueueOrderFn` in `proportion.go`) and does not register a job-order or node-order function. The queue comparison receives the candidate job, and one of its steps is dominant resource share (`queue_order.go`). Other plugins order jobs (`priority`, `elastic`).
 
-So the two act at different stages and do not pull the same decision in opposite directions: DRF decides which job goes next, and `balanced` decides which node that job's task lands on.
+`balanced` only orders nodes for a task that has already been chosen. It does not pick the queue or the job.
 
-The interaction that remains is indirect: node choice changes how fragmented the cluster becomes, which changes what fits later and therefore which jobs need reclaim or preemption. That effect has not been measured. It needs a simulation with multiple queues and reclaim enabled before this is implemented.
+Node choice still changes how fragmented the cluster becomes, which changes what fits later and which jobs need reclaim or preemption. That effect has not been measured. It needs a simulation with multiple queues and reclaim enabled before this is implemented.
 
 ## Benchmark Results
 
-> **Status:** The numbers below were produced with the earlier formula (`variance × 4`) over 6 simulated dimensions including GPU sub-resources. They are kept for reference and will be rerun with the standard-deviation base on CPU and Memory only. All results are from simulation (`benchmark_simulation.py`) and a 3-node minikube (`benchmark_full.py`); there is no production data.
+The weights and the results tables are from a retired formula. They need a rerun on the standard-deviation, CPU and memory formula before implementation. There is no production data. The scripts are not in this repository. See the [appendix](#appendix-retired-variance-times-4-simulation-rerun-required).
+
+## Alternatives Considered
+
+### Pure Cosine Alignment (V1)
+
+Using only cosine similarity with entropy reduction. In the retired simulation it over-steered and lost to a variance-style score on all 5 scenarios. That comparison has to be rerun with this formula.
+
+### Alignment + Complement Penalties (V2)
+
+Adding explicit penalties for mismatched dimensions. Better pairwise decisions in that same retired simulation, and it still lost the aggregate comparison because complement penalties rejected viable placements. Rerun before relying on that.
+
+### Configurable Weights
+
+Replace fixed 0.6/0.2/0.1 with user-configurable parameters. Deferred. The retired search's top combinations sat near those values; whether that is still true for standard deviation on CPU and memory is part of the rerun.
+
+### Separate Plugin
+
+The first draft proposed a standalone scoring plugin. Folding it into `nodeplacement` as another strategy reuses the existing per-job-type configuration and keeps one place for placement policy.
+
+### Gated Alignment (true tiebreaker)
+
+Apply alignment only when balance scores are within ε. In the retired simulation every ε tried (0.5 to 10) lost the stranding reduction. A per-node `NodeOrderFn` also cannot express a cross-node comparison without two-pass selection.
+
+### Integration with Topology-Aware Scheduling
+
+The balance score can be applied inside a topology domain rather than across the whole cluster. Future work. It does not change the core function.
+
+## Implementation Plan
+
+1. **Before implementation:** rerun the benchmark with the standard-deviation base on CPU and memory; simulate proportion queues with reclaim enabled. Do not ship the candidate weights ahead of that rerun.
+2. **Phase 1:** `balanced` for CPU-only tasks in `nodeplacement`, opt-in through `placementStrategy.cpu` (and the plugin argument it copies). GPU tasks stay on `binpack` or `spread`. The shard defaulting change starts in `kai-scheduler/api`.
+3. **Phase 2:** GPU count as an active dimension, which is when `gpu: balanced` can replace the free-GPU-count score without dropping it. GPU memory and GPU compute stay out until users can request them separately.
+4. **Phase 3:** Optional configurable weights if requested.
+
+## Appendix: retired variance times 4 simulation (rerun required)
+
+The numbers in this appendix were produced with `variance × 4` over 6 simulated dimensions (CPU, RAM, GPU-compute, GPU-memory, IOPS, network). They are not results for the standard-deviation CPU and memory formula above, and they are not a reason to keep 0.6/0.2/0.1. Rerun before implementation. All of them come from an external simulation (`benchmark_simulation.py`) and a 3-node minikube (`benchmark_full.py`). There is no production data.
+
+The source called its candidate "Lambda-G V3". That name is not a KAI strategy. The dollar column is that simulation's cost model, not a KAI metric.
 
 ### Methodology
 
@@ -204,7 +273,9 @@ Simulation benchmark scheduling N pods onto M heterogeneous nodes across 6 resou
 | **MostAllocated** | Bin-packing. Score = mean(used%). Prefer fullest nodes. |
 | **BalancedAllocation** | K8s built-in. Minimize post-placement variance across dimensions. |
 | **DominantResource** | Score by dominant (most-consumed) resource dimension per node. |
-| **Lambda-G V3** | This proposal. 0.6×variance + 0.2×alignment + 0.1×headroom − penalties. |
+| **Lambda-G V3** | External run of the retired formula. 0.6×variance + 0.2×alignment + 0.1×headroom − penalties. |
+
+These rows are the simulation's labels. They are not the KAI `binpack` and `spread` functions described above.
 
 ### Results — Balance Score (higher = better)
 
@@ -234,60 +305,27 @@ Simulation benchmark scheduling N pods onto M heterogeneous nodes across 6 resou
 | **Total Stranded Nodes** | 92 | 0 | 44 | 59 | **34** |
 | **Total Monthly Waste** | $205,249 | $0 | $144,588 | $116,304 | **$67,975** |
 
-Note: MostAllocated shows 0 stranded and $0 waste because it packs so aggressively that most pods cannot schedule at all (660 pending out of 660 total). Its zeros are an artifact of having no placed pods to strand, not evidence of good scheduling.
+Note: MostAllocated shows 0 stranded and $0 waste because it packs so aggressively that most pods cannot schedule at all (660 pending out of 660 total). Its zeros are an artifact of having no placed pods to strand, not evidence of good scheduling. These claims, including "wins all 5 scenarios", belong to the retired formula only.
 
 ### Key Observations
 
-1. **Lambda-G V3 vs BalancedAllocation** (closest real competitor): Lambda-G wins all 5 scenarios. 23% fewer stranded nodes (34 vs 44) and 53% less wasted capacity ($68k vs $145k). The variance component provides the same foundation as BalancedAllocation, while cosine alignment breaks ties by steering pods to nodes where their resource shape fits the gap.
+1. **Retired formula vs BalancedAllocation** (closest comparator in that run): the retired formula won all 5 scenarios on its own metric. 23% fewer stranded nodes (34 vs 44) and 53% less of that model's wasted capacity ($68k vs $145k). Rerun before carrying either percentage forward.
 
-2. **Lambda-G V3 vs DominantResource**: DRF looks at only the single most-consumed dimension. It misses cross-dimensional interactions — a node can have a moderate dominant resource but severe imbalance between other dimensions. Lambda-G considers all dimensions simultaneously through both variance and alignment.
+2. **Retired formula vs DominantResource**: that run's dominant-resource score looked at one dimension. The retired formula used every simulated dimension. This is not a measurement of KAI's `proportion` plugin.
 
-3. **Scaling behavior**: The gap between Lambda-G and BalancedAllocation holds at 60-node scale (76.7 vs 74.1), confirming the approach doesn't degrade with cluster size.
+3. **Scaling behavior**: in that run the gap held at 60 nodes (76.7 vs 74.1). Rerun before treating that as scale behavior of this formula.
 
 ### Scoring Latency
 
-For N=6 dimensions: sub-microsecond per node, zero heap allocations. Negligible compared to API server round-trip time.
+For N=6 dimensions the external run reported sub-microsecond per node and zero heap allocations. Re-measure for the two-dimension function before citing it.
 
 Benchmark source and reproduction: [github.com/0x-auth/lambda-g-auditor](https://github.com/0x-auth/lambda-g-auditor)
-
-## Alternatives Considered
-
-### Pure Cosine Alignment (V1)
-
-Using only cosine similarity with entropy reduction. Over-steers in aggregate benchmarks — too aggressive about directional matching, creates new imbalances. Lost to BalancedAllocation on all 5 scenarios.
-
-### Alignment + Complement Penalties (V2)
-
-Adding explicit penalties for mismatched dimensions. Better pairwise decisions but still lost the aggregate benchmark because complement penalties rejected viable placements.
-
-### Configurable Weights
-
-Replace fixed 0.6/0.2/0.1 with user-configurable parameters. Deferred — grid search shows the top 10 weight combinations all cluster near 0.6/0.2/0.1, suggesting the optimum is broad and stable.
-
-### Separate Plugin
-
-The first draft proposed a standalone scoring plugin. Folding it into `nodeplacement` as a third strategy reuses the existing per-job-type configuration and keeps one place for placement policy.
-
-### Gated Alignment (true tiebreaker)
-
-Apply alignment only when balance scores are within ε. Every ε tested (0.5 to 10) lost the stranding reduction. A per-node `NodeOrderFn` also cannot express a cross-node comparison without two-pass selection.
-
-### Integration with Topology-Aware Scheduling
-
-Lambda-G scoring can compose with TAS — score within a topology domain rather than globally. Future work; doesn't affect the core scoring function.
-
-## Implementation Plan
-
-1. **Before implementation:** rerun the benchmark with the standard-deviation base on CPU and Memory; simulate DRF queues with reclaim enabled.
-2. **Phase 1:** `balanced` strategy in `nodeplacement` for CPU and Memory, opt-in through plugin arguments.
-3. **Phase 2:** Further dimensions (GPU memory, GPU compute) once users can request them separately.
-4. **Phase 3:** Optional configurable weights if requested.
 
 ## References
 
 - Issue: [#1373](https://github.com/kai-scheduler/KAI-Scheduler/issues/1373)
 - Cluster defragmentation: [#1311](https://github.com/kai-scheduler/KAI-Scheduler/issues/1311)
 - Koordinator proposal: [koordinator-sh/koordinator#2839](https://github.com/koordinator-sh/koordinator/pull/2839)
-- Auditor + benchmark: [github.com/0x-auth/lambda-g-auditor](https://github.com/0x-auth/lambda-g-auditor)
-- Scheduler implementation: [github.com/0x-auth/lambda-g-scheduler](https://github.com/0x-auth/lambda-g-scheduler)
+- Auditor + benchmark (retired formula): [github.com/0x-auth/lambda-g-auditor](https://github.com/0x-auth/lambda-g-auditor)
+- External scheduler prototype: [github.com/0x-auth/lambda-g-scheduler](https://github.com/0x-auth/lambda-g-scheduler)
 - Docker image: [bitsabhi/lambda-g-controller](https://hub.docker.com/r/bitsabhi/lambda-g-controller)
