@@ -264,7 +264,7 @@ func (ssn *Session) FittingNode(
 			return true, false
 		}
 		logPredicateFailure(task, node, currentErr)
-		if !ssn.mayChangeFit(task, node) {
+		if !ssn.terminatingPodsMatter(task, node) {
 			addNodeFitError(task, job, currentErr)
 			return false, false
 		}

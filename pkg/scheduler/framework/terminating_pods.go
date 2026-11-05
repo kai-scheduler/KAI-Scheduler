@@ -74,42 +74,42 @@ func (ssn *Session) terminating() *terminatingPods {
 	for _, slice := range ssn.ClusterInfo.ResourceSlices {
 		if ptr.Deref(slice.Spec.NodeName, "") == "" {
 			t.hasSharedDevicePool = true
+			break
 		}
 	}
 	return t
 }
 
-func isTerminating(task *pod_info.PodInfo) bool {
-	return task.Status == pod_status.Releasing && !task.IsVirtualStatus
+// fitsWithoutTerminatingPods runs the task's predicates on the node with the terminating pods set
+// aside. Queue capacity is checked after the rollback: the evictions take the terminating pods off
+// their queues, which never counted them, so the queues look emptier than they are.
+func (ssn *Session) fitsWithoutTerminatingPods(
+	task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo,
+) error {
+	var err error
+	ssn.WithoutTerminatingPods(task, node, func() {
+		err = ssn.PredicateFn(task, job, node)
+	})
+	if err != nil {
+		return err
+	}
+	if result := ssn.IsTaskAllocationOnNodeOverCapacityFn(task, job, node); !result.IsSchedulable {
+		return common_info.NewFitError(task.Name, task.Namespace, node.Name,
+			fmt.Sprintf("node does not have enough capacity. Reason: %s, Details: %s", result.Reason, result.Message))
+	}
+	return nil
 }
 
-// terminatingPodsFor returns the terminating pods to evict for the task on the node: the node's own
-// pods, plus the DRA holders on other nodes when the task's devices may come from a pool shared
-// across nodes. Inter-pod affinity looks past the node too, but its filter reads only the prefilter counts.
-func (ssn *Session) terminatingPodsFor(task *pod_info.PodInfo, node *node_info.NodeInfo) []*pod_info.PodInfo {
-	t := ssn.terminating()
-	pods := t.byNode[node.Name]
-	if !t.hasSharedDevicePool || !usesDRA(task) {
-		return pods
-	}
-	pods = slices.Clip(pods)
-	for _, holder := range t.draHolders {
-		if holder.NodeName != node.Name {
-			pods = append(pods, holder)
-		}
-	}
-	return pods
-}
-
-// mayChangeFit reports whether setting the terminating pods aside can change the task's fit on the node.
-func (ssn *Session) mayChangeFit(task *pod_info.PodInfo, node *node_info.NodeInfo) bool {
-	return len(ssn.terminatingPodsFor(task, node)) > 0 || ssn.mayChangeAffinity(task.Pod)
+// terminatingPodsMatter reports whether setting the terminating pods aside can change the task's fit
+// on the node.
+func (ssn *Session) terminatingPodsMatter(task *pod_info.PodInfo, node *node_info.NodeInfo) bool {
+	return len(ssn.terminatingPodsFor(task, node)) > 0 || ssn.terminatingPodsMatterForAffinity(task.Pod)
 }
 
 // WithoutTerminatingPods runs fn on the session as it will be once the terminating pods relevant to
 // the task on the node are gone: it evicts them through the regular eviction path, then rolls back.
 func (ssn *Session) WithoutTerminatingPods(task *pod_info.PodInfo, node *node_info.NodeInfo, fn func()) {
-	if ssn.mayChangeAffinity(task.Pod) {
+	if ssn.terminatingPodsMatterForAffinity(task.Pod) {
 		restore := ssn.removeFromAffinityState(task.Pod)
 		defer restore()
 	}
@@ -137,24 +137,26 @@ func (ssn *Session) WithoutTerminatingPods(task *pod_info.PodInfo, node *node_in
 	}
 }
 
-// fitsWithoutTerminatingPods runs the task's predicates on the node with the terminating pods set
-// aside. Queue capacity is checked after the rollback: the evictions take the terminating pods off
-// their queues, which never counted them, so the queues look emptier than they are.
-func (ssn *Session) fitsWithoutTerminatingPods(
-	task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo,
-) error {
-	var err error
-	ssn.WithoutTerminatingPods(task, node, func() {
-		err = ssn.PredicateFn(task, job, node)
-	})
-	if err != nil {
-		return err
+// terminatingPodsFor returns the terminating pods to evict for the task on the node: the node's own
+// pods, plus the DRA holders on other nodes when the task's devices may come from a pool shared
+// across nodes. Inter-pod affinity looks past the node too, but its filter reads only the prefilter counts.
+func (ssn *Session) terminatingPodsFor(task *pod_info.PodInfo, node *node_info.NodeInfo) []*pod_info.PodInfo {
+	t := ssn.terminating()
+	pods := t.byNode[node.Name]
+	if !t.hasSharedDevicePool || !usesDRA(task) {
+		return pods
 	}
-	if result := ssn.IsTaskAllocationOnNodeOverCapacityFn(task, job, node); !result.IsSchedulable {
-		return common_info.NewFitError(task.Name, task.Namespace, node.Name,
-			fmt.Sprintf("node does not have enough capacity. Reason: %s, Details: %s", result.Reason, result.Message))
+	pods = slices.Clip(pods)
+	for _, holder := range t.draHolders {
+		if holder.NodeName != node.Name {
+			pods = append(pods, holder)
+		}
 	}
-	return nil
+	return pods
+}
+
+func isTerminating(task *pod_info.PodInfo) bool {
+	return task.Status == pod_status.Releasing && !task.IsVirtualStatus
 }
 
 // usesDRA reports whether the task needs DRA devices.

@@ -16,9 +16,9 @@ type k8sPod struct {
 	nodeInfo *k8sframework.NodeInfo
 }
 
-// mayChangeAffinity reports whether removing the terminating pods can change the pod's inter-pod
-// affinity result. Affinity is counted per topology domain, so it looks past the node.
-func (ssn *Session) mayChangeAffinity(pod *v1.Pod) bool {
+// terminatingPodsMatterForAffinity reports whether removing the terminating pods can change the pod's
+// inter-pod affinity result. Affinity is counted per topology domain, so it looks past the node.
+func (ssn *Session) terminatingPodsMatterForAffinity(pod *v1.Pod) bool {
 	t := ssn.terminating()
 	return len(t.k8sPods) > 0 && (t.hasRequiredAntiAffinity || hasRequiredPodAffinityTerms(pod))
 }
