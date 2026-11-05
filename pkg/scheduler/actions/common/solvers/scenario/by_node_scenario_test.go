@@ -257,7 +257,7 @@ func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 			want: nil,
 		},
 		{
-			name: "Single potential job, return pods from same job on different nodes",
+			name: "Elastic job returns only node-local pods",
 			fields: fields{
 				session: &framework.Session{
 					ClusterInfo: &api.ClusterInfo{PodGroupInfos: map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{
@@ -364,25 +364,10 @@ func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 						Phase: v1.PodRunning,
 					},
 				}, resource_info.NewResourceVectorMap()),
-				pod_info.NewTaskInfo(&v1.Pod{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "name2",
-						Namespace: "n1",
-						Annotations: map[string]string{
-							commonconstants.PodGroupAnnotationForPod: "pg1",
-						},
-					},
-					Spec: v1.PodSpec{
-						NodeName: "node2",
-					},
-					Status: v1.PodStatus{
-						Phase: v1.PodRunning,
-					},
-				}, resource_info.NewResourceVectorMap()),
 			},
 		},
 		{
-			name: "Single potential job, return pods from same job on different nodes - get tasks from AddPotentialVictimsTasks",
+			name: "Elastic job returns only node-local pods - get tasks from AddPotentialVictimsTasks",
 			fields: fields{
 				session: &framework.Session{
 					ClusterInfo: &api.ClusterInfo{PodGroupInfos: map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{
@@ -490,21 +475,6 @@ func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 						Phase: v1.PodRunning,
 					},
 				}, resource_info.NewResourceVectorMap()),
-				pod_info.NewTaskInfo(&v1.Pod{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "name2",
-						Namespace: "n1",
-						Annotations: map[string]string{
-							commonconstants.PodGroupAnnotationForPod: "pg1",
-						},
-					},
-					Spec: v1.PodSpec{
-						NodeName: "node2",
-					},
-					Status: v1.PodStatus{
-						Phase: v1.PodRunning,
-					},
-				}, resource_info.NewResourceVectorMap()),
 			},
 		},
 	}
@@ -523,6 +493,70 @@ func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 				t.Errorf("VictimsTasksFromNodes() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestByNodeScenario_VictimsTasksFromNodes_SelectsNodeLocalBatches(t *testing.T) {
+	elasticNode1 := newScenarioTestTask("elastic-node1", "elastic", "node1")
+	elasticNode2 := newScenarioTestTask("elastic-node2", "elastic", "node2")
+	gangNode1 := newScenarioTestTask("gang-node1", "gang", "node1")
+	gangNode2 := newScenarioTestTask("gang-node2", "gang", "node2")
+
+	elasticJob := podgroup_info.NewPodGroupInfo("n1/elastic", elasticNode1, elasticNode2)
+	gangJob := podgroup_info.NewPodGroupInfo("n1/gang", gangNode1, gangNode2)
+	gangJob.GetAllPodSets()[podgroup_info.DefaultSubGroup].SetMinAvailable(2)
+	session := &framework.Session{
+		ClusterInfo: &api.ClusterInfo{PodGroupInfos: map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{
+			"n1/elastic": elasticJob,
+			"n1/gang":    gangJob,
+		}},
+	}
+
+	bns := NewByNodeScenario(session, podgroup_info.NewPodGroupInfo("pending"), nil, nil, nil)
+	bns.AddPotentialVictimsTasks([]*pod_info.PodInfo{elasticNode1})
+	bns.AddPotentialVictimsTasks([]*pod_info.PodInfo{elasticNode2})
+	bns.AddPotentialVictimsTasks([]*pod_info.PodInfo{gangNode1, gangNode2})
+
+	got := bns.VictimsTasksFromNodes([]string{"node1"})
+	gotNames := map[string]bool{}
+	for _, task := range got {
+		gotNames[task.Name] = true
+	}
+	wantNames := map[string]bool{
+		"elastic-node1": true,
+		"gang-node1":    true,
+		"gang-node2":    true,
+	}
+	if !reflect.DeepEqual(gotNames, wantNames) {
+		t.Errorf("VictimsTasksFromNodes() task names = %v, want %v", gotNames, wantNames)
+	}
+}
+
+func TestByNodeScenario_VictimsTasksFromNodes_ReclaimKeepsGangVictimTogether(t *testing.T) {
+	reclaimeeNode1 := newScenarioTestTask("reclaimee-node1", "reclaimee", "node1")
+	reclaimeeNode2 := newScenarioTestTask("reclaimee-node2", "reclaimee", "node2")
+	reclaimeeJob := podgroup_info.NewPodGroupInfo("n1/reclaimee", reclaimeeNode1, reclaimeeNode2)
+	reclaimeeJob.GetAllPodSets()[podgroup_info.DefaultSubGroup].SetMinAvailable(2)
+	session := &framework.Session{
+		ClusterInfo: &api.ClusterInfo{PodGroupInfos: map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{
+			"n1/reclaimee": reclaimeeJob,
+		}},
+	}
+
+	bns := NewByNodeScenario(session, podgroup_info.NewPodGroupInfo("reclaimer"), nil, nil, nil)
+	bns.AddPotentialVictimsTasks([]*pod_info.PodInfo{reclaimeeNode1, reclaimeeNode2})
+
+	got := bns.VictimsTasksFromNodes([]string{"node1"})
+	gotNames := map[string]bool{}
+	for _, task := range got {
+		gotNames[task.Name] = true
+	}
+	wantNames := map[string]bool{
+		"reclaimee-node1": true,
+		"reclaimee-node2": true,
+	}
+	if !reflect.DeepEqual(gotNames, wantNames) {
+		t.Errorf("VictimsTasksFromNodes() task names = %v, want %v", gotNames, wantNames)
 	}
 }
 

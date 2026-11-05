@@ -26,7 +26,6 @@ func NewByNodeScenario(
 	session *framework.Session, originalJob *podgroup_info.PodGroupInfo, pendingTasks []*pod_info.PodInfo,
 	potentialVictimsTasks []*pod_info.PodInfo, recordedVictimsJobs []*podgroup_info.PodGroupInfo,
 ) *ByNodeScenario {
-
 	simpleScenario := NewBaseScenario(session, originalJob, pendingTasks, potentialVictimsTasks, recordedVictimsJobs)
 
 	bns := &ByNodeScenario{
@@ -78,9 +77,21 @@ func (bns *ByNodeScenario) VictimsTasksFromNodes(nodeNames []string) []*pod_info
 	var tasks []*pod_info.PodInfo
 	victimsJobs := bns.potentialVictimsJobsFromNodes(nodeNames)
 
+	nodeSet := make(map[string]struct{}, len(nodeNames))
+	for _, n := range nodeNames {
+		nodeSet[n] = struct{}{}
+	}
+
 	for _, jobID := range victimsJobs {
 		for _, jobTaskGroup := range bns.victimsJobsTaskGroups[jobID] {
-			tasks = append(tasks, maps.Values(jobTaskGroup.GetAllPodsMap())...)
+			allTasks := maps.Values(jobTaskGroup.GetAllPodsMap())
+
+			for _, task := range allTasks {
+				if _, ok := nodeSet[task.NodeName]; ok {
+					tasks = append(tasks, allTasks...)
+					break
+				}
+			}
 		}
 	}
 
