@@ -1,0 +1,6 @@
+kind: Fixed
+body: The scheduler no longer rejects pods requesting a non-GPU DRA-backed extended resource (a DeviceClass's extendedResourceName, KEP-5004) as "No node in the node-pool has ... resources"; nodes do not advertise such resources, and the dynamicresources plugin checks their fit.
+time: 2026-11-06T18:00:00.000000+01:00
+custom:
+    Author: skirsten
+    Issue: ""

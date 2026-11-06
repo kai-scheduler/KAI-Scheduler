@@ -11,6 +11,7 @@ import (
 	"github.com/dustin/go-humanize"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/dynamic-resource-allocation/deviceclass/extendedresourcecache"
 	ksf "k8s.io/kube-scheduler/framework"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
@@ -20,21 +21,26 @@ import (
 )
 
 type MaxNodeResourcesPredicate struct {
-	maxResources       resource_info.ResourceVector
-	vectorMap          *resource_info.ResourceVectorMap
-	resourceClaimsMap  map[string]*resourceapi.ResourceClaim
-	podsToClaimsMap    map[types.UID]map[types.UID]*resourceapi.ResourceClaim
-	schedulerShardName string
+	maxResources      resource_info.ResourceVector
+	vectorMap         *resource_info.ResourceVectorMap
+	resourceClaimsMap map[string]*resourceapi.ResourceClaim
+	podsToClaimsMap   map[types.UID]map[types.UID]*resourceapi.ResourceClaim
+	// deviceClassByResource resolves DRA-backed extended resources (KEP-5004). Nodes do not
+	// advertise them, so the dynamicresources plugin checks their fit, not this predicate.
+	deviceClassByResource *extendedresourcecache.ExtendedResourceCache
+	schedulerShardName    string
 }
 
-func NewMaxNodeResourcesPredicate(nodesMap map[string]*node_info.NodeInfo, resourceClaims []*resourceapi.ResourceClaim, nodePoolName string) *MaxNodeResourcesPredicate {
+func NewMaxNodeResourcesPredicate(nodesMap map[string]*node_info.NodeInfo, resourceClaims []*resourceapi.ResourceClaim,
+	deviceClassByResource *extendedresourcecache.ExtendedResourceCache, nodePoolName string) *MaxNodeResourcesPredicate {
 	resourceClaimsMap := resource_info.ResourceClaimSliceToMap(resourceClaims)
 	podsToClaimsMap := resource_info.CalcClaimsToPodsBaseMap(resourceClaimsMap)
 
 	predicate := &MaxNodeResourcesPredicate{
-		resourceClaimsMap:  resourceClaimsMap,
-		podsToClaimsMap:    podsToClaimsMap,
-		schedulerShardName: nodePoolName,
+		resourceClaimsMap:     resourceClaimsMap,
+		podsToClaimsMap:       podsToClaimsMap,
+		deviceClassByResource: deviceClassByResource,
+		schedulerShardName:    nodePoolName,
 	}
 
 	for _, node := range nodesMap {
@@ -97,6 +103,9 @@ func (mnr *MaxNodeResourcesPredicate) PreFilter(_ context.Context, _ ksf.CycleSt
 		maxVal := mnr.maxResources.Get(i)
 		if podVal > 0 && maxVal < podVal {
 			rName := mnr.vectorMap.ResourceAt(i)
+			if mnr.deviceClassByResource.GetDeviceClass(rName) != nil {
+				continue
+			}
 			units := ""
 			displayMax := float64(0)
 			if rName == v1.ResourceEphemeralStorage || rName == v1.ResourceStorage {
