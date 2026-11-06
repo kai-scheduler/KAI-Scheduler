@@ -3,4 +3,4 @@ body: The scheduler no longer rejects pods requesting a non-GPU DRA-backed exten
 time: 2026-11-06T18:00:00.000000+01:00
 custom:
     Author: skirsten
-    Issue: ""
+    Issue: "2596"
