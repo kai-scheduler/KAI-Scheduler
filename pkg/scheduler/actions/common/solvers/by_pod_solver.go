@@ -163,8 +163,11 @@ func (s *byPodSolver) tryScenarioWithEvictedVictims(ssn *framework.Session, scen
 	pendingJob := scenario.GetPreemptor()
 
 	if s.actionType == framework.Preempt || s.actionType == framework.Reclaim {
-		originalPods := make(map[*pod_info.PodInfo]*v1.Pod)
+		originalPods := make(map[*pod_info.PodInfo]*v1.Pod, len(victimTasks))
 		for _, task := range victimTasks {
+			if _, ok := originalPods[task]; ok {
+				continue
+			}
 			originalPods[task] = task.Pod
 			podCopy := *task.Pod
 			podCopy.Status.NominatedNodeName = task.NodeName
