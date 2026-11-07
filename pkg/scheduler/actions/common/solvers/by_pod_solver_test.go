@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"golang.org/x/exp/maps"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
@@ -207,6 +208,24 @@ func TestSolveSolvesSameScenarioWithoutValidator(t *testing.T) {
 	require.True(t, result.solved)
 	require.NotNil(t, result.statement)
 	result.statement.Discard()
+}
+
+func TestTryScenarioWithEvictedVictimsRestoresOriginalPodWithDuplicateVictims(t *testing.T) {
+	ssn, sn := newByPodSolverRollbackTestScenario(t)
+	solver := newByPodSolver(ssn.ClusterInfo.Nodes, nil, false, framework.Reclaim)
+
+	victimTask := sn.PotentialVictimsTasks()[0]
+	originalPod := victimTask.Pod
+	require.Empty(t, originalPod.Status.NominatedNodeName)
+
+	duplicatedVictims := []*pod_info.PodInfo{victimTask, victimTask}
+	statement := ssn.Statement()
+	defer statement.Discard()
+
+	solver.tryScenarioWithEvictedVictims(ssn, sn, statement, duplicatedVictims, maps.Values(ssn.ClusterInfo.Nodes))
+
+	require.Same(t, originalPod, victimTask.Pod)
+	require.Empty(t, victimTask.Pod.Status.NominatedNodeName)
 }
 
 func newByPodSolverRollbackTestScenario(t *testing.T) (*framework.Session, *scenario.ByNodeScenario) {
