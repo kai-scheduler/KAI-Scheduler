@@ -321,6 +321,12 @@ func (ni *NodeInfo) ConsolidateSharedPodInfoToDifferentGPU(ti *pod_info.PodInfo)
 	return ni.addTask(ti, true)
 }
 
+// RestoreReplacedSharedPodInfo reverts ConsolidateSharedPodInfoToDifferentGPU. The replaced record's
+// resources were never released from the node, so only the record itself is put back.
+func (ni *NodeInfo) RestoreReplacedSharedPodInfo(replaced *pod_info.PodInfo) {
+	ni.PodInfos[pod_info.PodKey(replaced.Pod)] = replaced
+}
+
 func (ni *NodeInfo) isGpuReleasingFromSharedTasks(gpuGroup string) bool {
 	usedSharedGPUsMemory, found := ni.UsedSharedGPUsMemory[gpuGroup]
 	if !found || usedSharedGPUsMemory == 0 {
