@@ -84,6 +84,7 @@ func CreateFakeSession(schedulerConfig *TestSessionConfig,
 	ssn.OverrideMaxNumberConsolidationPreemptees(-1)
 	ssn.OverrideAllowConsolidatingReclaim(true)
 	ssn.OverrideSchedulerName(schedulerName)
+	ssn.OverrideDeferredResizePreemption(testMetadata.DeferredResizePreemption)
 
 	if controller != nil || createCacheMockIfNotExists {
 		ssn.Cache = GetTestCacheMock(controller, testMetadata.Mocks, getDRAObjects(testMetadata), clusterPodAffinityInfo)

@@ -212,7 +212,7 @@ func (s *Statement) unevict(
 	return nil
 }
 
-func (s *Statement) Pipeline(task *pod_info.PodInfo, hostname string, updateTaskIfExistsOnNode bool) error {
+func (s *Statement) Pipeline(task *pod_info.PodInfo, hostname string, canUndoEviction bool) error {
 	// Only update status in session
 	job, foundJob := s.ssn.ClusterInfo.PodGroupInfos[task.Job]
 	node, foundNode := s.ssn.ClusterInfo.Nodes[hostname]
@@ -236,9 +236,8 @@ func (s *Statement) Pipeline(task *pod_info.PodInfo, hostname string, updateTask
 	}
 
 	// If the task already exist on the node, we assume it was evicted before.
-	// If task already exist on the node, and we didn't ask to update if on the node,
-	// and there is no special reason we should update on the node, then we need to unevict instead of pipelining it.
-	if foundOnNode && !updateTaskIfExistsOnNode && !gpuPlacementChanged && !numaPlacementChanged {
+	// If eviction undo is allowed and there is no special reason we should update on the node, then we need to unevict instead of pipelining it.
+	if foundOnNode && canUndoEviction && !gpuPlacementChanged && !numaPlacementChanged {
 		task.FractionalGpuGroups = cloneFractionalGpuGroups(taskOnNode.FractionalGpuGroups)
 		task.NUMAPlacement = taskOnNode.NUMAPlacement.Clone()
 		log.InfraLogger.V(6).Do(func() {
@@ -564,7 +563,7 @@ func (s *Statement) ConvertAllAllocatedToPipelined(jobID common_info.PodGroupID)
 			return err
 		}
 
-		err = s.Pipeline(currentTaskInOperations, nodeName, true)
+		err = s.Pipeline(currentTaskInOperations, nodeName, false)
 		if err != nil {
 			return err
 		}
@@ -698,7 +697,7 @@ func (s *Statement) undoOperation(index int) error {
 	case pipelineOperation:
 		operation := op.(pipelineOperation)
 		redoOperation = func() error {
-			return s.Pipeline(taskToUndo, operation.nextNode, true)
+			return s.Pipeline(taskToUndo, operation.nextNode, false)
 		}
 	case allocateOperation:
 		redoOperation = func() error {

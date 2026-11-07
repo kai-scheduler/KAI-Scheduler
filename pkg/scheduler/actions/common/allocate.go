@@ -5,6 +5,7 @@ package common
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
@@ -25,23 +26,27 @@ func AllocateJob(ssn *framework.Session, stmt *framework.Statement, nodes []*nod
 	if len(tasksToAllocate) == 0 {
 		return false
 	}
-	isPipelineOnly := allocationMode != podgroup_info.RealTaskAllocation
+	// A resize stand-in's target size is already charged on its node, and start-time checks do not apply.
+	if job.IsResizeStandIn() {
+		return isResizeStandInAllocatable(nodes, tasksToAllocate)
+	}
+	isSimulation := allocationMode != podgroup_info.RealTaskAllocation
 
 	result := ssn.IsJobOverQueueCapacityFn(job, tasksToAllocate)
 	if !result.IsSchedulable {
-		if !isPipelineOnly {
+		if !isSimulation {
 			job.AddJobFitError(common_info.NewJobFitErrorWithQueueContext(
 				job.Name, podgroup_info.DefaultSubGroup, job.Namespace,
 				result.Reason, result.Message, result.Details))
 		}
 		return false
 	}
-	return allocateSubGroupSet(ssn, stmt, nodes, job, job.RootSubGroupSet, tasksToAllocate, isPipelineOnly)
+	return allocateSubGroupSet(ssn, stmt, nodes, job, job.RootSubGroupSet, tasksToAllocate, isSimulation)
 }
 
 func allocateSubGroupSet(ssn *framework.Session, stmt *framework.Statement, nodes []*node_info.NodeInfo,
 	job *podgroup_info.PodGroupInfo, subGroupSet *subgroup_info.SubGroupSet, subtreeTasksToAllocate []*pod_info.PodInfo,
-	isPipelineOnly bool,
+	isSimulation bool,
 ) bool {
 	if len(subtreeTasksToAllocate) == 0 {
 		return true
@@ -56,7 +61,7 @@ func allocateSubGroupSet(ssn *framework.Session, stmt *framework.Statement, node
 
 	for _, nodeSet := range nodeSets {
 		cp := stmt.Checkpoint()
-		if allocateMembersOnNodes(ssn, stmt, nodeSet, job, subGroupSet, subtreeTasksToAllocate, isPipelineOnly) {
+		if allocateMembersOnNodes(ssn, stmt, nodeSet, job, subGroupSet, subtreeTasksToAllocate, isSimulation) {
 			return true
 		}
 		if err := stmt.Rollback(cp); err != nil {
@@ -72,18 +77,18 @@ func allocateSubGroupSet(ssn *framework.Session, stmt *framework.Statement, node
 // All members that do have tasks must succeed for this function to return true.
 func allocateMembersOnNodes(ssn *framework.Session, stmt *framework.Statement, nodes node_info.NodeSet,
 	job *podgroup_info.PodGroupInfo, subGroupSet *subgroup_info.SubGroupSet, subtreeTasksToAllocate []*pod_info.PodInfo,
-	isPipelineOnly bool,
+	isSimulation bool,
 ) bool {
 	for _, memberGeneric := range orderedMembers(ssn, subGroupSet.GetMembers()) {
 		switch member := memberGeneric.(type) {
 		case *subgroup_info.PodSet:
 			if !allocatePodSet(ssn, stmt, nodes, job, member,
-				filterTasksForPodSet(member, subtreeTasksToAllocate), isPipelineOnly) {
+				filterTasksForPodSet(member, subtreeTasksToAllocate), isSimulation) {
 				return false
 			}
 		case *subgroup_info.SubGroupSet:
 			if !allocateSubGroupSet(ssn, stmt, nodes, job, member,
-				filterTasksForPodSets(member.GetDescendantPodSets(), subtreeTasksToAllocate), isPipelineOnly) {
+				filterTasksForPodSets(member.GetDescendantPodSets(), subtreeTasksToAllocate), isSimulation) {
 				return false
 			}
 		}
@@ -109,7 +114,7 @@ func subtreePodSetsContainingTasks(subGroupSet *subgroup_info.SubGroupSet, tasks
 
 func allocatePodSet(ssn *framework.Session, stmt *framework.Statement, nodes node_info.NodeSet,
 	job *podgroup_info.PodGroupInfo, podSet *subgroup_info.PodSet, podsetTasksToAllocate []*pod_info.PodInfo,
-	isPipelineOnly bool,
+	isSimulation bool,
 ) bool {
 	if len(podsetTasksToAllocate) == 0 {
 		return true
@@ -126,7 +131,7 @@ func allocatePodSet(ssn *framework.Session, stmt *framework.Statement, nodes nod
 
 	for _, nodeSet := range nodeSets {
 		cp := stmt.Checkpoint()
-		if allocateTasksOnNodeSet(ssn, stmt, nodeSet, job, podsetTasksToAllocate, isPipelineOnly) {
+		if allocateTasksOnNodeSet(ssn, stmt, nodeSet, job, podsetTasksToAllocate, isSimulation) {
 			return true
 		}
 		if err := stmt.Rollback(cp); err != nil {
@@ -137,9 +142,9 @@ func allocatePodSet(ssn *framework.Session, stmt *framework.Statement, nodes nod
 }
 
 func allocateTasksOnNodeSet(ssn *framework.Session, stmt *framework.Statement, nodes node_info.NodeSet,
-	job *podgroup_info.PodGroupInfo, tasksToAllocate []*pod_info.PodInfo, isPipelineOnly bool) bool {
+	job *podgroup_info.PodGroupInfo, tasksToAllocate []*pod_info.PodInfo, isSimulation bool) bool {
 	for index, task := range tasksToAllocate {
-		success := allocateTask(ssn, stmt, nodes, task, isPipelineOnly)
+		success := allocateTask(ssn, stmt, nodes, task, isSimulation)
 		if !success {
 			handleFailedTaskAllocation(job, task, index)
 			return false
@@ -149,7 +154,7 @@ func allocateTasksOnNodeSet(ssn *framework.Session, stmt *framework.Statement, n
 }
 
 func allocateTask(ssn *framework.Session, stmt *framework.Statement, nodes []*node_info.NodeInfo,
-	task *pod_info.PodInfo, isPipelineOnly bool) (success bool) {
+	task *pod_info.PodInfo, isSimulation bool) (success bool) {
 	job := ssn.ClusterInfo.PodGroupInfos[task.Job]
 	if job == nil {
 		log.InfraLogger.Errorf("Failed to find job <%s> in session <%s>", task.Job, ssn.ID)
@@ -175,10 +180,10 @@ func allocateTask(ssn *framework.Session, stmt *framework.Statement, nodes []*no
 
 	orderedNodes := ssn.OrderedNodesByTask(nodes, task)
 	for _, node := range orderedNodes {
-		if !ssn.FittingNode(task, node, !isPipelineOnly) {
+		if !ssn.FittingNode(task, node, !isSimulation) {
 			continue
 		}
-		success = allocateTaskToNode(ssn, stmt, task, node, isPipelineOnly)
+		success = allocateTaskToNode(ssn, stmt, task, node, isSimulation)
 		if success {
 			break
 		}
@@ -202,7 +207,7 @@ func allocateTask(ssn *framework.Session, stmt *framework.Statement, nodes []*no
 	return success
 }
 
-func allocateTaskToNode(ssn *framework.Session, stmt *framework.Statement, task *pod_info.PodInfo, node *node_info.NodeInfo, isPipelineOnly bool) bool {
+func allocateTaskToNode(ssn *framework.Session, stmt *framework.Statement, task *pod_info.PodInfo, node *node_info.NodeInfo, isSimulation bool) bool {
 	placement, err := ssn.GetNumaPlacement(task, node)
 	if err != nil {
 		log.InfraLogger.V(6).Do(func() {
@@ -213,13 +218,13 @@ func allocateTaskToNode(ssn *framework.Session, stmt *framework.Statement, task 
 	task.NUMAPlacement = placement
 
 	if task.IsFractionRequest() || task.IsGpuMemoryRequest() {
-		return gpu_sharing.AllocateFractionalGPUTaskToNode(ssn, stmt, task, node, isPipelineOnly)
+		return gpu_sharing.AllocateFractionalGPUTaskToNode(ssn, stmt, task, node, isSimulation)
 	}
 
-	if taskAllocatable := node.IsTaskAllocatable(task); !isPipelineOnly && taskAllocatable {
+	if canBind := !isSimulation && node.IsTaskAllocatable(task); canBind {
 		return bindTaskToNode(ssn, stmt, task, node)
 	}
-	return pipelineTaskToNode(ssn, stmt, task, node, !isPipelineOnly)
+	return pipelineTaskToNode(ssn, stmt, task, node, isSimulation)
 }
 
 func bindTaskToNode(ssn *framework.Session, stmt *framework.Statement, task *pod_info.PodInfo, node *node_info.NodeInfo) bool {
@@ -235,13 +240,13 @@ func bindTaskToNode(ssn *framework.Session, stmt *framework.Statement, task *pod
 	return true
 }
 
-func pipelineTaskToNode(ssn *framework.Session, stmt *framework.Statement, task *pod_info.PodInfo, node *node_info.NodeInfo, updateTasksIfExistsOnNode bool) bool {
+func pipelineTaskToNode(ssn *framework.Session, stmt *framework.Statement, task *pod_info.PodInfo, node *node_info.NodeInfo, canUndoEviction bool) bool {
 	log.InfraLogger.V(6).Do(func() {
 		log.InfraLogger.Infof("Pipelining Task <%v/%v> to node <%v>, requires resources: %v",
 			task.Namespace, task.Name, node.Name, task.ResReqVector)
 	})
 
-	if err := stmt.Pipeline(task, node.Name, updateTasksIfExistsOnNode); err != nil {
+	if err := stmt.Pipeline(task, node.Name, canUndoEviction); err != nil {
 		log.InfraLogger.V(6).Do(func() {
 			log.InfraLogger.Infof("Failed to pipeline Task %v on %v in Session %v", task.UID, node.Name, ssn.ID)
 		})
@@ -320,4 +325,15 @@ func orderedMembers(ssn *framework.Session, subGroupMembers []subgroup_info.SubG
 		return ssn.SubGroupOrderFn(subGroupMembers[i], subGroupMembers[j])
 	})
 	return subGroupMembers
+}
+
+func isResizeStandInAllocatable(nodes []*node_info.NodeInfo, tasks []*pod_info.PodInfo) bool {
+	for _, task := range tasks {
+		if !slices.ContainsFunc(nodes, func(node *node_info.NodeInfo) bool {
+			return node.IsInPlaceResizeAllocatable(task)
+		}) {
+			return false
+		}
+	}
+	return true
 }
