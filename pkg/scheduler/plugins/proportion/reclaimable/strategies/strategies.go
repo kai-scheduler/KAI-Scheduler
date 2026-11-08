@@ -55,7 +55,7 @@ func (mfss *MaintainFairShareStrategy) Reclaimable(
 		reclaimerQueue.Name, reclaimeeQueue.Name, reclaimeeQueue.GetRequestableShare(), reclaimeeQueue.GetDeservedShare(),
 		reclaimeeQueue.GetFairShare(), reclaimeeRemainingShare)
 
-	return !reclaimeeRemainingShare.LessEqual(reclaimeeQueue.GetAllocatableShare())
+	return FitsMaintainFairShare(reclaimeeQueue, reclaimeeRemainingShare)
 }
 
 func (gdqs *GuaranteeDeservedQuotaStrategy) Reclaimable(
@@ -75,21 +75,39 @@ func (gdqs *GuaranteeDeservedQuotaStrategy) Reclaimable(
 		reclaimerQueue.GetDeservedShare(), reclaimerQueue.GetFairShare())
 
 	// reclaimer has to be under (or equal) deserved quota in all resources (cpu, mem, gpu)
-	if reclaimerWillGoOverQuota(reclaimerResources, vectorMap, reclaimerQueue) {
+	if !ReclaimerFitsDeservedQuota(reclaimerResources, vectorMap, reclaimerQueue) {
 		return false
 	}
 
 	// reclaimee should be over deserved quota (at least in one of the resources)
-	if reclaimeeRemainingShare.LessEqual(reclaimeeQueue.GetDeservedShare()) {
+	if !ReclaimeeExceedsDeservedQuota(reclaimeeQueue, reclaimeeRemainingShare) {
 		return false
 	}
 
 	return true
 }
 
-func reclaimerWillGoOverQuota(reclaimerResources resource_info.ResourceVector, vectorMap *resource_info.ResourceVectorMap, reclaimerQueue *rs.QueueAttributes) bool {
+// FitsMaintainFairShare returns true when the reclaimee remains over its allocatable share.
+func FitsMaintainFairShare(reclaimeeQueue *rs.QueueAttributes, reclaimeeRemainingShare rs.ResourceQuantities) bool {
+	return !reclaimeeRemainingShare.LessEqual(reclaimeeQueue.GetAllocatableShare())
+}
+
+// ReclaimerFitsDeservedQuota returns true when adding the reclaimer keeps its queue within deserved quota.
+func ReclaimerFitsDeservedQuota(
+	reclaimerResources resource_info.ResourceVector,
+	vectorMap *resource_info.ResourceVectorMap,
+	reclaimerQueue *rs.QueueAttributes,
+) bool {
 	reclaimerRequestedQuota := reclaimerQueue.GetAllocatedShare()
 	reclaimerRequestedQuota.Add(utils.QuantifyVector(reclaimerResources, vectorMap))
 
-	return !reclaimerRequestedQuota.LessEqual(reclaimerQueue.GetDeservedShare())
+	return reclaimerRequestedQuota.LessEqual(reclaimerQueue.GetDeservedShare())
+}
+
+// ReclaimeeExceedsDeservedQuota returns true when the reclaimee remains over deserved quota.
+func ReclaimeeExceedsDeservedQuota(
+	reclaimeeQueue *rs.QueueAttributes,
+	reclaimeeRemainingShare rs.ResourceQuantities,
+) bool {
+	return !reclaimeeRemainingShare.LessEqual(reclaimeeQueue.GetDeservedShare())
 }
