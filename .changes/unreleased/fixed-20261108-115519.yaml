@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Reclaim no longer abandons valid victims when an under-quota queue comes earlier in victim order
+custom:
+  Author: "enoodle"
+  Issue: "1750"
