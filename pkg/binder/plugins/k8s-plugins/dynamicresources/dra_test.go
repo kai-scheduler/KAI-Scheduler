@@ -13,8 +13,10 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
@@ -239,6 +241,47 @@ var _ = Describe("dynamicResourcesPlugin standalone ResourceClaim bind", func() 
 	It("does not duplicate the finalizer on repeated binds", func() {
 		Expect(plugin.Bind(ctx, pod, request, nil)).To(Succeed())
 		Expect(plugin.Bind(ctx, pod, request, nil)).To(Succeed())
+
+		bound := getClaim()
+		count := 0
+		for _, f := range bound.Finalizers {
+			if f == resourceapi.Finalizer {
+				count++
+			}
+		}
+		Expect(count).To(Equal(1))
+	})
+
+	It("does not duplicate the finalizer when UpdateStatus conflicts", func() {
+		// A 409 on the first UpdateStatus forces RetryOnConflict to re-read the
+		// claim and re-run the append logic; the slices.Contains guard must
+		// prevent a duplicate finalizer on that second pass.
+		var statusUpdates int
+		client.PrependReactor("update", "resourceclaims", func(action k8stesting.Action) (bool, runtime.Object, error) {
+			if action.GetSubresource() != "status" {
+				return false, nil, nil
+			}
+			statusUpdates++
+			if statusUpdates == 1 {
+				return true, nil, apierrors.NewConflict(
+					schema.GroupResource{Resource: "resourceclaims"},
+					claim.Name,
+					errors.New("conflict"),
+				)
+			}
+			return false, nil, nil
+		})
+
+		Expect(plugin.Bind(ctx, pod, request, nil)).To(Succeed())
+		Expect(statusUpdates).To(BeNumerically(">", 1))
+
+		var metadataUpdates int
+		for _, action := range client.Actions() {
+			if action.Matches("update", "resourceclaims") && action.GetSubresource() == "" {
+				metadataUpdates++
+			}
+		}
+		Expect(metadataUpdates).To(Equal(1))
 
 		bound := getClaim()
 		count := 0
