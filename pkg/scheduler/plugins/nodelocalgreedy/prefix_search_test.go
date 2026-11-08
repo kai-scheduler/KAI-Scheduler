@@ -21,6 +21,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_affinity"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
@@ -31,7 +32,7 @@ import (
 
 const prefixDomainLabel = "example.com/domain"
 
-func TestPrefixSearchSinglePodProbeDefersStockSuperset(t *testing.T) {
+func TestPrefixSearchSinglePodProbeEmitsNarrowBeforeSamePrefixStock(t *testing.T) {
 	ssn := prefixSession(t, map[string]prefixNodeSpec{
 		"node-a": {gpus: 1, cpu: "4"},
 		"node-b": {gpus: 1, cpu: "4"},
@@ -47,13 +48,11 @@ func TestPrefixSearchSinglePodProbeDefersStockSuperset(t *testing.T) {
 	}}
 	emitted := generator.scenariosForPrefix(base)
 
-	require.NotEmpty(t, emitted)
-	for _, sn := range emitted {
-		require.Len(t, sn.PotentialVictimsTasks(), 1, "touching batches are emitted one batch at a time")
+	pairAt := scenarioIndex(emitted, tasks)
+	require.GreaterOrEqualf(t, pairAt, 1, "the accumulated pair is emitted with this prefix, after a narrower batch")
+	for i := 0; i < pairAt; i++ {
+		require.Len(t, emitted[i].PotentialVictimsTasks(), 1, "narrower batches come before the same-prefix superset")
 	}
-	require.NotEmpty(t, generator.deferredStock)
-	require.GreaterOrEqual(t, len(generator.deferredStock[0].PotentialVictimsTasks()), 2,
-		"the held stock scenario keeps the accumulated superset")
 }
 
 func TestPrefixSearchPartialProbeKeepsStockStream(t *testing.T) {
@@ -76,7 +75,6 @@ func TestPrefixSearchPartialProbeKeepsStockStream(t *testing.T) {
 	narrowed := scenario.NewByNodeScenario(ssn, pending, basePending, nil, nil)
 	narrowed.AddPotentialVictimsTasks(base.PotentialVictimsTasks())
 	emitted := generator.scenariosForPrefix(narrowed)
-	require.Empty(t, generator.deferredStock)
 	require.NotEmpty(t, emitted)
 	foundSuperset := false
 	for _, sn := range emitted {
@@ -87,7 +85,7 @@ func TestPrefixSearchPartialProbeKeepsStockStream(t *testing.T) {
 	require.True(t, foundSuperset, "a k=1 probe of a larger job stays on the stock stream")
 }
 
-func TestPrefixSearchDropsShortCPUSubsetAndHoldsStock(t *testing.T) {
+func TestPrefixSearchKeepsShortCPUSubsetWithSamePrefixStock(t *testing.T) {
 	ssn := prefixSession(t, map[string]prefixNodeSpec{
 		"node-a": {gpus: 1, cpu: "500m"},
 		"node-b": {gpus: 1, cpu: "4"},
@@ -105,26 +103,21 @@ func TestPrefixSearchDropsShortCPUSubsetAndHoldsStock(t *testing.T) {
 	}}
 	emitted := generator.scenariosForPrefix(base)
 
-	require.Len(t, emitted, 1)
-	require.Equal(t, []string{"node-b"}, nodeNamesOfTasks(emitted[0].PotentialVictimsTasks()))
-	require.NotEmpty(t, generator.deferredStock)
-
-	generator.scenarios = generator.deferredStock
-	generator.deferredStock = nil
-	fallback := generator.popScenario()
-	require.NotNil(t, fallback)
-	require.ElementsMatch(t, []string{"node-a", "node-b"}, nodeNamesOfTasks(fallback.PotentialVictimsTasks()))
+	require.GreaterOrEqual(t, scenarioIndex(emitted, tasks[:1]), 0, "a one-node batch is not dropped for CPU")
+	pairAt := scenarioIndex(emitted, tasks)
+	require.GreaterOrEqual(t, pairAt, 0, "the same-prefix superset is still emitted")
+	require.Less(t, scenarioIndex(emitted, tasks[:1]), pairAt)
 }
 
-func TestPrefixSearchSkipsScenarioThatCannotHostLargestGPUTask(t *testing.T) {
+func TestPrefixSearchKeepsScenarioQuotaWouldCallTooSmall(t *testing.T) {
 	ssn := prefixSession(t, map[string]prefixNodeSpec{
 		"node-small": {gpus: 1, cpu: "4"},
 		"node-open":  {gpus: 2, cpu: "4"},
 	})
 	pending := addPrefixPending(t, ssn, 1, 13, "2", "100m")
-	smallJob, smallTasks := prefixRunningJob(t, ssn, 23, "100m", "1", "node-small")
+	_, smallTasks := prefixRunningJob(t, ssn, 23, "100m", "1", "node-small")
 	require.NoError(t, ssn.ClusterInfo.Nodes["node-small"].AddTask(smallTasks[0]))
-	openJob, openTasks := prefixRunningJob(t, ssn, 24, "100m", "1", "node-open")
+	_, openTasks := prefixRunningJob(t, ssn, 24, "100m", "1", "node-open")
 
 	short := scenario.NewByNodeScenario(ssn, pending, podsOf(pending), nil, nil)
 	short.AddPotentialVictimsTasks(smallTasks)
@@ -138,19 +131,10 @@ func TestPrefixSearchSkipsScenarioThatCannotHostLargestGPUTask(t *testing.T) {
 			"node-small": ssn.ClusterInfo.Nodes["node-small"],
 		},
 	}}
-	require.False(t, generator.canHostLargestTask(short))
-	generator.solveCtx.FeasibleNodes = ssn.ClusterInfo.Nodes
-	require.True(t, generator.canHostLargestTask(short), "idle room on a feasible node keeps the scenario")
-
-	generator.solveCtx.FeasibleNodes = map[string]*node_info.NodeInfo{
-		"node-small": ssn.ClusterInfo.Nodes["node-small"],
-	}
 	generator.scenarios = []*scenario.ByNodeScenario{short, open}
-	got := generator.popScenario()
-	require.Equal(t, podNames(openTasks), podNames(got.PotentialVictimsTasks()))
+	require.Equal(t, podNames(smallTasks), podNames(generator.popScenario().PotentialVictimsTasks()))
+	require.Equal(t, podNames(openTasks), podNames(generator.popScenario().PotentialVictimsTasks()))
 	require.Nil(t, generator.popScenario())
-	_ = smallJob
-	_ = openJob
 }
 
 func TestPrefixSearchDomainBatchesStayInsideOneDomain(t *testing.T) {
@@ -195,6 +179,11 @@ func TestSinglePodPlacementIgnoresPartialProbes(t *testing.T) {
 	require.True(t, oneGen.isSinglePodPlacement(1))
 	require.False(t, twoGen.isSinglePodPlacement(1))
 	require.False(t, wide.isSinglePodPlacement(1))
+
+	runningSibling := addPrefixPending(t, ssn, 2, 42, "1", "100m")
+	setOneTaskStatus(runningSibling, pod_status.Running)
+	runningGen := &nodeLocalGreedyGenerator{solveCtx: &solvers.SolveContext{Session: ssn, PartialPendingJob: runningSibling, ProbeK: 1}}
+	require.True(t, runningGen.isSinglePodPlacement(1), "a running sibling is already placed")
 }
 
 type prefixNodeSpec struct {
@@ -284,6 +273,13 @@ func accumulatedBatches(
 	}
 	_ = victim
 	return base
+}
+
+func setOneTaskStatus(job *podgroup_info.PodGroupInfo, status pod_status.PodStatus) {
+	for _, task := range job.GetAllPodsMap() {
+		task.Status = status
+		return
+	}
 }
 
 func nodeNamesOfTasks(tasks []*pod_info.PodInfo) []string {

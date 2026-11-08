@@ -15,7 +15,6 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/api/constants"
 )
@@ -28,7 +27,6 @@ type nodeLocalGreedyGenerator struct {
 	shouldAdvanceAccumulatedScenario bool
 	placementKnown                   bool
 	narrowPrefix                     bool
-	deferredStock                    []*scenario.ByNodeScenario
 }
 
 func NewNodeLocalGreedyGenerator(ctx framework.ScenarioGeneratorContext) framework.ScenarioGenerator {
@@ -56,16 +54,10 @@ func (g *nodeLocalGreedyGenerator) Next() api.ScenarioInfo {
 		}
 		accumulated := g.nextValidAccumulatedScenario()
 		if accumulated == nil {
-			if len(g.deferredStock) > 0 {
-				g.scenarios = g.deferredStock
-				g.deferredStock = nil
-				continue
-			}
 			return nil
 		}
-		// The builder mutates one scenario as victims accumulate. Scenarios for
-		// this prefix are built before the next pop. Partial probes and
-		// multi-task jobs keep the stock per-node split.
+		// The builder mutates one scenario as victims accumulate. This prefix,
+		// including its stock superset, is queued before the next victim is added.
 		g.scenarios = g.scenariosForPrefix(accumulated)
 	}
 }
@@ -76,100 +68,18 @@ func (g *nodeLocalGreedyGenerator) scenariosForPrefix(accumulated *scenario.ByNo
 		g.narrowPrefix = g.isSinglePodPlacement(len(accumulated.PendingTasks()))
 	}
 	stock := nodeLocalScenarios(g.solveCtx.Session, accumulated)
-	var narrow []*scenario.ByNodeScenario
-	if g.narrowPrefix {
-		// Batches that touch the latest victim's node, whole. When this is a
-		// proper subset, the stock superset is held until the queue is
-		// exhausted so it still runs if no subset places the pod.
-		narrow = batchesTouchingNodeScenarios(g.solveCtx.Session, accumulated)
+	// A partial probe of a larger job stays on the stock stream. Domain batches
+	// are a single-pod optimization and must not run ahead of that stream.
+	if !g.narrowPrefix {
+		return stock
 	}
-	if g.narrowPrefix && len(narrow) > 0 {
-		g.deferredStock = append(g.deferredStock, stock...)
-		// Skip a one-node subset that cannot cover the pending CPU request.
-		// The held stock superset still runs if every subset fails.
-		narrow = narrowScenariosWithCPU(g.solveCtx.Session, accumulated, narrow)
-		head := append(narrow, domainBatchScenarios(g.solveCtx.Session, accumulated)...)
-		if len(head) == 0 {
-			return nil
-		}
-		return appendUniqueThenStock(head, nil)
-	}
-	// Required-topology jobs get one scenario per domain of the latest victim,
-	// still using only batches from this prefix. Stock stays in its order.
+	narrow := batchesTouchingNodeScenarios(g.solveCtx.Session, accumulated)
 	head := append(narrow, domainBatchScenarios(g.solveCtx.Session, accumulated)...)
 	if len(head) == 0 {
 		return stock
 	}
+	// Narrower batches of this prefix, then its stock superset, before the next victim.
 	return appendUniqueThenStock(head, stock)
-}
-
-// narrowScenariosWithCPU drops a one-node subset whose victim CPU plus the
-// node's idle CPU is below the pending pod's CPU request. Unknown CPU and
-// multi-node subsets are kept.
-func narrowScenariosWithCPU(
-	session *framework.Session, base *scenario.ByNodeScenario, narrow []*scenario.ByNodeScenario,
-) []*scenario.ByNodeScenario {
-	if base == nil {
-		return narrow
-	}
-	need := cpuMilli(base.PendingTasks())
-	if need <= 0 {
-		return narrow
-	}
-	kept := make([]*scenario.ByNodeScenario, 0, len(narrow))
-	for _, sn := range narrow {
-		if sn == nil || cpuCovered(session, sn, need) {
-			kept = append(kept, sn)
-		}
-	}
-	return kept
-}
-
-func cpuCovered(session *framework.Session, sn *scenario.ByNodeScenario, need float64) bool {
-	tasks := sn.PotentialVictimsTasks()
-	freed := cpuMilli(tasks)
-	if freed <= 0 {
-		return true
-	}
-	nodeName := ""
-	for _, task := range tasks {
-		if task == nil || task.NodeName == "" {
-			continue
-		}
-		if nodeName == "" {
-			nodeName = task.NodeName
-			continue
-		}
-		if task.NodeName != nodeName {
-			return true
-		}
-	}
-	if nodeName == "" {
-		return true
-	}
-	return nodeIdleCPU(session, nodeName)+freed+1e-3 >= need
-}
-
-func cpuMilli(tasks []*pod_info.PodInfo) float64 {
-	total := 0.0
-	for _, task := range tasks {
-		if task == nil {
-			continue
-		}
-		total += task.ResReqVector.Get(resource_info.CPUIndex)
-	}
-	return total
-}
-
-func nodeIdleCPU(session *framework.Session, nodeName string) float64 {
-	if session == nil || session.ClusterInfo == nil || session.ClusterInfo.Nodes == nil {
-		return 0
-	}
-	node := session.ClusterInfo.Nodes[nodeName]
-	if node == nil {
-		return 0
-	}
-	return node.IdleVector.Get(resource_info.CPUIndex)
 }
 
 // appendUniqueThenStock keeps the first copy of a victim set from head, then
@@ -210,9 +120,10 @@ func scenarioVictimKey(sn *scenario.ByNodeScenario) string {
 	return victimUIDSetKey(sn.PotentialVictimsTasks()) + "\x01" + victimUIDSetKey(sn.RecordedVictimsTasks())
 }
 
-// isSinglePodPlacement is true only for the probe that places the original job's
-// one pending pod. A partial k=1 probe of a larger job also has one scenario task
-// and ProbeK 1; that probe stays on the stock stream.
+// isSinglePodPlacement is true only when this probe places the job's single
+// unscheduled pod. A k=1 probe of a larger job, including one whose other pod
+// is still gated, stays on the stock stream. Binding and pipelined pods already
+// have a placement and are not unscheduled work.
 func (g *nodeLocalGreedyGenerator) isSinglePodPlacement(scenarioPending int) bool {
 	if scenarioPending != 1 || g.solveCtx == nil || g.solveCtx.ProbeK != 1 {
 		return false
@@ -226,13 +137,20 @@ func (g *nodeLocalGreedyGenerator) isSinglePodPlacement(scenarioPending int) boo
 	if original == nil {
 		return false
 	}
-	pending := 0
+	unscheduled := 0
 	for _, task := range original.GetAllPodsMap() {
-		if task != nil && task.Status == pod_status.Pending {
-			pending++
+		if task != nil && isUnscheduledWork(task.Status) {
+			unscheduled++
 		}
 	}
-	return pending == 1
+	return unscheduled == 1
+}
+
+// isUnscheduledWork is a pod with no placement yet. Pending has not been
+// scheduled. Gated is still unschedulable. Allocated, binding, pipelined,
+// bound, and running pods already have a host decision.
+func isUnscheduledWork(status pod_status.PodStatus) bool {
+	return status == pod_status.Pending || status == pod_status.Gated
 }
 
 func (g *nodeLocalGreedyGenerator) ensureBuilder() bool {
@@ -254,105 +172,12 @@ func (g *nodeLocalGreedyGenerator) ensureBuilder() bool {
 }
 
 func (g *nodeLocalGreedyGenerator) popScenario() *scenario.ByNodeScenario {
-	for len(g.scenarios) > 0 {
-		sn := g.scenarios[0]
-		g.scenarios = g.scenarios[1:]
-		if sn == nil {
-			continue
-		}
-		// A scenario that cannot hold the largest pending task on any one node
-		// cannot place the pod. Later scenarios, including held stock, still run.
-		if !g.canHostLargestTask(sn) {
-			continue
-		}
-		return sn
-	}
-	return nil
-}
-
-// canHostLargestTask is false only when every pending task needs more GPUs
-// than the best single node in the scenario can free. Idle capacity on a
-// feasible node keeps the scenario.
-func (g *nodeLocalGreedyGenerator) canHostLargestTask(sn *scenario.ByNodeScenario) bool {
-	if sn == nil {
-		return false
-	}
-	need := 0.0
-	for _, task := range sn.PendingTasks() {
-		if task == nil {
-			continue
-		}
-		if q := task.GpuRequirement.GetGpusQuota(); q > need {
-			need = q
-		}
-	}
-	if need <= 0 {
-		return true
-	}
-	if g.solveCtx != nil {
-		for _, node := range g.solveCtx.FeasibleNodes {
-			if node == nil {
-				continue
-			}
-			idle, _ := node.GetSumOfIdleGPUs()
-			releasing, _ := node.GetSumOfReleasingGPUs()
-			if idle+releasing+1e-6 >= need {
-				return true
-			}
-		}
-	}
-	freedByNode := map[string]float64{}
-	add := func(tasks []*pod_info.PodInfo) {
-		for _, task := range tasks {
-			if task == nil || task.NodeName == "" {
-				continue
-			}
-			freedByNode[task.NodeName] += taskGPUs(task)
-		}
-	}
-	add(sn.PotentialVictimsTasks())
-	add(sn.RecordedVictimsTasks())
-	if len(freedByNode) == 0 {
-		return true
-	}
-	best := 0.0
-	for name, freed := range freedByNode {
-		capacity := freed + nodeIdleGPUs(g.nodeSession(), name)
-		if capacity > best {
-			best = capacity
-		}
-	}
-	return best+1e-6 >= need
-}
-
-func (g *nodeLocalGreedyGenerator) nodeSession() *framework.Session {
-	if g.solveCtx == nil {
+	if len(g.scenarios) == 0 {
 		return nil
 	}
-	return g.solveCtx.Session
-}
-
-func taskGPUs(task *pod_info.PodInfo) float64 {
-	if task == nil {
-		return 0
-	}
-	if q := task.AcceptedGpuRequirement.GetGpusQuota(); q > 0 {
-		return q
-	}
-	return task.GpuRequirement.GetGpusQuota()
-}
-
-func nodeIdleGPUs(session *framework.Session, nodeName string) float64 {
-	if session == nil || session.ClusterInfo == nil || session.ClusterInfo.Nodes == nil {
-		return 0
-	}
-	node := session.ClusterInfo.Nodes[nodeName]
-	if node == nil {
-		return 0
-	}
-	idle, _ := node.GetSumOfIdleGPUs()
-	releasing, _ := node.GetSumOfReleasingGPUs()
-	return idle + releasing
+	sn := g.scenarios[0]
+	g.scenarios = g.scenarios[1:]
+	return sn
 }
 
 func (g *nodeLocalGreedyGenerator) nextValidAccumulatedScenario() *scenario.ByNodeScenario {
@@ -528,31 +353,38 @@ func tasksOfJobs(jobs []*podgroup_info.PodGroupInfo) []*pod_info.PodInfo {
 	return tasks
 }
 
+// requiredTopologyLevel is set only when the job has one required level.
+// Different levels on subgroups or pod sets are left to the stock scenarios.
 func requiredTopologyLevel(job *podgroup_info.PodGroupInfo) string {
 	if job == nil || job.RootSubGroupSet == nil {
 		return ""
 	}
-	return firstRequiredLevel(job.RootSubGroupSet)
-}
-
-func firstRequiredLevel(sgs *subgroup_info.SubGroupSet) string {
-	if sgs == nil {
+	levels := map[string]struct{}{}
+	collectRequiredLevels(job.RootSubGroupSet, levels)
+	if len(levels) != 1 {
 		return ""
 	}
+	for level := range levels {
+		return level
+	}
+	return ""
+}
+
+func collectRequiredLevels(sgs *subgroup_info.SubGroupSet, levels map[string]struct{}) {
+	if sgs == nil {
+		return
+	}
 	if constraint := sgs.GetTopologyConstraint(); constraint != nil && constraint.RequiredLevel != "" {
-		return constraint.RequiredLevel
+		levels[constraint.RequiredLevel] = struct{}{}
 	}
 	for _, child := range sgs.GetDirectSubgroupsSets() {
-		if level := firstRequiredLevel(child); level != "" {
-			return level
-		}
+		collectRequiredLevels(child, levels)
 	}
 	for _, podSet := range sgs.GetDirectPodSets() {
 		if constraint := podSet.GetTopologyConstraint(); constraint != nil && constraint.RequiredLevel != "" {
-			return constraint.RequiredLevel
+			levels[constraint.RequiredLevel] = struct{}{}
 		}
 	}
-	return ""
 }
 
 func nodeLabel(session *framework.Session, nodeName, level string) string {
