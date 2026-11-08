@@ -1,0 +1,3 @@
+kind: Fixed
+body: |-
+  Status-updater drops status/patch updates for deleted PodGroups instead of retrying NotFound errors indefinitely, stopping log floods. [#1945](https://github.com/kai-scheduler/KAI-Scheduler/issues/1945)
