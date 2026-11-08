@@ -4,6 +4,7 @@
 package framework
 
 import (
+	"maps"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -257,4 +258,55 @@ func assertEqualSessionData(t *testing.T,
 	for name, node := range nodes {
 		assert.Equal(t, originalNodes[name], node)
 	}
+}
+
+// A fractional pod evicted and then pipelined back to the same node on a different
+// GPU group must leave the node exactly as it was once the statement is rolled back.
+func TestStatement_Rollback_EvictAndPipelineSharedTaskToDifferentGPUOnSameNode(t *testing.T) {
+	clusterTopology := nodes_fake.TestClusterTopology{
+		Name: "shared gpu evict and pipeline on same node",
+		Jobs: []*jobs_fake.TestJobBasic{
+			{
+				Name:                  "running_job0",
+				RequiredGPUsPerTask:   0.5,
+				RequiredCPUsPerTask:   2000,
+				RequiredMemoryPerTask: 1000,
+				QueueName:             "queue0",
+				Priority:              constants.PriorityTrainNumber,
+				Tasks: []*tasks_fake.TestTaskBasic{
+					{
+						State:     pod_status.Running,
+						NodeName:  "node0",
+						GPUGroups: []string{"0"},
+					},
+				},
+			},
+		},
+		Nodes: map[string]nodes_fake.TestNodeBasic{
+			"node0": {
+				GPUs: 2,
+			},
+		},
+	}
+	vectorMap := resource_info.NewResourceVectorMap()
+	jobsInfoMap, tasksToNodeMap, _ := jobs_fake.BuildJobsAndTasksMaps(clusterTopology.Jobs, vectorMap)
+	nodesInfoMap := nodes_fake.BuildNodesInfoMap(clusterTopology.Nodes, tasksToNodeMap, nil, vectorMap)
+	ssn := &Session{ClusterInfo: &api.ClusterInfo{PodGroupInfos: jobsInfoMap, Nodes: nodesInfoMap}}
+	s := &Statement{operations: []Operation{}, ssn: ssn, sessionID: "1234"}
+
+	originalNode := extractNodeAssertedInfo(nodesInfoMap["node0"])
+
+	task := jobsInfoMap["running_job0"].GetAllPodsMap()["running_job0-0"]
+	cp := s.Checkpoint()
+	err := s.Evict(task, "evicting task", eviction_info.EvictionMetadata{Action: "action", EvictionGangSize: 1})
+	assert.Nil(t, err)
+	task.SetGPUGroupIDs([]string{"1"})
+	err = s.Pipeline(task, "node0", false)
+	assert.Nil(t, err)
+	err = s.Rollback(cp)
+	assert.Nil(t, err)
+
+	rolledBackNode := extractNodeAssertedInfo(nodesInfoMap["node0"])
+	maps.DeleteFunc(rolledBackNode.gpuSharingNodeInfo.UsedSharedGPUsMemory, func(_ string, v int64) bool { return v == 0 })
+	originalNode.assertEqual(t, rolledBackNode)
 }
