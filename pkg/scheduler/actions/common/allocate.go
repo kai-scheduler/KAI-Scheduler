@@ -218,7 +218,7 @@ func allocateTaskToNode(ssn *framework.Session, stmt *framework.Statement, task 
 	task.NUMAPlacement = placement
 
 	if task.IsFractionRequest() || task.IsGpuMemoryRequest() {
-		return gpu_sharing.AllocateFractionalGPUTaskToNode(ssn, stmt, task, node, isSimulation)
+		return gpu_sharing.AllocateFractionalGPUTaskToNode(ssn, stmt, task, node, isSimulation, isSimulation)
 	}
 
 	if canBind := !isSimulation && node.IsTaskAllocatable(task); canBind {
