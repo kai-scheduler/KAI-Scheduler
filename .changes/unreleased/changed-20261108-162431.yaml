@@ -1,0 +1,6 @@
+kind: Changed
+body: |-
+  Prefer narrower node-local victim batches before the stock superset fallback
+custom:
+  Author: "eladb"
+  Issue: "2601"
