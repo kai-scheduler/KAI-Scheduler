@@ -242,6 +242,9 @@ func getSegmentSize(pod *v1.Pod, replicaSpecs map[string]interface{}) (int, bool
 		if err != nil {
 			return 0, false, fmt.Errorf("invalid segment size %s on pod %s/%s, err: %w", sizeStr, pod.Namespace, pod.Name, err)
 		}
+		if segmentSize <= 0 {
+			return 0, false, fmt.Errorf("segment size %s on pod %s/%s needs to be a positive integer", sizeStr, pod.Namespace, pod.Name)
+		}
 		return segmentSize, true, nil
 	}
 

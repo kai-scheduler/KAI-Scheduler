@@ -23,9 +23,9 @@ import (
 	"k8s.io/client-go/tools/cache"
 	podresourcesv1 "k8s.io/kubelet/pkg/apis/podresources/v1"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/npe/consts"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/npe/cputopology"
+	"github.com/kai-scheduler/api/constants"
 )
 
 // gpuPlacement is the annotation value gpuPod resolves to.

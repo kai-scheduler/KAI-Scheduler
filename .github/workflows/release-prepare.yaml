@@ -40,6 +40,22 @@ jobs:
         with:
           go-version: '1.26.8'
 
+      # The chart declares gpu-fractioning as a version range, so a release can bundle a
+      # newer one than its predecessor with no commit of ours to show for it. The entry
+      # names no version: the range is resolved again at build time.
+      - name: Add the bundled gpu-fractioning changelog entry
+        env:
+          GH_TOKEN: ${{ secrets.KAIBOT_TOKEN }}
+        run: |
+          set -euo pipefail
+          previous="$(git describe --tags --abbrev=0 --match 'v[0-9]*' || true)"
+          if [ -n "$previous" ]; then
+            bumped="$(hack/subchart-versions.sh changes "$previous")"
+            if [ -n "$bumped" ]; then
+              make changelog KIND=Changed BODY="Bump bundled gpu-fractioning; exact version in the subcharts.yaml release asset"
+            fi
+          fi
+
       - name: Fold fragments into CHANGELOG.md
         env:
           VERSION: ${{ inputs.version }}

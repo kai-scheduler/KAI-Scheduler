@@ -6,6 +6,7 @@ package resourcereservation
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strconv"
 	"sync/atomic"
 	"testing"
@@ -1413,6 +1414,79 @@ var _ = Describe("Race condition: reservation pod deleted during concurrent bind
 	)
 
 	Context("SyncForGpuGroup with stale cache - no fraction pods visible", func() {
+		failedRequest := func(backoffLimit *int32, failedAttempts int32) *schedulingv1alpha2.BindRequest {
+			return &schedulingv1alpha2.BindRequest{
+				ObjectMeta: metav1.ObjectMeta{Name: "bind-request-1", Namespace: "team-a"},
+				Spec: schedulingv1alpha2.BindRequestSpec{
+					PodName:           "fraction-pod-1",
+					SelectedNode:      nodeName,
+					SelectedGPUGroups: []string{gpuGroup},
+					BackoffLimit:      backoffLimit,
+				},
+				Status: schedulingv1alpha2.BindRequestStatus{
+					Phase:          schedulingv1alpha2.BindRequestPhaseFailed,
+					FailedAttempts: failedAttempts,
+				},
+			}
+		}
+		backoffLimit := int32(2)
+
+		DescribeTable("failed BindRequests preserve only needed reservations",
+			func(limit *int32, failedAttempts int32, preserveReservation bool) {
+				clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).
+					WithRuntimeObjects(reservationPod.DeepCopy(), failedRequest(limit, failedAttempts)).Build()
+				rsc := initializeTestService(clientWithObjs)
+
+				Expect(rsc.SyncForGpuGroup(context.Background(), gpuGroup)).To(Succeed())
+
+				pods := &v1.PodList{}
+				Expect(clientWithObjs.List(context.Background(), pods,
+					runtimeClient.InNamespace(resourceReservationNameSpace))).To(Succeed())
+				if preserveReservation {
+					Expect(pods.Items).To(HaveLen(1))
+					Expect(pods.Items[0].Name).To(Equal(reservationPod.Name))
+				} else {
+					Expect(pods.Items).To(BeEmpty())
+				}
+			},
+			Entry("failed request without a backoff limit", (*int32)(nil), int32(1), false),
+			Entry("failed request with a retry remaining", &backoffLimit, int32(1), true),
+			Entry("failed request at the backoff limit", &backoffLimit, int32(2), false),
+		)
+
+		It("should check a pending request after an exhausted request", func() {
+			exhaustedRequest := failedRequest(&backoffLimit, 2)
+			pendingRequest := exhaustedRequest.DeepCopy()
+			pendingRequest.Name = "bind-request-2"
+			pendingRequest.Spec.PodName = "fraction-pod-2"
+			pendingRequest.Status = schedulingv1alpha2.BindRequestStatus{Phase: schedulingv1alpha2.BindRequestPhasePending}
+			clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).
+				WithRuntimeObjects(reservationPod.DeepCopy(), exhaustedRequest, pendingRequest).
+				WithInterceptorFuncs(interceptor.Funcs{
+					List: func(ctx context.Context, c runtimeClient.WithWatch, list runtimeClient.ObjectList, opts ...runtimeClient.ListOption) error {
+						if err := c.List(ctx, list, opts...); err != nil {
+							return err
+						}
+						if requests, ok := list.(*schedulingv1alpha2.BindRequestList); ok {
+							// Force the terminal request first to exercise the continued search.
+							sort.Slice(requests.Items, func(i, j int) bool {
+								return requests.Items[i].Name < requests.Items[j].Name
+							})
+						}
+						return nil
+					},
+				}).Build()
+			rsc := initializeTestService(clientWithObjs)
+
+			Expect(rsc.SyncForGpuGroup(context.Background(), gpuGroup)).To(Succeed())
+
+			pods := &v1.PodList{}
+			Expect(clientWithObjs.List(context.Background(), pods,
+				runtimeClient.InNamespace(resourceReservationNameSpace))).To(Succeed())
+			Expect(pods.Items).To(HaveLen(1))
+			Expect(pods.Items[0].Name).To(Equal(reservationPod.Name))
+		})
+
 		It("should preserve reservation pod when an active BindRequest exists for the gpu group", func() {
 			activeBindRequest := &schedulingv1alpha2.BindRequest{
 				ObjectMeta: metav1.ObjectMeta{

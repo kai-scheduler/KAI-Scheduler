@@ -40,6 +40,8 @@ Tests are organized into contexts:
   - Whole GPU allocation tests
   - Distributed job scheduling
   - Reclaim scenarios
+  - Mixed NVfractions saturation
+  - Heterogeneous workloads
 
 
 ## Environment Setup

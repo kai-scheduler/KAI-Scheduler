@@ -97,15 +97,9 @@ func (sse *subScenarioEmitter) next() *scenario.ByNodeScenario {
 	}
 	sse.advanceNextK(k)
 
-	sub := scenario.NewByNodeScenario(
-		sse.session,
-		sse.base.GetPreemptor(),
-		sse.base.PendingTasks(),
-		nil,
-		sse.base.RecordedVictimsJobs(),
-	)
+	sub := sse.base.NewSubScenario()
 	for bi := range pickedBatches {
-		sub.AddPotentialVictimsTasks(sse.batches[bi].tasks)
+		sub.AddPotentialVictimsTasksWithRepresentative(sse.batches[bi].tasks, sse.batches[bi].representative)
 	}
 	return sub
 }
