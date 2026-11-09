@@ -104,6 +104,7 @@ func BuildSchedulerParams(opt *options.ServerOption) *conf.SchedulerParams {
 		MaxNumberConsolidationPreemptees:  opt.MaxNumberConsolidationPreemptees,
 		ScheduleCSIStorage:                opt.ScheduleCSIStorage,
 		UseSchedulingSignatures:           opt.UseSchedulingSignatures,
+		DeferredResizePreemption:          opt.DeferredResizePreemption,
 		FullHierarchyFairness:             opt.FullHierarchyFairness,
 		AllowConsolidatingReclaim:         opt.AllowConsolidatingReclaim,
 		NumOfStatusRecordingWorkers:       opt.NumOfStatusRecordingWorkers,
