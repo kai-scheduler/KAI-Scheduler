@@ -6,10 +6,13 @@ package dynamicresources
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	v1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/component-helpers/scheduling/corev1/nodeaffinity"
 	"k8s.io/dynamic-resource-allocation/cel"
 	"k8s.io/dynamic-resource-allocation/deviceclass/extendedresourcecache"
@@ -508,7 +511,8 @@ func (drap *draPlugin) deallocateResourceClaim(task *pod_info.PodInfo, podClaim 
 	claim := originalClaim.DeepCopy() // Modifying the original object will cause the manager to think there were no updates
 
 	resources.RemoveReservedFor(claim, task.Pod)
-	if len(claim.Status.ReservedFor) == 0 {
+	if len(claim.Status.ReservedFor) == 0 && !keepsDevicesAfterDeletion(claim, task.Pod) &&
+		!drap.devicesHeldByOtherClaims(claim) {
 		claim.Status.Allocation = nil
 	}
 
@@ -528,6 +532,46 @@ func (drap *draPlugin) deallocateResourceClaim(task *pod_info.PodInfo, podClaim 
 	})
 
 	return nil
+}
+
+// keepsDevicesAfterDeletion reports whether a pod already being deleted holds a claim that stays
+// allocated once the pod is gone: a standalone claim without the claim controller's finalizer.
+// Pods evicted by this session are not deleted yet and keep the simulation's existing behavior.
+func keepsDevicesAfterDeletion(claim *resourceapi.ResourceClaim, pod *v1.Pod) bool {
+	if pod.DeletionTimestamp == nil || slices.Contains(claim.Finalizers, resourceapi.Finalizer) {
+		return false
+	}
+	owner := metav1.GetControllerOf(claim)
+	return owner == nil || owner.Kind != "Pod" || owner.UID != pod.UID
+}
+
+// devicesHeldByOtherClaims reports whether another claim also holds the claim's devices, as a
+// task pipelined onto a terminating pod's devices does. The session's allocated-device set is not
+// reference counted, so deallocating this claim would free devices that are still taken.
+func (drap *draPlugin) devicesHeldByOtherClaims(claim *resourceapi.ResourceClaim) bool {
+	if claim.Status.Allocation == nil {
+		return false
+	}
+	devices := sets.New[string]()
+	for _, result := range claim.Status.Allocation.Devices.Results {
+		devices.Insert(result.Driver + "/" + result.Pool + "/" + result.Device)
+	}
+	claims, err := drap.manager.ResourceClaims().List()
+	if err != nil {
+		return false
+	}
+	for _, other := range claims {
+		isSameClaim := other.Namespace == claim.Namespace && other.Name == claim.Name
+		if isSameClaim || other.Status.Allocation == nil {
+			continue
+		}
+		for _, result := range other.Status.Allocation.Devices.Results {
+			if devices.Has(result.Driver + "/" + result.Pool + "/" + result.Device) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func getClaimDevicesString(claim *resourceapi.ResourceClaim) string {
