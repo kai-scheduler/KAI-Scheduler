@@ -10,6 +10,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/component-helpers/scheduling/corev1/nodeaffinity"
 	"k8s.io/dynamic-resource-allocation/cel"
 	"k8s.io/dynamic-resource-allocation/deviceclass/extendedresourcecache"
@@ -21,6 +22,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/k8s_utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
@@ -350,7 +352,7 @@ func (drap *draPlugin) allocateHandlerFn(ssn *framework.Session) func(event *fra
 		nodeInfo := ssn.ClusterInfo.Nodes[nodeName]
 
 		for _, podClaim := range pod.Spec.ResourceClaims {
-			err := drap.allocateResourceClaim(event.Task, &podClaim, node)
+			err := drap.allocateResourceClaim(ssn, event.Task, &podClaim, node)
 			if err != nil {
 				log.InfraLogger.Errorf("Failed to allocate resource claim %s for pod %s/%s: %v", podClaim.Name, pod.Namespace, pod.Name, err)
 				continue
@@ -358,14 +360,14 @@ func (drap *draPlugin) allocateHandlerFn(ssn *framework.Session) func(event *fra
 		}
 
 		if event.Task.ExtendedResourceClaim != nil {
-			if err := drap.allocateExtendedResourceClaim(event.Task, node, nodeInfo); err != nil {
+			if err := drap.allocateExtendedResourceClaim(ssn, event.Task, node, nodeInfo); err != nil {
 				log.InfraLogger.Errorf("Failed to allocate extended resource claim for pod %s/%s: %v", pod.Namespace, pod.Name, err)
 			}
 		}
 	}
 }
 
-func (drap *draPlugin) allocateExtendedResourceClaim(task *pod_info.PodInfo, node *v1.Node, nodeInfo *node_info.NodeInfo) error {
+func (drap *draPlugin) allocateExtendedResourceClaim(ssn *framework.Session, task *pod_info.PodInfo, node *v1.Node, nodeInfo *node_info.NodeInfo) error {
 	extResources := podExtendedResourcesNeedingDRA(task, nodeInfo, drap.deviceClassByResource)
 	if len(extResources) == 0 {
 		// Device-plugin handles the resource on this node; no DRA allocation needed.
@@ -378,7 +380,7 @@ func (drap *draPlugin) allocateExtendedResourceClaim(task *pod_info.PodInfo, nod
 	specialClaim := buildSpecialClaim(task.Pod)
 	specialClaim.Spec.Devices.Requests = deviceRequests
 
-	results, err := drap.allocate(node, []*resourceapi.ResourceClaim{specialClaim})
+	results, err := drap.allocate(ssn, task, node, []*resourceapi.ResourceClaim{specialClaim})
 	if err != nil || len(results) == 0 {
 		return fmt.Errorf("failed to allocate extended resources on node %s: %v", node.Name, err)
 	}
@@ -399,12 +401,13 @@ func (drap *draPlugin) allocateExtendedResourceClaim(task *pod_info.PodInfo, nod
 	return nil
 }
 
-func (drap *draPlugin) deallocateHandlerFn(_ *framework.Session) func(event *framework.Event) {
+func (drap *draPlugin) deallocateHandlerFn(ssn *framework.Session) func(event *framework.Event) {
 	return func(event *framework.Event) {
 		pod := event.Task.Pod
+		mayShareDevices := len(pod.Spec.ResourceClaims) > 0 && ssn.HasTerminatingPods()
 
 		for _, podClaim := range pod.Spec.ResourceClaims {
-			err := drap.deallocateResourceClaim(event.Task, &podClaim)
+			err := drap.deallocateResourceClaim(event.Task, &podClaim, mayShareDevices)
 			if err != nil {
 				log.InfraLogger.Errorf("Failed to deallocate resource claim %s for pod %s/%s: %v", podClaim.Name, pod.Namespace, pod.Name, err)
 				continue
@@ -422,19 +425,37 @@ func (drap *draPlugin) deallocateHandlerFn(_ *framework.Session) func(event *fra
 
 func (drap *draPlugin) OnSessionClose(_ *framework.Session) {}
 
-func (drap *draPlugin) allocate(node *v1.Node, claims []*resourceapi.ResourceClaim) ([]resourceapi.AllocationResult, error) {
-	allocatedState, err := drap.manager.ResourceClaims().GatherAllocatedState()
+// allocate allocates the claims on the node. A task pipelined onto devices that terminating pods
+// still hold is allocated against the session's future state, without those pods.
+func (drap *draPlugin) allocate(
+	ssn *framework.Session, task *pod_info.PodInfo, node *v1.Node, claims []*resourceapi.ResourceClaim,
+) ([]resourceapi.AllocationResult, error) {
+	results, err := drap.allocateWith(drap.manager, node, claims)
+	if (err == nil && len(results) > 0) || task.Status != pod_status.Pipelined {
+		return results, err
+	}
+	future := ssn.FutureDRAManager()
+	if future == nil {
+		return results, err
+	}
+	return drap.allocateWith(future, node, claims)
+}
+
+func (drap *draPlugin) allocateWith(
+	manager ksf.SharedDRAManager, node *v1.Node, claims []*resourceapi.ResourceClaim,
+) ([]resourceapi.AllocationResult, error) {
+	allocatedState, err := manager.ResourceClaims().GatherAllocatedState()
 	if err != nil {
 		return nil, fmt.Errorf("failed to gather allocated device state: %v", err)
 	}
-	slices, err := drap.manager.ResourceSlices().ListWithDeviceTaintRules()
+	slices, err := manager.ResourceSlices().ListWithDeviceTaintRules()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list resource slices: %v", err)
 	}
 	allocator, err := structured.NewAllocator(
 		context.Background(), drap.allocatorFeatures,
 		*allocatedState,
-		drap.manager.DeviceClasses(),
+		manager.DeviceClasses(),
 		slices,
 		drap.celCache,
 	)
@@ -444,7 +465,7 @@ func (drap *draPlugin) allocate(node *v1.Node, claims []*resourceapi.ResourceCla
 	return allocator.Allocate(context.Background(), node, claims)
 }
 
-func (drap *draPlugin) allocateResourceClaim(task *pod_info.PodInfo, podClaim *v1.PodResourceClaim, node *v1.Node) error {
+func (drap *draPlugin) allocateResourceClaim(ssn *framework.Session, task *pod_info.PodInfo, podClaim *v1.PodResourceClaim, node *v1.Node) error {
 	claimName, err := resources.GetResourceClaimName(task.Pod, podClaim)
 	if err != nil {
 		return err
@@ -467,7 +488,7 @@ func (drap *draPlugin) allocateResourceClaim(task *pod_info.PodInfo, podClaim *v
 	}
 
 	if claim.Status.Allocation == nil {
-		result, err := drap.allocate(node, []*resourceapi.ResourceClaim{claim})
+		result, err := drap.allocate(ssn, task, node, []*resourceapi.ResourceClaim{claim})
 		if err != nil {
 			return fmt.Errorf("failed to allocate resources: %v", err)
 		}
@@ -494,7 +515,9 @@ func (drap *draPlugin) allocateResourceClaim(task *pod_info.PodInfo, podClaim *v
 	return nil
 }
 
-func (drap *draPlugin) deallocateResourceClaim(task *pod_info.PodInfo, podClaim *v1.PodResourceClaim) error {
+func (drap *draPlugin) deallocateResourceClaim(
+	task *pod_info.PodInfo, podClaim *v1.PodResourceClaim, mayShareDevices bool,
+) error {
 	claimName, err := resources.GetResourceClaimName(task.Pod, podClaim)
 	if err != nil {
 		return err
@@ -508,7 +531,11 @@ func (drap *draPlugin) deallocateResourceClaim(task *pod_info.PodInfo, podClaim 
 	claim := originalClaim.DeepCopy() // Modifying the original object will cause the manager to think there were no updates
 
 	resources.RemoveReservedFor(claim, task.Pod)
+	var sharingDevices []*resourceapi.ResourceClaim
 	if len(claim.Status.ReservedFor) == 0 {
+		if mayShareDevices {
+			sharingDevices = drap.claimsSharingDevices(claim)
+		}
 		claim.Status.Allocation = nil
 	}
 
@@ -516,6 +543,7 @@ func (drap *draPlugin) deallocateResourceClaim(task *pod_info.PodInfo, podClaim 
 	if err != nil {
 		return fmt.Errorf("failed to update resource claim %s/%s: %v", task.Namespace, claimName, err)
 	}
+	drap.reassertAllocations(sharingDevices)
 
 	if task.ResourceClaimInfo != nil {
 		if claimInfoInTask := task.ResourceClaimInfo[podClaim.Name]; claimInfoInTask != nil {
@@ -528,6 +556,53 @@ func (drap *draPlugin) deallocateResourceClaim(task *pod_info.PodInfo, podClaim 
 	})
 
 	return nil
+}
+
+// claimsSharingDevices returns the other claims allocated any of the claim's devices, as a claim
+// pipelined onto a terminating pod's devices is.
+func (drap *draPlugin) claimsSharingDevices(claim *resourceapi.ResourceClaim) []*resourceapi.ResourceClaim {
+	if claim.Status.Allocation == nil {
+		return nil
+	}
+	devices := sets.New[string]()
+	for _, result := range claim.Status.Allocation.Devices.Results {
+		devices.Insert(result.Driver + "/" + result.Pool + "/" + result.Device)
+	}
+	claims, err := drap.manager.ResourceClaims().List()
+	if err != nil {
+		return nil
+	}
+	var sharing []*resourceapi.ResourceClaim
+	for _, other := range claims {
+		isSameClaim := other.Namespace == claim.Namespace && other.Name == claim.Name
+		if isSameClaim || other.Status.Allocation == nil {
+			continue
+		}
+		for _, result := range other.Status.Allocation.Devices.Results {
+			if devices.Has(result.Driver + "/" + result.Pool + "/" + result.Device) {
+				sharing = append(sharing, other)
+				break
+			}
+		}
+	}
+	return sharing
+}
+
+// reassertAllocations marks the claims' devices allocated again. The session's allocated-device set
+// is not reference counted, so deallocating one of two claims on a device frees it for both. The set
+// only reacts to an allocation appearing or disappearing, so each claim is cleared and restored.
+func (drap *draPlugin) reassertAllocations(claims []*resourceapi.ResourceClaim) {
+	for _, claim := range claims {
+		cleared := claim.DeepCopy()
+		cleared.Status.Allocation = nil
+		if err := drap.manager.ResourceClaims().AssumeClaimAfterAPICall(cleared); err != nil {
+			log.InfraLogger.Errorf("Failed to restore devices of claim %s/%s: %v", claim.Namespace, claim.Name, err)
+			continue
+		}
+		if err := drap.manager.ResourceClaims().AssumeClaimAfterAPICall(claim.DeepCopy()); err != nil {
+			log.InfraLogger.Errorf("Failed to restore devices of claim %s/%s: %v", claim.Namespace, claim.Name, err)
+		}
+	}
 }
 
 func getClaimDevicesString(claim *resourceapi.ResourceClaim) string {
