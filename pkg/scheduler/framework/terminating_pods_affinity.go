@@ -7,6 +7,7 @@ import (
 	"context"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 	ksf "k8s.io/kube-scheduler/framework"
 	k8sframework "k8s.io/kubernetes/pkg/scheduler/framework"
 )
@@ -21,25 +22,37 @@ func (ssn *Session) terminatingPodsMatterForAffinity(pod *v1.Pod) bool {
 	return len(t.k8sPods) > 0 && (t.hasRequiredAntiAffinity || hasRequiredPodAffinityTerms(pod))
 }
 
-// removeFromAffinityState swaps the pod's prefilter state for a copy without the terminating pods in
-// its inter-pod affinity counts, as kube-scheduler does for preemption victims. Rerunning the
-// prefilter would be costlier, and a Skip it returns would stick for the rest of the session.
+// removeFromAffinityState subtracts the terminating pods from a copy of the pod's affinity counts.
+// Rerunning the prefilter could return Skip, which the predicates plugin keeps for the whole
+// session (possibly a bug).
 func (ssn *Session) removeFromAffinityState(pod *v1.Pod) (restore func()) {
 	extensions := ssn.podAffinityExtensions()
 	if extensions == nil {
 		return func() {}
 	}
+	t := ssn.terminating()
 	state := ssn.GetSessionStateForResource(pod.UID)
-	derived := state.Clone()
-	for _, terminating := range ssn.terminating().k8sPods {
-		// Fails when the prefilter was skipped: the pod has no affinity counts to adjust.
-		status := extensions.RemovePod(context.Background(), derived, pod, terminating.podInfo, terminating.nodeInfo)
-		if !status.IsSuccess() {
-			return func() {}
+	derived, found := t.affinityStates[pod.UID]
+	if !found {
+		derived = state.Clone()
+		for _, terminating := range t.k8sPods {
+			// Fails when the prefilter was skipped: the pod has no affinity counts to adjust.
+			status := extensions.RemovePod(context.Background(), derived, pod, terminating.podInfo, terminating.nodeInfo)
+			if !status.IsSuccess() {
+				derived = state
+				break
+			}
 		}
+		t.affinityStates[pod.UID] = derived
 	}
 	ssn.k8sResourceStateCache.Store(pod.UID, derived)
 	return func() { ssn.k8sResourceStateCache.Store(pod.UID, state) }
+}
+
+func (ssn *Session) dropAffinityState(uid types.UID) {
+	if ssn.terminatingPods != nil {
+		delete(ssn.terminatingPods.affinityStates, uid)
+	}
 }
 
 func (ssn *Session) podAffinityExtensions() ksf.PreFilterExtensions {

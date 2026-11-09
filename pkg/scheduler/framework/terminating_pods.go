@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"slices"
 
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
@@ -16,6 +17,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/cluster_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 )
 
@@ -29,13 +31,17 @@ type terminatingPods struct {
 	k8sPods                 []k8sPod
 	hasRequiredAntiAffinity bool
 	hasSharedDevicePool     bool
+	affinityStates          map[types.UID]k8s_internal.SessionState
 }
 
 func (ssn *Session) terminating() *terminatingPods {
 	if ssn.terminatingPods != nil {
 		return ssn.terminatingPods
 	}
-	t := &terminatingPods{byNode: map[string][]*pod_info.PodInfo{}}
+	t := &terminatingPods{
+		byNode:         map[string][]*pod_info.PodInfo{},
+		affinityStates: map[types.UID]k8s_internal.SessionState{},
+	}
 	ssn.terminatingPods = t
 	for _, node := range ssn.ClusterInfo.Nodes {
 		affinityInfo, ok := node.PodAffinityInfo.(*cluster_info.K8sNodePodAffinityInfo)
