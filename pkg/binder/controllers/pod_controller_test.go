@@ -20,7 +20,10 @@ import (
 )
 
 var _ = Describe("Pod Controller", func() {
-	const schedulerName = "kai-scheduler"
+	const (
+		schedulerName        = "kai-scheduler"
+		reservationNamespace = "kai-resource-reservation"
+	)
 
 	var (
 		resourceReservation *mock_resourcereservation.MockInterface
@@ -33,8 +36,9 @@ var _ = Describe("Pod Controller", func() {
 	BeforeEach(func() {
 		resourceReservation = mock_resourcereservation.NewMockInterface(gomock.NewController(GinkgoT()))
 		reconciler = &PodReconciler{
-			ResourceReservation: resourceReservation,
-			SchedulerName:       schedulerName,
+			ResourceReservation:  resourceReservation,
+			SchedulerName:        schedulerName,
+			ReservationNamespace: reservationNamespace,
 		}
 		queue = workqueue.NewTypedRateLimitingQueue(
 			workqueue.DefaultTypedControllerRateLimiter[reconcile.Request]())
@@ -88,5 +92,20 @@ var _ = Describe("Pod Controller", func() {
 		handlers.DeleteFunc(context.TODO(), event.DeleteEvent{Object: otherSchedulerPod}, queue)
 
 		Expect(queue.Len()).To(Equal(0))
+	})
+	It("syncs the GPU group when its reservation Pod is deleted", func() {
+		resourceReservation.EXPECT().SyncForGpuGroup(gomock.Any(), "group").Return(nil)
+
+		reservationPod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "gpu-reservation-pod",
+				Namespace: reservationNamespace,
+				Labels: map[string]string{
+					constants.GPUGroup: "group",
+				},
+			},
+			Spec: corev1.PodSpec{SchedulerName: "default-scheduler"},
+		}
+		reconciler.eventHandlers().DeleteFunc(context.TODO(), event.DeleteEvent{Object: reservationPod}, queue)
 	})
 })
