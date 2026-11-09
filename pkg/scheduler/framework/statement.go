@@ -38,14 +38,9 @@ import (
 
 type Statement struct {
 	operations []Operation
-	// undoneBy[i] is the index of the first undoOperation targeting operations[i], or noUndo.
-	// Kept in sync with operations so operationValid does not scan all operations.
-	undoneBy  []int
-	ssn       *Session
-	sessionID string
+	ssn        *Session
+	sessionID  string
 }
-
-const noUndo = -1
 
 type Checkpoint int
 
@@ -64,7 +59,7 @@ func (s *Statement) Rollback(cp Checkpoint) error {
 		}
 	}
 
-	s.truncateOperations(int(cp))
+	s.operations = s.operations[:cp]
 	return nil
 }
 
@@ -116,7 +111,7 @@ func (s *Statement) Evict(reclaimeeTask *pod_info.PodInfo, message string,
 		}
 	}
 
-	s.appendOperation(
+	s.operations = append(s.operations,
 		evictOperation{
 			taskInfo:                    reclaimeeTask,
 			previousStatus:              previousStatus,
@@ -312,7 +307,7 @@ func (s *Statement) Pipeline(task *pod_info.PodInfo, hostname string, canUndoEvi
 		}
 	}
 
-	s.appendOperation(pipelineOperation{
+	s.operations = append(s.operations, pipelineOperation{
 		taskInfo:                    task,
 		previousStatus:              previousStatus,
 		previousNode:                previousNode,
@@ -389,7 +384,7 @@ func (s *Statement) Allocate(task *pod_info.PodInfo, hostname string) error {
 
 	// Update status in session
 	previousIsVirtualStatus := task.IsVirtualStatus
-	s.appendOperation(
+	s.operations = append(s.operations,
 		allocateOperation{
 			taskInfo: task.Clone(),
 			nextNode: node.Name,
@@ -575,50 +570,13 @@ func (s *Statement) ConvertAllAllocatedToPipelined(jobID common_info.PodGroupID)
 			newOperations = append(newOperations, op)
 		}
 	}
-	s.setOperations(newOperations)
+	s.operations = newOperations
 
 	return nil
 }
 
 func (s *Statement) clearOperations() {
 	s.operations = []Operation{}
-	s.undoneBy = nil
-}
-
-func (s *Statement) appendOperation(op Operation) {
-	index := len(s.operations)
-	s.operations = append(s.operations, op)
-	s.undoneBy = append(s.undoneBy, noUndo)
-	if undoOp, isUndo := op.(undoOperation); isUndo && s.undoneBy[undoOp.operationIndex] == noUndo {
-		s.undoneBy[undoOp.operationIndex] = index
-	}
-}
-
-func (s *Statement) truncateOperations(length int) {
-	for i := length; i < len(s.operations); i++ {
-		undoOp, isUndo := s.operations[i].(undoOperation)
-		if isUndo && undoOp.operationIndex < length && s.undoneBy[undoOp.operationIndex] == i {
-			s.undoneBy[undoOp.operationIndex] = noUndo
-		}
-	}
-	s.operations = s.operations[:length]
-	s.undoneBy = s.undoneBy[:length]
-}
-
-// setOperations replaces all operations and rebuilds the undo index for the new positions.
-func (s *Statement) setOperations(operations []Operation) {
-	s.operations = nil
-	s.undoneBy = nil
-	for _, op := range operations {
-		s.operations = append(s.operations, op)
-		s.undoneBy = append(s.undoneBy, noUndo)
-	}
-	for i, op := range s.operations {
-		undoOp, isUndo := op.(undoOperation)
-		if isUndo && undoOp.operationIndex < len(s.undoneBy) && s.undoneBy[undoOp.operationIndex] == noUndo {
-			s.undoneBy[undoOp.operationIndex] = i
-		}
-	}
 }
 
 func (s *Statement) Discard() {
@@ -750,7 +708,7 @@ func (s *Statement) undoOperation(index int) error {
 		return fmt.Errorf("failed to reverse operation %s: %v", op.Name(), err)
 	}
 
-	s.appendOperation(
+	s.operations = append(s.operations,
 		undoOperation{
 			operationIndex:   index,
 			reverseOperation: redoOperation,
@@ -768,14 +726,16 @@ func (s *Statement) cleanupFailedAllocation(task *pod_info.PodInfo, node *node_i
 	_ = s.unallocate(task, node.Name, pod_info.NUMAPlacement{}, false)
 }
 
-// operationValid reports whether operations[i] is in effect: it holds when the chain of first undos
-// starting at i (undo, undo of that undo, ...) has even length.
 func (s *Statement) operationValid(i int) bool {
-	valid := true
-	for undoIndex := s.undoneBy[i]; undoIndex != noUndo; undoIndex = s.undoneBy[undoIndex] {
-		valid = !valid
+	for undoIndex, operation := range s.operations {
+		if operation.Name() != undo {
+			continue
+		}
+		if operation.(undoOperation).operationIndex == i {
+			return !s.operationValid(undoIndex)
+		}
 	}
-	return valid
+	return true
 }
 
 func cloneFractionalGpuGroups(
