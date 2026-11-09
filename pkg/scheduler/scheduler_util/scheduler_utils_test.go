@@ -148,3 +148,51 @@ func TestNodeWithUnavailableNetwork(t *testing.T) {
 		t.Errorf("ValidateIsNodeReady - node with unavailable network")
 	}
 }
+
+func TestUnschedulableNodeWithTolerationIsFit(t *testing.T) {
+	node := createTestNode([]v1.NodeCondition{
+		{
+			Type:   v1.NodeReady,
+			Status: v1.ConditionTrue,
+		},
+	})
+	node.Spec.Unschedulable = true
+	tolerations := []v1.Toleration{
+		{
+			Key:      v1.TaintNodeUnschedulable,
+			Operator: v1.TolerationOpExists,
+			Effect:   v1.TaintEffectNoSchedule,
+		},
+	}
+	fit, reasons, err := CheckNodeConditionPredicate(node, tolerations)
+	if err != nil {
+		t.Fatalf("CheckNodeConditionPredicate - unexpected error: %v", err)
+	}
+	if !fit {
+		t.Errorf("CheckNodeConditionPredicate - unschedulable node with matching toleration should be fit, reasons: %v", reasons)
+	}
+}
+
+func TestUnschedulableNodeWithUnrelatedTolerationIsNotFit(t *testing.T) {
+	node := createTestNode([]v1.NodeCondition{
+		{
+			Type:   v1.NodeReady,
+			Status: v1.ConditionTrue,
+		},
+	})
+	node.Spec.Unschedulable = true
+	tolerations := []v1.Toleration{
+		{
+			Key:      "some.other/taint",
+			Operator: v1.TolerationOpExists,
+			Effect:   v1.TaintEffectNoSchedule,
+		},
+	}
+	fit, _, err := CheckNodeConditionPredicate(node, tolerations)
+	if err != nil {
+		t.Fatalf("CheckNodeConditionPredicate - unexpected error: %v", err)
+	}
+	if fit {
+		t.Errorf("CheckNodeConditionPredicate - unschedulable node with unrelated toleration should not be fit")
+	}
+}

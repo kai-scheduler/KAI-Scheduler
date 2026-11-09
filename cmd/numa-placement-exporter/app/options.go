@@ -39,7 +39,7 @@ func (o *Options) AddFlags() {
 	flag.DurationVar(&o.PollInterval, "poll-interval", consts.DefaultPollInterval,
 		"How often to reconcile observed NUMA placement from the node's podresources onto pods.")
 	flag.DurationVar(&o.DriftResyncInterval, "drift-resync-interval", consts.DefaultDriftResyncInterval,
-		"How often to reconcile against the API server and repair pods whose annotation drifted. Set to 0 to disable.")
+		"Deprecated; ignored. Polling and pod events reconcile annotation drift.")
 	flag.IntVar(&o.Qps, "qps", 50, "Queries per second to the K8s API server")
 	flag.IntVar(&o.Burst, "burst", 100, "Burst to the K8s API server")
 }

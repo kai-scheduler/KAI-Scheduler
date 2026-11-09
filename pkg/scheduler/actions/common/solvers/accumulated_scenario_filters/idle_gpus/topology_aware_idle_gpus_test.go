@@ -14,7 +14,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 
-	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
@@ -29,6 +28,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
+	commonconstants "github.com/kai-scheduler/api/constants"
 )
 
 func TestNewTopologyAwareIdleGpusFilter_NoConstraints(t *testing.T) {
@@ -49,7 +49,7 @@ func TestNewTopologyAwareIdleGpusFilter_NoConstraints(t *testing.T) {
 		RootSubGroupSet:     nil,
 	}}
 	jobsInfoMap, _, _ := jobs_fake.BuildJobsAndTasksMaps(jobs, vectorMap)
-	pendingJob := jobsInfoMap["pending-job"]
+	pendingJob := jobsInfoMap[common_info.NewPodGroupID("default", "pending-job")]
 
 	tasks := []*pod_info.PodInfo{}
 	for _, task := range pendingJob.GetAllPodsMap() {
@@ -205,7 +205,7 @@ func TestTopologyAwareIdleGpus_WithVictimTasks(t *testing.T) {
 	session := &framework.Session{
 		ClusterInfo: &api.ClusterInfo{
 			PodGroupInfos: map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{
-				"victim-1-job": podgroup_info.NewPodGroupInfo("victim-1-job"),
+				"default/victim-1-job": podgroup_info.NewPodGroupInfo("default/victim-1-job"),
 			},
 		},
 	}
@@ -264,7 +264,7 @@ func TestTopologyAwareIdleGpus_VictimNotDoubleCountedAcrossFilterCalls(t *testin
 	session := &framework.Session{
 		ClusterInfo: &api.ClusterInfo{
 			PodGroupInfos: map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{
-				"victim-1-job": podgroup_info.NewPodGroupInfo("victim-1-job"),
+				"default/victim-1-job": podgroup_info.NewPodGroupInfo("default/victim-1-job"),
 			},
 		},
 	}
@@ -324,13 +324,13 @@ func TestTopologyAwareIdleGpus_RecordedVictimsCountedTowardCapacity(t *testing.T
 
 	// Build a PodGroupInfo for the victim job that contains the running task so that
 	// RecordedVictimsTasks() can return it.
-	victimJob := podgroup_info.NewPodGroupInfo(common_info.PodGroupID("victim-1-job"))
+	victimJob := podgroup_info.NewPodGroupInfo(common_info.NewPodGroupID("default", "victim-1-job"))
 	victimJob.AddTaskInfo(victimTask)
 
 	session := &framework.Session{
 		ClusterInfo: &api.ClusterInfo{
 			PodGroupInfos: map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{
-				"victim-1-job": victimJob,
+				"default/victim-1-job": victimJob,
 			},
 		},
 	}
@@ -447,7 +447,7 @@ func TestTopologyAwareIdleGpus_FilterDomainMovesTwoStepsLeft(t *testing.T) {
 	session := &framework.Session{
 		ClusterInfo: &api.ClusterInfo{
 			PodGroupInfos: map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{
-				"victim-1-job": podgroup_info.NewPodGroupInfo("victim-1-job"),
+				"default/victim-1-job": podgroup_info.NewPodGroupInfo("default/victim-1-job"),
 			},
 		},
 	}
@@ -606,7 +606,7 @@ func buildJob(name string, tasks []*tasks_fake.TestTaskBasic, rootSubGroupSet *s
 		Tasks:           tasks,
 	}}
 	jobsInfoMap, _, _ := jobs_fake.BuildJobsAndTasksMaps(jobs, vectorMap)
-	return jobsInfoMap[common_info.PodGroupID(name)]
+	return jobsInfoMap[common_info.NewPodGroupID("default", name)]
 }
 
 // runFilterCheck runs the filter and asserts the expected validity.

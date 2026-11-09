@@ -1,0 +1,5 @@
+kind: Changed
+body: Moved the third-party component inventory and source-code offer from NOTICE to COPYRIGHT, so NOTICE carries only attribution notices; images ship both files
+time: 2026-10-07T15:00:00.000000+03:00
+custom:
+    Issue: "2355"

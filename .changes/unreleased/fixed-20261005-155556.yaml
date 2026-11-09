@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Keep replacement subgroups in the job's required topology domain
+custom:
+  Author: "1fanwang"
+  Issue: "2318"

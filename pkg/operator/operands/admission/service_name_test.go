@@ -19,8 +19,8 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
 	nvidiav1 "github.com/kai-scheduler/KAI-scheduler/third_party/nvidia/gpu-operator/api/nvidia/v1"
+	kaiv1 "github.com/kai-scheduler/api/kai/v1"
 )
 
 func TestAdmissionServiceIdentity(t *testing.T) {

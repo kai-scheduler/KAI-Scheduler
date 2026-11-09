@@ -18,7 +18,6 @@ import (
 	storage "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/informers"
@@ -29,15 +28,8 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/utils/ptr"
 
-	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
+	kaiv1alpha1 "github.com/kai-scheduler/api/kai/v1alpha1"
 
-	kubeAiSchedulerClient "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned"
-	kubeAiSchedulerClientFake "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/fake"
-	kubeAiSchedulerInfo "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/informers/externalversions"
-	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	enginev2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
-	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_affinity"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -53,6 +45,13 @@ import (
 	fakeusage "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/usagedb/fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/utils"
+	kubeAiSchedulerClient "github.com/kai-scheduler/api/client/clientset/versioned"
+	kubeAiSchedulerClientFake "github.com/kai-scheduler/api/client/clientset/versioned/fake"
+	kubeAiSchedulerInfo "github.com/kai-scheduler/api/client/informers/externalversions"
+	commonconstants "github.com/kai-scheduler/api/constants"
+	schedulingv1alpha2 "github.com/kai-scheduler/api/scheduling/v1alpha2"
+	enginev2 "github.com/kai-scheduler/api/scheduling/v2"
+	enginev2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
 )
 
 const (
@@ -545,13 +544,12 @@ func TestBindRequests(t *testing.T) {
 	}
 
 	tests := map[string]struct {
-		kubeObjects             []runtime.Object
-		kaiSchedulerObjects     []runtime.Object
-		expectedProcessing      int
-		expectedStale           int
-		expectedForDeletedNodes int
-		expectedPodStatus       map[string]map[string]pod_status.PodStatus
-		resultNodes             map[string]*resource.Quantity
+		kubeObjects                        []runtime.Object
+		kaiSchedulerObjects                []runtime.Object
+		expectedProcessing                 int
+		expectedFailedBindRequestsForShard int
+		expectedPodStatus                  map[string]map[string]pod_status.PodStatus
+		resultNodes                        map[string]*resource.Quantity
 	}{
 		"Pod with PodGroup Waiting For Binding": {
 			kubeObjects: []runtime.Object{
@@ -691,8 +689,8 @@ func TestBindRequests(t *testing.T) {
 					},
 				},
 			},
-			expectedProcessing: 0,
-			expectedStale:      1,
+			expectedProcessing:                 0,
+			expectedFailedBindRequestsForShard: 1,
 			expectedPodStatus: map[string]map[string]pod_status.PodStatus{
 				namespace1: {
 					examplePodName: pod_status.Pending,
@@ -745,7 +743,6 @@ func TestBindRequests(t *testing.T) {
 				},
 			},
 			expectedProcessing: 1,
-			expectedStale:      0,
 			expectedPodStatus: map[string]map[string]pod_status.PodStatus{
 				namespace1: {
 					examplePodName: pod_status.Pending,
@@ -796,8 +793,7 @@ func TestBindRequests(t *testing.T) {
 					},
 				},
 			},
-			expectedStale:           0,
-			expectedForDeletedNodes: 1,
+			expectedFailedBindRequestsForShard: 1,
 			expectedPodStatus: map[string]map[string]pod_status.PodStatus{
 				namespace1: {
 					examplePodName: pod_status.Pending,
@@ -846,7 +842,8 @@ func TestBindRequests(t *testing.T) {
 					},
 				},
 			},
-			expectedProcessing: 0,
+			expectedProcessing:                 0,
+			expectedFailedBindRequestsForShard: 0,
 			expectedPodStatus: map[string]map[string]pod_status.PodStatus{
 				namespace1: {
 					examplePodName: pod_status.Pending,
@@ -898,7 +895,6 @@ func TestBindRequests(t *testing.T) {
 					},
 				},
 			},
-			expectedStale: 1,
 			expectedPodStatus: map[string]map[string]pod_status.PodStatus{
 				namespace1: {
 					examplePodName: pod_status.Pending,
@@ -921,19 +917,8 @@ func TestBindRequests(t *testing.T) {
 		snapshot, err := clusterInfo.Snapshot()
 		assert.Equal(t, nil, err)
 
-		processingBindRequests := 0
-		staleBindRequests := 0
-		for _, bindRequest := range snapshot.BindRequests {
-			if bindRequest.IsFailed() {
-				staleBindRequests++
-			} else {
-				processingBindRequests++
-			}
-		}
-		assert.Equal(t, test.expectedProcessing, processingBindRequests)
-		assert.Equal(t, test.expectedStale, staleBindRequests)
-
-		assert.Equal(t, test.expectedForDeletedNodes, len(snapshot.BindRequestsForDeletedNodes))
+		assert.Equal(t, test.expectedProcessing, len(snapshot.BindRequests))
+		assert.Equal(t, test.expectedFailedBindRequestsForShard, len(snapshot.FailedBindRequestsForShard))
 
 		assertedPods := 0
 		for _, podGroup := range snapshot.PodGroupInfos {
@@ -1414,6 +1399,78 @@ func TestSnapshotPodGroupsWithSameNameInDifferentNamespaces(t *testing.T) {
 			assert.Equal(t, namespace, pod.Namespace)
 			assert.Equal(t, podGroupID, pod.Job)
 		}
+	}
+}
+
+func TestSnapshotBackgroundPodsResolvePodGroups(t *testing.T) {
+	const podGroupName = "healthcheck"
+	namespaces := []string{"default", "other"}
+	kubeObjects := []runtime.Object{&corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "node-1"},
+		Status: corev1.NodeStatus{Allocatable: corev1.ResourceList{
+			"nvidia.com/gpu": resource.MustParse("8"),
+		}},
+	}}
+	kaiObjects := []runtime.Object{&enginev2.Queue{
+		ObjectMeta: metav1.ObjectMeta{Name: "queue-0"},
+	}}
+	for _, namespace := range namespaces {
+		kubeObjects = append(kubeObjects, &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "healthcheck-pod", Namespace: namespace, UID: types.UID(namespace + "-pod"),
+				Annotations: map[string]string{commonconstants.PodGroupAnnotationForPod: podGroupName},
+				Labels:      map[string]string{"kai.scheduler/background": "true"},
+			},
+			Spec: corev1.PodSpec{
+				NodeName: "node-1",
+				Containers: []corev1.Container{{
+					Name: "healthcheck", Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{"nvidia.com/gpu": resource.MustParse("1")},
+					},
+				}},
+			},
+			Status: corev1.PodStatus{Phase: corev1.PodRunning},
+		})
+		kaiObjects = append(kaiObjects, &enginev2alpha2.PodGroup{
+			ObjectMeta: metav1.ObjectMeta{Name: podGroupName, Namespace: namespace},
+			Spec:       enginev2alpha2.PodGroupSpec{Queue: "queue-0"},
+		})
+	}
+	for i, annotations := range []map[string]string{
+		nil,
+		{commonconstants.PodGroupAnnotationForPod: ""},
+	} {
+		kubeObjects = append(kubeObjects, &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: fmt.Sprintf("unmanaged-%d", i), Namespace: "default",
+				UID: types.UID(fmt.Sprintf("unmanaged-%d", i)), Annotations: annotations,
+			},
+			Spec:   corev1.PodSpec{NodeName: "node-1"},
+			Status: corev1.PodStatus{Phase: corev1.PodRunning},
+		})
+	}
+	clusterInfo := newClusterInfoTests(t, clusterInfoTestParams{
+		kubeObjects: kubeObjects, kaiSchedulerObjects: kaiObjects,
+	})
+	snapshot, err := clusterInfo.Snapshot()
+	if !assert.NoError(t, err) {
+		return
+	}
+	assert.Len(t, snapshot.PodGroupInfos, len(namespaces))
+	assert.Len(t, snapshot.Nodes["node-1"].PodInfos, len(namespaces)+2)
+	for _, pod := range snapshot.Nodes["node-1"].PodInfos {
+		if pod.Name != "healthcheck-pod" {
+			assert.Empty(t, pod.Job, "unmanaged node pods must not acquire a PodGroup")
+			continue
+		}
+		podGroupID := common_info.NewPodGroupID(pod.Namespace, podGroupName)
+		assert.Equal(t, podGroupID, pod.Job)
+		podGroup, found := snapshot.PodGroupInfos[pod.Job]
+		if !assert.True(t, found, "background pod %s/%s must resolve its PodGroup", pod.Namespace, pod.Name) {
+			continue
+		}
+		assert.Equal(t, pod.Namespace, podGroup.Namespace)
+		assert.Contains(t, podGroup.GetAllPodsMap(), pod.UID)
 	}
 }
 
@@ -2659,7 +2716,6 @@ func TestSnapshotNodesWithDRAGPUs(t *testing.T) {
 			ci := &ClusterInfo{
 				dataLister:             mockLister,
 				nodePoolParams:         &conf.SchedulingNodePoolParams{},
-				nodePoolSelector:       labels.Everything(),
 				clusterPodAffinityInfo: clusterPodAffinityInfo,
 			}
 
@@ -2706,7 +2762,6 @@ func TestSnapshotNodesWithNodeResourceTopology(t *testing.T) {
 	ci := &ClusterInfo{
 		dataLister:             mockLister,
 		nodePoolParams:         &conf.SchedulingNodePoolParams{},
-		nodePoolSelector:       labels.Everything(),
 		clusterPodAffinityInfo: clusterPodAffinityInfo,
 	}
 

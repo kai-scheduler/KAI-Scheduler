@@ -6,7 +6,7 @@ package app
 import (
 	"flag"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/api/constants"
 )
 
 type Options struct {

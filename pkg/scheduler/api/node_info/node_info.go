@@ -30,7 +30,6 @@ import (
 	"golang.org/x/exp/maps"
 	v1 "k8s.io/api/core/v1"
 
-	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"k8s.io/dynamic-resource-allocation/deviceclass/extendedresourcecache"
 
@@ -43,6 +42,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	commonconstants "github.com/kai-scheduler/api/constants"
 )
 
 const (
@@ -154,6 +154,13 @@ func (ni *NodeInfo) NonAllocatedResource(resourceType v1.ResourceName) float64 {
 		return 0
 	}
 	return ni.IdleVector.Get(idx) + ni.ReleasingVector.Get(idx)
+}
+
+// IsInPlaceResizeAllocatable checks the task's own node, which already charges the task at its target
+// size, for over-commitment (KEP-5836).
+func (ni *NodeInfo) IsInPlaceResizeAllocatable(task *pod_info.PodInfo) bool {
+	return task.NodeName == ni.Name &&
+		ni.NonAllocatedResource(v1.ResourceCPU) >= 0 && ni.NonAllocatedResource(v1.ResourceMemory) >= 0
 }
 
 func (ni *NodeInfo) IsTaskAllocatable(task *pod_info.PodInfo) bool {

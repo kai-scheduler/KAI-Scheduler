@@ -25,10 +25,10 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
-	kubeAiSchedulerV2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	controllers "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper"
 	pluginshub "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/hub"
+	v2 "github.com/kai-scheduler/api/scheduling/v2"
+	kubeAiSchedulerV2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -187,7 +187,9 @@ func getCacheOptions(configs controllers.Configs) cache.Options {
 		podByObject.Label = labels.Set(configs.PodLabelSelector).AsSelector()
 	}
 
-	cacheOptions := cache.Options{}
+	cacheOptions := cache.Options{
+		DefaultTransform: cache.TransformStripManagedFields(),
+	}
 	cacheOptions.ByObject = map[client.Object]cache.ByObject{
 		&corev1.Pod{}: podByObject,
 	}

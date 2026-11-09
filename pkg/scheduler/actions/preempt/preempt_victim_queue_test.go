@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 	v1 "k8s.io/api/core/v1"
 
-	schedulingv2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
@@ -20,6 +19,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	schedulingv2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
 )
 
 func TestOrderedVictimsQueueCachesCandidatesPerPreemptor(t *testing.T) {
@@ -155,4 +155,31 @@ func newPreemptVictimQueueTestJob(
 	job.Priority = priority
 	job.Preemptibility = schedulingv2alpha2.Preemptible
 	return job, task
+}
+
+func TestOrderedVictimsQueueOnNodeKeepsOnlyJobsOnTheNode(t *testing.T) {
+	ssn, preemptor, onNode, otherNode := newPreemptVictimQueueTestSession()
+	for _, task := range otherNode.GetAllPodsMap() {
+		task.NodeName = "node-1"
+	}
+	ssn.ClusterInfo.Nodes["node-1"] = nil
+	ssn.AddPreemptVictimFilterFn(func(_, _ *podgroup_info.PodGroupInfo) bool { return true })
+
+	queue := getOrderedVictimsQueueOnNode(ssn, preemptor, "node-0")()
+	require.Same(t, onNode, queue.PopNextJob())
+	require.True(t, queue.IsEmpty())
+
+	queue = getOrderedVictimsQueueOnNode(ssn, preemptor, "node-1")()
+	require.Same(t, otherNode, queue.PopNextJob())
+	require.True(t, queue.IsEmpty())
+}
+
+func TestOrderedVictimsQueueOnNodeKeepsPreemptRules(t *testing.T) {
+	ssn, preemptor, onNode, filtered := newPreemptVictimQueueTestSession()
+	filtered.Priority = preemptor.Priority
+	ssn.AddPreemptVictimFilterFn(func(_, _ *podgroup_info.PodGroupInfo) bool { return true })
+
+	queue := getOrderedVictimsQueueOnNode(ssn, preemptor, "node-0")()
+	require.Same(t, onNode, queue.PopNextJob())
+	require.True(t, queue.IsEmpty(), "equal priority job is not a victim")
 }

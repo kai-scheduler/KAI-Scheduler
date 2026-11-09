@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  PyTorchJob podgrouper rejects a non-positive segment size on the pod instead of dividing by zero
+custom:
+  Author: "blacksoxx"
+  Issue: "2468"

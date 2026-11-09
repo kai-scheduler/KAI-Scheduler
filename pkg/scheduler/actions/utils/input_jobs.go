@@ -7,11 +7,11 @@ import (
 	"fmt"
 	"time"
 
-	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	enginev2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
 )
 
 type JobsOrderInitOptions struct {
@@ -24,6 +24,7 @@ type JobsOrderInitOptions struct {
 	FilterWithinPreemptionDelay bool
 	VictimQueue                 bool
 	MaxJobsQueueDepth           int
+	NonPendingJobFilter         func(*podgroup_info.PodGroupInfo) bool
 }
 
 func (jobsOrder *JobsOrderByQueues) InitializeWithJobs(
@@ -34,7 +35,8 @@ func (jobsOrder *JobsOrderByQueues) InitializeWithJobs(
 			continue
 		}
 
-		if jobsOrder.options.FilterNonPending && len(job.PodStatusIndex[pod_status.Pending]) == 0 {
+		if jobsOrder.options.FilterNonPending && len(job.PodStatusIndex[pod_status.Pending]) == 0 &&
+			(jobsOrder.options.NonPendingJobFilter == nil || !jobsOrder.options.NonPendingJobFilter(job)) {
 			continue
 		}
 
@@ -42,14 +44,7 @@ func (jobsOrder *JobsOrderByQueues) InitializeWithJobs(
 			continue
 		}
 
-		isJobActive := false
-		for _, task := range job.GetAllPodsMap() {
-			if pod_status.IsActiveAllocatedStatus(task.Status) {
-				isJobActive = true
-				break
-			}
-		}
-		if jobsOrder.options.FilterNonActiveAllocated && !isJobActive {
+		if jobsOrder.options.FilterNonActiveAllocated && job.GetActiveAllocatedTasksCount() == 0 {
 			continue
 		}
 
@@ -73,7 +68,10 @@ func (jobsOrder *JobsOrderByQueues) InitializeWithJobs(
 		}
 
 		if jobsOrder.options.FilterWithinPreemptionDelay && job.IsWithinPreemptionDelay(now) {
-			recordPreemptionDelayFitError(job)
+			// A running job included only for a deferred resize is not unschedulable.
+			if len(job.PodStatusIndex[pod_status.Pending]) > 0 {
+				recordPreemptionDelayFitError(job)
+			}
 			log.InfraLogger.V(5).Do(func() {
 				log.InfraLogger.Infof("Job <%s> is within its preemption delay window, skipping as eviction trigger",
 					job.NamespacedName)

@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Fix Topology CRD installation on Kubernetes 1.28 and 1.29 while preserving node label immutability
+custom:
+  Author: "enoodle"
+  Issue: "2293"

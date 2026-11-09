@@ -41,7 +41,7 @@ func TestFingerprintScenarioEncodesCanonicalSections(t *testing.T) {
 		ssn, pendingJob, pendingTasks, victimTasks, []*podgroup_info.PodGroupInfo{recordedJob},
 	)
 
-	payload := "10" + // preemptor job UID
+	payload := "kai-team-pending/job10" + // preemptor job UID
 		"\x1f" + "20" + "\x00" + "21" + // pending task UIDs
 		"\x1f" + "30" + // recorded victim task UIDs
 		"\x1f" + "40" + "\x00" + "41" // potential victim task UIDs

@@ -20,13 +20,10 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/ptr"
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
-	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
-	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	schedulerconfig "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/configurations"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/constant/labels"
 	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
@@ -39,6 +36,11 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait/watcher"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/scale/topology"
+	"github.com/kai-scheduler/api/constants"
+	"github.com/kai-scheduler/api/kai/v1/common"
+	kaiv1alpha1 "github.com/kai-scheduler/api/kai/v1alpha1"
+	v2 "github.com/kai-scheduler/api/scheduling/v2"
+	"github.com/kai-scheduler/api/scheduling/v2alpha2"
 )
 
 var _ = ReportAfterSuite("report failed test suite if needed", func(report Report) {
@@ -616,6 +618,100 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 
 			It("workload scale scenario: elastic distributed job reclaim", func(ctx context.Context) {
 				elasticJobReclaim(ctx, testCtx, elasticVictimQueue, elasticReclaimQueue, numberOfNodes)
+			}, SpecTimeout(maxFlowTimeoutMinutes*time.Minute))
+		})
+
+		Context("Fraction scale scenarios", Ordered, func() {
+			var (
+				fractionTiers       []fractionTier
+				originalSharingMode *common.GpuSharingMode
+				gpuMemoryMiB        int64
+			)
+
+			BeforeAll(func(ctx context.Context) {
+				originalSharingMode = currentGpuSharingMode(ctx, testCtx)
+				setGpuSharingMode(ctx, testCtx, ptr.To(common.GpuSharingModeNvFractions))
+				gpuMemoryMiB = stampNvFractionsNodes(ctx, testCtx)
+
+				fractionTiers = []fractionTier{{fractionsPerGPU: 2}, {fractionsPerGPU: 8}}
+				fractionQueues := make([]*v2.Queue, 0, len(fractionTiers))
+				for i := range fractionTiers {
+					fractionTiers[i].queue = queue.CreateQueueObject(
+						fmt.Sprintf("fractions-1-of-%d-%s", fractionTiers[i].fractionsPerGPU, utils.GenerateRandomK8sName(10)),
+						parentQueue.Name)
+					fractionTiers[i].queue.Spec.Resources.GPU.Quota = float64(numberOfNodes * gpusPerNode / len(fractionTiers))
+					fractionQueues = append(fractionQueues, fractionTiers[i].queue)
+				}
+				testCtx.AddQueues(ctx, fractionQueues)
+
+				Expect(createReservationGpuIndexStage(ctx, testCtx.ControllerClient)).To(Succeed())
+			})
+
+			AfterAll(func(ctx context.Context) {
+				setGpuSharingMode(ctx, testCtx, originalSharingMode)
+				Expect(runtimeClient.IgnoreNotFound(deleteReservationGpuIndexStage(ctx, testCtx.ControllerClient))).To(Succeed())
+			})
+
+			AfterEach(func(ctx context.Context) {
+				if CurrentSpecReport().Failed() {
+					return
+				}
+				for _, tier := range fractionTiers {
+					cleanupTestQueue(ctx, testCtx, tier.queue)
+				}
+			})
+
+			// Two equal-priority queues, one requesting 0.5 GPU per pod and one 0.125, together filling the cluster.
+			// Reports allocation time, scheduling time, bind lag and GPU utilization, and checks that no GPU is
+			// over-committed. Pods are created in batches that back off if the API server throttles.
+			// Simulation: a KWOK stage stands in for the reservation container. Real NvFractions requires its own
+			// operator, https://github.com/kai-scheduler/gpu-fractioning.
+			It("fraction scale scenario: mixed saturation", func(ctx context.Context) {
+				fractionsSaturation(ctx, testCtx, fractionTiers, numberOfNodes, gpuMemoryMiB)
+			}, SpecTimeout(maxFlowTimeoutMinutes*time.Minute))
+		})
+
+		Context("Research scale scenarios", Ordered, func() {
+			var (
+				researchQueues []*v2.Queue
+				cpuNodes       int
+			)
+
+			BeforeAll(func(ctx context.Context) {
+				cpuNodes = researchCPUNodeCount(numberOfNodes)
+				createResearchCPUNodePool(ctx, testCtx, cpuNodes)
+
+				queueCount := researchQueueCount(numberOfNodes)
+				researchQueues = make([]*v2.Queue, queueCount)
+				for i := range researchQueues {
+					researchQueues[i] = queue.CreateQueueObject(
+						fmt.Sprintf("research-%d-%s", i, utils.GenerateRandomK8sName(10)), parentQueue.Name)
+					researchQueues[i].Spec.Resources.GPU.Quota = float64(numberOfNodes * gpusPerNode / queueCount)
+				}
+				testCtx.AddQueues(ctx, researchQueues)
+			})
+
+			AfterAll(func(ctx context.Context) {
+				deleteResearchCPUNodePool(ctx, testCtx)
+			})
+
+			AfterEach(func(ctx context.Context) {
+				if CurrentSpecReport().Failed() {
+					return
+				}
+				for _, researchQueue := range researchQueues {
+					cleanupTestQueue(ctx, testCtx, researchQueue)
+				}
+			})
+
+			// Equal-priority queues submitting GPU experiments, hierarchical RL pipelines (GPU trainer plus a rollout of
+			// GPU generators and CPU environments) and CPU-only preprocessing jobs, each 5-10% of the cluster, together
+			// requesting ~150% of GPU and CPU capacity. Reports p50/p95/max time to each workload's first decision,
+			// allocated or unschedulable, and checks gang integrity and CPU/GPU node placement.
+			// Simulation: all workloads arrive in one burst and none complete. CPU-only nodes are a test-created KWOK
+			// node pool without GPUs.
+			It("research scale scenario: mixed workload decision latency", func(ctx context.Context) {
+				researchWorkloads(ctx, testCtx, researchQueues, numberOfNodes, cpuNodes)
 			}, SpecTimeout(maxFlowTimeoutMinutes*time.Minute))
 		})
 	})

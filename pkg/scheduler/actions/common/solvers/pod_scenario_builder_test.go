@@ -18,9 +18,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 
-	schedulingv2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
-	schedulingv2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
@@ -32,6 +29,9 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	commonconstants "github.com/kai-scheduler/api/constants"
+	schedulingv2 "github.com/kai-scheduler/api/scheduling/v2"
+	schedulingv2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
 )
 
 var _ = Describe("PodAccumulatedScenarioBuilder", func() {
@@ -380,7 +380,8 @@ func createJobWithTasks(
 	jobTasks := []*pod_info.PodInfo{}
 
 	namespace := "kai-" + queueName
-	jobUID := strconv.Itoa(jobID)
+	jobName := fmt.Sprintf("job%d", jobID)
+	jobUID := common_info.NewPodGroupID(namespace, jobName)
 
 	for taskID := 0; taskID < tasksPerJob; taskID++ {
 		taskNum := jobID*tasksPerJob + taskID
@@ -388,15 +389,15 @@ func createJobWithTasks(
 			buildPod(
 				strconv.Itoa(taskNum),
 				fmt.Sprintf("pod-%d", taskNum),
-				namespace, jobUID, tasksStatus,
+				namespace, jobName, tasksStatus,
 				podResources,
 			), resource_info.NewResourceVectorMap()))
 	}
 
-	newJob := podgroup_info.NewPodGroupInfo(common_info.PodGroupID(strconv.Itoa(jobID)), jobTasks...)
+	newJob := podgroup_info.NewPodGroupInfo(jobUID, jobTasks...)
 	newJob.SetPodGroup(&schedulingv2alpha2.PodGroup{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("job%d", jobID),
+			Name:      jobName,
 			Namespace: namespace,
 			UID:       types.UID(jobUID),
 		},

@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/api/constants"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	batchv1 "k8s.io/api/batch/v1"
@@ -19,8 +19,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	schedulerconfig "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/configurations"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/configurations/feature_flags"
 	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
@@ -29,6 +27,8 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/testconfig"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/utils"
 	waitutils "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
+	v2 "github.com/kai-scheduler/api/scheduling/v2"
+	"github.com/kai-scheduler/api/scheduling/v2alpha2"
 )
 
 const (
@@ -327,18 +327,25 @@ func measureUnschedulableDelayInSeconds(
 
 // reclaimForOneLargeJob creates a distributed job with the specified number of pods, each requesting gpusPerNode GPUs
 func reclaimForOneLargeJob(ctx context.Context, testCtx *testcontext.TestContext, reclaimSingleGPUJobsQueue *v2.Queue, numberOfPods int) {
-	result, err := createDistributedJobForKwok(
+	batchLabels := map[string]string{distributedJobBatchLabel: utils.GenerateRandomK8sName(10)}
+	job, err := submitDistributedJobForKwok(
 		ctx, testCtx, reclaimSingleGPUJobsQueue,
 		v1.ResourceRequirements{
 			Limits: map[v1.ResourceName]resource.Quantity{
 				constants.NvidiaGpuResource: *resource.NewQuantity(int64(gpusPerNode), resource.DecimalSI),
 			},
 		},
-		numberOfPods, map[string]string{},
+		numberOfPods, batchLabels, batchLabels,
 		nil,
 	)
 	Expect(err).NotTo(HaveOccurred())
-	podGroup := result.PodGroup
+	waitForDistributedJobsForKwok(ctx, testCtx, []*batchv1.Job{job})
+
+	podGroup := &v2alpha2.PodGroup{}
+	Expect(testCtx.ControllerClient.Get(ctx, runtimeClient.ObjectKey{
+		Namespace: job.Namespace,
+		Name:      rd.PodGroupNameForJob(job),
+	}, podGroup)).To(Succeed())
 
 	podsList := &v1.PodList{}
 	Eventually(func(g Gomega) bool {

@@ -11,10 +11,10 @@ import (
 	vpav1 "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
 
 	"github.com/kai-scheduler/KAI-scheduler/cmd/operator/config"
-	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
-	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/controller"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands"
+	kaiv1 "github.com/kai-scheduler/api/kai/v1"
+	kaiv1alpha1 "github.com/kai-scheduler/api/kai/v1alpha1"
 
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"

@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Scheduler deletes only failed BindRequests; binder skips terminal ones, drops duplicate reconcile events, keeps reservations during retries
+custom:
+  Author: "davidLif"
+  Issue: "2343"

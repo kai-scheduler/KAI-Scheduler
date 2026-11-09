@@ -16,7 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
+	"github.com/kai-scheduler/api/utilities/resources"
 )
 
 const (
@@ -93,6 +93,9 @@ func patchConfigMap(
 		updatedConfigMap := existingConfigMap.DeepCopy()
 		for k, v := range desiredConfigMap.Data {
 			if len(v) != 0 {
+				if updatedConfigMap.Data == nil {
+					updatedConfigMap.Data = map[string]string{}
+				}
 				updatedConfigMap.Data[k] = v
 			}
 		}

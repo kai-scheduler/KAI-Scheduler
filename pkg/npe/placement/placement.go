@@ -100,7 +100,7 @@ func (p Placement) add(resourceName string, numaNode int, quantity int64) {
 	if quantity == 0 {
 		return
 	}
-	zone := fmt.Sprintf("node-%d", numaNode)
+	zone := zoneName(int64(numaNode))
 	rl, ok := p[zone]
 	if !ok {
 		rl = v1.ResourceList{}
@@ -109,6 +109,10 @@ func (p Placement) add(resourceName string, numaNode int, quantity int64) {
 	existing := rl[v1.ResourceName(resourceName)]
 	existing.Add(*resource.NewQuantity(quantity, resource.DecimalSI))
 	rl[v1.ResourceName(resourceName)] = existing
+}
+
+func zoneName(numaNode int64) string {
+	return fmt.Sprintf("node-%d", numaNode)
 }
 
 // singleNUMANode returns the NUMA node a resource is pinned to. A resource attributed to more

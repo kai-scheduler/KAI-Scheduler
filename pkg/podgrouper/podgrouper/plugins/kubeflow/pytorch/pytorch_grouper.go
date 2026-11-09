@@ -15,8 +15,8 @@ import (
 	"k8s.io/utils/ptr"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/kubeflow"
+	"github.com/kai-scheduler/api/podgrouper/constants"
 )
 
 const (
@@ -241,6 +241,9 @@ func getSegmentSize(pod *v1.Pod, replicaSpecs map[string]interface{}) (int, bool
 		segmentSize, err := strconv.Atoi(sizeStr)
 		if err != nil {
 			return 0, false, fmt.Errorf("invalid segment size %s on pod %s/%s, err: %w", sizeStr, pod.Namespace, pod.Name, err)
+		}
+		if segmentSize <= 0 {
+			return 0, false, fmt.Errorf("segment size %s on pod %s/%s needs to be a positive integer", sizeStr, pod.Namespace, pod.Name)
 		}
 		return segmentSize, true, nil
 	}

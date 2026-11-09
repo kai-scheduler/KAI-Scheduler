@@ -21,19 +21,19 @@ import (
 	v12 "k8s.io/client-go/listers/storage/v1"
 	"k8s.io/client-go/tools/cache"
 
-	kubeAiSchedulerInfo "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/informers/externalversions"
-	scheudlinglistv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/listers/scheduling/v1alpha2"
-	schedlistv2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/listers/scheduling/v2"
-	schedlist2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/listers/scheduling/v2alpha2"
-	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	enginev2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
-	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	featuregates "github.com/kai-scheduler/KAI-scheduler/pkg/common/feature_gates"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/usagedb"
+	kubeAiSchedulerInfo "github.com/kai-scheduler/api/client/informers/externalversions"
+	scheudlinglistv1alpha2 "github.com/kai-scheduler/api/client/listers/scheduling/v1alpha2"
+	schedlistv2 "github.com/kai-scheduler/api/client/listers/scheduling/v2"
+	schedlist2alpha2 "github.com/kai-scheduler/api/client/listers/scheduling/v2alpha2"
+	schedulingv1alpha2 "github.com/kai-scheduler/api/scheduling/v1alpha2"
+	enginev2 "github.com/kai-scheduler/api/scheduling/v2"
+	enginev2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
 
-	kaiv1alpha1Listers "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/listers/kai/v1alpha1"
-	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
+	kaiv1alpha1Listers "github.com/kai-scheduler/api/client/listers/kai/v1alpha1"
+	kaiv1alpha1 "github.com/kai-scheduler/api/kai/v1alpha1"
 )
 
 type k8sLister struct {
@@ -187,7 +187,7 @@ func (k *k8sLister) ListCSIDrivers() ([]*storage.CSIDriver, error) {
 // +kubebuilder:rbac:groups="scheduling.run.ai",resources=bindrequests,verbs=get;list;watch
 
 func (k *k8sLister) ListBindRequests() ([]*schedulingv1alpha2.BindRequest, error) {
-	return k.bindRequestLister.List(labels.Everything())
+	return k.bindRequestLister.List(k.partitionSelector)
 }
 
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch

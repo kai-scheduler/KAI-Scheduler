@@ -8,9 +8,10 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 	resourceapi "k8s.io/api/resource/v1"
 
-	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
@@ -19,11 +20,59 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	schedulercache "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
+	schedulingv1alpha2 "github.com/kai-scheduler/api/scheduling/v1alpha2"
 )
+
+func TestStatementCommitRecordsOneEvictionEventPerPodGroup(t *testing.T) {
+	vectorMap := resource_info.NewResourceVectorMap()
+	jobs, tasksToNodes, _ := jobs_fake.BuildJobsAndTasksMaps([]*jobs_fake.TestJobBasic{
+		{
+			Name:      "victim-a",
+			QueueName: "queue0",
+			Tasks: []*tasks_fake.TestTaskBasic{
+				{State: pod_status.Running, NodeName: "node0"},
+				{State: pod_status.Running, NodeName: "node0"},
+			},
+		},
+		{
+			Name:      "victim-b",
+			QueueName: "queue0",
+			Tasks: []*tasks_fake.TestTaskBasic{
+				{State: pod_status.Running, NodeName: "node0"},
+			},
+		},
+	}, vectorMap)
+	nodes := nodes_fake.BuildNodesInfoMap(map[string]nodes_fake.TestNodeBasic{
+		"node0": {CPUMillis: 10000},
+	}, tasksToNodes, nil, vectorMap)
+
+	controller := gomock.NewController(t)
+	cache := schedulercache.NewMockCache(controller)
+	cache.EXPECT().Evict(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(3)
+	cache.EXPECT().RecordPodGroupEvictionEvent(jobs["victim-a"], "preempt").Times(1)
+	cache.EXPECT().RecordPodGroupEvictionEvent(jobs["victim-b"], "preempt").Times(1)
+
+	session := &Session{ClusterInfo: &api.ClusterInfo{
+		PodGroupInfos: jobs,
+		Nodes:         nodes,
+	}, Cache: cache}
+	statement := session.Statement()
+	for _, job := range jobs {
+		for _, task := range job.GetAllPodsMap() {
+			require.NoError(t, statement.Evict(task, "evicted", eviction_info.EvictionMetadata{
+				Action:           "preempt",
+				EvictionGangSize: 3,
+			}))
+		}
+	}
+
+	require.NoError(t, statement.Commit())
+}
 
 func TestStatement_Evict_Unevict(t *testing.T) {
 	type args struct {
@@ -625,7 +674,7 @@ func TestStatement_Pipeline_Unpipeline(t *testing.T) {
 			}
 			originalPipelinedToNodeInfo := extractNodeAssertedInfo(nodesInfoMap[tt.args.nodeToPipeline])
 
-			if err := s.Pipeline(pipelinedTask, tt.args.nodeToPipeline, pipelinedTask.NodeName != ""); err != nil {
+			if err := s.Pipeline(pipelinedTask, tt.args.nodeToPipeline, pipelinedTask.NodeName == ""); err != nil {
 				t.Errorf("Pipeline() error = %v", err)
 			}
 			if err := s.undoOperation(0); err != nil {
@@ -657,10 +706,10 @@ func TestStatement_Pipeline_Unpipeline(t *testing.T) {
 
 func TestStatement_Pipeline(t *testing.T) {
 	type args struct {
-		jobName                  common_info.PodGroupID
-		podName                  common_info.PodID
-		nodeToPipeline           string
-		updateTaskIfExistsOnNode bool
+		jobName         common_info.PodGroupID
+		podName         common_info.PodID
+		nodeToPipeline  string
+		canUndoEviction bool
 	}
 	type expected struct {
 		err              error
@@ -713,10 +762,10 @@ func TestStatement_Pipeline(t *testing.T) {
 				},
 			},
 			args{
-				jobName:                  "pending_job0",
-				podName:                  "pending_job0-0",
-				nodeToPipeline:           "node0",
-				updateTaskIfExistsOnNode: true,
+				jobName:         "pending_job0",
+				podName:         "pending_job0-0",
+				nodeToPipeline:  "node0",
+				canUndoEviction: false,
 			},
 			expected{
 				err:              nil,
@@ -751,7 +800,7 @@ func TestStatement_Pipeline(t *testing.T) {
 				dataBeforeEvict.fromNode = extractNodeAssertedInfo(nodesInfoMap[pipelinedTask.NodeName])
 			}
 
-			err := s.Pipeline(pipelinedTask, tt.args.nodeToPipeline, tt.args.updateTaskIfExistsOnNode)
+			err := s.Pipeline(pipelinedTask, tt.args.nodeToPipeline, tt.args.canUndoEviction)
 			if err != tt.expected.err && tt.expected.err.Error() != err.Error() {
 				t.Errorf("Pipeline() expected error = %v, actual error %v", tt.expected.err, err)
 			}
@@ -776,10 +825,10 @@ func TestStatement_Pipeline(t *testing.T) {
 
 func TestStatement_Pipeline_Undo_Undo(t *testing.T) {
 	type args struct {
-		jobName                  common_info.PodGroupID
-		podName                  common_info.PodID
-		nodeToPipeline           string
-		updateTaskIfExistsOnNode bool
+		jobName         common_info.PodGroupID
+		podName         common_info.PodID
+		nodeToPipeline  string
+		canUndoEviction bool
 	}
 	type expected struct {
 		err              error
@@ -832,10 +881,10 @@ func TestStatement_Pipeline_Undo_Undo(t *testing.T) {
 				},
 			},
 			args{
-				jobName:                  "pending_job0",
-				podName:                  "pending_job0-0",
-				nodeToPipeline:           "node0",
-				updateTaskIfExistsOnNode: true,
+				jobName:         "pending_job0",
+				podName:         "pending_job0-0",
+				nodeToPipeline:  "node0",
+				canUndoEviction: false,
 			},
 			expected{
 				err:              nil,
@@ -870,7 +919,7 @@ func TestStatement_Pipeline_Undo_Undo(t *testing.T) {
 				dataBeforeEvict.fromNode = extractNodeAssertedInfo(nodesInfoMap[pipelinedTask.NodeName])
 			}
 
-			err := s.Pipeline(pipelinedTask, tt.args.nodeToPipeline, tt.args.updateTaskIfExistsOnNode)
+			err := s.Pipeline(pipelinedTask, tt.args.nodeToPipeline, tt.args.canUndoEviction)
 			if err != tt.expected.err && tt.expected.err.Error() != err.Error() {
 				t.Errorf("Pipeline() expected error = %v, actual error %v", tt.expected.err, err)
 			}
@@ -1001,10 +1050,10 @@ func TestStatement_Allocate_Unallocate(t *testing.T) {
 
 func TestStatement_Allocate(t *testing.T) {
 	type args struct {
-		jobName                  common_info.PodGroupID
-		podName                  common_info.PodID
-		nodeToAllocate           string
-		updateTaskIfExistsOnNode bool
+		jobName         common_info.PodGroupID
+		podName         common_info.PodID
+		nodeToAllocate  string
+		canUndoEviction bool
 	}
 	type expected struct {
 		err              error
@@ -1047,10 +1096,10 @@ func TestStatement_Allocate(t *testing.T) {
 				},
 			},
 			args{
-				jobName:                  "pending_job0",
-				podName:                  "pending_job0-0",
-				nodeToAllocate:           "node1",
-				updateTaskIfExistsOnNode: true,
+				jobName:         "pending_job0",
+				podName:         "pending_job0-0",
+				nodeToAllocate:  "node1",
+				canUndoEviction: false,
 			},
 			expected{
 				err:              nil,
@@ -1103,10 +1152,10 @@ func TestStatement_Allocate(t *testing.T) {
 
 func TestStatement_Allocate_Undo_Undo(t *testing.T) {
 	type args struct {
-		jobName                  common_info.PodGroupID
-		podName                  common_info.PodID
-		nodeToAllocate           string
-		updateTaskIfExistsOnNode bool
+		jobName         common_info.PodGroupID
+		podName         common_info.PodID
+		nodeToAllocate  string
+		canUndoEviction bool
 	}
 	type expected struct {
 		err              error
@@ -1149,10 +1198,10 @@ func TestStatement_Allocate_Undo_Undo(t *testing.T) {
 				},
 			},
 			args{
-				jobName:                  "pending_job0",
-				podName:                  "pending_job0-0",
-				nodeToAllocate:           "node1",
-				updateTaskIfExistsOnNode: true,
+				jobName:         "pending_job0",
+				podName:         "pending_job0-0",
+				nodeToAllocate:  "node1",
+				canUndoEviction: false,
 			},
 			expected{
 				err:              nil,
@@ -1397,7 +1446,7 @@ func TestStatement_Pipeline_Undo_Undo_DRA_ResourceClaimInfo(t *testing.T) {
 	}
 
 	// Pipeline (op[0])
-	err := s.Pipeline(task, "node0", true)
+	err := s.Pipeline(task, "node0", false)
 	assert.NoError(t, err)
 
 	// Undo pipeline (op[1]) — unpipeline restores RCI, DeallocateFunc nils allocations
@@ -1551,7 +1600,7 @@ func TestStatement_Pipeline_TaskNotInJob(t *testing.T) {
 	}
 	nodeBefore := extractNodeAssertedInfo(nodesInfoMap["node0"])
 
-	err := s.Pipeline(staleTask, "node0", true)
+	err := s.Pipeline(staleTask, "node0", false)
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to find task")

@@ -10,11 +10,11 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	commonconstants "github.com/kai-scheduler/api/constants"
 )
 
 var _ = Describe("compactSchedulerPod", func() {
@@ -104,14 +104,14 @@ var _ = Describe("compactSchedulerPod", func() {
 
 			succeeded := taskInfo(succeededPod())
 			Expect(succeeded.Status).To(Equal(pod_status.Succeeded))
-			Expect(succeeded.Job).To(BeEquivalentTo("pg-1"))
+			Expect(succeeded.Job).To(BeEquivalentTo("team-a/pg-1"))
 
 			running := succeededPod()
 			running.Name = "worker-1"
 			running.UID = "worker-1-uid"
 			running.Status.Phase = v1.PodRunning
 
-			podGroup := podgroup_info.NewPodGroupInfo("pg-1", succeeded, taskInfo(running))
+			podGroup := podgroup_info.NewPodGroupInfo(succeeded.Job, succeeded, taskInfo(running))
 			podGroup.GetAllPodSets()[podgroup_info.DefaultSubGroup].SetMinAvailable(2)
 
 			Expect(podGroup.IsStale()).To(BeFalse())

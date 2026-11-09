@@ -24,7 +24,6 @@ import (
 	"maps"
 	"net/http"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
@@ -34,6 +33,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/api/constants"
 )
 
 func (ssn *Session) AddGPUOrderFn(gof api.GpuOrderFn) {
@@ -136,9 +136,9 @@ func (ssn *Session) AddNumaPlacementFn(fn api.NumaPlacementFn) {
 	ssn.NumaPlacementFn = fn
 }
 
-func (ssn *Session) GetNumaPlacement(task *pod_info.PodInfo, node *node_info.NodeInfo) pod_info.NUMAPlacement {
+func (ssn *Session) GetNumaPlacement(task *pod_info.PodInfo, node *node_info.NodeInfo) (pod_info.NUMAPlacement, error) {
 	if ssn.NumaPlacementFn == nil {
-		return nil
+		return pod_info.NUMAPlacement{}, nil
 	}
 	return ssn.NumaPlacementFn(task, node)
 }
@@ -454,6 +454,7 @@ func logNodeSetsPluginResult(subsetNodesFn api.SubsetNodesFn, podGroup *podgroup
 }
 
 func (ssn *Session) PrePredicateFn(task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo) error {
+	ssn.dropAffinityState(task.Pod.UID)
 	for _, prePredicate := range ssn.PrePredicateFns {
 		err := prePredicate(task, job)
 		if err != nil {

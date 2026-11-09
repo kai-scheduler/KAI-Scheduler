@@ -20,13 +20,13 @@ limitations under the License.
 package api
 
 import (
-	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/api/scheduling/v2alpha2"
 )
 
 // SubsetNodesFn is used to divide the nodes into sets
@@ -85,7 +85,7 @@ type OnJobSolutionStartFn func()
 // BindRequestMutateFn allows plugins to add annotations before BindRequest creation.
 type BindRequestMutateFn func(pod *pod_info.PodInfo, nodeName string) map[string]string
 
-type NumaPlacementFn func(task *pod_info.PodInfo, node *node_info.NodeInfo) pod_info.NUMAPlacement
+type NumaPlacementFn func(task *pod_info.PodInfo, node *node_info.NodeInfo) (pod_info.NUMAPlacement, error)
 
 // PreJobAllocationFn is used for notifying on job allocation start
 type PreJobAllocationFn func(job *podgroup_info.PodGroupInfo)

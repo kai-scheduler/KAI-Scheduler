@@ -1,0 +1,3 @@
+# Build output of `helm dependency build`, never committed: Chart.yaml declares
+# gpu-fractioning by a version range, and a committed lock would pin it back.
+Chart.lock

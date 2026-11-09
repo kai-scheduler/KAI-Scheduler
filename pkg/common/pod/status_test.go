@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 func TestIsAllocated(t *testing.T) {
@@ -91,6 +92,39 @@ func TestIsAllocated(t *testing.T) {
 			if tt.expectedResult != result {
 				t.Errorf("IsAllocated() failed. test name: %s, expected: %v, actual: %v",
 					tt.name, tt.expectedResult, result)
+			}
+		})
+	}
+}
+
+func TestIsGuaranteed(t *testing.T) {
+	guaranteedResources := v1.ResourceList{v1.ResourceCPU: resource.MustParse("1"), v1.ResourceMemory: resource.MustParse("1Gi")}
+	guaranteed := &v1.Pod{Spec: v1.PodSpec{Containers: []v1.Container{{Resources: v1.ResourceRequirements{Requests: guaranteedResources, Limits: guaranteedResources.DeepCopy()}}}}}
+	mixed := guaranteed.DeepCopy()
+	mixed.Spec.Containers = append(mixed.Spec.Containers, v1.Container{})
+	missingMemory := guaranteed.DeepCopy()
+	delete(missingMemory.Spec.Containers[0].Resources.Requests, v1.ResourceMemory)
+	persistedGuaranteed := mixed.DeepCopy()
+	persistedGuaranteed.Status.QOSClass = v1.PodQOSGuaranteed
+	persistedBurstable := guaranteed.DeepCopy()
+	persistedBurstable.Status.QOSClass = v1.PodQOSBurstable
+	tests := []struct {
+		name string
+		pod  *v1.Pod
+		want bool
+	}{
+		{name: "nil pod"},
+		{name: "best effort", pod: &v1.Pod{Spec: v1.PodSpec{Containers: []v1.Container{{}}}}},
+		{name: "spec derived guaranteed", pod: guaranteed, want: true},
+		{name: "mixed containers", pod: mixed},
+		{name: "missing memory request", pod: missingMemory},
+		{name: "persisted guaranteed overrides spec", pod: persistedGuaranteed, want: true},
+		{name: "persisted burstable overrides spec", pod: persistedBurstable},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := IsGuaranteed(test.pod); got != test.want {
+				t.Fatalf("got %v, want %v", got, test.want)
 			}
 		})
 	}

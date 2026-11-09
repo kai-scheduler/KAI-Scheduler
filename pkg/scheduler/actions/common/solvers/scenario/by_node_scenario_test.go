@@ -9,14 +9,15 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 
-	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	commonconstants "github.com/kai-scheduler/api/constants"
 )
 
 func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
@@ -41,7 +42,7 @@ func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 			fields: fields{
 				session: &framework.Session{
 					ClusterInfo: &api.ClusterInfo{PodGroupInfos: map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{
-						"pg1": podgroup_info.NewPodGroupInfo("pg1",
+						"n1/pg1": podgroup_info.NewPodGroupInfo("n1/pg1",
 							pod_info.NewTaskInfo(&v1.Pod{
 								ObjectMeta: metav1.ObjectMeta{
 									Name:      "name1",
@@ -73,7 +74,7 @@ func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 								},
 							}, resource_info.NewResourceVectorMap()),
 						),
-						"pg2": podgroup_info.NewPodGroupInfo("pg2", pod_info.NewTaskInfo(&v1.Pod{
+						"n1/pg2": podgroup_info.NewPodGroupInfo("n1/pg2", pod_info.NewTaskInfo(&v1.Pod{
 							ObjectMeta: metav1.ObjectMeta{
 								Name:      "name3",
 								Namespace: "n1",
@@ -166,7 +167,7 @@ func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 			fields: fields{
 				session: &framework.Session{
 					ClusterInfo: &api.ClusterInfo{PodGroupInfos: map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{
-						"pg1": podgroup_info.NewPodGroupInfo("pg1",
+						"n1/pg1": podgroup_info.NewPodGroupInfo("n1/pg1",
 							pod_info.NewTaskInfo(&v1.Pod{
 								ObjectMeta: metav1.ObjectMeta{
 									Name:      "name1",
@@ -198,7 +199,7 @@ func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 								},
 							}, resource_info.NewResourceVectorMap()),
 						),
-						"pg2": podgroup_info.NewPodGroupInfo("pg2", pod_info.NewTaskInfo(&v1.Pod{
+						"n1/pg2": podgroup_info.NewPodGroupInfo("n1/pg2", pod_info.NewTaskInfo(&v1.Pod{
 							ObjectMeta: metav1.ObjectMeta{
 								Name:      "name3",
 								Namespace: "n1",
@@ -260,7 +261,7 @@ func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 			fields: fields{
 				session: &framework.Session{
 					ClusterInfo: &api.ClusterInfo{PodGroupInfos: map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{
-						"pg1": podgroup_info.NewPodGroupInfo("pg1",
+						"n1/pg1": podgroup_info.NewPodGroupInfo("n1/pg1",
 							pod_info.NewTaskInfo(&v1.Pod{
 								ObjectMeta: metav1.ObjectMeta{
 									Name:      "name1",
@@ -292,7 +293,7 @@ func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 								},
 							}, resource_info.NewResourceVectorMap()),
 						),
-						"pg2": podgroup_info.NewPodGroupInfo("pg2", pod_info.NewTaskInfo(&v1.Pod{
+						"n1/pg2": podgroup_info.NewPodGroupInfo("n1/pg2", pod_info.NewTaskInfo(&v1.Pod{
 							ObjectMeta: metav1.ObjectMeta{
 								Name:      "name3",
 								Namespace: "n1",
@@ -385,7 +386,7 @@ func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 			fields: fields{
 				session: &framework.Session{
 					ClusterInfo: &api.ClusterInfo{PodGroupInfos: map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{
-						"pg1": podgroup_info.NewPodGroupInfo("pg1",
+						"n1/pg1": podgroup_info.NewPodGroupInfo("n1/pg1",
 							pod_info.NewTaskInfo(&v1.Pod{
 								ObjectMeta: metav1.ObjectMeta{
 									Name:      "name1",
@@ -417,7 +418,7 @@ func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 								},
 							}, resource_info.NewResourceVectorMap()),
 						),
-						"pg2": podgroup_info.NewPodGroupInfo("pg2", pod_info.NewTaskInfo(&v1.Pod{
+						"n1/pg2": podgroup_info.NewPodGroupInfo("n1/pg2", pod_info.NewTaskInfo(&v1.Pod{
 							ObjectMeta: metav1.ObjectMeta{
 								Name:      "name3",
 								Namespace: "n1",
@@ -522,5 +523,47 @@ func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 				t.Errorf("VictimsTasksFromNodes() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func newScenarioTestTask(name, podGroup, node string) *pod_info.PodInfo {
+	return pod_info.NewTaskInfo(&v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: "n1",
+			UID:       types.UID(name),
+			Annotations: map[string]string{
+				commonconstants.PodGroupAnnotationForPod: podGroup,
+			},
+		},
+		Spec: v1.PodSpec{NodeName: node},
+	}, resource_info.NewResourceVectorMap())
+}
+
+func TestByNodeScenario_SubScenarioReusesRepresentatives(t *testing.T) {
+	recordedTask := newScenarioTestTask("recorded", "pg1", "node1")
+	victimTask := newScenarioTestTask("victim", "pg2", "node2")
+	recordedJob := podgroup_info.NewPodGroupInfo("n1/pg1", recordedTask)
+	session := &framework.Session{
+		ClusterInfo: &api.ClusterInfo{PodGroupInfos: map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{
+			"n1/pg1": recordedJob,
+			"n1/pg2": podgroup_info.NewPodGroupInfo("n1/pg2", victimTask),
+		}},
+	}
+
+	base := NewByNodeScenario(session, podgroup_info.NewPodGroupInfo("pending"), nil, nil,
+		[]*podgroup_info.PodGroupInfo{recordedJob})
+	base.AddPotentialVictimsTasks([]*pod_info.PodInfo{victimTask})
+	recordedRepresentative := base.GetVictimJobRepresentativeById(recordedTask)
+	victimRepresentative := base.GetVictimJobRepresentativeById(victimTask)
+
+	sub := base.NewSubScenario()
+	sub.AddPotentialVictimsTasksWithRepresentative([]*pod_info.PodInfo{victimTask}, victimRepresentative)
+
+	if got := sub.GetVictimJobRepresentativeById(recordedTask); got != recordedRepresentative {
+		t.Errorf("recorded victim representative was cloned again")
+	}
+	if got := sub.GetVictimJobRepresentativeById(victimTask); got != victimRepresentative {
+		t.Errorf("potential victim representative was cloned again")
 	}
 }

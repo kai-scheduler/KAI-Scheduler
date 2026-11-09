@@ -14,8 +14,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	commonpod "github.com/kai-scheduler/KAI-scheduler/pkg/common/pod"
-	commonresources "github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgroupcontroller/controllers/resources"
+	commonresources "github.com/kai-scheduler/api/utilities/resources"
 )
 
 type PodMetadata struct {
@@ -76,10 +76,11 @@ func calculatedAllocatedResources(
 	ctx context.Context, pod *v1.Pod, kubeClient client.Client, draClaims []*resourceapi.ResourceClaim,
 ) (v1.ResourceList, error) {
 	// Same aggregation the scheduler charges internally (KEP-753 sidecar formula,
-	// KEP-1287 effective requests), keeping queue status consistent with the
-	// resize webhook's delta baseline.
-	allocatedResources := resourcehelpers.AggregateContainerRequests(pod, resourcehelpers.PodResourcesOptions{
+	// KEP-1287 effective requests, KEP-2837 pod-level resources), keeping queue
+	// status consistent with the resize webhook's delta baseline.
+	allocatedResources := resourcehelpers.PodRequests(pod, resourcehelpers.PodResourcesOptions{
 		UseStatusResources: true,
+		ExcludeOverhead:    true,
 	})
 
 	gpuSharingReceivedResources, err := resources.ExtractGPUSharingReceivedResources(ctx, pod, kubeClient)
@@ -100,7 +101,9 @@ func calculatedAllocatedResources(
 func calculateRequestedResources(
 	ctx context.Context, pod *v1.Pod, kubeClient client.Client, draClaims []*resourceapi.ResourceClaim,
 ) (v1.ResourceList, error) {
-	requestedResources := resourcehelpers.AggregateContainerRequests(pod, resourcehelpers.PodResourcesOptions{})
+	requestedResources := resourcehelpers.PodRequests(pod, resourcehelpers.PodResourcesOptions{
+		ExcludeOverhead: true,
+	})
 	gpuSharingRequestedResources, err := resources.ExtractGPUSharingRequestedResources(pod)
 	if err != nil {
 		return nil, err

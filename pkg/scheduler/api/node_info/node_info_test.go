@@ -35,15 +35,15 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_affinity"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/storagecapacity_info"
+	commonconstants "github.com/kai-scheduler/api/constants"
+	schedulingv1alpha2 "github.com/kai-scheduler/api/scheduling/v1alpha2"
+	"github.com/kai-scheduler/api/utilities/resources"
 )
 
 const (
@@ -1866,6 +1866,38 @@ func TestPredicateByNodeResourcesType_SharedGPU_DRANode(t *testing.T) {
 			if (err != nil) != tt.wantErr {
 				t.Errorf("PredicateByNodeResourcesType error = %v, wantErr %v", err, tt.wantErr)
 			}
+		})
+	}
+}
+
+func TestIsInPlaceResizeAllocatable(t *testing.T) {
+	tests := []struct {
+		name                  string
+		taskNode              string
+		idleCPU, releasingCPU float64
+		idleMemory            float64
+		want                  bool
+	}{
+		{name: "over-committed", taskNode: "node0", idleCPU: -1000, want: false},
+		{name: "releasing covers the shortfall", taskNode: "node0", idleCPU: -1000, releasingCPU: 1000, want: true},
+		{name: "memory over-committed", taskNode: "node0", idleMemory: -1, want: false},
+		{name: "another node", taskNode: "node1", want: false},
+		{name: "fits", taskNode: "node0", want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			vectorMap := resource_info.NewResourceVectorMap()
+			ni := &NodeInfo{
+				Name:            "node0",
+				VectorMap:       vectorMap,
+				IdleVector:      resource_info.NewResourceVector(vectorMap),
+				ReleasingVector: resource_info.NewResourceVector(vectorMap),
+			}
+			ni.IdleVector.Set(vectorMap.GetIndex(v1.ResourceCPU), tt.idleCPU)
+			ni.IdleVector.Set(vectorMap.GetIndex(v1.ResourceMemory), tt.idleMemory)
+			ni.ReleasingVector.Set(vectorMap.GetIndex(v1.ResourceCPU), tt.releasingCPU)
+
+			assert.Equal(t, tt.want, ni.IsInPlaceResizeAllocatable(&pod_info.PodInfo{NodeName: tt.taskNode}))
 		})
 	}
 }

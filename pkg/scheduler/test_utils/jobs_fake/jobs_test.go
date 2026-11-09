@@ -31,9 +31,31 @@ func TestBuildJobsAndTasksMapsAddsPersistentVolumeClaimVolumes(t *testing.T) {
 		resource_info.NewResourceVectorMap(),
 	)
 
-	job := jobs[common_info.PodGroupID("job-with-pvc")]
+	job := jobs[common_info.NewPodGroupID("test-namespace", "job-with-pvc")]
 	task := job.GetAllPodsMap()[common_info.PodID("job-with-pvc-0")]
 
 	require.Len(t, task.Pod.Spec.Volumes, 1)
 	require.Equal(t, "missing-pvc", task.Pod.Spec.Volumes[0].PersistentVolumeClaim.ClaimName)
+}
+
+func TestBuildJobsAndTasksMapsKeepsSameNamedPodGroupsInDifferentNamespaces(t *testing.T) {
+	jobs, _, _ := BuildJobsAndTasksMaps([]*TestJobBasic{
+		{Name: "training", Namespace: "team-a", QueueName: "queue", Tasks: []*tasks_fake.TestTaskBasic{{State: pod_status.Pending}}},
+		{Name: "training", Namespace: "team-b", QueueName: "queue", Tasks: []*tasks_fake.TestTaskBasic{{State: pod_status.Pending}}},
+	}, resource_info.NewResourceVectorMap())
+
+	require.Len(t, jobs, 2)
+	for _, namespace := range []string{"team-a", "team-b"} {
+		id := common_info.NewPodGroupID(namespace, "training")
+		job := jobs[id]
+		require.NotNil(t, job)
+		require.Equal(t, id, job.UID)
+		require.Equal(t, namespace, job.PodGroup.Namespace)
+		require.Equal(t, "training", job.PodGroup.Name)
+		require.Len(t, job.GetAllPodsMap(), 1)
+		for _, task := range job.GetAllPodsMap() {
+			require.Equal(t, id, task.Job)
+			require.Same(t, job, jobs[task.Job])
+		}
+	}
 }
