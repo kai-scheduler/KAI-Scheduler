@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v0.16.16] - 2026-11-09
+
+### Fixed
+- Status-updater drops status/patch updates for deleted PodGroups instead of retrying NotFound errors indefinitely, stopping log floods. [#1945](https://github.com/kai-scheduler/KAI-Scheduler/issues/1945)
+
 ## [v0.16.15] - 2026-11-02
 
 ## [v0.16.14] - 2026-10-26
