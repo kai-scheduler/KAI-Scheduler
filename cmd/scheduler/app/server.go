@@ -105,6 +105,7 @@ func BuildSchedulerParams(opt *options.ServerOption) *conf.SchedulerParams {
 		ConsolidationCooldown:             opt.ConsolidationCooldown,
 		ScheduleCSIStorage:                opt.ScheduleCSIStorage,
 		UseSchedulingSignatures:           opt.UseSchedulingSignatures,
+		DeferredResizePreemption:          opt.DeferredResizePreemption,
 		FullHierarchyFairness:             opt.FullHierarchyFairness,
 		AllowConsolidatingReclaim:         opt.AllowConsolidatingReclaim,
 		NumOfStatusRecordingWorkers:       opt.NumOfStatusRecordingWorkers,

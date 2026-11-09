@@ -123,7 +123,7 @@ func TestReclaimRepipelineDoesNotGoNegative(t *testing.T) {
 			return err
 		}
 		task.NUMAPlacement = placement
-		return stmt.Pipeline(task, "node0", false)
+		return stmt.Pipeline(task, "node0", true)
 	}
 
 	// Evict both victims → credits both zones back to full.

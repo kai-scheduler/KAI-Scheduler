@@ -722,7 +722,7 @@ func TestStatementPipelineUnpipeline_WithDRAClaims(t *testing.T) {
 			initialState := captureTaskState(task)
 			assert.Greater(t, initialState.claimInfoCount, 0, "Pending task should have ResourceClaimInfo")
 
-			err := stmt.Pipeline(task, test.nodeName, false)
+			err := stmt.Pipeline(task, test.nodeName, true)
 			assert.NoError(t, err)
 
 			assert.Equal(t, test.nodeName, task.NodeName)

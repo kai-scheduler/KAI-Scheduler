@@ -24,6 +24,21 @@
     { id: 'inference-reclaim', title: 'Disaggregated Inference Reclaim', label: 'Duration' },
     { id: 'hero-job-reclaim', title: 'Zone-Constrained Hero Job Reclaim', label: 'Duration' },
     { id: 'elastic-job-reclaim', title: 'Elastic Distributed Job Reclaim', label: 'Duration' },
+    { id: 'fractions-saturation-allocation', title: 'Mixed Fraction Saturation: Allocation Time', label: 'Duration' },
+    { id: 'fractions-saturation-scheduling', title: 'Mixed Fraction Saturation: Bind Time After Last Allocation', label: 'Duration' },
+    { id: 'research-decision-p95', title: 'Research Workloads: p95 Decision Latency', label: 'Duration' },
+    { id: 'research-decision-max', title: 'Research Workloads: Max Decision Latency', label: 'Duration' },
+  ];
+
+  const SATURATION_DERIVED_FIELDS = [
+    'pods', 'allocated_pods', 'unschedulable_pods', 'gpu_utilization_pct', 'allocation_seconds', 'scheduling_seconds',
+    'bind_lag_p50_seconds', 'bind_lag_p95_seconds', 'bind_lag_max_seconds',
+  ];
+
+  const RESEARCH_DERIVED_FIELDS = [
+    'pods', 'scheduled_workloads', 'unschedulable_workloads', 'gpu_utilization_pct', 'decision_p50_seconds',
+    'decision_p95_seconds', 'decision_max_seconds', 'experiment_decision_p95_seconds', 'rl_decision_p95_seconds',
+    'preprocess_decision_p95_seconds',
   ];
 
   const TEST_CASES = [
@@ -115,6 +130,31 @@
     {
       id: 'elastic-job-reclaim', chartId: 'elastic-job-reclaim', timingField: 'duration_seconds',
       scale: name => name === 'Elastic distributed job reclaim',
+      legacy: () => false,
+    },
+    {
+      id: 'fractions-saturation-allocation', chartId: 'fractions-saturation-allocation',
+      timingField: 'allocation_seconds', ignoredSeriesFields: SATURATION_DERIVED_FIELDS,
+      scale: name => name === 'Mixed fractions saturation - allocation',
+      legacy: () => false,
+    },
+    {
+      id: 'fractions-saturation-scheduling', chartId: 'fractions-saturation-scheduling',
+      timingField: 'scheduling_seconds', ignoredSeriesFields: SATURATION_DERIVED_FIELDS,
+      timing: details => Math.max(Number(details.scheduling_seconds) - Number(details.allocation_seconds), 0),
+      scale: name => name === 'Mixed fractions saturation - scheduling',
+      legacy: () => false,
+    },
+    {
+      id: 'research-decision-p95', chartId: 'research-decision-p95',
+      timingField: 'decision_p95_seconds', ignoredSeriesFields: RESEARCH_DERIVED_FIELDS,
+      scale: name => name === 'Research workloads - decision latency p95',
+      legacy: () => false,
+    },
+    {
+      id: 'research-decision-max', chartId: 'research-decision-max',
+      timingField: 'decision_max_seconds', ignoredSeriesFields: RESEARCH_DERIVED_FIELDS,
+      scale: name => name === 'Research workloads - decision latency max',
       legacy: () => false,
     },
   ];
@@ -297,26 +337,27 @@
     return `${detailsLabel} · ${metadataLabel(metadata)}`;
   }
 
+  function isScalar(value) {
+    return value === null || typeof value !== 'object';
+  }
+
+  // Nested values (e.g. service_resources) are skipped: they are large and already summarized by the config hash.
   function buildTooltipLines(observation) {
     const testCase = TEST_CASES.find(candidate => candidate.id === observation.testId);
-    const lines = [
-      `test: ${observation.testName}`,
-      `source: ${observation.source === 'scale-results' ? 'results' : 'legacy Ginkgo'}`,
-    ];
-    if (observation.commit) lines.push(`commit: ${observation.commit}`);
-    Object.keys(observation.details || {}).sort().forEach(key => {
-      const label = testCase?.detailLabels?.[key] || key;
-      lines.push(`${label}: ${formatDetailValue(observation.details[key])}`);
-    });
-    Object.keys(observation.metadata || {}).sort().forEach(key => {
-      lines.push(`${key}: ${formatDetailValue(observation.metadata[key])}`);
-    });
+    const lines = [];
+    if (observation.commit) lines.push(`commit: ${observation.commit.slice(0, 8)}`);
+    Object.keys(observation.details || {}).sort()
+      .filter(key => key !== observation.timingField && isScalar(observation.details[key]))
+      .forEach(key => lines.push(`${testCase?.detailLabels?.[key] || key}: ${formatDetailValue(observation.details[key])}`));
+    Object.keys(observation.metadata || {}).sort()
+      .filter(key => isScalar(observation.metadata[key]))
+      .forEach(key => lines.push(`${key}: ${formatDetailValue(observation.metadata[key])}`));
     return lines;
   }
 
   function createObservation(run, testCase, testName, status, details) {
     if (!testCase || !details || typeof details !== 'object') return null;
-    const rawTiming = details[testCase.timingField];
+    const rawTiming = testCase.timing ? testCase.timing(details) : details[testCase.timingField];
     const timingSeconds = parseDuration(rawTiming);
     if (timingSeconds === null) return null;
     const seriesIdentity = buildSeriesIdentity({
