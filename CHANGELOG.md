@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v0.14.12] - 2026-11-09
+
+### Fixed
+- Status-updater drops status/patch updates for deleted PodGroups instead of retrying NotFound errors indefinitely, stopping log floods. [#1945](https://github.com/kai-scheduler/KAI-Scheduler/issues/1945)
+- Reclaim no longer abandons valid victims when an under-quota queue comes earlier in victim order [#1750](https://github.com/kai-scheduler/KAI-Scheduler/issues/1750) [enoodle](https://github.com/enoodle)
+
 ## [v0.14.11] - 2026-11-02
 
 ### Added
