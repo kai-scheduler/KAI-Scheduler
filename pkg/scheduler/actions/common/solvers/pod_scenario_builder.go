@@ -60,23 +60,25 @@ func NewPodAccumulatedScenarioBuilder(
 	}
 
 	var scenarioFilters []accumulated_scenario_filters.Interface
+	// A resize stand-in is only checked for room on its own node, in AllocateJob.
+	if !pendingJob.IsResizeStandIn() {
+		// Filter scenario if it has any pods with node affinities that cannot be satisfied by the available nodes for allocation
+		nodeSelectorFilter := node_affinities.NewNodeAffinitiesFilter(scenario, feasibleNodes, session)
+		if nodeSelectorFilter != nil {
+			scenarioFilters = append(scenarioFilters, nodeSelectorFilter)
+		}
 
-	// Filter scenario if it has any pods with node affinities that cannot be satisfied by the available nodes for allocation
-	nodeSelectorFilter := node_affinities.NewNodeAffinitiesFilter(scenario, feasibleNodes, session)
-	if nodeSelectorFilter != nil {
-		scenarioFilters = append(scenarioFilters, nodeSelectorFilter)
-	}
+		// Basic topology-aware gpu capacity filter
+		topologyAwareFilter := idle_gpus_filter.NewTopologyAwareIdleGpusFilter(scenario, session.ClusterInfo.Nodes)
+		if topologyAwareFilter != nil {
+			scenarioFilters = append(scenarioFilters, topologyAwareFilter)
+		}
 
-	// Basic topology-aware gpu capacity filter
-	topologyAwareFilter := idle_gpus_filter.NewTopologyAwareIdleGpusFilter(scenario, session.ClusterInfo.Nodes)
-	if topologyAwareFilter != nil {
-		scenarioFilters = append(scenarioFilters, topologyAwareFilter)
-	}
-
-	// Full cluster-level idle GPUs filter
-	idleGpusScenarioFilter := idle_gpus_filter.NewIdleGpusFilter(scenario, session.ClusterInfo.Nodes)
-	if idleGpusScenarioFilter != nil {
-		scenarioFilters = append(scenarioFilters, idleGpusScenarioFilter)
+		// Full cluster-level idle GPUs filter
+		idleGpusScenarioFilter := idle_gpus_filter.NewIdleGpusFilter(scenario, session.ClusterInfo.Nodes)
+		if idleGpusScenarioFilter != nil {
+			scenarioFilters = append(scenarioFilters, idleGpusScenarioFilter)
+		}
 	}
 
 	return &PodAccumulatedScenarioBuilder{
