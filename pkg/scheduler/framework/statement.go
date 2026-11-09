@@ -212,7 +212,7 @@ func (s *Statement) unevict(
 	return nil
 }
 
-func (s *Statement) Pipeline(task *pod_info.PodInfo, hostname string, updateTaskIfExistsOnNode bool) error {
+func (s *Statement) Pipeline(task *pod_info.PodInfo, hostname string, canUndoEviction bool) error {
 	// Only update status in session
 	job, foundJob := s.ssn.ClusterInfo.PodGroupInfos[task.Job]
 	node, foundNode := s.ssn.ClusterInfo.Nodes[hostname]
@@ -231,14 +231,13 @@ func (s *Statement) Pipeline(task *pod_info.PodInfo, hostname string, updateTask
 		taskOnNodeGPUGroups := taskOnNode.GPUGroupIDs()
 		gpuPlacementChanged = len(taskGPUGroups) > 0 && task.IsSharedGPUAllocation() &&
 			!slices.Equal(taskGPUGroups, []string{"-1"}) && !slices.Equal(taskGPUGroups, taskOnNodeGPUGroups)
-		numaPlacementChanged = len(task.NUMAPlacement) > 0 &&
+		numaPlacementChanged = !task.NUMAPlacement.IsEmpty() &&
 			!task.NUMAPlacement.Equal(taskOnNode.NUMAPlacement)
 	}
 
 	// If the task already exist on the node, we assume it was evicted before.
-	// If task already exist on the node, and we didn't ask to update if on the node,
-	// and there is no special reason we should update on the node, then we need to unevict instead of pipelining it.
-	if foundOnNode && !updateTaskIfExistsOnNode && !gpuPlacementChanged && !numaPlacementChanged {
+	// If eviction undo is allowed and there is no special reason we should update on the node, then we need to unevict instead of pipelining it.
+	if foundOnNode && canUndoEviction && !gpuPlacementChanged && !numaPlacementChanged {
 		task.FractionalGpuGroups = cloneFractionalGpuGroups(taskOnNode.FractionalGpuGroups)
 		task.NUMAPlacement = taskOnNode.NUMAPlacement.Clone()
 		log.InfraLogger.V(6).Do(func() {
@@ -559,7 +558,7 @@ func (s *Statement) ConvertAllAllocatedToPipelined(jobID common_info.PodGroupID)
 			return err
 		}
 
-		err = s.Pipeline(currentTaskInOperations, nodeName, true)
+		err = s.Pipeline(currentTaskInOperations, nodeName, false)
 		if err != nil {
 			return err
 		}
@@ -654,12 +653,12 @@ func (s *Statement) Commit() error {
 // undoEarliestValidOperation will undo the earliest valid operation of the given type
 func (s *Statement) undoEarliestValidOperation(taskToUndo *pod_info.PodInfo, opName string) error {
 	for index, op := range s.operations {
-		// If the operation was already undone, skip it
-		if !s.operationValid(index) {
+		if opName != op.Name() || taskToUndo.UID != op.TaskInfo().UID {
 			continue
 		}
 
-		if taskToUndo.UID != op.TaskInfo().UID || opName != op.Name() {
+		// If the operation was already undone, skip it
+		if !s.operationValid(index) {
 			continue
 		}
 
@@ -693,7 +692,7 @@ func (s *Statement) undoOperation(index int) error {
 	case pipelineOperation:
 		operation := op.(pipelineOperation)
 		redoOperation = func() error {
-			return s.Pipeline(taskToUndo, operation.nextNode, true)
+			return s.Pipeline(taskToUndo, operation.nextNode, false)
 		}
 	case allocateOperation:
 		redoOperation = func() error {
@@ -724,7 +723,7 @@ func (s *Statement) cleanupFailedAllocation(task *pod_info.PodInfo, node *node_i
 		task.Namespace, task.Name, node.Name)
 
 	// Failed allocation: clear the placement so a retry re-evaluates.
-	_ = s.unallocate(task, node.Name, nil, false)
+	_ = s.unallocate(task, node.Name, pod_info.NUMAPlacement{}, false)
 }
 
 func (s *Statement) operationValid(i int) bool {

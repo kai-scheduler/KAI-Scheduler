@@ -56,3 +56,8 @@ jobs:
             echo "::error::No changelog fragment found. Run 'make changelog' to add one, or add the 'skip-changelog' label to opt out."
             exit 1
           fi
+
+      # Same renderer Release — Prepare Changelog uses; fails on invalid fragments (e.g. wrong-case kind).
+      - name: Validate fragments render
+        if: github.event_name == 'pull_request'
+        run: make changelog-preview VERSION=v0.0.0

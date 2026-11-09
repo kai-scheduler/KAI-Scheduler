@@ -247,11 +247,20 @@ func (rsc *service) hasActiveBindRequestsForGpuGroup(ctx context.Context, gpuGro
 		}
 
 		if br.Status.Phase == schedulingv1alpha2.BindRequestPhaseFailed {
+			var backoffLimit any
+			if br.Spec.BackoffLimit != nil {
+				backoffLimit = *br.Spec.BackoffLimit
+			}
+			logger := log.FromContext(ctx).WithValues(
+				"namespace", br.Namespace, "name", br.Name, "gpuGroup", gpuGroup,
+				"failedAttempts", br.Status.FailedAttempts, "backoffLimit", backoffLimit)
 			// If the binding backoff limit is not spent, the binder will keep retrying.
 			if br.Spec.BackoffLimit == nil || br.Status.FailedAttempts >= *br.Spec.BackoffLimit {
-				return false, nil
+				logger.Info("Failed BindRequest has no retries remaining, checking other requests for GPU group")
+				continue
 			}
-			continue
+			logger.Info("Preserving GPU reservation for failed BindRequest with retries remaining")
+			return true, nil
 		}
 
 		if br.Status.Phase == schedulingv1alpha2.BindRequestPhaseSucceeded {

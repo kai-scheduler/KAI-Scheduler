@@ -294,6 +294,25 @@ func TestGetPodMetadata_EffectiveRequests(t *testing.T) {
 			},
 			expectedCPU: "3",
 		},
+		{
+			name: "pod-level request replaces the container sum (KEP-2837)",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "p", Namespace: "default"},
+				Spec: v1.PodSpec{
+					Resources: &v1.ResourceRequirements{
+						Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("4")},
+					},
+					Containers: []v1.Container{
+						{Name: "main", Resources: v1.ResourceRequirements{
+							Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1")},
+						}},
+						{Name: "store"},
+					},
+				},
+				Status: *runningStatus.DeepCopy(),
+			},
+			expectedCPU: "4",
+		},
 	}
 
 	for _, tt := range tests {

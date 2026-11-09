@@ -56,6 +56,11 @@ runs:
           --k8s-version $K8S_VERSION \
           --output /tmp/kind-config.yaml
 
+    - name: Raise inotify limits
+      shell: bash
+      # ubuntu-26.04 defaults to max_user_instances=128, which crashes kube-proxy on multi-node kind clusters
+      run: sudo sysctl -w fs.inotify.max_user_instances=1280 fs.inotify.max_user_watches=655360
+
     - name: Create k8s Kind Cluster
       uses: helm/kind-action@v1.14.0
       with:
@@ -63,6 +68,12 @@ runs:
         version: v0.32.0
         config: /tmp/kind-config.yaml
         node_image: kindest/node:${{ inputs.k8s_version }}
+
+    - name: Keep kindnet Burstable for simulated NUMA nodes
+      shell: bash
+      run: |
+        kubectl -n kube-system set resources daemonset/kindnet --containers=kindnet-cni --limits=cpu=200m
+        kubectl -n kube-system rollout status daemonset/kindnet --timeout=180s
 
     - name: Deploy image registry
       shell: bash
@@ -76,7 +87,7 @@ runs:
         PACKAGE_VERSION: ${{ inputs.package_version }}
       run: |
         kubectl port-forward -n kube-registry deploy/registry 5000:5000 &
-        docker load < /mnt/images/docker_images.tgz
+        docker load -i /mnt/images/docker_images.tar
         for image in $(docker images --format '{{.Repository}}:{{.Tag}}' | grep $PACKAGE_VERSION); do
           new_image=$(echo "$image" | sed -E 's|.*/([^/]+:[^/]+)$|localhost:5000/\1|')
           docker tag $image $new_image
@@ -126,4 +137,4 @@ runs:
         PACKAGE_VERSION: ${{ inputs.package_version }}
       run: |
         docker images --format '{{.Repository}}:{{.Tag}}' | grep $PACKAGE_VERSION | xargs docker rmi -f
-        sudo rm -rf /mnt/images/docker_images.tgz
+        sudo rm -rf /mnt/images/docker_images.tar

@@ -1933,3 +1933,31 @@ func TestSetPodGroupLastEvictionTimestamp(t *testing.T) {
 		})
 	}
 }
+
+func TestIsResizeStandIn(t *testing.T) {
+	standIn := &pod_info.PodInfo{UID: "stand-in", Status: pod_status.Pending, IsResizeStandIn: true}
+	pending := &pod_info.PodInfo{UID: "pending", Status: pod_status.Pending}
+	running := &pod_info.PodInfo{UID: "running", Status: pod_status.Running}
+	tests := []struct {
+		name  string
+		tasks []*pod_info.PodInfo
+		want  bool
+	}{
+		{name: "stand-in with running siblings", tasks: []*pod_info.PodInfo{standIn, running}, want: true},
+		{name: "regular pending pod", tasks: []*pod_info.PodInfo{pending, running}, want: false},
+		{name: "stand-in with a regular pending pod", tasks: []*pod_info.PodInfo{standIn, pending}, want: false},
+		{name: "no pending pods", tasks: []*pod_info.PodInfo{running}, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			job := &PodGroupInfo{PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{}}
+			for _, task := range tt.tasks {
+				if job.PodStatusIndex[task.Status] == nil {
+					job.PodStatusIndex[task.Status] = pod_info.PodsMap{}
+				}
+				job.PodStatusIndex[task.Status][task.UID] = task
+			}
+			assert.Equal(t, tt.want, job.IsResizeStandIn())
+		})
+	}
+}

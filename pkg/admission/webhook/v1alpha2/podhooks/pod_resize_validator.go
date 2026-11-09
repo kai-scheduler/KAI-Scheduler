@@ -134,12 +134,12 @@ func isCorePod(pg *v2alpha2.PodGroup, podName string) bool {
 }
 
 func podResizeDelta(oldPod, newPod *corev1.Pod) corev1.ResourceList {
-	specOnly := resourcehelpers.PodResourcesOptions{}
-	withStatus := resourcehelpers.PodResourcesOptions{UseStatusResources: true}
+	specOnly := resourcehelpers.PodResourcesOptions{ExcludeOverhead: true}
+	withStatus := resourcehelpers.PodResourcesOptions{UseStatusResources: true, ExcludeOverhead: true}
 
-	newSpec := resourcehelpers.AggregateContainerRequests(newPod, specOnly)
-	oldSpec := resourcehelpers.AggregateContainerRequests(oldPod, specOnly)
-	effectiveOld := resourcehelpers.AggregateContainerRequests(oldPod, withStatus)
+	newSpec := resourcehelpers.PodRequests(newPod, specOnly)
+	oldSpec := resourcehelpers.PodRequests(oldPod, specOnly)
+	effectiveOld := resourcehelpers.PodRequests(oldPod, withStatus)
 
 	delta := corev1.ResourceList{}
 	for resName, newQty := range newSpec {

@@ -35,11 +35,17 @@ import (
 	schedulingv1alpha2 "github.com/kai-scheduler/api/scheduling/v1alpha2"
 )
 
+// NUMAPrediction carries the durable placement recorded on a BindRequest.
+type NUMAPrediction struct {
+	Zones        []schedulingv1alpha2.NUMAZonePlacement
+	MemoryGroups []schedulingv1alpha2.NUMAMemoryGroupPlacement
+}
+
 type Cache interface {
 	Run(stopCh <-chan struct{})
 	Snapshot() (*api.ClusterInfo, error)
 	WaitForCacheSync(stopCh <-chan struct{})
-	Bind(podInfo *pod_info.PodInfo, hostname string, bindRequestAnnotations map[string]string, predictedNUMAZones []schedulingv1alpha2.NUMAZonePlacement) error
+	Bind(podInfo *pod_info.PodInfo, hostname string, bindRequestAnnotations map[string]string, numa NUMAPrediction) error
 	Evict(ssnPod *v1.Pod, job *podgroup_info.PodGroupInfo, evictionMetadata eviction_info.EvictionMetadata, message string) error
 	RecordPodGroupEvictionEvent(job *podgroup_info.PodGroupInfo, action string)
 	RecordJobStatusEvent(
