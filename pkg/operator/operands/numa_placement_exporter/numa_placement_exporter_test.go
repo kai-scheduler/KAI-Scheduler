@@ -133,6 +133,23 @@ var _ = Describe("NumaPlacementExporter DesiredState", func() {
 			envNames = append(envNames, e.Name)
 		}
 		Expect(envNames).To(ContainElement("NODE_NAME"))
+		Expect(container.Args).ToNot(ContainElement("--zap-devel=false"))
+	})
+
+	It("passes --zap-devel=false when global jsonLog is set", func(ctx context.Context) {
+		cfg.Spec.NumaPlacementExporter.Service.Enabled = ptr.To(true)
+		cfg.Spec.Global.JSONLog = ptr.To(true)
+		objects, err := (&NumaPlacementExporter{}).DesiredState(ctx, fakeClient(), cfg)
+		Expect(err).To(BeNil())
+
+		var ds *appsv1.DaemonSet
+		for _, o := range objects {
+			if d, ok := o.(*appsv1.DaemonSet); ok {
+				ds = d
+			}
+		}
+		Expect(ds).ToNot(BeNil())
+		Expect(ds.Spec.Template.Spec.Containers[0].Args).To(ContainElement("--zap-devel=false"))
 	})
 
 	It("honors configured podResources/sysfs path overrides", func(ctx context.Context) {

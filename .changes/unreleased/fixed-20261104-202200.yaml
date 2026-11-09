@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  NUMA placement exporter logs JSON when global.jsonLog is set, like the other services
+custom:
+  Author: "lasse-ii"
+  Issue: "2627"
