@@ -468,6 +468,7 @@ func logNodeSetsPluginResult(subsetNodesFn api.SubsetNodesFn, podGroup *podgroup
 }
 
 func (ssn *Session) PrePredicateFn(task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo) error {
+	ssn.dropAffinityState(task.Pod.UID)
 	for _, prePredicate := range ssn.PrePredicateFns {
 		err := prePredicate(task, job)
 		if err != nil {

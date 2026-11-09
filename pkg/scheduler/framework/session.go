@@ -114,6 +114,7 @@ type Session struct {
 	mux             *http.ServeMux
 
 	k8sResourceStateCache  sync.Map
+	terminatingPods        *terminatingPods
 	nodeScoringPool        *ants.Pool
 	scoringPoolWorkerCount int
 }
@@ -233,43 +234,69 @@ func (ssn *Session) sortGPUs(filteredGPUs []string, pod *pod_info.PodInfo, node 
 	return sortedGPUs
 }
 
-func (ssn *Session) FittingNode(task *pod_info.PodInfo, node *node_info.NodeInfo, writeFittingDelta bool) bool {
-	var fitErrors *common_info.TasksFitErrors
-	if writeFittingDelta {
-		fitErrors = common_info.NewFitErrors()
-	}
-
+// FittingNode reports whether the task fits the node, and whether the fit must be pipelined rather than
+// bound. A simulation checks predicates without the pods that were already terminating, and always
+// pipelines. A real allocation checks the cluster as it is first, and falls back to the cluster
+// without them; a fit found only there must be pipelined.
+func (ssn *Session) FittingNode(
+	task *pod_info.PodInfo, node *node_info.NodeInfo, isSimulation bool,
+) (fits bool, mustPipeline bool) {
 	job := ssn.ClusterInfo.PodGroupInfos[task.Job]
 
 	log.InfraLogger.V(6).Do(func() {
 		log.InfraLogger.Infof("Checking if task <%v/%v> is allocatable on node <%v>: <%v> vs. <%v>",
 			task.Namespace, task.Name, node.Name, task.ResReqVector, node.IdleVector)
 	})
-	allocatable, fitError := ssn.isTaskAllocatableOnNode(task, job, node, writeFittingDelta)
+	allocatable, fitError := ssn.isTaskAllocatableOnNode(task, job, node, !isSimulation)
 	if !allocatable {
-		if fitError != nil && writeFittingDelta {
-			fitErrors.AddNodeError(fitError)
-			job.AddTaskFitErrors(task, fitErrors)
+		if fitError != nil && !isSimulation {
+			addNodeFitError(task, job, fitError)
 		}
-		return false
+		return false, false
 	}
 
 	log.InfraLogger.V(6).Do(func() {
 		log.InfraLogger.Infof("Running predicates for task <%v/%v> on node <%v>",
 			task.Namespace, task.Name, node.Name)
 	})
-	if err := ssn.PredicateFn(task, job, node); err != nil {
-		log.InfraLogger.V(6).Do(func() {
-			log.InfraLogger.Infof("Predicates failed for task <%s/%s> on node <%s>: %v",
-				task.Namespace, task.Name, node.Name, err)
-		})
-		if writeFittingDelta {
-			fitErrors.AddNodeError(err)
-			job.AddTaskFitErrors(task, fitErrors)
+	var currentErr error
+	if !isSimulation {
+		if currentErr = ssn.PredicateFn(task, job, node); currentErr == nil {
+			return true, false
 		}
-		return false
+		logPredicateFailure(task, node, currentErr)
+		if !ssn.terminatingPodsMatter(task, node) {
+			addNodeFitError(task, job, currentErr)
+			return false, false
+		}
 	}
-	return true
+
+	if err := ssn.fitsWithoutTerminatingPods(task, job, node); err != nil {
+		logPredicateFailure(task, node, err)
+		if !isSimulation {
+			// The error against the cluster as it is explains the failure better.
+			addNodeFitError(task, job, currentErr)
+		}
+		return false, false
+	}
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("Task <%s/%s> fits node <%s> once the terminating pods are gone",
+			task.Namespace, task.Name, node.Name)
+	})
+	return true, true
+}
+
+func addNodeFitError(task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo, err error) {
+	fitErrors := common_info.NewFitErrors()
+	fitErrors.AddNodeError(err)
+	job.AddTaskFitErrors(task, fitErrors)
+}
+
+func logPredicateFailure(task *pod_info.PodInfo, node *node_info.NodeInfo, err error) {
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("Predicates failed for task <%s/%s> on node <%s>: %v",
+			task.Namespace, task.Name, node.Name, err)
+	})
 }
 
 // OrderedNodesByTask scores nodes for a task and returns them in order of their scores
@@ -558,6 +585,14 @@ func (ssn *Session) OverrideMaxNumberConsolidationPreemptees(maxPreemptees int) 
 
 func (ssn *Session) UseSchedulingSignatures() bool {
 	return ssn.SchedulerParams.UseSchedulingSignatures
+}
+
+func (ssn *Session) DeferredResizePreemptionEnabled() bool {
+	return ssn.SchedulerParams.DeferredResizePreemption
+}
+
+func (ssn *Session) OverrideDeferredResizePreemption(enabled bool) {
+	ssn.SchedulerParams.DeferredResizePreemption = enabled
 }
 
 func (ssn *Session) GetJobsDepth(action ActionType) int {
