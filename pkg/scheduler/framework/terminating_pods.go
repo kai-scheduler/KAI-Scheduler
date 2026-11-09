@@ -39,7 +39,7 @@ func (ssn *Session) terminating() *terminatingPods {
 	ssn.terminatingPods = t
 	for _, node := range ssn.ClusterInfo.Nodes {
 		affinityInfo, ok := node.PodAffinityInfo.(*cluster_info.K8sNodePodAffinityInfo)
-		if !ok {
+		if !ok || affinityInfo == nil || affinityInfo.NodeInfo == nil {
 			continue
 		}
 		k8sNode := affinityInfo.NodeInfo
@@ -120,8 +120,10 @@ func (ssn *Session) WithoutTerminatingPods(task *pod_info.PodInfo, node *node_in
 			continue
 		}
 		if err := stmt.Evict(pod, "", eviction_info.EvictionMetadata{}); err != nil {
-			log.InfraLogger.V(6).Infof("Failed to set aside terminating pod <%s/%s>: %v",
-				pod.Namespace, pod.Name, err)
+			log.InfraLogger.V(6).Do(func() {
+				log.InfraLogger.Infof("Failed to set aside terminating pod <%s/%s>: %v",
+					pod.Namespace, pod.Name, err)
+			})
 		}
 	}
 	fn()

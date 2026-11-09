@@ -37,6 +37,9 @@ func TestSessionClaimTrackerKeepsSharedDevices(t *testing.T) {
 	isAllocated := func(tracker *SessionClaimTracker) bool {
 		state, err := tracker.GatherAllocatedState()
 		require.NoError(t, err)
+		devices, err := tracker.ListAllAllocatedDevices()
+		require.NoError(t, err)
+		require.Equal(t, state.AllocatedDevices.Has(device), devices.Has(device))
 		return state.AllocatedDevices.Has(device)
 	}
 

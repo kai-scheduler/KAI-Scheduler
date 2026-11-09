@@ -67,12 +67,25 @@ func (t *SessionClaimTracker) GatherAllocatedState() (*structured.AllocatedState
 	if err != nil {
 		return nil, err
 	}
+	t.insertHeldSharedDevices(state.AllocatedDevices)
+	return state, nil
+}
+
+func (t *SessionClaimTracker) ListAllAllocatedDevices() (sets.Set[structured.DeviceID], error) {
+	devices, err := t.ResourceClaimTracker.ListAllAllocatedDevices()
+	if err != nil {
+		return nil, err
+	}
+	t.insertHeldSharedDevices(devices)
+	return devices, nil
+}
+
+func (t *SessionClaimTracker) insertHeldSharedDevices(devices sets.Set[structured.DeviceID]) {
 	for device := range t.shared {
 		if len(t.holders[device]) > 0 {
-			state.AllocatedDevices.Insert(device)
+			devices.Insert(device)
 		}
 	}
-	return state, nil
 }
 
 func (t *SessionClaimTracker) AssumeClaimAfterAPICall(claim *resourceapi.ResourceClaim) error {

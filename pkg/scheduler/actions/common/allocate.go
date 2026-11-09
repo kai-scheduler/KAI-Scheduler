@@ -237,7 +237,7 @@ func placeTaskOnNode(ssn *framework.Session, stmt *framework.Statement, task *po
 		return gpu_sharing.AllocateFractionalGPUTaskToNode(ssn, stmt, task, node, isSimulation, mustPipeline)
 	}
 
-	if canBind := !mustPipeline && node.IsTaskAllocatable(task); canBind {
+	if canBind := !isSimulation && !mustPipeline && node.IsTaskAllocatable(task); canBind {
 		return bindTaskToNode(ssn, stmt, task, node)
 	}
 	return pipelineTaskToNode(ssn, stmt, task, node, isSimulation)
