@@ -1,3 +1,6 @@
 kind: Added
 body: |-
   Add horizontal autoscaling support for the admission service
+custom:
+  Author: juniemariam
+  Issue: "901"
