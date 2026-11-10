@@ -16,15 +16,15 @@ import (
 )
 
 // mockClientFn is a helper function that creates a mock client
-func mockClientFn(connectionString string, usageParams *api.UsageParams) (api.Interface, error) {
+func mockClientFn(connectionString string, usageParams *api.UsageParams, _ *api.Auth) (api.Interface, error) {
 	if connectionString == "error-connection" {
 		return nil, fmt.Errorf("mock client error")
 	}
-	return fake.NewFakeClient(connectionString, usageParams)
+	return fake.NewFakeClient(connectionString, usageParams, nil)
 }
 
 // errorClientFn is a helper function that always returns an error
-func errorClientFn(connectionString string, usageParams *api.UsageParams) (api.Interface, error) {
+func errorClientFn(connectionString string, usageParams *api.UsageParams, _ *api.Auth) (api.Interface, error) {
 	return nil, fmt.Errorf("client creation failed for connection: %s", connectionString)
 }
 
@@ -305,10 +305,10 @@ func TestClientResolver_GetClient_Integration(t *testing.T) {
 
 	t.Run("custom client integration", func(t *testing.T) {
 		customClientCreated := false
-		customClientFn := func(connectionString string, usageParams *api.UsageParams) (api.Interface, error) {
+		customClientFn := func(connectionString string, usageParams *api.UsageParams, _ *api.Auth) (api.Interface, error) {
 			customClientCreated = true
 			assert.Equal(t, "custom-integration-connection", connectionString)
-			return fake.NewFakeClient(connectionString, nil)
+			return fake.NewFakeClient(connectionString, nil, nil)
 		}
 
 		resolver := NewClientResolver(map[string]GetClientFn{
@@ -546,6 +546,78 @@ func TestResolveConnectionString(t *testing.T) {
 				assert.NoError(t, err)
 				assert.Equal(t, tt.want, got)
 			}
+		})
+	}
+}
+
+func TestGetClient_Auth(t *testing.T) {
+	t.Run("auth reaches the client", func(t *testing.T) {
+		auth := &api.Auth{Authorization: &api.Authorization{CredentialsFile: "/auth/credentials"}}
+		var received *api.Auth
+		resolver := NewClientResolver(map[string]GetClientFn{
+			"recording": func(connectionString string, usageParams *api.UsageParams, auth *api.Auth) (api.Interface, error) {
+				received = auth
+				return fake.NewFakeClient(connectionString, usageParams, auth)
+			},
+		})
+
+		_, err := resolver.GetClient(&api.UsageDBConfig{
+			ClientType:       "recording",
+			ConnectionString: "https://metrics.example.com/prometheus",
+			Auth:             auth,
+		})
+		require.NoError(t, err)
+		assert.Same(t, auth, received)
+	})
+
+	t.Run("an invalid auth is rejected before a client is created", func(t *testing.T) {
+		created := false
+		resolver := NewClientResolver(map[string]GetClientFn{
+			"recording": func(string, *api.UsageParams, *api.Auth) (api.Interface, error) {
+				created = true
+				return nil, nil
+			},
+		})
+
+		_, err := resolver.GetClient(&api.UsageDBConfig{
+			ClientType:       "recording",
+			ConnectionString: "https://metrics.example.com/prometheus",
+			Auth:             &api.Auth{Authorization: &api.Authorization{Type: "Bearer"}},
+		})
+		assert.ErrorContains(t, err, "invalid usage db auth")
+		assert.False(t, created)
+	})
+}
+
+func TestRedactConnectionString(t *testing.T) {
+	tests := []struct {
+		name             string
+		connectionString string
+		expected         string
+	}{
+		{name: "empty", connectionString: "", expected: ""},
+		{
+			name:             "url without credentials is unchanged",
+			connectionString: "http://prometheus.monitoring.svc:9090/prefix",
+			expected:         "http://prometheus.monitoring.svc:9090/prefix",
+		},
+		{
+			name:             "url password is hidden",
+			connectionString: "https://reader:s3cret@metrics.example.com/prometheus",
+			expected:         "https://reader:xxxxx@metrics.example.com/prometheus",
+		},
+		{
+			name:             "a string that is not a url is not shown",
+			connectionString: "host=db user=reader password=s3cret",
+			expected:         "<redacted>",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			redacted := redactConnectionString(tt.connectionString)
+			assert.Equal(t, tt.expected, redacted)
+			assert.NotContains(t, redacted, "s3cret")
 		})
 	}
 }

@@ -19,6 +19,9 @@ type (
 	UsageDBConfig = usagedb.UsageDBConfig
 	UsageParams   = usagedb.UsageParams
 	WindowType    = usagedb.WindowType
+	Auth          = usagedb.Auth
+	BasicAuth     = usagedb.BasicAuth
+	Authorization = usagedb.Authorization
 )
 
 const (

@@ -66,7 +66,7 @@ func TestNewPrometheusClient(t *testing.T) {
 				tt.params = &api.UsageParams{}
 				tt.params.SetDefaults()
 			}
-			client, err := NewPrometheusClient(tt.address, tt.params)
+			client, err := NewPrometheusClient(tt.address, tt.params, nil)
 			if tt.expectError {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.errorContains)
@@ -299,7 +299,7 @@ func TestNewPrometheusClient_ExtraParams(t *testing.T) {
 			}
 			params.SetDefaults()
 
-			client, err := NewPrometheusClient("http://localhost:9090", params)
+			client, err := NewPrometheusClient("http://localhost:9090", params, nil)
 			require.NoError(t, err)
 			require.NotNil(t, client)
 

@@ -6,6 +6,7 @@ package usagedb
 import (
 	"fmt"
 	"maps"
+	"net/url"
 	"os"
 	"slices"
 
@@ -15,7 +16,9 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 )
 
-type GetClientFn func(connectionString string, usageParams *api.UsageParams) (api.Interface, error)
+// GetClientFn creates a usage db client. auth is nil when the usage database
+// needs no authentication; a client type that cannot authenticate ignores it.
+type GetClientFn func(connectionString string, usageParams *api.UsageParams, auth *api.Auth) (api.Interface, error)
 
 var defaultClientMap = map[string]GetClientFn{
 	"fake":              fake.NewFakeClient,
@@ -53,17 +56,34 @@ func (cr *ClientResolver) GetClient(config *api.UsageDBConfig) (api.Interface, e
 		return nil, fmt.Errorf("unknown client type: %s, supported types: %v", config.ClientType, supportedTypes)
 	}
 
-	log.InfraLogger.V(3).Infof("getting usage db client of type: %s, connection string: %s", config.ClientType, config.ConnectionString)
-
 	connectionString, err := resolveConnectionString(config)
-	log.InfraLogger.V(3).Infof("resolved connection string: %s", connectionString)
 	if err != nil {
 		return nil, err
 	}
 
-	log.InfraLogger.V(3).Infof("getting usage db client of type: %s, connection string: %s", config.ClientType, connectionString)
+	if err = config.Auth.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid usage db auth: %w", err)
+	}
 
-	return client(connectionString, config.GetUsageParams())
+	log.InfraLogger.V(3).Infof("getting usage db client of type: %s, connection string: %s",
+		config.ClientType, redactConnectionString(connectionString))
+
+	return client(connectionString, config.GetUsageParams(), config.Auth)
+}
+
+// redactConnectionString returns the connection string in a form that is safe
+// to log: a URL keeps everything but the password of its userinfo, and a
+// string that is not a URL, which may be a DSN with a credential anywhere in
+// it, is not shown at all.
+func redactConnectionString(connectionString string) string {
+	if connectionString == "" {
+		return ""
+	}
+	parsed, err := url.Parse(connectionString)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "<redacted>"
+	}
+	return parsed.Redacted()
 }
 
 func resolveConnectionString(config *api.UsageDBConfig) (string, error) {
