@@ -27,6 +27,7 @@ import (
 	"gotest.tools/assert"
 	v1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
@@ -290,6 +291,94 @@ func TestGetPodResourceRequest(t *testing.T) {
 				},
 			},
 			expectedResource: resource_info.NewResourceRequirements(1, 4000, 3000000000),
+		},
+		{
+			// KEP-2837: a pod-level request replaces the container-derived
+			// value for that resource. This is what kubelet admission charges,
+			// so the scheduler must charge it too or it over-commits the node.
+			name: "pod-level resources override the container sum",
+			pod: &v1.Pod{
+				Spec: v1.PodSpec{
+					Resources: &v1.ResourceRequirements{
+						Requests: common_info.BuildResourceList("4000m", "96Gi"),
+					},
+					Containers: []v1.Container{
+						{
+							Resources: v1.ResourceRequirements{
+								Requests: common_info.BuildResourceListWithGPU("0", "0", "1"),
+							},
+						},
+						{},
+					},
+				},
+			},
+			// containers contribute 0 cpu / 0 memory, pod-level supplies both;
+			// the GPU stays with the container.
+			expectedResource: resource_info.NewResourceRequirements(1, 4000, 103079215104),
+		},
+		{
+			// Only one resource set at pod level: the other keeps the
+			// container-derived value.
+			name: "pod-level cpu only, memory from containers",
+			pod: &v1.Pod{
+				Spec: v1.PodSpec{
+					Resources: &v1.ResourceRequirements{
+						Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("6")},
+					},
+					Containers: []v1.Container{
+						{
+							Resources: v1.ResourceRequirements{
+								Requests: common_info.BuildResourceList("1000m", "1G"),
+							},
+						},
+						{
+							Resources: v1.ResourceRequirements{
+								Requests: common_info.BuildResourceList("2000m", "1G"),
+							},
+						},
+					},
+				},
+			},
+			expectedResource: resource_info.RequirementsFromResourceList(common_info.BuildResourceList("6000m", "2G")),
+		},
+		{
+			// Pod-level resources sit outside the init-phase max and above
+			// the sidecar sum, exactly as in upstream PodRequests; overhead is
+			// still added on top.
+			name: "pod-level resources with sidecar, init container and overhead",
+			pod: &v1.Pod{
+				Spec: v1.PodSpec{
+					Resources: &v1.ResourceRequirements{
+						Requests: common_info.BuildResourceList("8000m", "16Gi"),
+					},
+					InitContainers: []v1.Container{
+						{
+							RestartPolicy: ptr.To(v1.ContainerRestartPolicyAlways),
+							Resources: v1.ResourceRequirements{
+								Requests: common_info.BuildResourceList("500m", "256Mi"),
+							},
+						},
+						{
+							Resources: v1.ResourceRequirements{
+								Requests: common_info.BuildResourceList("5000m", "1Gi"),
+							},
+						},
+					},
+					Containers: []v1.Container{
+						{
+							Resources: v1.ResourceRequirements{
+								Requests: common_info.BuildResourceList("1000m", "1Gi"),
+							},
+						},
+					},
+					Overhead: common_info.BuildResourceList("1000m", "1Gi"),
+				},
+			},
+			// pod-level (8000m, 16Gi) replaces the init/sidecar-derived
+			// (5500m, 1Gi+256Mi); overhead (1000m, 1Gi) is added: 9000m, 17Gi.
+			expectedResource: resource_info.RequirementsFromResourceList(
+				common_info.BuildResourceList("9000m", "18253611008"),
+			),
 		},
 	}
 	for i, test := range tests {
