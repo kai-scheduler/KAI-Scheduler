@@ -2105,3 +2105,23 @@ var _ = Describe("Proportion", func() {
 		}
 	})
 })
+
+// pkg/fairshare can't import the scheduler, so it keeps its own copies of these; this catches a drift.
+var _ = Describe("pkg/fairshare matches the scheduler", func() {
+	It("uses the same unlimited quantity", func() {
+		Expect(fairshare.Unlimited).To(Equal(commonconstants.UnlimitedResourceQuantity))
+	})
+
+	DescribeTable("computes the same requestable share",
+		func(maxAllowed, request float64) {
+			share := rs.ResourceShare{MaxAllowed: maxAllowed, Request: request}
+			queue := fairshare.Queue{MaxAllowed: maxAllowed, Request: request}
+			Expect(queue.RequestableShare()).To(Equal(share.GetRequestableShare()))
+		},
+		Entry("unlimited max allowed", commonconstants.UnlimitedResourceQuantity, 5.0),
+		Entry("max allowed below the request", 2.0, 5.0),
+		Entry("max allowed above the request", 8.0, 5.0),
+		Entry("max allowed equal to the request", 5.0, 5.0),
+		Entry("no request", 3.0, 0.0),
+	)
+})
