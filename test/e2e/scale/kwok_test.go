@@ -670,6 +670,50 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 				fractionsSaturation(ctx, testCtx, fractionTiers, numberOfNodes, gpuMemoryMiB)
 			}, SpecTimeout(maxFlowTimeoutMinutes*time.Minute))
 		})
+
+		Context("Research scale scenarios", Ordered, func() {
+			var (
+				researchQueues []*v2.Queue
+				cpuNodes       int
+			)
+
+			BeforeAll(func(ctx context.Context) {
+				cpuNodes = researchCPUNodeCount(numberOfNodes)
+				createResearchCPUNodePool(ctx, testCtx, cpuNodes)
+
+				queueCount := researchQueueCount(numberOfNodes)
+				researchQueues = make([]*v2.Queue, queueCount)
+				for i := range researchQueues {
+					researchQueues[i] = queue.CreateQueueObject(
+						fmt.Sprintf("research-%d-%s", i, utils.GenerateRandomK8sName(10)), parentQueue.Name)
+					researchQueues[i].Spec.Resources.GPU.Quota = float64(numberOfNodes * gpusPerNode / queueCount)
+				}
+				testCtx.AddQueues(ctx, researchQueues)
+			})
+
+			AfterAll(func(ctx context.Context) {
+				deleteResearchCPUNodePool(ctx, testCtx)
+			})
+
+			AfterEach(func(ctx context.Context) {
+				if CurrentSpecReport().Failed() {
+					return
+				}
+				for _, researchQueue := range researchQueues {
+					cleanupTestQueue(ctx, testCtx, researchQueue)
+				}
+			})
+
+			// Equal-priority queues submitting GPU experiments, hierarchical RL pipelines (GPU trainer plus a rollout of
+			// GPU generators and CPU environments) and CPU-only preprocessing jobs, each 5-10% of the cluster, together
+			// requesting ~150% of GPU and CPU capacity. Reports p50/p95/max time to each workload's first decision,
+			// allocated or unschedulable, and checks gang integrity and CPU/GPU node placement.
+			// Simulation: all workloads arrive in one burst and none complete. CPU-only nodes are a test-created KWOK
+			// node pool without GPUs.
+			It("research scale scenario: mixed workload decision latency", func(ctx context.Context) {
+				researchWorkloads(ctx, testCtx, researchQueues, numberOfNodes, cpuNodes)
+			}, SpecTimeout(maxFlowTimeoutMinutes*time.Minute))
+		})
 	})
 })
 
