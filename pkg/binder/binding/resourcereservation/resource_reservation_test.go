@@ -125,6 +125,9 @@ var _ = Describe("ResourceReservationService", func() {
 							constants.GPUGroup: existingGroup,
 						},
 					},
+					Spec: v1.PodSpec{
+						NodeName: nodeName,
+					},
 				},
 				numReservationPods: 1,
 				expectedGPUIndex:   "4",
@@ -139,10 +142,38 @@ var _ = Describe("ResourceReservationService", func() {
 							constants.GPUGroup: existingGroup,
 						},
 					},
+					Spec: v1.PodSpec{
+						NodeName: nodeName,
+					},
 				},
 				numReservationPods:    1,
 				expectedGPUIndex:      unknownGpuIndicator,
 				expectedErrorContains: "annotation",
+			},
+			"reservation pod exists on another node with same group - create a new one on target node": {
+				groupName: existingGroup,
+				reservationPod: &v1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "gpu-reservation-other-node",
+						Namespace: resourceReservationNameSpace,
+						Annotations: map[string]string{
+							gpuIndexAnnotationName: "4",
+						},
+						Labels: map[string]string{
+							constants.GPUGroup: existingGroup,
+						},
+					},
+					Spec: v1.PodSpec{
+						NodeName: "node-2",
+					},
+				},
+				clientInterceptFuncs: interceptor.Funcs{
+					Watch: func(ctx context.Context, client runtimeClient.WithWatch, obj runtimeClient.ObjectList, opts ...runtimeClient.ListOption) (watch.Interface, error) {
+						return exampleMockWatchPod("3", 0), nil
+					},
+				},
+				numReservationPods: 2,
+				expectedGPUIndex:   "3",
 			},
 			"error listing pods": {
 				groupName: existingGroup,
@@ -616,6 +647,24 @@ var _ = Describe("ResourceReservationService", func() {
 					},
 				},
 				podsLeft: 1,
+			},
+			"reservation pods on two nodes with same gpu group - only orphaned node reservation pod is deleted": {
+				podsInCluster: []runtime.Object{
+					exampleReservationPod,
+					&v1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "example-node-2",
+							Namespace: resourceReservationNameSpace,
+							Labels:    groupLabels,
+						},
+						Spec: v1.PodSpec{
+							NodeName: "node-2",
+						},
+						Status: runningStatus,
+					},
+					exampleRunningJob,
+				},
+				podsLeft: 2,
 			},
 		} {
 			testName := testName
@@ -1678,6 +1727,78 @@ var _ = Describe("Race condition: reservation pod deleted during concurrent bind
 			Expect(err).To(Succeed())
 			Expect(len(pods.Items)).To(Equal(1),
 				"Reservation pod should be preserved when an active BindRequest exists")
+		})
+
+		It("should delete orphaned node reservation pod when two nodes share gpu group label and only one node has a running consumer pod", func() {
+			reservationPodNode2 := &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "gpu-reservation-node-2-abcde",
+					Namespace: resourceReservationNameSpace,
+					Labels:    groupLabels,
+				},
+				Spec: v1.PodSpec{
+					NodeName: "node-2",
+				},
+				Status: v1.PodStatus{
+					Phase: v1.PodRunning,
+				},
+			}
+			runningConsumerNode1 := &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "job-1-0-0",
+					Namespace: "my-ns",
+					Labels:    groupLabels,
+				},
+				Spec: v1.PodSpec{
+					NodeName: nodeName,
+				},
+				Status: v1.PodStatus{
+					Phase: v1.PodRunning,
+				},
+			}
+
+			clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).
+				WithRuntimeObjects(reservationPod.DeepCopy(), reservationPodNode2, runningConsumerNode1).
+				WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
+			rsc := initializeTestService(clientWithObjs)
+
+			Expect(rsc.SyncForGpuGroup(context.Background(), gpuGroup)).To(Succeed())
+
+			resPods := &v1.PodList{}
+			Expect(clientWithObjs.List(context.Background(), resPods,
+				runtimeClient.InNamespace(resourceReservationNameSpace))).To(Succeed())
+			Expect(resPods.Items).To(HaveLen(1))
+			Expect(resPods.Items[0].Name).To(Equal(reservationPod.Name))
+			Expect(resPods.Items[0].Spec.NodeName).To(Equal(nodeName))
+		})
+
+		It("should not preserve reservation pod when active BindRequest is for another node", func() {
+			activeBindRequestOtherNode := &schedulingv1alpha2.BindRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "bind-request-node-2",
+					Namespace: "team-a",
+				},
+				Spec: schedulingv1alpha2.BindRequestSpec{
+					PodName:           "fraction-pod-2",
+					SelectedNode:      "node-2",
+					SelectedGPUGroups: []string{gpuGroup},
+				},
+				Status: schedulingv1alpha2.BindRequestStatus{
+					Phase: schedulingv1alpha2.BindRequestPhasePending,
+				},
+			}
+
+			clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).
+				WithRuntimeObjects(reservationPod.DeepCopy(), activeBindRequestOtherNode).
+				WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
+			rsc := initializeTestService(clientWithObjs)
+
+			Expect(rsc.SyncForGpuGroup(context.Background(), gpuGroup)).To(Succeed())
+
+			resPods := &v1.PodList{}
+			Expect(clientWithObjs.List(context.Background(), resPods,
+				runtimeClient.InNamespace(resourceReservationNameSpace))).To(Succeed())
+			Expect(resPods.Items).To(BeEmpty())
 		})
 	})
 
