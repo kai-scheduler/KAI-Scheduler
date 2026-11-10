@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v0.12.28] - 2026-11-10
+
 ## [v0.12.27] - 2026-11-02
 
 ### Added
