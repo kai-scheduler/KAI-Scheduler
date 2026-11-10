@@ -1,6 +1,6 @@
 kind: Fixed
 body: |-
-  Default pod anti-affinity terms are added when global or service affinity is unset
+  Default pod anti-affinity terms are now applied when global or service affinity is unset, as with the chart defaults. Every KAI Deployment without a configured podAntiAffinity restarts once on upgrade
 custom:
   Author: "ZeXi0308"
   Issue: "2527"
