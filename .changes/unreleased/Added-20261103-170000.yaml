@@ -1,6 +1,0 @@
-kind: Added
-body: Dependency-free pkg/fairshare package so external tools can compute the scheduler's fair share
-time: 2026-11-03T17:00:00.000000+02:00
-custom:
-    Author: barakle1
-    Issue: "2573"
