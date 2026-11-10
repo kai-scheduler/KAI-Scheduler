@@ -1,0 +1,5 @@
+kind: Fixed
+body: |-
+  Treat missing `spec.cdi.enabled` as enabled when auto-detecting CDI on GPU Operator >= 25.10.0
+custom:
+  Issue: "2641"

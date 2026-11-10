@@ -28,11 +28,15 @@ func IsGPUOperatorCDIEnabled(ctx context.Context, readerClient client.Reader) (b
 		return false, err
 	}
 
+	gpuOperatorVersion, hasVersion := nvidiaClusterPolicy.Labels[gpuOperatorVersionLabelName]
+	isVersionAtLeast25_10 := hasVersion && semver.Compare(gpuOperatorVersion, gpuOperatorVersionDefaultCDIDeprecated) >= 0
+
+	// On GPU Operator >= 25.10.0, CDI is enabled by default unless explicitly disabled.
+	if isVersionAtLeast25_10 {
+		return nvidiaClusterPolicy.Spec.CDI.Enabled == nil || *nvidiaClusterPolicy.Spec.CDI.Enabled, nil
+	}
+
 	if nvidiaClusterPolicy.Spec.CDI.Enabled != nil && *nvidiaClusterPolicy.Spec.CDI.Enabled {
-		gpuOperatorVersion, found := nvidiaClusterPolicy.Labels[gpuOperatorVersionLabelName]
-		if found && semver.Compare(gpuOperatorVersion, gpuOperatorVersionDefaultCDIDeprecated) >= 0 {
-			return true, nil
-		}
 		if nvidiaClusterPolicy.Spec.CDI.Default != nil && *nvidiaClusterPolicy.Spec.CDI.Default {
 			return true, nil
 		}
