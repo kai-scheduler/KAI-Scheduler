@@ -181,12 +181,17 @@ func (rsc *service) syncForGpuGroupWithLock(ctx context.Context, gpuGroup string
 
 func (rsc *service) syncForPods(ctx context.Context, pods []*v1.Pod, gpuGroupToSync string) error {
 	logger := log.FromContext(ctx)
-	reservationPods := map[string]*v1.Pod{}
-	fractionPods := map[string][]*v1.Pod{}
+	type reservationScope struct {
+		nodeName string
+		gpuGroup string
+	}
+	reservationPods := map[reservationScope]*v1.Pod{}
+	fractionPods := map[reservationScope][]*v1.Pod{}
 
 	for _, pod := range pods {
 		if pod.Namespace == rsc.namespace {
-			reservationPods[gpuGroupToSync] = pod
+			scope := reservationScope{nodeName: pod.Spec.NodeName, gpuGroup: gpuGroupToSync}
+			reservationPods[scope] = pod
 			continue
 		}
 
@@ -194,34 +199,36 @@ func (rsc *service) syncForPods(ctx context.Context, pods []*v1.Pod, gpuGroupToS
 			[]v1.PodPhase{v1.PodRunning, v1.PodPending},
 			pod.Status.Phase,
 		) {
-			fractionPods[gpuGroupToSync] = append(fractionPods[gpuGroupToSync], pod)
+			scope := reservationScope{nodeName: pod.Spec.NodeName, gpuGroup: gpuGroupToSync}
+			fractionPods[scope] = append(fractionPods[scope], pod)
 		}
 	}
 
-	for gpuGroup, pods := range fractionPods {
-		if _, found := reservationPods[gpuGroup]; !found {
-			err := rsc.deleteNonReservedPods(ctx, gpuGroup, pods)
+	for scope, pods := range fractionPods {
+		if _, found := reservationPods[scope]; !found {
+			err := rsc.deleteNonReservedPods(ctx, scope.gpuGroup, pods)
 			if err != nil {
 				return err
 			}
 		}
 	}
 
-	for gpuGroup, reservationPod := range reservationPods {
-		if _, found := fractionPods[gpuGroup]; !found {
-			hasActive, err := rsc.hasActiveBindRequestsForGpuGroup(ctx, gpuGroup)
+	unscheduledScope := reservationScope{nodeName: "", gpuGroup: gpuGroupToSync}
+	for scope, reservationPod := range reservationPods {
+		if _, found := fractionPods[scope]; !found && len(fractionPods[unscheduledScope]) == 0 {
+			hasActive, err := rsc.hasActiveBindRequestsForGpuGroup(ctx, scope.gpuGroup, scope.nodeName)
 			if err != nil {
 				logger.Error(err, "Failed to check active BindRequests for gpu group",
-					"gpuGroup", gpuGroup)
+					"gpuGroup", scope.gpuGroup, "nodeName", scope.nodeName)
 				return err
 			}
 			if hasActive {
 				logger.Info("Skipping reservation pod deletion, active BindRequests exist",
-					"gpuGroup", gpuGroup)
+					"gpuGroup", scope.gpuGroup, "nodeName", scope.nodeName)
 				continue
 			}
 			logger.Info("Did not find fraction pod for gpu group, deleting reservation pod",
-				"gpuGroup", gpuGroup)
+				"gpuGroup", scope.gpuGroup, "nodeName", scope.nodeName)
 			err = rsc.deleteReservationPod(ctx, reservationPod)
 			if err != nil {
 				return err
@@ -235,7 +242,7 @@ func (rsc *service) syncForPods(ctx context.Context, pods []*v1.Pod, gpuGroupToS
 // hasActiveBindRequestsForGpuGroup checks if BindRequests still protect the GPU group.
 // A succeeded BindRequest also protects the reservation while its pod is still alive:
 // the pod label can lag behind the BindRequest status in the controller cache.
-func (rsc *service) hasActiveBindRequestsForGpuGroup(ctx context.Context, gpuGroup string) (bool, error) {
+func (rsc *service) hasActiveBindRequestsForGpuGroup(ctx context.Context, gpuGroup, nodeName string) (bool, error) {
 	bindRequestList := &schedulingv1alpha2.BindRequestList{}
 	if err := rsc.kubeClient.List(ctx, bindRequestList); err != nil {
 		return false, fmt.Errorf("failed to list BindRequests: %w", err)
@@ -243,6 +250,9 @@ func (rsc *service) hasActiveBindRequestsForGpuGroup(ctx context.Context, gpuGro
 
 	for _, br := range bindRequestList.Items {
 		if !slices.Contains(br.Spec.SelectedFractionalGpuGroupIDs(), gpuGroup) {
+			continue
+		}
+		if br.Spec.SelectedNode != "" && nodeName != "" && br.Spec.SelectedNode != nodeName {
 			continue
 		}
 
@@ -399,7 +409,7 @@ func (rsc *service) acquireGPUIndexByGroup(
 	ctx context.Context, sourcePod *v1.Pod, nodeName string,
 	fractionalGpuGroup schedulingv1alpha2.FractionalGpuGroup,
 ) (string, error) {
-	gpuIndex, err := rsc.findGPUIndexByGroup(fractionalGpuGroup.ID)
+	gpuIndex, err := rsc.findGPUIndexByGroup(ctx, nodeName, fractionalGpuGroup.ID)
 	if err != nil {
 		return "", err
 	}
@@ -409,27 +419,30 @@ func (rsc *service) acquireGPUIndexByGroup(
 	return rsc.createGPUReservationPodAndGetIndex(ctx, sourcePod, nodeName, fractionalGpuGroup)
 }
 
-func (rsc *service) findGPUIndexByGroup(gpuGroup string) (
+func (rsc *service) findGPUIndexByGroup(ctx context.Context, nodeName, gpuGroup string) (
 	gpuIndex string, err error,
 ) {
 	pods := &v1.PodList{}
-	err = rsc.kubeClient.List(context.Background(), pods,
+	err = rsc.kubeClient.List(ctx, pods,
 		client.InNamespace(rsc.namespace),
 		client.MatchingLabels{constants.GPUGroup: gpuGroup})
 	if err != nil {
 		return "", err
 	}
 
-	if len(pods.Items) == 0 {
-		return "", nil
+	for index := range pods.Items {
+		pod := &pods.Items[index]
+		if pod.Spec.NodeName != nodeName {
+			continue
+		}
+		gpuIndex, found := pod.Annotations[gpuIndexAnnotationName]
+		if !found {
+			return "", fmt.Errorf("failed to find annotation on reservation pod %s", pod.Name)
+		}
+		return gpuIndex, nil
 	}
 
-	gpuIndex, found := pods.Items[0].Annotations[gpuIndexAnnotationName]
-	if !found {
-		return "", fmt.Errorf("failed to find annotation on reservation pod %s", pods.Items[0].Name)
-	}
-
-	return gpuIndex, nil
+	return "", nil
 }
 
 func (rsc *service) createGPUReservationPodAndGetIndex(
