@@ -55,11 +55,23 @@ func divide(queues map[common_info.QueueID]*rs.QueueAttributes, resourceName rs.
 			Usage:             share.GetUsage(),
 			FairShare:         share.FairShare,
 		})
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof("calculating %v resource fair share for %v: deserved: %v, maxAllowed: %v, "+
+				"overQuotaWeight: %v, request: %v, usage: %v, fairShare: %v", resourceName, queue.Name,
+				share.Deserved, share.MaxAllowed, share.OverQuotaWeight, share.Request, share.GetUsage(), share.FairShare)
+		})
 	}
 	remaining := division(fq)
 	for i, q := range fq {
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof("%v resource fair share for %v: %v (was %v)", resourceName, attributes[i].Name,
+				q.FairShare, attributes[i].ResourceShare(resourceName).FairShare)
+		})
 		attributes[i].SetFairShare(resourceName, q.FairShare)
 	}
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("%v resource remaining after division: %v", resourceName, remaining)
+	})
 	return remaining
 }
 
