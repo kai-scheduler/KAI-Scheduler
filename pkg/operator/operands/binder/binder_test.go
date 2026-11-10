@@ -212,6 +212,38 @@ var _ = Describe("Binder", func() {
 					expectGPUSharingCDI((*deploymentT).Spec.Template.Spec.Containers[0].Args, false)
 				})
 
+				It("detects CDI state with GPU Operator >= v25.10.0 when spec.cdi is omitted", func(ctx context.Context) {
+					clusterPolicy.Labels = map[string]string{
+						versionLabelName: "v25.10.1",
+					}
+					clusterPolicy.Spec.CDI = nvidiav1.CDIConfigSpec{}
+					Expect(fakeKubeClient.Create(ctx, clusterPolicy)).To(Succeed())
+
+					objects, err := b.DesiredState(ctx, fakeKubeClient, kaiConfig)
+					Expect(err).To(BeNil())
+
+					deploymentT := test_utils.FindTypeInObjects[*appsv1.Deployment](objects)
+					Expect(deploymentT).NotTo(BeNil())
+					expectGPUSharingCDI((*deploymentT).Spec.Template.Spec.Containers[0].Args, true)
+				})
+
+				It("detects CDI state with GPU Operator >= v25.10.0 when spec.cdi.enabled is false", func(ctx context.Context) {
+					clusterPolicy.Labels = map[string]string{
+						versionLabelName: "v25.10.1",
+					}
+					clusterPolicy.Spec.CDI = nvidiav1.CDIConfigSpec{
+						Enabled: ptr.To(false),
+					}
+					Expect(fakeKubeClient.Create(ctx, clusterPolicy)).To(Succeed())
+
+					objects, err := b.DesiredState(ctx, fakeKubeClient, kaiConfig)
+					Expect(err).To(BeNil())
+
+					deploymentT := test_utils.FindTypeInObjects[*appsv1.Deployment](objects)
+					Expect(deploymentT).NotTo(BeNil())
+					expectGPUSharingCDI((*deploymentT).Spec.Template.Spec.Containers[0].Args, false)
+				})
+
 				It("detects CDI state with GPU Operator >= v25.10.0", func(ctx context.Context) {
 					clusterPolicy.Labels = map[string]string{
 						versionLabelName: "v25.10.1",
