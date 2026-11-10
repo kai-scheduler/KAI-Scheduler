@@ -35,7 +35,7 @@ func divideOverQuotaResource(totalResourceAmount, kValue float64, queues map[com
 	})
 }
 
-// divide runs a fairshare division on one resource of the queues and adds the result through AddResourceShare,
+// divide runs a fairshare division on one resource of the queues and stores the result through SetFairShare,
 // which also invalidates the queues' cached fair share.
 func divide(queues map[common_info.QueueID]*rs.QueueAttributes, resourceName rs.ResourceName,
 	division func([]*fairshare.Queue) float64) float64 {
@@ -58,7 +58,7 @@ func divide(queues map[common_info.QueueID]*rs.QueueAttributes, resourceName rs.
 	}
 	remaining := division(fq)
 	for i, q := range fq {
-		attributes[i].AddResourceShare(resourceName, q.FairShare-attributes[i].ResourceShare(resourceName).FairShare)
+		attributes[i].SetFairShare(resourceName, q.FairShare)
 	}
 	return remaining
 }
