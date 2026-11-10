@@ -11,10 +11,19 @@ import (
 
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/fairshare"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	rs "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
 	commonconstants "github.com/kai-scheduler/api/constants"
 )
+
+func divideOverQuotaResource(totalResourceAmount, kValue float64, queues map[common_info.QueueID]*rs.QueueAttributes,
+	resourceName rs.ResourceName) float64 {
+	fq, attributes := toFairshareQueues(queues, resourceName)
+	remaining := fairshare.DivideOverQuota(totalResourceAmount, kValue, fq)
+	storeFairShare(fq, attributes, resourceName)
+	return remaining
+}
 
 func TestProportion(t *testing.T) {
 	RegisterFailHandler(Fail)
