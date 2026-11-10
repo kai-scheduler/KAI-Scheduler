@@ -28,8 +28,6 @@ type Queue struct {
 	// Usage is the queue's historical usage, normalized to the cluster's capacity. It only matters when kValue > 0.
 	Usage     float64
 	FairShare float64
-
-	Children []*Queue
 }
 
 // RequestableShare is the part of the request the queue may get: its request capped by MaxAllowed.
@@ -38,17 +36,6 @@ func (q *Queue) RequestableShare() float64 {
 		return q.Request
 	}
 	return math.Min(q.MaxAllowed, q.Request)
-}
-
-// DivideHierarchy divides total between the root queues and then each queue's fair share between its children.
-func DivideHierarchy(total, kValue float64, roots []*Queue) {
-	if len(roots) == 0 {
-		return
-	}
-	Divide(total, kValue, roots)
-	for _, q := range roots {
-		DivideHierarchy(q.FairShare, kValue, q.Children)
-	}
 }
 
 // Divide divides total between queues and returns what is left. Queues keep their existing FairShare and receive

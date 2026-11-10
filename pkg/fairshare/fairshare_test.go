@@ -71,22 +71,3 @@ func TestDivide(t *testing.T) {
 		})
 	}
 }
-
-func TestDivideHierarchy(t *testing.T) {
-	a1 := queue("a1", 1, 4, 1, math.Inf(1))
-	a2 := queue("a2", 1, 0, 3, math.Inf(1))
-	a := queue("a", 1, 0, 1, math.Inf(1))
-	a.Children = []*Queue{a1, a2}
-	b := queue("b", 1, 0, 1, math.Inf(1))
-
-	DivideHierarchy(40, 0, []*Queue{a, b})
-
-	for _, c := range []struct {
-		q        *Queue
-		expected float64
-	}{{a, 20}, {b, 20}, {a1, 8}, {a2, 12}} {
-		if c.q.FairShare != c.expected {
-			t.Errorf("%s: fair share %v, expected %v", c.q.ID, c.q.FairShare, c.expected)
-		}
-	}
-}
