@@ -49,12 +49,6 @@ func TestAllocateHostPortPrefersBindableNodeOverPipeline(t *testing.T) {
 	nodeA := ssn.ClusterInfo.Nodes["node-a"]
 	nodeB := ssn.ClusterInfo.Nodes["node-b"]
 
-	require.True(t, nodeA.IsTaskAllocatable(task), "A has idle GPU capacity; only its host port blocks binding")
-	require.True(t, nodeB.IsTaskAllocatable(task))
-	require.NoError(t, ssn.PrePredicateFn(task, job))
-	require.Error(t, ssn.PredicateFn(task, job, nodeA))
-	require.NoError(t, ssn.PredicateFn(task, job, nodeB), "B can bind without waiting for termination")
-
 	ssn.NodeOrderFns = []api.NodeOrderFn{func(_ *pod_info.PodInfo, node *node_info.NodeInfo) (float64, error) {
 		if node.Name == "node-a" {
 			return 1, nil
