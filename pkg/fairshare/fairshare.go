@@ -131,7 +131,7 @@ func divideUpToFairShare(total, kValue float64, queues []*Queue) (float64, map[s
 				continue
 			}
 			requested := getRemainingRequested(q)
-			fairShare := amountThisRound * weights[q.ID] / weightsSum
+			fairShare := amountThisRound * (weights[q.ID] / weightsSum)
 			give := getResourceToGiveInCurrentRound(fairShare, requested, q, remainingRequested)
 			if give == 0 {
 				continue
