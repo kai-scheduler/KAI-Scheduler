@@ -136,31 +136,31 @@ func (sp *snapshotPlugin) writeSnapshot(ctx context.Context, writer io.Writer) e
 }
 
 func (sp *snapshotPlugin) writeRawObjects(stream *jsonStream) error {
-	dataLister := sp.session.Cache.GetDataLister()
+	raw := CollectRawObjects(sp.session.Cache.GetDataLister())
+	if raw == nil {
+		raw = &RawKubernetesObjects{}
+	}
 
 	return stream.writeObject(func(object *jsonObjectWriter) error {
 		return writeFields(
 			object,
-			listedSliceField("pods", dataLister.ListPods, "Error getting raw pods"),
-			listedSliceField("nodes", dataLister.ListNodes, "Error getting raw nodes"),
-			listedSliceField("queues", dataLister.ListQueues, "Error getting raw queues"),
-			listedSliceField("podGroups", dataLister.ListPodGroups, "Error getting raw pod groups"),
-			listedSliceField("bindRequests", dataLister.ListBindRequests, "Error getting raw bind requests"),
-			listedSliceField("priorityClasses", dataLister.ListPriorityClasses, "Error getting raw priority classes"),
-			listedSliceField("configMaps", dataLister.ListConfigMaps, "Error getting raw config maps"),
-			listedSliceField("persistentVolumes", dataLister.ListPersistentVolumes, "Error getting raw persistent volumes"),
-			listedSliceField("persistentVolumeClaims", dataLister.ListPersistentVolumeClaims,
-				"Error getting raw persistent volume claims"),
-			listedSliceField("csiStorageCapacities", dataLister.ListCSIStorageCapacities,
-				"Error getting raw CSI storage capacities"),
-			listedSliceField("storageClasses", dataLister.ListStorageClasses, "Error getting raw storage classes"),
-			listedSliceField("csiDrivers", dataLister.ListCSIDrivers, "Error getting raw CSI drivers"),
-			listedSliceField("resourceClaims", dataLister.ListResourceClaims, "Error getting raw resource claims"),
-			listedSliceField("resourceSlices", dataLister.ListResourceSlices, "Error getting raw resource slices"),
-			listedSliceField("deviceClasses", dataLister.ListDeviceClasses, "Error getting raw device classes"),
-			listedSliceField("topologies", dataLister.ListTopologies, "Error getting raw topologies"),
-			listedSliceField("nodeResourceTopologies", dataLister.ListNodeResourceTopologies,
-				"Error getting raw node resource topologies"),
+			valueField("pods", raw.Pods),
+			valueField("nodes", raw.Nodes),
+			valueField("queues", raw.Queues),
+			valueField("podGroups", raw.PodGroups),
+			valueField("bindRequests", raw.BindRequests),
+			valueField("priorityClasses", raw.PriorityClasses),
+			valueField("configMaps", raw.ConfigMaps),
+			valueField("persistentVolumes", raw.PersistentVolumes),
+			valueField("persistentVolumeClaims", raw.PersistentVolumeClaims),
+			valueField("csiStorageCapacities", raw.CSIStorageCapacities),
+			valueField("storageClasses", raw.StorageClasses),
+			valueField("csiDrivers", raw.CSIDrivers),
+			valueField("resourceClaims", raw.ResourceClaims),
+			valueField("resourceSlices", raw.ResourceSlices),
+			valueField("deviceClasses", raw.DeviceClasses),
+			valueField("topologies", raw.Topologies),
+			valueField("nodeResourceTopologies", raw.NodeResourceTopologies),
 		)
 	})
 }
@@ -178,23 +178,7 @@ func (sp *snapshotPlugin) writeDiscoverySnapshot(ctx context.Context, stream *js
 }
 
 func (sp *snapshotPlugin) getDiscoverySnapshot(ctx context.Context) *DiscoverySnapshot {
-	discoverySnapshot := &DiscoverySnapshot{}
-	discoveryClient := sp.session.Cache.KubeClient().Discovery()
-	var err error
-
-	discoverySnapshot.ServerVersion, err = getServerVersion(ctx, discoveryClient)
-	if err != nil {
-		log.InfraLogger.V(2).Warnf("Failed to snapshot server version: %v", err)
-		discoverySnapshot.ServerVersion = nil
-	}
-
-	_, discoverySnapshot.Resources, err = discoveryClient.ServerGroupsAndResources()
-	if err != nil {
-		log.InfraLogger.V(2).Warnf("Failed to snapshot server resources: %v", err)
-		discoverySnapshot.Resources = nil
-	}
-
-	return discoverySnapshot
+	return CollectDiscovery(ctx, sp.session.Cache.KubeClient().Discovery())
 }
 
 func newJSONStream(writer io.Writer) *jsonStream {
@@ -273,26 +257,10 @@ func streamedField(fieldName string, writeValue func(*jsonStream) error) jsonFie
 	}
 }
 
-func listedSliceField[T any](fieldName string, list func() ([]T, error), errorMessage string) jsonFieldWriter {
-	return func(object *jsonObjectWriter) error {
-		return writeListedSlice(object, fieldName, list, errorMessage)
-	}
-}
-
 func sliceField[T any](fieldName string, values []T) jsonFieldWriter {
 	return func(object *jsonObjectWriter) error {
 		return writeSliceField(object, fieldName, values)
 	}
-}
-
-func writeListedSlice[T any](object *jsonObjectWriter, fieldName string, list func() ([]T, error), errorMessage string) error {
-	values, err := list()
-	if err != nil {
-		log.InfraLogger.Errorf("%s: %v", errorMessage, err)
-		values = []T{}
-	}
-
-	return writeSliceField(object, fieldName, values)
 }
 
 func writeSliceField[T any](object *jsonObjectWriter, fieldName string, values []T) error {

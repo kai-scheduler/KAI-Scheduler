@@ -160,10 +160,15 @@ func (s *Scheduler) runOnce() {
 	for _, action := range actions {
 		log.InfraLogger.SetAction(string(action.Name()))
 		metrics.SetCurrentAction(string(action.Name()))
+		ssn.SetCurrentAction(string(action.Name()))
 		actionStartTime := time.Now()
 		action.Execute(ssn)
+		elapsed := time.Since(actionStartTime)
 		metrics.UpdateActionDuration(string(action.Name()), metrics.Duration(actionStartTime))
+		ssn.NoteActionDuration(string(action.Name()), elapsed)
 	}
+	// Plugins close from the deferred CloseSession. Tag those commits separately from the last action.
+	ssn.SetCurrentAction(framework.SessionCloseAction)
 	log.InfraLogger.RemoveActionLogger()
 }
 

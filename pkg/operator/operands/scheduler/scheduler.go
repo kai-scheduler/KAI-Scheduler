@@ -9,6 +9,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	recorderv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/recorder/v1"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common"
 	kaiv1 "github.com/kai-scheduler/api/kai/v1"
 )
@@ -28,6 +29,15 @@ type SchedulerForShard struct {
 	lastDesiredState []client.Object
 
 	BaseResourceName string
+	// recorderOverride carries spec.recorder in tests. Production reads it from the live object.
+	recorderOverride *recorderv1.RecorderSpec
+	// apiReader bypasses the typed cache, which drops spec.recorder until the api module has the field.
+	apiReader client.Reader
+}
+
+// SetAPIReader selects the client used to read spec.recorder.
+func (s *SchedulerForShard) SetAPIReader(reader client.Reader) {
+	s.apiReader = reader
 }
 
 type SchedulerForConfig struct {

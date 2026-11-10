@@ -10540,6 +10540,29 @@ spec:
               scheduler:
                 description: Scheduler is the configuration for the scheduler microservice
                 properties:
+                  recorder:
+                    description: Defaults for the scheduling recorder. A shard's own recorder block overrides these.
+                    properties:
+                      address:
+                        type: string
+                      batch:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                      cycleBufferSize:
+                        type: integer
+                      enabled:
+                        type: boolean
+                      image:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                      lifecycleBufferSize:
+                        type: integer
+                      resources:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                      storageSecretName:
+                        type: string
+                    type: object
                   GOGC:
                     description: GOGC configures the GOGC environment variable for
                       the scheduler container

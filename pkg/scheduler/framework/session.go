@@ -109,6 +109,10 @@ type Session struct {
 	// pluginsInOrder records the order plugins were opened in, so they can be closed in reverse.
 	pluginsInOrder  []Plugin
 	eventHandlers   []*EventHandler
+	commitHandlers  []*CommitHandler
+	currentAction   string
+	statementSeq    int
+	actionDurations map[string]time.Duration
 	SchedulerParams conf.SchedulerParams
 	mux             *http.ServeMux
 
@@ -119,7 +123,79 @@ type Session struct {
 }
 
 func (ssn *Session) Statement() *Statement {
-	return &Statement{ssn: ssn, sessionID: ssn.ID}
+	ssn.statementSeq++
+	return &Statement{
+		ssn:       ssn,
+		sessionID: ssn.ID,
+		id:        ssn.statementSeq,
+		action:    ssn.currentAction,
+	}
+}
+
+// SetCurrentAction names the action whose statements are about to run.
+// Commit and discard read it when they publish, so a statement opened earlier
+// (background pods opens one at session start) is tagged with the action that commits it.
+func (ssn *Session) SetCurrentAction(action string) {
+	ssn.currentAction = action
+}
+
+// CurrentAction returns the action set for the in-flight scheduling phase.
+func (ssn *Session) CurrentAction() string {
+	return ssn.currentAction
+}
+
+// NoteActionDuration records how long an action's Execute call took.
+func (ssn *Session) NoteActionDuration(action string, d time.Duration) {
+	if ssn.actionDurations == nil {
+		ssn.actionDurations = map[string]time.Duration{}
+	}
+	ssn.actionDurations[action] = d
+}
+
+// ActionDurations returns a copy of the durations recorded for this session.
+func (ssn *Session) ActionDurations() map[string]time.Duration {
+	out := make(map[string]time.Duration, len(ssn.actionDurations))
+	for action, d := range ssn.actionDurations {
+		out[action] = d
+	}
+	return out
+}
+
+// AddCommitHandler registers a best-effort listener for commit, discard, and session eviction.
+func (ssn *Session) AddCommitHandler(handler *CommitHandler) {
+	if handler == nil {
+		return
+	}
+	ssn.commitHandlers = append(ssn.commitHandlers, handler)
+}
+
+func (ssn *Session) publishSessionEvict(pod *pod_info.PodInfo, message string, metadata eviction_info.EvictionMetadata) {
+	if len(ssn.commitHandlers) == 0 || pod == nil {
+		return
+	}
+	if metadata.Preemptor != nil {
+		preemptor := *metadata.Preemptor
+		metadata.Preemptor = &preemptor
+	}
+	event := &CommitEvent{
+		SessionID:   ssn.ID,
+		Action:      ssn.currentAction,
+		StatementID: "session-evict",
+		Ops: []CommitOp{{
+			Kind:      evict,
+			UID:       string(pod.UID),
+			Namespace: pod.Namespace,
+			Name:      pod.Name,
+			Node:      pod.NodeName,
+			Message:   message,
+			Eviction:  metadata,
+		}},
+	}
+	for _, handler := range ssn.commitHandlers {
+		if handler != nil && handler.OnCommit != nil {
+			handler.OnCommit(event)
+		}
+	}
 }
 
 func (ssn *Session) GetSessionStateForResource(uid types.UID) k8s_internal.SessionState {
@@ -179,6 +255,7 @@ func (ssn *Session) Evict(pod *pod_info.PodInfo, message string, evictionMetadat
 			})
 		}
 	}
+	ssn.publishSessionEvict(pod, message, evictionMetadata)
 	return nil
 }
 
@@ -463,6 +540,9 @@ func (ssn *Session) clear() {
 	ssn.plugins = nil
 	ssn.pluginsInOrder = nil
 	ssn.eventHandlers = nil
+	ssn.commitHandlers = nil
+	ssn.currentAction = ""
+	ssn.actionDurations = nil
 	ssn.GpuOrderFns = nil
 	ssn.NodePreOrderFns = nil
 	ssn.NodeOrderFns = nil

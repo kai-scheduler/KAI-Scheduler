@@ -55,6 +55,9 @@ type SchedulingShardReconciler struct {
 	shardOperandsForShard func(*kaiv1.SchedulingShard) []operands.Operand
 	deployablePerShard    map[string]*deployable.DeployableOperands
 	statusReconcilers     map[string]*status_reconciler.StatusReconciler
+	// APIReader is an uncached reader. The generated SchedulingShard type does not yet
+	// include spec.recorder, and the typed cache drops that field on decode.
+	APIReader client.Reader
 }
 
 func NewSchedulingShardReconciler(client client.Client, scheme *runtime.Scheme) *SchedulingShardReconciler {
@@ -88,8 +91,16 @@ func (r *SchedulingShardReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 	shard.Spec.SetDefaultsWhereNeeded()
 
+	shardOperands := r.shardOperandsForShard(shard)
+	if r.APIReader != nil {
+		for _, operand := range shardOperands {
+			if shardOperand, ok := operand.(*scheduler.SchedulerForShard); ok {
+				shardOperand.SetAPIReader(r.APIReader)
+			}
+		}
+	}
 	r.deployablePerShard[shard.Name] = deployable.New(
-		r.shardOperandsForShard(shard),
+		shardOperands,
 		known_types.SchedulingShardRegisteredCollectable,
 	)
 	r.deployablePerShard[shard.Name].RegisterFieldsInheritFromClusterObjects(&admissionv1.ValidatingWebhookConfiguration{},

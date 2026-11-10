@@ -19,6 +19,7 @@ import (
 	podgroup_info "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	data_lister "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/cluster_info/data_lister"
 	plugins "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal/plugins"
+	externalversions "github.com/kai-scheduler/api/client/informers/externalversions"
 	gomock "go.uber.org/mock/gomock"
 	v1 "k8s.io/api/core/v1"
 	informers "k8s.io/client-go/informers"
@@ -104,6 +105,20 @@ func (m *MockCache) InternalK8sPlugins() *plugins.K8sPlugins {
 func (mr *MockCacheMockRecorder) InternalK8sPlugins() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InternalK8sPlugins", reflect.TypeOf((*MockCache)(nil).InternalK8sPlugins))
+}
+
+// KubeAiSchedulerInformerFactory mocks base method.
+func (m *MockCache) KubeAiSchedulerInformerFactory() externalversions.SharedInformerFactory {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "KubeAiSchedulerInformerFactory")
+	ret0, _ := ret[0].(externalversions.SharedInformerFactory)
+	return ret0
+}
+
+// KubeAiSchedulerInformerFactory indicates an expected call of KubeAiSchedulerInformerFactory.
+func (mr *MockCacheMockRecorder) KubeAiSchedulerInformerFactory() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "KubeAiSchedulerInformerFactory", reflect.TypeOf((*MockCache)(nil).KubeAiSchedulerInformerFactory))
 }
 
 // KubeClient mocks base method.

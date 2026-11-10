@@ -18,7 +18,7 @@ CHANGIE ?= $(LOCALBIN)/changie
 
 # Space seperated list of services to build by default
 # SERVICE_NAMES := service1 service2 service3
-SERVICE_NAMES := podgrouper scheduler binder resourcereservation snapshot-tool scalingpod nodescaleadjuster podgroupcontroller queuecontroller fairshare-simulator admission operator time-based-fairshare-simulator numa-placement-exporter helm-hooks
+SERVICE_NAMES := podgrouper scheduler binder resourcereservation snapshot-tool scalingpod nodescaleadjuster podgroupcontroller queuecontroller fairshare-simulator admission operator time-based-fairshare-simulator numa-placement-exporter helm-hooks recorder
 
 
 lint: fmt-go vet-go lint-go

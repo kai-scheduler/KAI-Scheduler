@@ -20,8 +20,12 @@ limitations under the License.
 package framework
 
 import (
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 )
+
+// SessionCloseAction tags commits that run while plugins close, after the configured actions.
+const SessionCloseAction = "session-close"
 
 type Event struct {
 	Task *pod_info.PodInfo
@@ -30,4 +34,34 @@ type Event struct {
 type EventHandler struct {
 	AllocateFunc   func(event *Event)
 	DeallocateFunc func(event *Event)
+}
+
+// CommitOp is one operation inside a committed or discarded statement.
+// Values are copied at publish time so a handler can retain the event.
+type CommitOp struct {
+	Kind         string                         `json:"kind"`
+	UID          string                         `json:"uid,omitempty"`
+	Namespace    string                         `json:"namespace,omitempty"`
+	Name         string                         `json:"name,omitempty"`
+	Node         string                         `json:"node,omitempty"`
+	Message      string                         `json:"message,omitempty"`
+	Error        string                         `json:"error,omitempty"`
+	NotAttempted bool                           `json:"notAttempted,omitempty"`
+	Eviction     eviction_info.EvictionMetadata `json:"eviction,omitempty"`
+}
+
+// CommitEvent is emitted once per Statement.Commit, Statement.Discard, and Session.Evict.
+// Discarded events carry only DiscardedOpCount. Handlers run on the scheduling goroutine
+// and must not block.
+type CommitEvent struct {
+	SessionID        string     `json:"sessionID"`
+	Action           string     `json:"action,omitempty"`
+	StatementID      string     `json:"statementID,omitempty"`
+	Ops              []CommitOp `json:"ops,omitempty"`
+	Discarded        bool       `json:"discarded,omitempty"`
+	DiscardedOpCount int        `json:"discardedOpCount,omitempty"`
+}
+
+type CommitHandler struct {
+	OnCommit func(event *CommitEvent)
 }

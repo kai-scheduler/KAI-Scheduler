@@ -35,6 +35,11 @@ func PrintVersion() {
 	}
 }
 
+// GitCommit returns the scheduler build's git commit, injected at link time.
+func GitCommit() string {
+	return gitCommit
+}
+
 // Info returns an array of various service versions
 func Info() []string {
 	return []string{

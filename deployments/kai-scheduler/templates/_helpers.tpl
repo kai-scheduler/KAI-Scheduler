@@ -375,6 +375,26 @@ spec:
     schedulerService:
       port: {{ .Values.scheduler.ports.metricsPort }}
     {{- end }}
+    {{- if .Values.scheduler.recorder }}
+    recorder:
+      enabled: {{ .Values.scheduler.recorder.enabled }}
+      image:
+        name: {{ .Values.scheduler.recorder.image.name }}
+        repository: {{ .Values.global.registry }}
+        tag: {{ include "kai-scheduler.imageTag" (dict "root" $ "tag" .Values.scheduler.recorder.image.tag) }}
+        pullPolicy: {{ .Values.scheduler.recorder.image.pullPolicy | default .Values.global.imagePullPolicy }}
+      {{- if .Values.scheduler.recorder.resources }}
+      resources:
+        {{- toYaml .Values.scheduler.recorder.resources | nindent 8 }}
+      {{- end }}
+      {{- if .Values.scheduler.recorder.storageSecretName }}
+      storageSecretName: {{ .Values.scheduler.recorder.storageSecretName }}
+      {{- end }}
+      {{- if .Values.scheduler.recorder.batch }}
+      batch:
+        {{- toYaml .Values.scheduler.recorder.batch | nindent 8 }}
+      {{- end }}
+    {{- end }}
 
   {{- if or .Values.prometheus.enabled .Values.prometheus.serviceMonitor.enabled }}
   prometheus:

@@ -40,6 +40,11 @@ type Statement struct {
 	operations []Operation
 	ssn        *Session
 	sessionID  string
+	id         int
+	// action is the action current when the statement was opened. Commit prefers the
+	// session's action at publish time so a statement held across the cycle is tagged
+	// with the action that actually commits it.
+	action string
 }
 
 type Checkpoint int
@@ -585,6 +590,15 @@ func (s *Statement) Discard() {
 		return
 	}
 
+	discardedOps := 0
+	if s.recording() {
+		for i := range s.operations {
+			if s.operationValid(i) {
+				discardedOps++
+			}
+		}
+	}
+
 	log.InfraLogger.V(6).Do(func() {
 		log.InfraLogger.Infof("Discarding operations ...")
 	})
@@ -593,6 +607,9 @@ func (s *Statement) Discard() {
 	}
 
 	s.clearOperations()
+	if discardedOps > 0 {
+		s.publishCommit(nil, true, discardedOps)
+	}
 }
 
 func (s *Statement) Commit() error {
@@ -602,6 +619,8 @@ func (s *Statement) Commit() error {
 	}
 
 	var err error
+	recording := s.recording()
+	var recorded []CommitOp
 	type evictionEventKey struct {
 		podGroup common_info.PodGroupID
 		action   string
@@ -610,6 +629,9 @@ func (s *Statement) Commit() error {
 	defer func() {
 		for key, podGroup := range committedEvictions {
 			s.ssn.Cache.RecordPodGroupEvictionEvent(podGroup, key.action)
+		}
+		if recording {
+			s.publishCommit(recorded, false, 0)
 		}
 	}()
 
@@ -620,6 +642,10 @@ func (s *Statement) Commit() error {
 		}
 
 		taskInfo := op.TaskInfo()
+		recordedOp := CommitOp{}
+		if recording {
+			recordedOp = commitOpFrom(op)
+		}
 		switch op.Name() {
 		case evict:
 			log.InfraLogger.V(4).Infof("Evicting task: %v/%v", taskInfo.Namespace, taskInfo.Name)
@@ -627,6 +653,9 @@ func (s *Statement) Commit() error {
 			if err = s.commitEvict(taskInfo, evictOp); err != nil {
 				log.InfraLogger.Errorf("Failed to evict task <%v/%v>, error: <%v>",
 					taskInfo.Namespace, taskInfo.Name, err)
+				if recording {
+					recordedOp.Error = err.Error()
+				}
 			} else {
 				key := evictionEventKey{podGroup: taskInfo.Job, action: evictOp.evictionMetadata.Action}
 				committedEvictions[key] = s.ssn.ClusterInfo.PodGroupInfos[taskInfo.Job]
@@ -639,15 +668,97 @@ func (s *Statement) Commit() error {
 			err = s.commitAllocate(taskInfo)
 			if err != nil {
 				log.InfraLogger.Errorf("Failed to allocate task. error: %s", err.Error())
+				if recording {
+					recordedOp.Error = err.Error()
+					recorded = append(recorded, recordedOp)
+					recorded = append(recorded, s.unattemptedOps(i+1)...)
+				}
 				s.clearOperations()
 				return err
 			}
+		}
+		if recording {
+			recorded = append(recorded, recordedOp)
 		}
 	}
 
 	s.clearOperations()
 
 	return err
+}
+
+func (s *Statement) recording() bool {
+	return s != nil && s.ssn != nil && len(s.ssn.commitHandlers) > 0
+}
+
+func (s *Statement) publishAction() string {
+	if s.ssn != nil && s.ssn.currentAction != "" {
+		return s.ssn.currentAction
+	}
+	return s.action
+}
+
+func (s *Statement) publishCommit(ops []CommitOp, discarded bool, discardedOps int) {
+	if !s.recording() {
+		return
+	}
+	if !discarded && len(ops) == 0 {
+		return
+	}
+	event := &CommitEvent{
+		SessionID:        s.sessionID,
+		Action:           s.publishAction(),
+		StatementID:      fmt.Sprintf("%d", s.id),
+		Ops:              ops,
+		Discarded:        discarded,
+		DiscardedOpCount: discardedOps,
+	}
+	for _, handler := range s.ssn.commitHandlers {
+		if handler != nil && handler.OnCommit != nil {
+			handler.OnCommit(event)
+		}
+	}
+}
+
+func (s *Statement) unattemptedOps(from int) []CommitOp {
+	var ops []CommitOp
+	for i := from; i < len(s.operations); i++ {
+		if !s.operationValid(i) {
+			continue
+		}
+		op := commitOpFrom(s.operations[i])
+		op.NotAttempted = true
+		ops = append(ops, op)
+	}
+	return ops
+}
+
+func commitOpFrom(op Operation) CommitOp {
+	task := op.TaskInfo()
+	recorded := CommitOp{Kind: op.Name()}
+	if task != nil {
+		recorded.UID = string(task.UID)
+		recorded.Namespace = task.Namespace
+		recorded.Name = task.Name
+	}
+	switch typed := op.(type) {
+	case evictOperation:
+		if typed.previousNode != nil {
+			recorded.Node = typed.previousNode.Name
+		}
+		recorded.Message = typed.message
+		recorded.Eviction = typed.evictionMetadata
+		if typed.evictionMetadata.Preemptor != nil {
+			preemptor := *typed.evictionMetadata.Preemptor
+			recorded.Eviction.Preemptor = &preemptor
+		}
+	case pipelineOperation:
+		recorded.Node = typed.nextNode
+		recorded.Message = typed.message
+	case allocateOperation:
+		recorded.Node = typed.nextNode
+	}
+	return recorded
 }
 
 // undoEarliestValidOperation will undo the earliest valid operation of the given type
