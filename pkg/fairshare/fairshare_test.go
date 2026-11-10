@@ -60,6 +60,56 @@ func TestDivide(t *testing.T) {
 			},
 			expected: map[string]float64{"older": 3, "newer": 2},
 		},
+		{
+			name:     "deserved is given in full even when it exceeds the total",
+			total:    10,
+			queues:   []*Queue{queue("a", 1, 6, 1, math.Inf(1)), queue("b", 1, 6, 1, math.Inf(1))},
+			expected: map[string]float64{"a": 6, "b": 6},
+		},
+		{
+			name:  "unlimited deserved covers the whole request",
+			total: 10,
+			queues: []*Queue{
+				queue("unlimited", 1, Unlimited, 1, 7),
+				queue("other", 1, 0, 1, math.Inf(1)),
+			},
+			expected: map[string]float64{"unlimited": 7, "other": 3},
+		},
+		{
+			name:  "queues after the total runs out get nothing",
+			total: 10,
+			queues: []*Queue{
+				queue("a", 1, 0, 1, math.Inf(1)),
+				queue("b", 1, 0, 1, math.Inf(1)),
+				queue("zero-weight", 1, 0, 0, math.Inf(1)),
+			},
+			expected: map[string]float64{"a": 5, "b": 5, "zero-weight": 0},
+		},
+		{
+			name:  "a single leftover unit goes to the oldest queue",
+			total: 1,
+			queues: []*Queue{
+				{ID: "a", Priority: 1, MaxAllowed: Unlimited, OverQuotaWeight: 1, Request: math.Inf(1), CreationTimestamp: time.Unix(3, 0)},
+				{ID: "b", Priority: 1, MaxAllowed: Unlimited, OverQuotaWeight: 1, Request: math.Inf(1), CreationTimestamp: time.Unix(1, 0)},
+				{ID: "c", Priority: 1, MaxAllowed: Unlimited, OverQuotaWeight: 1, Request: math.Inf(1), CreationTimestamp: time.Unix(2, 0)},
+			},
+			expected: map[string]float64{"a": 0, "b": 1, "c": 0},
+		},
+		{
+			name:     "a single leftover unit goes to the largest fraction",
+			total:    1,
+			queues:   []*Queue{queue("light", 1, 0, 1, math.Inf(1)), queue("heavy", 1, 0, 3, math.Inf(1))},
+			expected: map[string]float64{"light": 0, "heavy": 1},
+		},
+		{
+			name:  "a queue already above its request gets nothing more",
+			total: 4,
+			queues: []*Queue{
+				{ID: "above", Priority: 1, MaxAllowed: Unlimited, OverQuotaWeight: 1, Request: 3, FairShare: 5},
+				queue("other", 1, 0, 1, math.Inf(1)),
+			},
+			expected: map[string]float64{"above": 5, "other": 4},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			Divide(tc.total, 0, tc.queues)
