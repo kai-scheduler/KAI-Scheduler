@@ -20,6 +20,11 @@ func scalingPodName(unschedulablePodNamespace string, unschedulablePodName strin
 	return fmt.Sprintf("scaling.%s.%s", unschedulablePodNamespace, unschedulablePodName)
 }
 
+// legacyScalingPodName is the name format used before scalingPodName added the dot separator.
+func legacyScalingPodName(unschedulablePodNamespace string, unschedulablePodName string) string {
+	return fmt.Sprintf("%s-%s", unschedulablePodNamespace, unschedulablePodName)
+}
+
 func createScalingPodSpec(
 	scalingPodAppLabel string, scalingPodServiceAccount string,
 	unschedulablePod *corev1.Pod, image, namespace string, numDevices int64, fipsOnly bool,

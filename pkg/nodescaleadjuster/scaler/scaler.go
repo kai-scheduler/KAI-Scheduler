@@ -90,7 +90,7 @@ func (s *Scaler) IsScalingPodExistsForUnschedulablePod(unschedulablePod *corev1.
 	pod := &corev1.Pod{}
 	err := s.client.Get(context.TODO(), key, pod)
 	if errors.IsNotFound(err) {
-		key.Name = fmt.Sprintf("%s-%s", unschedulablePod.Namespace, unschedulablePod.Name)
+		key.Name = legacyScalingPodName(unschedulablePod.Namespace, unschedulablePod.Name)
 		err = s.client.Get(context.TODO(), key, pod)
 	}
 	if errors.IsNotFound(err) {
