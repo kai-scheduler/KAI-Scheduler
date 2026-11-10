@@ -21,6 +21,12 @@ type GpuSharingNodeInfo struct {
 	UsedSharedGPUsMemory      map[string]int64
 	ReleasingSharedGPUsMemory map[string]int64
 	AllocatedSharedGPUsMemory map[string]int64
+
+	// DRASharedDeviceRefCount counts how many pods on the node reference each
+	// physical DRA GPU device (keyed by driver/pool/device). A device shared
+	// by several pods through one ResourceClaim (status.reservedFor with more
+	// than one entry) must contribute to the node's used GPU count only once.
+	DRASharedDeviceRefCount map[string]int
 }
 
 func newGpuSharingNodeInfo() *GpuSharingNodeInfo {
@@ -30,6 +36,8 @@ func newGpuSharingNodeInfo() *GpuSharingNodeInfo {
 		UsedSharedGPUsMemory:      make(map[string]int64),
 		ReleasingSharedGPUsMemory: make(map[string]int64),
 		AllocatedSharedGPUsMemory: make(map[string]int64),
+
+		DRASharedDeviceRefCount: make(map[string]int),
 	}
 }
 
@@ -47,6 +55,9 @@ func (g *GpuSharingNodeInfo) Clone() *GpuSharingNodeInfo {
 	}
 	for k, v := range g.AllocatedSharedGPUsMemory {
 		gpuSharingNodeInfo.AllocatedSharedGPUsMemory[k] = v
+	}
+	for k, v := range g.DRASharedDeviceRefCount {
+		gpuSharingNodeInfo.DRASharedDeviceRefCount[k] = v
 	}
 
 	return gpuSharingNodeInfo

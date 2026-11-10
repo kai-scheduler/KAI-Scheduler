@@ -466,6 +466,10 @@ func (ni *NodeInfo) addTaskResources(task *pod_info.PodInfo) {
 		resourcesToTrackVector.Set(resource_info.GPUIndex, 0)
 	}
 
+	// A physical DRA device shared by several pods (one ResourceClaim with
+	// multiple reservedFor entries) must be counted once, not once per pod.
+	ni.dedupSharedDRAGpus(task, resourcesToTrackVector)
+
 	ni.UsedVector.Add(resourcesToTrackVector)
 
 	switch task.Status {
@@ -515,6 +519,10 @@ func (ni *NodeInfo) removeTaskResources(task *pod_info.PodInfo) {
 		// Reservation pod: untrack all resources except GPUs
 		resourcesToTrackVector.Set(resource_info.GPUIndex, 0)
 	}
+
+	// Mirror of dedupSharedDRAGpus: keep a shared physical DRA device in the
+	// used vector as long as another pod on the node still references it.
+	ni.releaseSharedDRAGpus(task, resourcesToTrackVector)
 
 	ni.UsedVector.Sub(resourcesToTrackVector)
 
@@ -736,6 +744,13 @@ func (ni *NodeInfo) lessEqualTaskToNodeResources(
 ) bool {
 	if !ni.isValidGpuPortion(&task.GpuRequirement) {
 		return false
+	}
+	// A task sharing an already-counted DRA device does not need additional
+	// GPU capacity for that device.
+	if discount := ni.sharedDRAGpuDiscount(task); discount > 0 {
+		adjusted := nodeResourcesVector.Clone()
+		adjusted.Set(resource_info.GPUIndex, adjusted.Get(resource_info.GPUIndex)+discount)
+		return task.ResReqVector.LessEqual(adjusted)
 	}
 	return task.ResReqVector.LessEqual(nodeResourcesVector)
 }
