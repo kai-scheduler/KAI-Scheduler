@@ -83,6 +83,17 @@ Zero-valued series for `pod_group_evicted_pods_total` and `pod_group_eviction_ev
 
 ---
 
+## Admission Metrics
+
+Metrics exposed by the admission webhooks. Like the other metrics, they carry the metrics namespace prefix (`kai_` by default).
+
+| Metric Name | Type | Labels | Description |
+|---|---|---|---|
+| `admission_requests_total` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `webhook`, `operation`, `result` | Total number of admission requests handled by the KAI webhooks. Every request the webhook receives is counted, including pods that belong to other schedulers, which the webhooks admit unchanged. The request rate can be used as a load signal. |
+| `admission_rejections_total` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `webhook`, `reason` | Total number of admission requests rejected by the KAI webhooks. |
+
+---
+
 ## Common Label Definitions
 
 All metrics include these standard Prometheus scrape labels:
@@ -103,6 +114,10 @@ Business/Resource Labels:
 - **`reduced_budget`**: Whether the scenario search ran after the action budget was reduced (`true` or `false`)
 - **`state`**: Scenario lifecycle state (`emitted`, `simulated`, or `validator_rejected`)
 - **`plugin`**: Plugin name
+- **`webhook`**: Admission webhook that handled the request (`pod-mutator`, `pod-validator`, `pod-resize-validator` or `topology-validator`)
+- **`operation`**: Admission operation (`create`, `update` or `delete`). The `pod-mutator` webhook only handles `create`.
+- **`result`**: Outcome of an admission request (`allowed` or `rejected`)
+- **`reason`**: Why a request was rejected. For `pod-mutator` and `pod-validator` this is the name of the admission plugin that rejected the pod. Other rejections use `mutation_failed`, `validation_failed`, `resize_rejected` (`pod-resize-validator`) or `invalid_topology` (`topology-validator`).
 - **`OnSession`**: Session lifecycle phase (`OnSessionOpen` or `OnSessionClose`)
 - **`podgroup`**: PodGroup resource identifier
 - **`nodepool`**: Node pool identifier for resource allocation
