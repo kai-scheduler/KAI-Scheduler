@@ -1287,13 +1287,9 @@ var _ = Describe("ResourceReservationService", func() {
 		It("should not allow GPU resources to be overridden by podResources", func() {
 			// This test ensures that even if podResources contains GPU configuration,
 			// it won't override the GPU resource value set by the service
-			rsc := &service{
-				namespace:           "kai-resource-reservation",
-				appLabelValue:       "kai-reservation",
-				serviceAccountName:  "kai-sa",
-				reservationPodImage: "test-image:latest",
-				kubeClient:          fake.NewClientBuilder().WithScheme(testScheme).Build(),
-				podResources: &v1.ResourceRequirements{
+			rsc := NewService(false, fake.NewClientBuilder().WithScheme(testScheme).Build(), "test-image:latest",
+				time.Minute, "kai-resource-reservation", "kai-sa", "kai-reservation", scalingPodsNamespace, "",
+				&v1.ResourceRequirements{
 					Requests: v1.ResourceList{
 						v1.ResourceCPU:              resource.MustParse("10m"),
 						constants.NvidiaGpuResource: resource.MustParse("999"), // This should be ignored
@@ -1302,9 +1298,7 @@ var _ = Describe("ResourceReservationService", func() {
 						v1.ResourceCPU:              resource.MustParse("100m"),
 						constants.NvidiaGpuResource: resource.MustParse("999"), // This should be ignored
 					},
-				},
-				scalingPodNamespace: scalingPodsNamespace,
-			}
+				}, nil, nil, false)
 
 			pod, err := rsc.createGPUReservationPod(context.TODO(), nil, "test-node", schedulingv1alpha2.FractionalGpuGroup{
 				ID:                 "test-gpu-group",
@@ -1327,27 +1321,23 @@ var _ = Describe("ResourceReservationService", func() {
 		})
 
 		It("should not modify the configured podResources", func() {
-			// podResources is the service-wide configuration, shared by every reservation pod
-			// (and by concurrent binds): creating a pod must leave it as configured.
-			rsc := &service{
-				namespace:           "kai-resource-reservation",
-				appLabelValue:       "kai-reservation",
-				serviceAccountName:  "kai-sa",
-				reservationPodImage: "test-image:latest",
-				kubeClient:          fake.NewClientBuilder().WithScheme(testScheme).Build(),
-				podResources: &v1.ResourceRequirements{
-					Requests: v1.ResourceList{
-						v1.ResourceCPU:              resource.MustParse("10m"),
-						constants.NvidiaGpuResource: resource.MustParse("999"),
-					},
-					Limits: v1.ResourceList{
-						v1.ResourceCPU:              resource.MustParse("100m"),
-						constants.NvidiaGpuResource: resource.MustParse("999"),
-					},
+			// NewService removes the GPU resource from its own copy, once: the caller's configuration
+			// is left as passed, and creating reservation pods writes to neither.
+			configured := &v1.ResourceRequirements{
+				Requests: v1.ResourceList{
+					v1.ResourceCPU:              resource.MustParse("10m"),
+					constants.NvidiaGpuResource: resource.MustParse("999"),
 				},
-				scalingPodNamespace: scalingPodsNamespace,
+				Limits: v1.ResourceList{
+					v1.ResourceCPU:              resource.MustParse("100m"),
+					constants.NvidiaGpuResource: resource.MustParse("999"),
+				},
 			}
-			configured := rsc.podResources.DeepCopy()
+			passed := configured.DeepCopy()
+			rsc := NewService(false, fake.NewClientBuilder().WithScheme(testScheme).Build(), "test-image:latest",
+				time.Minute, "kai-resource-reservation", "kai-sa", "kai-reservation", scalingPodsNamespace, "",
+				configured, nil, nil, false)
+			stripped := rsc.podResources.DeepCopy()
 
 			for _, id := range []string{"gpu-group-1", "gpu-group-2"} {
 				_, err := rsc.createGPUReservationPod(context.TODO(), nil, "test-node", schedulingv1alpha2.FractionalGpuGroup{
@@ -1357,7 +1347,10 @@ var _ = Describe("ResourceReservationService", func() {
 				Expect(err).To(BeNil())
 			}
 
-			Expect(rsc.podResources).To(Equal(configured))
+			Expect(configured).To(Equal(passed))
+			Expect(rsc.podResources).To(Equal(stripped))
+			Expect(rsc.podResources.Limits).NotTo(HaveKey(constants.NvidiaGpuResource))
+			Expect(rsc.podResources.Requests).NotTo(HaveKey(constants.NvidiaGpuResource))
 		})
 	})
 })
