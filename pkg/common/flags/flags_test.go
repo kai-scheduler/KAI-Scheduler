@@ -51,6 +51,18 @@ var _ = Describe("StringMapFlag", func() {
 		Expect(err).To(HaveOccurred())
 	})
 
+	It("does not apply valid pairs before an invalid pair", func() {
+		var m StringMapFlag
+		Expect(m.Set("new=value,invalid")).To(HaveOccurred())
+		Expect(m).To(BeNil())
+		Expect(m.Set("")).To(Succeed())
+		Expect(m).To(Equal(StringMapFlag{}))
+
+		Expect(m.Set("existing=old")).To(Succeed())
+		Expect(m.Set("existing=new,added=value,invalid")).To(HaveOccurred())
+		Expect(m.Get()).To(Equal(map[string]string{"existing": "old"}))
+	})
+
 	It("String() returns the correct string representation", func() {
 		var m StringMapFlag
 		err := m.Set("foo=bar,baz=qux")

@@ -653,12 +653,12 @@ func (s *Statement) Commit() error {
 // undoEarliestValidOperation will undo the earliest valid operation of the given type
 func (s *Statement) undoEarliestValidOperation(taskToUndo *pod_info.PodInfo, opName string) error {
 	for index, op := range s.operations {
-		// If the operation was already undone, skip it
-		if !s.operationValid(index) {
+		if opName != op.Name() || taskToUndo.UID != op.TaskInfo().UID {
 			continue
 		}
 
-		if taskToUndo.UID != op.TaskInfo().UID || opName != op.Name() {
+		// If the operation was already undone, skip it
+		if !s.operationValid(index) {
 			continue
 		}
 
