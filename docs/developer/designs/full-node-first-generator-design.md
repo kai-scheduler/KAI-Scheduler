@@ -43,13 +43,31 @@ initializes, then emits scenarios until its demand is met or it is exhausted.
 1. **Per-size demand.** Pending tasks are grouped by request into `sizeDemand{req, count}` (so
    heterogeneous whole-node sizes are supported). Inert if there are no pending tasks or any task
    requests nothing.
-2. **Whole-node match.** A node matches a size only if `needsEntireNode(req, node)` — the task
-   request exactly equals at least one of the node's allocatable resource dimensions (e.g. an
-   8-GPU task on an 8-GPU node). A node is skipped if it is too small, if the size already fits on
-   the node's idle capacity (no reclaim needed), or if a prior probe recorded it as freed.
+2. **Whole-node match.** A node matches a size only if the task fits the node on every resource
+   dimension and `needsEntireNode(req, node, threshold)` holds — the task requests at least
+   `threshold` of the node's allocatable capacity on at least one dimension (e.g. an 8-GPU task on
+   an 8-GPU node). With the default `threshold` of 1.0 that is an exact match on one dimension, and
+   the other dimensions (CPU, memory) only need to fit. A node is skipped if it is too small, if the
+   size already fits on the node's idle capacity (no reclaim needed), or if a prior probe recorded
+   it as freed.
 
-The whole-node match is the key gate: **a task that does not fully fill a node dimension matches
-no node, so the generator emits nothing and the portfolio falls through to the next generator.**
+   `threshold` is the `fullNodeThreshold` plugin argument of `sg-fullnodefirst`. It must be greater
+   than 0.5 and at most 1.0, so two matching tasks can never share one node; an unparsable or
+   out-of-range value is logged and replaced by the default of 1.0. Lowering it (e.g. `"0.95"`)
+   lets tasks that request slightly less than a node's capacity on every dimension, such as 120 of
+   126 CPUs, still be treated as whole-node. Tasks that fill a node's GPUs only partially (7 of 8)
+   need a threshold of at most 0.875, which is a deliberate choice, not a recommended default.
+
+   ```yaml
+   spec:
+     plugins:
+       sg-fullnodefirst:
+         arguments:
+           fullNodeThreshold: "0.95"
+   ```
+
+The whole-node match is the key gate: **a task that does not fill at least `threshold` of a node
+dimension matches no node, so the generator emits nothing and the portfolio falls through to the next generator.**
 That is what makes `FullNodeFirst` safe to keep in the portfolio — a no-op for reclaimers it does
 not serve.
 
