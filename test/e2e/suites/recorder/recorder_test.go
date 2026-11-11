@@ -35,20 +35,25 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/queue"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/testconfig"
-	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
 	"github.com/kai-scheduler/api/constants"
 	kaiv1 "github.com/kai-scheduler/api/kai/v1"
 	v2 "github.com/kai-scheduler/api/scheduling/v2"
 )
 
 const (
-	nodePoolKey      = "kai.scheduler/node-pool"
-	tokenPath        = "/var/run/secrets/kubernetes.io/serviceaccount"
-	allocatePool     = "kai-rec-pool-a"
-	preemptPool      = "kai-rec-pool-b"
-	lowPriorityName  = "kai-rec-low"
-	highPriorityName = "kai-rec-high"
+	tokenPath         = "/var/run/secrets/kubernetes.io/serviceaccount"
+	recorderPoolValue = "kai-rec-pool"
+	devicePluginLabel = "nvidia.com/gpu.deploy.device-plugin"
+	hostnameLabel     = "kubernetes.io/hostname"
+	lowPriorityName   = "kai-rec-low"
+	highPriorityName  = "kai-rec-high"
+	simulatedPoolKey  = "run.ai/simulated-gpu-node-pool"
+	priorityLabelKey  = "priorityClassName"
 )
+
+// wantedPartition is the shard partition the records spec is scheduling against.
+// schedulerPod ignores pods from the previous rollout, which still have an empty partition.
+var wantedPartition string
 
 // liveScheduler is the shard the operator actually deployed.
 // The scheduler container is named after that deployment, not "scheduler".
@@ -68,6 +73,7 @@ var _ = Describe("Recorder", Ordered, ContinueOnFailure, Label("recorder"), func
 		victimPod    *v1.Pod
 		preemptorPod *v1.Pod
 		leafQueue    *v2.Queue
+		poolKeyUsed  string
 	)
 
 	BeforeAll(func(ctx context.Context) {
@@ -79,7 +85,15 @@ var _ = Describe("Recorder", Ordered, ContinueOnFailure, Label("recorder"), func
 		if testCtx == nil {
 			return
 		}
-		clearNodePoolLabels(ctx, testCtx.KubeClientset)
+		wantedPartition = ""
+		key := poolKeyUsed
+		if key == "" {
+			key = constants.DefaultNodePoolLabelKey
+		}
+		clearNodePoolLabels(ctx, testCtx.KubeClientset, key)
+		if live.shardName != "" {
+			patchPartitionValue(ctx, testCtx.ControllerClient, live.shardName, "")
+		}
 		_ = testCtx.KubeClientset.SchedulingV1().PriorityClasses().Delete(ctx, lowPriorityName, metav1.DeleteOptions{})
 		_ = testCtx.KubeClientset.SchedulingV1().PriorityClasses().Delete(ctx, highPriorityName, metav1.DeleteOptions{})
 		if live.namespace != "" {
@@ -149,30 +163,41 @@ var _ = Describe("Recorder", Ordered, ContinueOnFailure, Label("recorder"), func
 		// The BeforeAll context is already canceled, so refresh it for this spec.
 		testCtx = testcontext.GetConnectivity(ctx, Default)
 		ensureRecorder(ctx, testCtx, live)
-		allocateNode, preemptNode := waitForGPUNodes(ctx, testCtx.KubeClientset)
-		labelNode(ctx, testCtx.KubeClientset, allocateNode, allocatePool)
-		labelNode(ctx, testCtx.KubeClientset, preemptNode, preemptPool)
+		poolKey := nodePoolLabelKey(ctx, testCtx)
+		poolKeyUsed = poolKey
+		allocateNode, preemptNode := twoGPUNodes(ctx, testCtx.KubeClientset)
+		// An empty partition value selects nodes that lack the pool label.
+		// The label and the shard partition have to move together, and queues
+		// and pod groups are selected with the same label.
+		labelNode(ctx, testCtx.KubeClientset, allocateNode.Name, poolKey, recorderPoolValue)
+		labelNode(ctx, testCtx.KubeClientset, preemptNode.Name, poolKey, recorderPoolValue)
+		patchPartitionValue(ctx, testCtx.ControllerClient, live.shardName, recorderPoolValue)
+		wantedPartition = recorderPoolValue
+		ensureRecorder(ctx, testCtx, live)
 		createPriorityClasses(ctx, testCtx.KubeClientset)
 
 		parent := queue.CreateQueueObject("kai-rec-parent", "")
 		leafQueue = queue.CreateQueueObject("kai-rec-leaf", parent.Name)
+		parent.Labels[poolKey] = recorderPoolValue
+		leafQueue.Labels[poolKey] = recorderPoolValue
 		testCtx.InitQueues([]*v2.Queue{parent, leafQueue})
 
-		allocatePod = gpuPod(leafQueue, 1, highPriorityName, allocatePool)
-		allocatePod, err := rd.CreatePod(ctx, testCtx.KubeClientset, allocatePod)
+		allocatePod = gpuPod(leafQueue, 1, highPriorityName, allocateNode.Hostname, poolKey, recorderPoolValue)
+		var err error
+		allocatePod, err = rd.CreatePod(ctx, testCtx.KubeClientset, allocatePod)
 		Expect(err).NotTo(HaveOccurred())
-		wait.ForPodScheduled(ctx, testCtx.ControllerClient, allocatePod)
+		waitScheduled(ctx, testCtx, allocatePod)
 
-		victimGPUs := idleGPUs(testCtx.KubeClientset, preemptNode)
-		victimPod = gpuPod(leafQueue, victimGPUs, lowPriorityName, preemptPool)
+		victimGPUs := idleGPUs(testCtx.KubeClientset, preemptNode.Name)
+		victimPod = gpuPod(leafQueue, victimGPUs, lowPriorityName, preemptNode.Hostname, poolKey, recorderPoolValue)
 		victimPod, err = rd.CreatePod(ctx, testCtx.KubeClientset, victimPod)
 		Expect(err).NotTo(HaveOccurred())
-		wait.ForPodScheduled(ctx, testCtx.ControllerClient, victimPod)
+		waitScheduled(ctx, testCtx, victimPod)
 
-		preemptorPod = gpuPod(leafQueue, 1, highPriorityName, preemptPool)
+		preemptorPod = gpuPod(leafQueue, 1, highPriorityName, preemptNode.Hostname, poolKey, recorderPoolValue)
 		preemptorPod, err = rd.CreatePod(ctx, testCtx.KubeClientset, preemptorPod)
 		Expect(err).NotTo(HaveOccurred())
-		wait.ForPodScheduled(ctx, testCtx.ControllerClient, preemptorPod)
+		waitScheduled(ctx, testCtx, preemptorPod)
 
 		key := hashKey(ctx, testCtx, live)
 		h := schedrec.NewHasher(key)
@@ -186,9 +211,11 @@ var _ = Describe("Recorder", Ordered, ContinueOnFailure, Label("recorder"), func
 			requireHashed(g, h, body, leafQueue.Name)
 			requireHashed(g, h, body, lowPriorityName)
 			requireHashed(g, h, body, highPriorityName)
-			requireHashed(g, h, body, allocatePool)
-			requireHashed(g, h, body, preemptPool)
-			g.Expect(body).To(ContainSubstring(nodePoolKey))
+			if poolKey == constants.DefaultNodePoolLabelKey {
+				values := jsonStringValues(body, poolKey)
+				g.Expect(values).To(ContainElement(h.Hash(recorderPoolValue)))
+				g.Expect(values).NotTo(ContainElement(recorderPoolValue))
+			}
 			g.Expect(decisionLines(body, "allocate")).To(ContainElement(ContainSubstring(h.Hash(allocatePod.Name))))
 			g.Expect(decisionLines(body, "preempt")).To(ContainElement(ContainSubstring(h.Hash(victimPod.Name))))
 			g.Expect(decisionLines(body, "preempt")).To(ContainElement(ContainSubstring(h.Hash(preemptorPod.Name))))
@@ -219,13 +246,42 @@ func schedulerPod(ctx context.Context, testCtx *testcontext.TestContext, live li
 		LabelSelector: constants.AppLabelName + "=" + live.containerName,
 	})
 	Expect(err).NotTo(HaveOccurred())
-	Expect(pods.Items).NotTo(BeEmpty())
-	for _, pod := range pods.Items {
-		if pod.DeletionTimestamp == nil {
-			return pod
+	var candidate *v1.Pod
+	for i := range pods.Items {
+		pod := &pods.Items[i]
+		if pod.DeletionTimestamp != nil {
+			continue
+		}
+		if wantedPartition != "" && !containerHasArg(pod, live.containerName, "--partition-label-value="+wantedPartition) {
+			continue
+		}
+		candidate = pod
+		if rd.IsPodRunning(pod) {
+			break
 		}
 	}
-	return pods.Items[0]
+	if candidate == nil {
+		if wantedPartition != "" {
+			return v1.Pod{}
+		}
+		Expect(pods.Items).NotTo(BeEmpty())
+		return pods.Items[0]
+	}
+	return *candidate
+}
+
+func containerHasArg(pod *v1.Pod, containerName, arg string) bool {
+	for _, container := range pod.Spec.Containers {
+		if container.Name != containerName {
+			continue
+		}
+		for _, value := range append(container.Command, container.Args...) {
+			if value == arg {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func otherContainer(pod v1.Pod, schedulerContainer string) *v1.Container {
@@ -347,11 +403,37 @@ func ensureRecorder(ctx context.Context, testCtx *testcontext.TestContext, live 
 	patchRecorderEnabled(ctx, testCtx.ControllerClient, live.shardName, true)
 	Eventually(func(g Gomega) {
 		pod := schedulerPod(ctx, testCtx, live)
-		g.Expect(rd.IsPodRunning(&pod)).To(BeTrue())
+		g.Expect(pod.Name).NotTo(BeEmpty(), describeSchedulerPods(ctx, testCtx, live))
+		g.Expect(rd.IsPodRunning(&pod)).To(BeTrue(), describeSchedulerPods(ctx, testCtx, live))
 		side := otherContainer(pod, live.containerName)
-		g.Expect(side).NotTo(BeNil())
+		g.Expect(side).NotTo(BeNil(), describeSchedulerPods(ctx, testCtx, live))
 		g.Expect(side.Image).NotTo(BeEmpty())
 	}).WithTimeout(3 * time.Minute).WithPolling(2 * time.Second).Should(Succeed())
+}
+
+func describeSchedulerPods(ctx context.Context, testCtx *testcontext.TestContext, live liveScheduler) string {
+	pods, err := testCtx.KubeClientset.CoreV1().Pods(live.namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: constants.AppLabelName + "=" + live.containerName,
+	})
+	if err != nil {
+		return err.Error()
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "wanted partition %q\n", wantedPartition)
+	for _, pod := range pods.Items {
+		fmt.Fprintf(&b, "pod %s phase=%s deleting=%v args=%v\n",
+			pod.Name, pod.Status.Phase, pod.DeletionTimestamp != nil, schedulerArgs(&pod, live.containerName))
+	}
+	return b.String()
+}
+
+func schedulerArgs(pod *v1.Pod, containerName string) []string {
+	for _, container := range pod.Spec.Containers {
+		if container.Name == containerName {
+			return container.Args
+		}
+	}
+	return nil
 }
 
 func hashKey(ctx context.Context, testCtx *testcontext.TestContext, live liveScheduler) []byte {
@@ -361,20 +443,56 @@ func hashKey(ctx context.Context, testCtx *testcontext.TestContext, live liveSch
 	return stored.Data[recorderv1.HMACKeyDataKey]
 }
 
-func waitForGPUNodes(ctx context.Context, kube *kubernetes.Clientset) (allocateNode, preemptNode string) {
+type gpuNode struct {
+	Name     string
+	Hostname string
+	Idle     int64
+}
+
+func nodePoolLabelKey(ctx context.Context, testCtx *testcontext.TestContext) string {
+	kaiConfig := &kaiv1.Config{}
+	Expect(testCtx.ControllerClient.Get(ctx, client.ObjectKey{Name: constants.DefaultKAIConfigSingeltonInstanceName}, kaiConfig)).To(Succeed())
+	if kaiConfig.Spec.Global != nil && kaiConfig.Spec.Global.NodePoolLabelKey != nil && *kaiConfig.Spec.Global.NodePoolLabelKey != "" {
+		return *kaiConfig.Spec.Global.NodePoolLabelKey
+	}
+	return constants.DefaultNodePoolLabelKey
+}
+
+func twoGPUNodes(ctx context.Context, kube *kubernetes.Clientset) (allocateNode, preemptNode gpuNode) {
+	var found []gpuNode
 	Eventually(func(g Gomega) {
-		nodes, err := capacity.GetNodesIdleResources(kube)
-		g.Expect(err).NotTo(HaveOccurred())
-		var found []string
-		for name, resources := range nodes {
-			if resources.Gpu.Cmp(resource.MustParse("1")) >= 0 {
-				found = append(found, name)
-			}
-		}
-		g.Expect(len(found)).To(BeNumerically(">=", 2), "need two GPU nodes with a free GPU, got %v", found)
-		allocateNode, preemptNode = found[0], found[1]
+		found = listGPUNodes(ctx, kube)
+		g.Expect(len(found)).To(BeNumerically(">=", 2), "need two device-plugin nodes with a free GPU:\n%s", nodeDump(ctx, kube))
 	}).WithTimeout(3 * time.Minute).WithPolling(2 * time.Second).Should(Succeed())
-	return allocateNode, preemptNode
+	sort.Slice(found, func(i, j int) bool { return found[i].Name < found[j].Name })
+	return found[0], found[1]
+}
+
+func listGPUNodes(ctx context.Context, kube *kubernetes.Clientset) []gpuNode {
+	idle, err := capacity.GetNodesIdleResources(kube)
+	Expect(err).NotTo(HaveOccurred())
+	listed, err := kube.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+	Expect(err).NotTo(HaveOccurred())
+	var devicePlugin, anyGPU []gpuNode
+	for _, node := range listed.Items {
+		free := idle[node.Name]
+		if free == nil || free.Gpu.Cmp(resource.MustParse("1")) < 0 {
+			continue
+		}
+		hostname := node.Labels[hostnameLabel]
+		if hostname == "" {
+			hostname = node.Name
+		}
+		candidate := gpuNode{Name: node.Name, Hostname: hostname, Idle: free.Gpu.Value()}
+		anyGPU = append(anyGPU, candidate)
+		if node.Labels[devicePluginLabel] == "true" {
+			devicePlugin = append(devicePlugin, candidate)
+		}
+	}
+	if len(devicePlugin) > 0 {
+		return devicePlugin
+	}
+	return anyGPU
 }
 
 func idleGPUs(kube *kubernetes.Clientset, nodeName string) int64 {
@@ -386,24 +504,87 @@ func idleGPUs(kube *kubernetes.Clientset, nodeName string) int64 {
 	return resources.Gpu.Value()
 }
 
-func labelNode(ctx context.Context, kube *kubernetes.Clientset, nodeName, pool string) {
-	payload := []byte(fmt.Sprintf(`{"metadata":{"labels":{%q:%q}}}`, nodePoolKey, pool))
+func labelNode(ctx context.Context, kube *kubernetes.Clientset, nodeName, key, value string) {
+	payload := []byte(fmt.Sprintf(`{"metadata":{"labels":{%q:%q}}}`, key, value))
 	_, err := kube.CoreV1().Nodes().Patch(ctx, nodeName, types.MergePatchType, payload, metav1.PatchOptions{})
 	Expect(err).NotTo(HaveOccurred())
 }
 
-func clearNodePoolLabels(ctx context.Context, kube *kubernetes.Clientset) {
+func clearNodePoolLabels(ctx context.Context, kube *kubernetes.Clientset, key string) {
 	nodes, err := kube.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return
 	}
-	payload := []byte(fmt.Sprintf(`{"metadata":{"labels":{%q:null}}}`, nodePoolKey))
+	payload := []byte(fmt.Sprintf(`{"metadata":{"labels":{%q:null}}}`, key))
 	for _, node := range nodes.Items {
-		if _, found := node.Labels[nodePoolKey]; !found {
+		if _, found := node.Labels[key]; !found {
 			continue
 		}
 		_, _ = kube.CoreV1().Nodes().Patch(ctx, node.Name, types.MergePatchType, payload, metav1.PatchOptions{})
 	}
+}
+
+func patchPartitionValue(ctx context.Context, c client.Client, shardName, value string) {
+	shard := &unstructured.Unstructured{}
+	shard.SetGroupVersionKind(kaiv1.GroupVersion.WithKind("SchedulingShard"))
+	shard.SetName(shardName)
+	payload := []byte(fmt.Sprintf(`{"spec":{"partitionLabelValue":%q}}`, value))
+	Expect(c.Patch(ctx, shard, client.RawPatch(types.MergePatchType, payload))).To(Succeed())
+}
+
+func waitScheduled(ctx context.Context, testCtx *testcontext.TestContext, pod *v1.Pod) {
+	Eventually(func(g Gomega) {
+		current, err := testCtx.KubeClientset.CoreV1().Pods(pod.Namespace).Get(ctx, pod.Name, metav1.GetOptions{})
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(current.Spec.NodeName).NotTo(BeEmpty(), describePending(ctx, testCtx, current))
+	}).WithTimeout(3 * time.Minute).WithPolling(2 * time.Second).Should(Succeed())
+}
+
+func describePending(ctx context.Context, testCtx *testcontext.TestContext, pod *v1.Pod) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "pod %s/%s phase=%s node=%q\n", pod.Namespace, pod.Name, pod.Status.Phase, pod.Spec.NodeName)
+	fmt.Fprintf(&b, "nodeSelector=%v\n", pod.Spec.NodeSelector)
+	for _, cond := range pod.Status.Conditions {
+		fmt.Fprintf(&b, "condition %s=%s reason=%s message=%s\n", cond.Type, cond.Status, cond.Reason, cond.Message)
+	}
+	events, err := testCtx.KubeClientset.CoreV1().Events(pod.Namespace).List(ctx, metav1.ListOptions{
+		FieldSelector: "involvedObject.name=" + pod.Name,
+	})
+	if err == nil {
+		for _, event := range events.Items {
+			fmt.Fprintf(&b, "event %s: %s\n", event.Reason, event.Message)
+		}
+	}
+	b.WriteString(nodeDump(ctx, testCtx.KubeClientset))
+	return b.String()
+}
+
+func nodeDump(ctx context.Context, kube *kubernetes.Clientset) string {
+	idle, err := capacity.GetNodesIdleResources(kube)
+	if err != nil {
+		return fmt.Sprintf("idle lookup failed: %v", err)
+	}
+	listed, err := kube.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return fmt.Sprintf("node list failed: %v", err)
+	}
+	var b strings.Builder
+	for _, node := range listed.Items {
+		free := int64(0)
+		if idle[node.Name] != nil {
+			free = idle[node.Name].Gpu.Value()
+		}
+		fmt.Fprintf(&b, "node %s allocatableGPU=%s idleGPU=%d hostname=%q devicePlugin=%q simulatedPool=%q nodePool=%q\n",
+			node.Name,
+			node.Status.Allocatable.Name(constants.NvidiaGpuResource, resource.DecimalSI).String(),
+			free,
+			node.Labels[hostnameLabel],
+			node.Labels[devicePluginLabel],
+			node.Labels[simulatedPoolKey],
+			node.Labels[constants.DefaultNodePoolLabelKey],
+		)
+	}
+	return b.String()
 }
 
 func createPriorityClasses(ctx context.Context, kube *kubernetes.Clientset) {
@@ -416,13 +597,58 @@ func createPriorityClasses(ctx context.Context, kube *kubernetes.Clientset) {
 	}
 }
 
-func gpuPod(q *v2.Queue, gpus int64, priorityClass, pool string) *v1.Pod {
+func gpuPod(q *v2.Queue, gpus int64, priorityClass, nodeName, poolKey, poolValue string) *v1.Pod {
 	pod := rd.CreatePodObject(q, v1.ResourceRequirements{
-		Limits: v1.ResourceList{constants.NvidiaGpuResource: *resource.NewQuantity(gpus, resource.DecimalSI)},
+		Requests: v1.ResourceList{constants.NvidiaGpuResource: *resource.NewQuantity(gpus, resource.DecimalSI)},
+		Limits:   v1.ResourceList{constants.NvidiaGpuResource: *resource.NewQuantity(gpus, resource.DecimalSI)},
 	})
+	pod.Labels[poolKey] = poolValue
+	pod.Labels[priorityLabelKey] = priorityClass
 	pod.Spec.PriorityClassName = priorityClass
-	pod.Spec.NodeSelector = map[string]string{nodePoolKey: pool}
+	pod.Spec.NodeSelector = map[string]string{
+		hostnameLabel: nodeName,
+		poolKey:       poolValue,
+	}
 	return pod
+}
+
+func jsonStringValues(body, key string) []string {
+	needle := fmt.Sprintf("%q:", key)
+	var values []string
+	rest := body
+	for {
+		index := strings.Index(rest, needle)
+		if index < 0 {
+			return values
+		}
+		rest = rest[index+len(needle):]
+		rest = strings.TrimLeft(rest, " \t\r\n")
+		if !strings.HasPrefix(rest, `"`) {
+			continue
+		}
+		var value string
+		if err := json.Unmarshal([]byte(rest[:stringEnd(rest)]), &value); err != nil {
+			continue
+		}
+		values = append(values, value)
+	}
+}
+
+func stringEnd(quoted string) int {
+	escaped := false
+	for i := 1; i < len(quoted); i++ {
+		if escaped {
+			escaped = false
+			continue
+		}
+		switch quoted[i] {
+		case '\\':
+			escaped = true
+		case '"':
+			return i + 1
+		}
+	}
+	return len(quoted)
 }
 
 func readRecords(ctx context.Context, testCtx *testcontext.TestContext, live liveScheduler) (string, error) {
