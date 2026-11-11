@@ -51,6 +51,7 @@ tiers:
   - name: subgrouporder
   - name: taskorder
   - name: nominatednode
+  - name: victimreallocation
   - name: dynamicresources
   - name: nodeplacement
     arguments:
