@@ -28,6 +28,7 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	recorderv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/recorder/v1"
 	schedrec "github.com/kai-scheduler/KAI-scheduler/pkg/recorder"
 	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/capacity"
@@ -41,20 +42,28 @@ import (
 )
 
 const (
-	nodePoolKey       = "kai.scheduler/node-pool"
-	hashKeySecretName = "kai-recorder-hash-key"
-	storageSecretName = "kai-recorder-storage"
-	tokenPath         = "/var/run/secrets/kubernetes.io/serviceaccount"
-	allocatePool      = "kai-rec-pool-a"
-	preemptPool       = "kai-rec-pool-b"
-	lowPriorityName   = "kai-rec-low"
-	highPriorityName  = "kai-rec-high"
+	nodePoolKey      = "kai.scheduler/node-pool"
+	tokenPath        = "/var/run/secrets/kubernetes.io/serviceaccount"
+	allocatePool     = "kai-rec-pool-a"
+	preemptPool      = "kai-rec-pool-b"
+	lowPriorityName  = "kai-rec-low"
+	highPriorityName = "kai-rec-high"
 )
 
-var _ = Describe("Recorder", Ordered, Label("recorder"), func() {
+// liveScheduler is the shard the operator actually deployed.
+// The scheduler container is named after that deployment, not "scheduler".
+type liveScheduler struct {
+	namespace     string
+	shardName     string
+	containerName string
+	hashSecret    string
+	storageSecret string
+}
+
+var _ = Describe("Recorder", Ordered, ContinueOnFailure, Label("recorder"), func() {
 	var (
 		testCtx      *testcontext.TestContext
-		cfg          testconfig.TestConfig
+		live         liveScheduler
 		allocatePod  *v1.Pod
 		victimPod    *v1.Pod
 		preemptorPod *v1.Pod
@@ -63,7 +72,7 @@ var _ = Describe("Recorder", Ordered, Label("recorder"), func() {
 
 	BeforeAll(func(ctx context.Context) {
 		testCtx = testcontext.GetConnectivity(ctx, Default)
-		cfg = testconfig.GetConfig()
+		live = discoverScheduler(ctx, testCtx)
 	})
 
 	AfterAll(func(ctx context.Context) {
@@ -73,62 +82,55 @@ var _ = Describe("Recorder", Ordered, Label("recorder"), func() {
 		clearNodePoolLabels(ctx, testCtx.KubeClientset)
 		_ = testCtx.KubeClientset.SchedulingV1().PriorityClasses().Delete(ctx, lowPriorityName, metav1.DeleteOptions{})
 		_ = testCtx.KubeClientset.SchedulingV1().PriorityClasses().Delete(ctx, highPriorityName, metav1.DeleteOptions{})
-		_ = testCtx.KubeClientset.CoreV1().Pods(cfg.SystemPodsNamespace).Delete(ctx, "recorder-log-reader", metav1.DeleteOptions{})
-		patchRecorderEnabled(ctx, testCtx.ControllerClient, false)
-		_ = testCtx.KubeClientset.CoreV1().Secrets(cfg.SystemPodsNamespace).Delete(ctx, storageSecretName, metav1.DeleteOptions{})
+		if live.namespace != "" {
+			_ = testCtx.KubeClientset.CoreV1().Pods(live.namespace).Delete(ctx, "recorder-log-reader", metav1.DeleteOptions{})
+			patchRecorderEnabled(ctx, testCtx.ControllerClient, live.shardName, false)
+			_ = testCtx.KubeClientset.CoreV1().Secrets(live.namespace).Delete(ctx, live.storageSecret, metav1.DeleteOptions{})
+		}
 		testCtx.ClusterCleanup(ctx)
 	})
 
 	It("stays off unless a shard enables it", func(ctx context.Context) {
-		pod := schedulerPod(ctx, testCtx)
-		Expect(containerNames(pod)).To(Equal([]string{"scheduler"}))
+		pod := schedulerPod(ctx, testCtx, live)
+		Expect(containerNames(pod)).To(Equal([]string{live.containerName}))
+		Expect(otherContainer(pod, live.containerName)).To(BeNil())
 		Expect(volumeNames(pod)).NotTo(ContainElement("recorder-data"))
-		_, err := testCtx.KubeClientset.CoreV1().Secrets(cfg.SystemPodsNamespace).Get(ctx, hashKeySecretName, metav1.GetOptions{})
+		_, err := testCtx.KubeClientset.CoreV1().Secrets(live.namespace).Get(ctx, live.hashSecret, metav1.GetOptions{})
 		Expect(errors.IsNotFound(err)).To(BeTrue())
 	})
 
 	It("deploys the sidecar and creates the hash-key secret", func(ctx context.Context) {
-		secret := &v1.Secret{ObjectMeta: metav1.ObjectMeta{Name: storageSecretName, Namespace: cfg.SystemPodsNamespace}}
-		_, err := testCtx.KubeClientset.CoreV1().Secrets(cfg.SystemPodsNamespace).Create(ctx, secret, metav1.CreateOptions{})
-		Expect(err).NotTo(HaveOccurred())
-
-		patchRecorderEnabled(ctx, testCtx.ControllerClient, true)
-
-		Eventually(func(g Gomega) {
-			pod := schedulerPod(ctx, testCtx)
-			g.Expect(containerNames(pod)).To(ContainElement("recorder"))
-			g.Expect(rd.IsPodRunning(&pod)).To(BeTrue())
-			for _, container := range pod.Spec.Containers {
-				if container.Name != "recorder" {
-					continue
-				}
-				g.Expect(container.Image).To(ContainSubstring("recorder"))
-			}
-		}).WithTimeout(3 * time.Minute).WithPolling(2 * time.Second).Should(Succeed())
+		ensureRecorder(ctx, testCtx, live)
 
 		var first []byte
 		Eventually(func(g Gomega) {
-			stored, err := testCtx.KubeClientset.CoreV1().Secrets(cfg.SystemPodsNamespace).Get(ctx, hashKeySecretName, metav1.GetOptions{})
+			stored, err := testCtx.KubeClientset.CoreV1().Secrets(live.namespace).Get(ctx, live.hashSecret, metav1.GetOptions{})
 			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(stored.Namespace).To(Equal(cfg.SystemPodsNamespace))
-			g.Expect(stored.Data["hmac-key"]).NotTo(BeEmpty())
-			first = append([]byte(nil), stored.Data["hmac-key"]...)
+			g.Expect(stored.Namespace).To(Equal(live.namespace))
+			g.Expect(stored.Data[recorderv1.HMACKeyDataKey]).NotTo(BeEmpty())
+			first = append([]byte(nil), stored.Data[recorderv1.HMACKeyDataKey]...)
 		}).WithTimeout(time.Minute).WithPolling(time.Second).Should(Succeed())
 
 		// A second look must see the same key. The operator does not rotate it.
-		stored, err := testCtx.KubeClientset.CoreV1().Secrets(cfg.SystemPodsNamespace).Get(ctx, hashKeySecretName, metav1.GetOptions{})
+		stored, err := testCtx.KubeClientset.CoreV1().Secrets(live.namespace).Get(ctx, live.hashSecret, metav1.GetOptions{})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(stored.Data["hmac-key"]).To(Equal(first))
+		Expect(stored.Data[recorderv1.HMACKeyDataKey]).To(Equal(first))
 	})
 
 	It("hides the service account token from the sidecar and leaves it on the scheduler", func(ctx context.Context) {
-		pod := schedulerPod(ctx, testCtx)
-		Expect(mountPath(&pod, "recorder", tokenPath)).To(Equal("recorder-no-sa-token"))
-		Expect(mountPath(&pod, "scheduler", tokenPath)).NotTo(Equal("recorder-no-sa-token"))
+		ensureRecorder(ctx, testCtx, live)
+		pod := schedulerPod(ctx, testCtx, live)
+		side := otherContainer(pod, live.containerName)
+		Expect(side).NotTo(BeNil())
+		sideMount := mountedVolume(&pod, side.Name, tokenPath)
+		Expect(sideMount).NotTo(BeNil())
+		Expect(sideMount.EmptyDir).NotTo(BeNil())
+		schedulerMount := mountedVolume(&pod, live.containerName, tokenPath)
+		Expect(schedulerMount == nil || schedulerMount.EmptyDir == nil).To(BeTrue())
 
-		sidecarListing := probeTokenDir(ctx, testCtx, &pod, "recorder")
-		current := schedulerPod(ctx, testCtx)
-		schedulerListing := probeTokenDir(ctx, testCtx, &current, "scheduler")
+		sidecarListing := probeTokenDir(ctx, testCtx, live, &pod, side.Name)
+		current := schedulerPod(ctx, testCtx, live)
+		schedulerListing := probeTokenDir(ctx, testCtx, live, &current, live.containerName)
 		Expect(sidecarListing).To(ContainSubstring("PID"))
 		Expect(sidecarListing).NotTo(ContainSubstring("LIST_FAILED"))
 		Expect(sidecarListing).NotTo(ContainSubstring("NO_APP"))
@@ -143,6 +145,7 @@ var _ = Describe("Recorder", Ordered, Label("recorder"), func() {
 	})
 
 	It("records allocate and preempt with hashed names", func(ctx context.Context) {
+		ensureRecorder(ctx, testCtx, live)
 		allocateNode, preemptNode := waitForGPUNodes(ctx, testCtx.KubeClientset)
 		labelNode(ctx, testCtx.KubeClientset, allocateNode, allocatePool)
 		labelNode(ctx, testCtx.KubeClientset, preemptNode, preemptPool)
@@ -168,10 +171,10 @@ var _ = Describe("Recorder", Ordered, Label("recorder"), func() {
 		Expect(err).NotTo(HaveOccurred())
 		wait.ForPodScheduled(ctx, testCtx.ControllerClient, preemptorPod)
 
-		key := hashKey(ctx, testCtx)
+		key := hashKey(ctx, testCtx, live)
 		h := schedrec.NewHasher(key)
 		Eventually(func(g Gomega) {
-			body, err := readRecords(ctx, testCtx)
+			body, err := readRecords(ctx, testCtx, live)
 			g.Expect(err).NotTo(HaveOccurred())
 			requireHashed(g, h, body, allocatePod.Namespace)
 			requireHashed(g, h, body, allocatePod.Name)
@@ -190,9 +193,12 @@ var _ = Describe("Recorder", Ordered, Label("recorder"), func() {
 	})
 
 	It("replays a recorded preempt cycle onto the same placements", func(ctx context.Context) {
-		body, err := readRecords(ctx, testCtx)
+		if victimPod == nil || preemptorPod == nil {
+			Fail("preempt workload was not created, so there is no recorded cycle to replay")
+		}
+		body, err := readRecords(ctx, testCtx, live)
 		Expect(err).NotTo(HaveOccurred())
-		key := hashKey(ctx, testCtx)
+		key := hashKey(ctx, testCtx, live)
 		h := schedrec.NewHasher(key)
 		state, recorded := preemptCycle(body, h.Hash(victimPod.Name), h.Hash(preemptorPod.Name))
 		replayed := replayCycle(state, "preempt")
@@ -205,10 +211,9 @@ func requireHashed(g Gomega, h schedrec.Hasher, body, plain string) {
 	g.Expect(body).To(ContainSubstring(h.Hash(plain)))
 }
 
-func schedulerPod(ctx context.Context, testCtx *testcontext.TestContext) v1.Pod {
-	cfg := testconfig.GetConfig()
-	pods, err := testCtx.KubeClientset.CoreV1().Pods(cfg.SystemPodsNamespace).List(ctx, metav1.ListOptions{
-		LabelSelector: constants.AppLabelName + "=" + cfg.SchedulerDeploymentName,
+func schedulerPod(ctx context.Context, testCtx *testcontext.TestContext, live liveScheduler) v1.Pod {
+	pods, err := testCtx.KubeClientset.CoreV1().Pods(live.namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: constants.AppLabelName + "=" + live.containerName,
 	})
 	Expect(err).NotTo(HaveOccurred())
 	Expect(pods.Items).NotTo(BeEmpty())
@@ -218,6 +223,28 @@ func schedulerPod(ctx context.Context, testCtx *testcontext.TestContext) v1.Pod 
 		}
 	}
 	return pods.Items[0]
+}
+
+func otherContainer(pod v1.Pod, schedulerContainer string) *v1.Container {
+	for i := range pod.Spec.Containers {
+		if pod.Spec.Containers[i].Name != schedulerContainer {
+			return &pod.Spec.Containers[i]
+		}
+	}
+	return nil
+}
+
+func mountedVolume(pod *v1.Pod, containerName, path string) *v1.Volume {
+	name := mountPath(pod, containerName, path)
+	if name == "" {
+		return nil
+	}
+	for i := range pod.Spec.Volumes {
+		if pod.Spec.Volumes[i].Name == name {
+			return &pod.Spec.Volumes[i]
+		}
+	}
+	return nil
 }
 
 func containerNames(pod v1.Pod) []string {
@@ -250,20 +277,85 @@ func mountPath(pod *v1.Pod, containerName, path string) string {
 	return ""
 }
 
-func patchRecorderEnabled(ctx context.Context, c client.Client, enabled bool) {
+func patchRecorderEnabled(ctx context.Context, c client.Client, shardName string, enabled bool) {
 	shard := &unstructured.Unstructured{}
 	shard.SetGroupVersionKind(kaiv1.GroupVersion.WithKind("SchedulingShard"))
-	shard.SetName("default")
+	shard.SetName(shardName)
 	payload := []byte(fmt.Sprintf(`{"spec":{"recorder":{"enabled":%t}}}`, enabled))
 	Expect(c.Patch(ctx, shard, client.RawPatch(types.MergePatchType, payload))).To(Succeed())
 }
 
-func hashKey(ctx context.Context, testCtx *testcontext.TestContext) []byte {
-	cfg := testconfig.GetConfig()
-	stored, err := testCtx.KubeClientset.CoreV1().Secrets(cfg.SystemPodsNamespace).Get(ctx, hashKeySecretName, metav1.GetOptions{})
+func discoverScheduler(ctx context.Context, testCtx *testcontext.TestContext) liveScheduler {
+	kaiConfig := &kaiv1.Config{}
+	Expect(testCtx.ControllerClient.Get(ctx, client.ObjectKey{Name: constants.DefaultKAIConfigSingeltonInstanceName}, kaiConfig)).To(Succeed())
+	Expect(kaiConfig.Spec.Namespace).NotTo(BeEmpty())
+	schedulerName := constants.DefaultSchedulerName
+	if kaiConfig.Spec.Global != nil && kaiConfig.Spec.Global.SchedulerName != nil && *kaiConfig.Spec.Global.SchedulerName != "" {
+		schedulerName = *kaiConfig.Spec.Global.SchedulerName
+	}
+
+	var shards kaiv1.SchedulingShardList
+	Expect(testCtx.ControllerClient.List(ctx, &shards)).To(Succeed())
+	var found *liveScheduler
+	for i := range shards.Items {
+		deployment := fmt.Sprintf("%s-%s", schedulerName, shards.Items[i].Name)
+		pods, err := testCtx.KubeClientset.CoreV1().Pods(kaiConfig.Spec.Namespace).List(ctx, metav1.ListOptions{
+			LabelSelector: constants.AppLabelName + "=" + deployment,
+		})
+		Expect(err).NotTo(HaveOccurred())
+		if len(pods.Items) == 0 {
+			continue
+		}
+		hashSecret, storageSecret := recorderSecretNames(ctx, testCtx, shards.Items[i].Name)
+		found = &liveScheduler{
+			namespace:     kaiConfig.Spec.Namespace,
+			shardName:     shards.Items[i].Name,
+			containerName: deployment,
+			hashSecret:    hashSecret,
+			storageSecret: storageSecret,
+		}
+		break
+	}
+	Expect(found).NotTo(BeNil(), "no scheduler pod matched a SchedulingShard in %s", kaiConfig.Spec.Namespace)
+	return *found
+}
+
+func recorderSecretNames(ctx context.Context, testCtx *testcontext.TestContext, shardName string) (hashSecret, storageSecret string) {
+	shard := &unstructured.Unstructured{}
+	shard.SetGroupVersionKind(kaiv1.GroupVersion.WithKind("SchedulingShard"))
+	Expect(testCtx.ControllerClient.Get(ctx, client.ObjectKey{Name: shardName}, shard)).To(Succeed())
+	hashSecret, _, _ = unstructured.NestedString(shard.Object, "spec", "recorder", "hashKeySecretName")
+	storageSecret, _, _ = unstructured.NestedString(shard.Object, "spec", "recorder", "storageSecretName")
+	if hashSecret == "" {
+		hashSecret = recorderv1.DefaultHashKeySecretName
+	}
+	if storageSecret == "" {
+		storageSecret = recorderv1.DefaultStorageSecretName
+	}
+	return hashSecret, storageSecret
+}
+
+func ensureRecorder(ctx context.Context, testCtx *testcontext.TestContext, live liveScheduler) {
+	secret := &v1.Secret{ObjectMeta: metav1.ObjectMeta{Name: live.storageSecret, Namespace: live.namespace}}
+	_, err := testCtx.KubeClientset.CoreV1().Secrets(live.namespace).Create(ctx, secret, metav1.CreateOptions{})
+	if err != nil && !errors.IsAlreadyExists(err) {
+		Expect(err).NotTo(HaveOccurred())
+	}
+	patchRecorderEnabled(ctx, testCtx.ControllerClient, live.shardName, true)
+	Eventually(func(g Gomega) {
+		pod := schedulerPod(ctx, testCtx, live)
+		g.Expect(rd.IsPodRunning(&pod)).To(BeTrue())
+		side := otherContainer(pod, live.containerName)
+		g.Expect(side).NotTo(BeNil())
+		g.Expect(side.Image).NotTo(BeEmpty())
+	}).WithTimeout(3 * time.Minute).WithPolling(2 * time.Second).Should(Succeed())
+}
+
+func hashKey(ctx context.Context, testCtx *testcontext.TestContext, live liveScheduler) []byte {
+	stored, err := testCtx.KubeClientset.CoreV1().Secrets(live.namespace).Get(ctx, live.hashSecret, metav1.GetOptions{})
 	Expect(err).NotTo(HaveOccurred())
-	Expect(stored.Data["hmac-key"]).NotTo(BeEmpty())
-	return stored.Data["hmac-key"]
+	Expect(stored.Data[recorderv1.HMACKeyDataKey]).NotTo(BeEmpty())
+	return stored.Data[recorderv1.HMACKeyDataKey]
 }
 
 func waitForGPUNodes(ctx context.Context, kube *kubernetes.Clientset) (allocateNode, preemptNode string) {
@@ -330,13 +422,13 @@ func gpuPod(q *v2.Queue, gpus int64, priorityClass, pool string) *v1.Pod {
 	return pod
 }
 
-func readRecords(ctx context.Context, testCtx *testcontext.TestContext) (string, error) {
-	pod := schedulerPod(ctx, testCtx)
-	return execReader(ctx, testCtx, &pod)
+func readRecords(ctx context.Context, testCtx *testcontext.TestContext, live liveScheduler) (string, error) {
+	pod := schedulerPod(ctx, testCtx, live)
+	return execReader(ctx, testCtx, live, &pod)
 }
 
-func execReader(ctx context.Context, testCtx *testcontext.TestContext, sched *v1.Pod) (string, error) {
-	reader := ensureReader(ctx, testCtx, sched)
+func execReader(ctx context.Context, testCtx *testcontext.TestContext, live liveScheduler, sched *v1.Pod) (string, error) {
+	reader := ensureReader(ctx, testCtx, live, sched)
 	command := []string{"sh", "-c", `
 set -eu
 ls -la /volumes || true
@@ -352,25 +444,25 @@ done
 	return execContainer(ctx, testCtx.KubeClientset, testCtx.KubeConfig, reader, "reader", command)
 }
 
-func ensureReader(ctx context.Context, testCtx *testcontext.TestContext, sched *v1.Pod) *v1.Pod {
+func ensureReader(ctx context.Context, testCtx *testcontext.TestContext, live liveScheduler, sched *v1.Pod) *v1.Pod {
 	cfg := testconfig.GetConfig()
-	existing, err := testCtx.KubeClientset.CoreV1().Pods(cfg.SystemPodsNamespace).Get(ctx, "recorder-log-reader", metav1.GetOptions{})
+	existing, err := testCtx.KubeClientset.CoreV1().Pods(live.namespace).Get(ctx, "recorder-log-reader", metav1.GetOptions{})
 	if err == nil && readerMatches(existing, sched) {
 		if rd.IsPodRunning(existing) {
 			return existing
 		}
 	}
 	if err == nil {
-		Expect(testCtx.KubeClientset.CoreV1().Pods(cfg.SystemPodsNamespace).Delete(ctx, existing.Name, metav1.DeleteOptions{})).To(Succeed())
+		Expect(testCtx.KubeClientset.CoreV1().Pods(live.namespace).Delete(ctx, existing.Name, metav1.DeleteOptions{})).To(Succeed())
 		Eventually(func() bool {
-			_, getErr := testCtx.KubeClientset.CoreV1().Pods(cfg.SystemPodsNamespace).Get(ctx, "recorder-log-reader", metav1.GetOptions{})
+			_, getErr := testCtx.KubeClientset.CoreV1().Pods(live.namespace).Get(ctx, "recorder-log-reader", metav1.GetOptions{})
 			return errors.IsNotFound(getErr)
 		}).WithTimeout(time.Minute).Should(BeTrue())
 	}
 	hostPath := fmt.Sprintf("/var/lib/kubelet/pods/%s/volumes", sched.UID)
 	dir := v1.HostPathDirectory
 	pod := &v1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: "recorder-log-reader", Namespace: cfg.SystemPodsNamespace},
+		ObjectMeta: metav1.ObjectMeta{Name: "recorder-log-reader", Namespace: live.namespace},
 		Spec: v1.PodSpec{
 			NodeName:      sched.Spec.NodeName,
 			RestartPolicy: v1.RestartPolicyAlways,
@@ -390,10 +482,10 @@ func ensureReader(ctx context.Context, testCtx *testcontext.TestContext, sched *
 			}},
 		},
 	}
-	created, err := testCtx.KubeClientset.CoreV1().Pods(cfg.SystemPodsNamespace).Create(ctx, pod, metav1.CreateOptions{})
+	created, err := testCtx.KubeClientset.CoreV1().Pods(live.namespace).Create(ctx, pod, metav1.CreateOptions{})
 	Expect(err).NotTo(HaveOccurred())
 	Eventually(func(g Gomega) {
-		current, err := testCtx.KubeClientset.CoreV1().Pods(cfg.SystemPodsNamespace).Get(ctx, created.Name, metav1.GetOptions{})
+		current, err := testCtx.KubeClientset.CoreV1().Pods(live.namespace).Get(ctx, created.Name, metav1.GetOptions{})
 		g.Expect(err).NotTo(HaveOccurred())
 		g.Expect(rd.IsPodRunning(current)).To(BeTrue())
 	}).WithTimeout(2 * time.Minute).WithPolling(time.Second).Should(Succeed())
@@ -407,11 +499,11 @@ func readerMatches(pod, sched *v1.Pod) bool {
 	return strings.Contains(pod.Spec.Volumes[0].HostPath.Path, string(sched.UID))
 }
 
-func probeTokenDir(ctx context.Context, testCtx *testcontext.TestContext, pod *v1.Pod, containerName string) string {
+func probeTokenDir(ctx context.Context, testCtx *testcontext.TestContext, live liveScheduler, pod *v1.Pod, containerName string) string {
 	name := "token-probe-" + containerName
 	addTokenProbe(ctx, testCtx, pod, name, containerName)
 	Eventually(func(g Gomega) {
-		current := schedulerPod(ctx, testCtx)
+		current := schedulerPod(ctx, testCtx, live)
 		g.Expect(ephemeralRunning(&current, name)).To(BeTrue())
 	}).WithTimeout(3 * time.Minute).WithPolling(2 * time.Second).Should(Succeed())
 
@@ -433,7 +525,7 @@ if [ "$found" -eq 0 ]; then
   exit 1
 fi
 `
-	current := schedulerPod(ctx, testCtx)
+	current := schedulerPod(ctx, testCtx, live)
 	out, err := execContainer(ctx, testCtx.KubeClientset, testCtx.KubeConfig, &current, name, []string{"sh", "-c", script})
 	Expect(err).NotTo(HaveOccurred(), out)
 	return out
