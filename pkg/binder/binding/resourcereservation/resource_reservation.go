@@ -92,11 +92,23 @@ func NewService(
 		appLabelValue:                       appLabelValue,
 		scalingPodNamespace:                 scalingPodNamespace,
 		runtimeClassName:                    runtimeClassName,
-		podResources:                        podResources,
+		podResources:                        withoutGPUResource(podResources),
 		reservationPodSecurityContext:       reservationPodSecurityContext,
 		reservationContainerSecurityContext: reservationContainerSecurityContext,
 		fipsOnly:                            fipsOnly,
 	}
+}
+
+// withoutGPUResource returns a copy of the configured reservation-pod resources without the GPU resource,
+// which the service sets itself. It runs once, at start-up, and leaves the caller's value unchanged.
+func withoutGPUResource(podResources *v1.ResourceRequirements) *v1.ResourceRequirements {
+	if podResources == nil {
+		return nil
+	}
+	stripped := podResources.DeepCopy()
+	delete(stripped.Limits, constants.NvidiaGpuResource)
+	delete(stripped.Requests, constants.NvidiaGpuResource)
+	return stripped
 }
 
 func (rsc *service) Sync(ctx context.Context) error {
@@ -511,15 +523,10 @@ func (rsc *service) createGPUReservationPod(
 		},
 	}
 
+	// rsc.podResources carries no GPU resource (NewService removed it), so it cannot override the GPU count.
 	if rsc.podResources != nil {
-		if rsc.podResources.Limits != nil {
-			delete(rsc.podResources.Limits, constants.NvidiaGpuResource)
-			maps.Copy(resources.Limits, rsc.podResources.Limits)
-		}
-		if rsc.podResources.Requests != nil {
-			delete(rsc.podResources.Requests, constants.NvidiaGpuResource)
-			maps.Copy(resources.Requests, rsc.podResources.Requests)
-		}
+		maps.Copy(resources.Limits, rsc.podResources.Limits)
+		maps.Copy(resources.Requests, rsc.podResources.Requests)
 	}
 
 	pod, err := rsc.createResourceReservationPod(sourcePod, nodeName, fractionalGpuGroup, podName, resources)
