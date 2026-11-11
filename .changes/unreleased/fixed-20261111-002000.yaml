@@ -1,6 +1,6 @@
 kind: Fixed
 body: |-
-  A pod that requests nvidia.com/gpu is no longer bound to a node whose GPUs come only from DRA when no DeviceClass maps nvidia.com/gpu to DRA. Before, it ran without a GPU. It now stays Pending with a clear reason
+  A pod that requests a GPU resource (nvidia.com/gpu or amd.com/gpu) is no longer bound to a node whose GPUs come only from DRA when no DeviceClass maps that resource to DRA. Before, it ran without a GPU. It now stays Pending with a clear reason
 time: 2026-11-11T00:20:00.000000+00:00
 custom:
     Author: mohitvinchoo

@@ -19,6 +19,11 @@ const (
 	PodsResourceName   = v1.ResourcePods
 )
 
+// IsGpuResourceName reports whether the resource is one of the GPU resources a pod can request.
+func IsGpuResourceName(name v1.ResourceName) bool {
+	return name == GPUResourceName || name == amdGpuResourceName
+}
+
 type ResourceRequirements struct {
 	BaseResource
 	GpuResourceRequirement
