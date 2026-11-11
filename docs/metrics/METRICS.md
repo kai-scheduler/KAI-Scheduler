@@ -38,6 +38,8 @@ Metrics related to the core scheduling algorithm performance, task lifecycle, an
 
 ### Latency Metrics
 
+The `*_latency_milliseconds` gauges for the scheduling cycle, session, plugin and action durations only expose the latest value. The matching `*_latency_seconds` histograms record every observation, so percentiles can be computed, for example `histogram_quantile(0.99, sum by (le, action) (rate(action_scheduling_latency_seconds_bucket[5m])))`. The gauges are kept for backward compatibility.
+
 | Metric Name | Type | Labels | Description |
 |---|---|---|---|
 | `e2e_scheduling_latency_milliseconds` | Gauge | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | End-to-end scheduling cycle (all actions) duration in milliseconds |
@@ -45,6 +47,11 @@ Metrics related to the core scheduling algorithm performance, task lifecycle, an
 | `close_session_latency_milliseconds` | Gauge | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | Session close latency in milliseconds, including all plugin cleanup. Latest value only. |
 | `plugin_scheduling_latency_milliseconds` | Gauge | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `plugin`, `OnSession` | Per-plugin scheduling latency in milliseconds for OnSessionOpen and OnSessionClose methods |
 | `action_scheduling_latency_milliseconds` | Gauge | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `action` | Per-action scheduling latency in milliseconds. Identifies which actions dominate scheduling time. |
+| `e2e_scheduling_latency_seconds` | Histogram | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | Distribution of end-to-end scheduling cycle (all actions) duration in seconds. Use `histogram_quantile` to compute p95/p99. Buckets: [0.1ms, 0.2ms, 0.4ms, ..., ~105s] (exponential). |
+| `open_session_latency_seconds` | Histogram | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | Distribution of session open latency in seconds, including all plugin initialization. Buckets: [0.1ms, 0.2ms, 0.4ms, ..., ~105s] (exponential). |
+| `close_session_latency_seconds` | Histogram | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | Distribution of session close latency in seconds, including all plugin cleanup. Buckets: [0.1ms, 0.2ms, 0.4ms, ..., ~105s] (exponential). |
+| `plugin_scheduling_latency_seconds` | Histogram | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `plugin`, `OnSession` | Distribution of per-plugin scheduling latency in seconds for OnSessionOpen and OnSessionClose methods. Buckets: [0.1ms, 0.2ms, 0.4ms, ..., ~105s] (exponential). |
+| `action_scheduling_latency_seconds` | Histogram | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `action` | Distribution of per-action scheduling latency in seconds. Identifies which actions dominate scheduling time. Buckets: [0.1ms, 0.2ms, 0.4ms, ..., ~105s] (exponential). |
 | `task_scheduling_latency_milliseconds` | Histogram | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | Duration in milliseconds from pod creation until scheduler bind attempt. Affected by scheduler performance and cluster conditions (e.g., resource availability). Does not include binder service execution. Buckets: [5ms, 10ms, 20ms, ..., 2560ms] (exponential). |
 | `task_bind_latency_milliseconds` | Histogram | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | Duration in milliseconds for the binder service to execute pod binding, including bind request creation and actual binding. Buckets: [5ms, 10ms, 20ms, ..., 2560ms] (exponential). |
 | `usage_query_latency_milliseconds` | Histogram | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | Usage database query latency distribution in milliseconds (if configured). Buckets: [5ms, 10ms, 20ms, ..., 2560ms] (exponential). |
