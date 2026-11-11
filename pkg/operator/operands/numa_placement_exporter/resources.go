@@ -41,7 +41,7 @@ func (e *NumaPlacementExporter) daemonSetForKAIConfig(
 	}
 
 	container := &ds.Spec.Template.Spec.Containers[0]
-	container.Args = buildArgsList(config)
+	container.Args = buildArgsList(config, kaiConfig.Spec.Global.JSONLog)
 	container.Env = append(container.Env, v1.EnvVar{
 		Name:      "NODE_NAME",
 		ValueFrom: &v1.EnvVarSource{FieldRef: &v1.ObjectFieldSelector{FieldPath: "spec.nodeName"}},
@@ -70,9 +70,9 @@ func (e *NumaPlacementExporter) daemonSetForKAIConfig(
 	return []client.Object{ds}, nil
 }
 
-// buildArgsList passes the fixed mount-aligned paths plus any tunable intervals the Config sets;
-// unset intervals fall through to the binary defaults.
-func buildArgsList(config *npeapi.NumaPlacementExporter) []string {
+// buildArgsList passes the fixed mount-aligned paths, any tunable intervals the Config sets and the
+// global JSON-log flag; unset intervals fall through to the binary defaults.
+func buildArgsList(config *npeapi.NumaPlacementExporter, jsonLog *bool) []string {
 	args := []string{
 		fmt.Sprintf("--podresources-socket=%s", effectivePodResourcesSocket(config)),
 		fmt.Sprintf("--sysfs-root=%s", sysfsMountPath),
@@ -83,7 +83,7 @@ func buildArgsList(config *npeapi.NumaPlacementExporter) []string {
 	if config.DriftResyncInterval != nil {
 		args = append(args, fmt.Sprintf("--drift-resync-interval=%s", config.DriftResyncInterval.Duration.String()))
 	}
-	return args
+	return common.AddControllerRuntimeJSONLogArg(jsonLog, args)
 }
 
 func (e *NumaPlacementExporter) serviceAccountForKAIConfig(
