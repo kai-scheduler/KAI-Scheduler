@@ -14,6 +14,7 @@ import (
 	"k8s.io/component-base/version"
 	ndf "k8s.io/component-helpers/nodedeclaredfeatures"
 	ndffeatures "k8s.io/component-helpers/nodedeclaredfeatures/features"
+	"k8s.io/klog/v2"
 	kubefeatures "k8s.io/kubernetes/pkg/features"
 )
 
@@ -22,9 +23,19 @@ type nodeDeclaredFeaturesInference struct {
 	version   *versionutil.Version
 }
 
+// Setup runs once and its error is cached, so it is logged here rather than
+// by every caller.
+var getNodeDeclaredFeaturesInference = sync.OnceValues(func() (*nodeDeclaredFeaturesInference, error) {
+	inference, err := newNodeDeclaredFeaturesInference()
+	if err != nil {
+		klog.ErrorS(err, "Failed to set up node declared features inference")
+	}
+	return inference, err
+})
+
 // Built the same way as the upstream NodeDeclaredFeatures scheduler plugin, so
 // callers infer exactly the requirements that the plugin filters on.
-var getNodeDeclaredFeaturesInference = sync.OnceValues(func() (*nodeDeclaredFeaturesInference, error) {
+func newNodeDeclaredFeaturesInference() (*nodeDeclaredFeaturesInference, error) {
 	framework, err := ndf.New(ndffeatures.AllFeatures)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create node declared features framework: %w", err)
@@ -34,7 +45,7 @@ var getNodeDeclaredFeaturesInference = sync.OnceValues(func() (*nodeDeclaredFeat
 		return nil, fmt.Errorf("failed to parse version: %w", err)
 	}
 	return &nodeDeclaredFeaturesInference{framework: framework, version: ver}, nil
-})
+}
 
 // NodeDeclaredFeatureRequirements returns the sorted names of the node-declared
 // features required to schedule the pod. It returns nil when the pod has no
