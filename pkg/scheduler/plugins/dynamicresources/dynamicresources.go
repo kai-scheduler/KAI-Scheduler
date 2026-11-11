@@ -10,6 +10,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/component-helpers/scheduling/corev1/nodeaffinity"
 	"k8s.io/dynamic-resource-allocation/cel"
 	"k8s.io/dynamic-resource-allocation/deviceclass/extendedresourcecache"
@@ -22,7 +23,6 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	"github.com/kai-scheduler/api/constants"
@@ -39,6 +39,7 @@ type draPlugin struct {
 	manager               ksf.SharedDRAManager
 	celCache              *cel.Cache
 	allocatorFeatures     structured.Features
+	requestedGpus         map[types.UID][]v1.ResourceName // The GPU resources each pod requests, which do not depend on the node.
 	queueLabelKey         string
 	deviceClassByResource *extendedresourcecache.ExtendedResourceCache
 }
@@ -227,9 +228,9 @@ func (drap *draPlugin) preFilter(task *pod_info.PodInfo, job *podgroup_info.PodG
 func (drap *draPlugin) filter(task *pod_info.PodInfo, _ *podgroup_info.PodGroupInfo, nodeInfo *node_info.NodeInfo) error {
 	pod := task.Pod
 
-	if gpuRequestHasNoDeviceSource(task, nodeInfo, drap.deviceClassByResource) {
+	if gpuResource, found := drap.gpuResourceWithoutDeviceSource(task, nodeInfo); found {
 		return fmt.Errorf("node %s reports no %s, its GPUs are only available through DRA, and no DeviceClass maps %s to DRA",
-			nodeInfo.Name, resource_info.GPUResourceName, resource_info.GPUResourceName)
+			nodeInfo.Name, gpuResource, gpuResource)
 	}
 
 	hasDRAExtResources := task.ExtendedResourceClaim != nil
@@ -312,6 +313,21 @@ func (drap *draPlugin) filter(task *pod_info.PodInfo, _ *podgroup_info.PodGroupI
 	}
 
 	return nil
+}
+
+func (drap *draPlugin) gpuResourceWithoutDeviceSource(task *pod_info.PodInfo, nodeInfo *node_info.NodeInfo) (v1.ResourceName, bool) {
+	if !nodeInfo.HasDRAGPUs {
+		return "", false
+	}
+	requested, cached := drap.requestedGpus[task.Pod.UID]
+	if !cached {
+		if drap.requestedGpus == nil {
+			drap.requestedGpus = map[types.UID][]v1.ResourceName{}
+		}
+		requested = requestedGpuResources(task.Pod)
+		drap.requestedGpus[task.Pod.UID] = requested
+	}
+	return gpuResourceWithoutDeviceSource(requested, nodeInfo, drap.deviceClassByResource)
 }
 
 // validateSharedGpuClaimQueueLabel validates that shared GPU DRA claims (non-template claims) have the correct queue label.

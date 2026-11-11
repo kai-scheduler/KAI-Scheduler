@@ -4,6 +4,8 @@
 package dynamicresources
 
 import (
+	"sort"
+
 	v1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -88,19 +90,32 @@ func podExtendedResourcesNeedingDRA(
 	return result
 }
 
-// gpuRequestHasNoDeviceSource reports a pod requesting nvidia.com/gpu on a DRA-only node where no DeviceClass maps it to DRA.
-func gpuRequestHasNoDeviceSource(
-	task *pod_info.PodInfo,
+// requestedGpuResources returns the GPU resources the pod requests, in a stable order.
+func requestedGpuResources(pod *v1.Pod) []v1.ResourceName {
+	var names []v1.ResourceName
+	for name, quantity := range resourcehelper.PodRequests(pod, resourcehelper.PodResourcesOptions{}) {
+		if resource_info.IsGpuResourceName(name) && !quantity.IsZero() {
+			names = append(names, name)
+		}
+	}
+	sort.Slice(names, func(i, j int) bool { return names[i] < names[j] })
+	return names
+}
+
+// gpuResourceWithoutDeviceSource returns a requested GPU resource that nothing on the DRA-only node can provide.
+func gpuResourceWithoutDeviceSource(
+	requested []v1.ResourceName,
 	nodeInfo *node_info.NodeInfo,
 	dbc *extendedresourcecache.ExtendedResourceCache,
-) bool {
-	gpu := v1.ResourceName(resource_info.GPUResourceName)
-	if !nodeInfo.HasDRAGPUs || dbc.GetDeviceClass(gpu) != nil {
-		return false
+) (v1.ResourceName, bool) {
+	for _, name := range requested {
+		if dbc.GetDeviceClass(name) != nil {
+			continue
+		}
+		if allocatable, ok := nodeInfo.Node.Status.Allocatable[name]; ok && !allocatable.IsZero() {
+			continue
+		}
+		return name, true
 	}
-	if allocatable, ok := nodeInfo.Node.Status.Allocatable[gpu]; ok && !allocatable.IsZero() {
-		return false
-	}
-	request := resourcehelper.PodRequests(task.Pod, resourcehelper.PodResourcesOptions{})[gpu]
-	return !request.IsZero()
+	return "", false
 }
