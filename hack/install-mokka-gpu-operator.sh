@@ -16,7 +16,7 @@ fi
 # PR 1109, the memory-limit fix, and opt-in NUMA sysfs/kubelet simulation.
 # Keep this commit pinned until the integration is available in an upstream release.
 : "${MOKKA_REPOSITORY:=https://github.com/JRosenboimNVIDIA/mokka.git}"
-: "${MOKKA_REF:=a62adccb7d3334c902c644e89f28950af751b647}"
+: "${MOKKA_REF:=7085b09b5c80ffc984e6e8f5ca1bce1f19b24506}"
 : "${MOKKA_IMAGE_REPOSITORY:=mokka-e2e}"
 : "${MOKKA_IMAGE_TAG:=${MOKKA_REF:0:12}}"
 
@@ -27,7 +27,6 @@ git -C "$SOURCE_DIR" fetch --depth=1 "$MOKKA_REPOSITORY" "$MOKKA_REF"
 git -C "$SOURCE_DIR" checkout --quiet --detach FETCH_HEAD
 
 docker build --file "$SOURCE_DIR/deployments/nvml-mock/Dockerfile" \
-  --build-arg GOLANG_VERSION=1.27.3 \
   --tag "$MOKKA_IMAGE_REPOSITORY:$MOKKA_IMAGE_TAG" "$SOURCE_DIR"
 kind load docker-image --name "$CLUSTER_NAME" "$MOKKA_IMAGE_REPOSITORY:$MOKKA_IMAGE_TAG"
 
@@ -40,7 +39,7 @@ if [[ "$FEATURE_CONFIG" = numa-full ]]; then
   for policy in single-numa-node restricted best-effort; do
     helm upgrade --install "nvml-mock-$policy" "$SOURCE_DIR/deployments/nvml-mock/helm/nvml-mock" \
       --namespace mokka --create-namespace "${MOKKA_VALUES[@]}" \
-      --set 'nodeAgent.numa.enabled=true' --set 'nodeAgent.numa.configureKubelet=true' \
+      --set 'nodeAgent.numa.enabled=true' \
       --set 'nodeAgent.numa.cpuManagerPolicy=static' --set 'nodeAgent.numa.memoryManagerPolicy=static' \
       --set 'nodeAgent.numa.systemReservedCPU=100m' \
       --set "nodeAgent.numa.topologyManagerPolicy=$policy" \

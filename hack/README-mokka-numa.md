@@ -9,18 +9,17 @@ The `numa-full` kind layout has four GPU workers, with eight A100 GPUs each,
 split 4+4 between two zones. Two workers use `single-numa-node`; one uses
 `restricted`; one uses `best-effort`. A CPU worker runs the control services.
 
-Mokka is pinned to `a62adccb7d3334c902c644e89f28950af751b647` in the public
+Mokka is pinned to `7085b09b5c80ffc984e6e8f5ca1bce1f19b24506` in the public
 `JRosenboimNVIDIA/mokka` fork. It includes Roman's GPU Operator support, the
 memory-limit fix, the current NUMA review changes, and the node-bus fix that lets
 NFD read memory capacity in every simulated zone. It also includes bidirectional
-host mounts, the PodResources socket health check, and preparation owned by the
-NUMA simulator before all staging. Each selected node uses:
+host mounts, the PodResources socket health check, and a shared NUMA layout
+resolved by the agent enricher before all staging. Each selected node uses:
 
 ```yaml
 nodeAgent:
   numa:
     enabled: true
-    configureKubelet: true
     topologyManagerPolicy: restricted # varies by pool
     cpuManagerPolicy: static
     memoryManagerPolicy: static
@@ -30,10 +29,10 @@ nodeAgent:
 
 Mokka configures a fractional CPU reservation and whole shared-pool CPU IDs, configures memory
 reservations, backs up manager checkpoints, and restarts kubelet. The privileged
-pod applies simulation and bind-mounts the modified kubelet configuration. A boot
-helper clears registered manager checkpoints before kubelet starts after a node
-reboot. Restore simulation before changing active policies; use fresh or drained
-test nodes.
+pod applies simulation and bind-mounts the modified kubelet configuration. The
+node agent registers boot cleanup with an empty persistent marker. The helper
+clears manager checkpoints before kubelet starts after a node reboot. Restore
+simulation before changing active policies; use fresh or drained test nodes.
 
 CPU Manager assigns real CPU IDs. Memory Manager keeps simulated memory groups
 in its own state, exposed by the real kubelet pod-resources socket. Mokka's NRI
