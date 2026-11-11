@@ -46,6 +46,8 @@ type TestTaskBasic struct {
 	IsLegacyMigTask            bool
 	ResourceClaimTemplates     map[string]string
 	ResourceClaimNames         []string
+	// ExtendedResourceClaimName is the pod's extended-resource claim, recorded in the pod status.
+	ExtendedResourceClaimName  string
 	PersistentVolumeClaimNames []string
 	// ResizeStatus holds the allocated/enacted size; the job's request is the desired size.
 	ResizeStatus *TestResizeStatus
@@ -169,6 +171,12 @@ func BuildPod(
 			Name:              claimName,
 			ResourceClaimName: &claimName,
 		})
+	}
+
+	if task.ExtendedResourceClaimName != "" {
+		pod.Status.ExtendedResourceClaimStatus = &v1.PodExtendedResourceClaimStatus{
+			ResourceClaimName: task.ExtendedResourceClaimName,
+		}
 	}
 
 	for templateName, claimName := range task.ResourceClaimTemplates {
