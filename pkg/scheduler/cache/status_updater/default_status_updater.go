@@ -119,7 +119,7 @@ func (su *defaultStatusUpdater) Evicted(
 	}
 
 	su.recorder.AnnotatedEventf(evictedPodGroup, evictionEventMetadata, v1.EventTypeNormal, "Evict",
-		message)
+		"%s", evictionEventMessage(evictionMetadata, message))
 
 	nodepool := utils.GetNodePoolNameFromLabels(evictedPodGroup.Labels, su.nodePoolLabelKey)
 	metrics.IncPodGroupEvictedPods(
@@ -128,6 +128,28 @@ func (su *defaultStatusUpdater) Evicted(
 		evictionMetadata.Action,
 		evictedPod.Labels[commonconstants.SubGroupLabelKey],
 	)
+}
+
+// evictionEventMessage prefixes the eviction message with the evicting action and the
+// preemptor PodGroup, so that both show up in `kubectl describe` and `kubectl get events`
+// and not only in the event annotations.
+func evictionEventMessage(evictionMetadata eviction_info.EvictionMetadata, message string) string {
+	if evictionMetadata.Action == "" {
+		return message
+	}
+
+	summary := "Evicted by " + evictionMetadata.Action
+	if evictionMetadata.Preemptor != nil && evictionMetadata.Preemptor.Name != "" {
+		preemptor := evictionMetadata.Preemptor.Name
+		if evictionMetadata.Preemptor.Namespace != "" {
+			preemptor = evictionMetadata.Preemptor.Namespace + "/" + preemptor
+		}
+		summary += " for " + preemptor
+	}
+	if message == "" {
+		return summary
+	}
+	return summary + ": " + message
 }
 
 // +kubebuilder:rbac:groups="",resources=pods,verbs=update;patch

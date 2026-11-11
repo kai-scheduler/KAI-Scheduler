@@ -1221,11 +1221,81 @@ func TestEvicted_EmitsAnnotatedEventWithMetadata(t *testing.T) {
 	event := recorder.events[0]
 	assert.Equal(t, v1.EventTypeNormal, event.eventType)
 	assert.Equal(t, "Evict", event.reason)
-	assert.Equal(t, "pod evicted", event.message)
+	assert.Equal(t, "Evicted by preempt for preemptor-ns/preemptor: pod evicted", event.message)
 	assert.Equal(t, "5", event.annotations[evictionGangSize])
 	assert.Equal(t, "preempt", event.annotations[evictorActionType])
 	assert.Equal(t, "preemptor", event.annotations[evictorPodGroupNameAnnotations])
 	assert.Equal(t, "preemptor-ns", event.annotations[evictorPodGroupNamespaceAnnotations])
+}
+
+func TestEvicted_EventMessageNamesActionAndPreemptor(t *testing.T) {
+	tests := []struct {
+		name            string
+		metadata        eviction_info.EvictionMetadata
+		message         string
+		expectedMessage string
+	}{
+		{
+			name: "reclaim with preemptor",
+			metadata: eviction_info.EvictionMetadata{
+				Action:    "reclaim",
+				Preemptor: &types.NamespacedName{Namespace: "team-b", Name: "train-42"},
+			},
+			message:         "Pod team-a/p-0 was preempted by workload team-b/train-42.",
+			expectedMessage: "Evicted by reclaim for team-b/train-42: Pod team-a/p-0 was preempted by workload team-b/train-42.",
+		},
+		{
+			name: "consolidation with preemptor",
+			metadata: eviction_info.EvictionMetadata{
+				Action:    "consolidation",
+				Preemptor: &types.NamespacedName{Namespace: "team-b", Name: "train-42"},
+			},
+			message:         "Pod team-a/p-0 was preempted and rescheduled due to bin packing (resource consolidation) procedure",
+			expectedMessage: "Evicted by consolidation for team-b/train-42: Pod team-a/p-0 was preempted and rescheduled due to bin packing (resource consolidation) procedure",
+		},
+		{
+			name:            "stale gang eviction without preemptor",
+			metadata:        eviction_info.EvictionMetadata{Action: "stalegangeviction"},
+			message:         "Workload has fewer pods than its minimum",
+			expectedMessage: "Evicted by stalegangeviction: Workload has fewer pods than its minimum",
+		},
+		{
+			name: "preemptor without namespace",
+			metadata: eviction_info.EvictionMetadata{
+				Action:    "preempt",
+				Preemptor: &types.NamespacedName{Name: "train-42"},
+			},
+			message:         "pod evicted",
+			expectedMessage: "Evicted by preempt for train-42: pod evicted",
+		},
+		{
+			name:            "no action keeps the message",
+			metadata:        eviction_info.EvictionMetadata{},
+			message:         "pod evicted",
+			expectedMessage: "pod evicted",
+		},
+		{
+			name:            "message with format verbs is not interpreted",
+			metadata:        eviction_info.EvictionMetadata{Action: "reclaim"},
+			message:         "queue uses 100% of its quota",
+			expectedMessage: "Evicted by reclaim: queue uses 100% of its quota",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			pg := makeEvictionPodGroup(t, "msg")
+			recorder := &annotationCapturingRecorder{}
+			statusUpdater := New(fake.NewSimpleClientset(), kubeaischedfake.NewSimpleClientset(), recorder, 1,
+				false, nodePoolLabelKey)
+
+			statusUpdater.Evicted(&v1.Pod{}, pg, tc.metadata, tc.message)
+
+			require.Len(t, recorder.events, 1)
+			assert.Equal(t, "Evict", recorder.events[0].reason)
+			assert.Equal(t, tc.expectedMessage, recorder.events[0].message)
+		})
+	}
 }
 
 func TestUpdatePodGroupLastEvictionTimeStamp(t *testing.T) {
