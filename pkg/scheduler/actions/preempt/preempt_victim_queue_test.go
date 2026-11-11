@@ -156,3 +156,30 @@ func newPreemptVictimQueueTestJob(
 	job.Preemptibility = schedulingv2alpha2.Preemptible
 	return job, task
 }
+
+func TestOrderedVictimsQueueOnNodeKeepsOnlyJobsOnTheNode(t *testing.T) {
+	ssn, preemptor, onNode, otherNode := newPreemptVictimQueueTestSession()
+	for _, task := range otherNode.GetAllPodsMap() {
+		task.NodeName = "node-1"
+	}
+	ssn.ClusterInfo.Nodes["node-1"] = nil
+	ssn.AddPreemptVictimFilterFn(func(_, _ *podgroup_info.PodGroupInfo) bool { return true })
+
+	queue := getOrderedVictimsQueueOnNode(ssn, preemptor, "node-0")()
+	require.Same(t, onNode, queue.PopNextJob())
+	require.True(t, queue.IsEmpty())
+
+	queue = getOrderedVictimsQueueOnNode(ssn, preemptor, "node-1")()
+	require.Same(t, otherNode, queue.PopNextJob())
+	require.True(t, queue.IsEmpty())
+}
+
+func TestOrderedVictimsQueueOnNodeKeepsPreemptRules(t *testing.T) {
+	ssn, preemptor, onNode, filtered := newPreemptVictimQueueTestSession()
+	filtered.Priority = preemptor.Priority
+	ssn.AddPreemptVictimFilterFn(func(_, _ *podgroup_info.PodGroupInfo) bool { return true })
+
+	queue := getOrderedVictimsQueueOnNode(ssn, preemptor, "node-0")()
+	require.Same(t, onNode, queue.PopNextJob())
+	require.True(t, queue.IsEmpty(), "equal priority job is not a victim")
+}
