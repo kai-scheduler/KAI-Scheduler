@@ -22,23 +22,34 @@ const (
 )
 
 // IsGPUOperatorCDIEnabled returns whether the GPU Operator ClusterPolicy enables CDI.
+// From GPU Operator 25.10 CDI is on unless spec.cdi.enabled is false, and
+// spec.cdi.default no longer matters; before that, CDI is used only when both
+// spec.cdi.enabled and spec.cdi.default are true.
 func IsGPUOperatorCDIEnabled(ctx context.Context, readerClient client.Reader) (bool, error) {
 	nvidiaClusterPolicy, found, err := gpuOperatorClusterPolicy(ctx, readerClient)
 	if err != nil || !found {
 		return false, err
 	}
 
-	if nvidiaClusterPolicy.Spec.CDI.Enabled != nil && *nvidiaClusterPolicy.Spec.CDI.Enabled {
-		gpuOperatorVersion, found := nvidiaClusterPolicy.Labels[gpuOperatorVersionLabelName]
-		if found && semver.Compare(gpuOperatorVersion, gpuOperatorVersionDefaultCDIDeprecated) >= 0 {
-			return true, nil
-		}
-		if nvidiaClusterPolicy.Spec.CDI.Default != nil && *nvidiaClusterPolicy.Spec.CDI.Default {
-			return true, nil
-		}
+	cdiOnByDefault := gpuOperatorDefaultsToCDI(nvidiaClusterPolicy)
+	enabled := cdiOnByDefault
+	if nvidiaClusterPolicy.Spec.CDI.Enabled != nil {
+		enabled = *nvidiaClusterPolicy.Spec.CDI.Enabled
 	}
+	if !enabled {
+		return false, nil
+	}
+	if cdiOnByDefault {
+		return true, nil
+	}
+	return nvidiaClusterPolicy.Spec.CDI.Default != nil && *nvidiaClusterPolicy.Spec.CDI.Default, nil
+}
 
-	return false, nil
+// gpuOperatorDefaultsToCDI reports whether the ClusterPolicy's GPU Operator
+// version label is 25.10 or newer; an absent label is treated as older.
+func gpuOperatorDefaultsToCDI(nvidiaClusterPolicy *nvidiav1.ClusterPolicy) bool {
+	gpuOperatorVersion, found := nvidiaClusterPolicy.Labels[gpuOperatorVersionLabelName]
+	return found && semver.Compare(gpuOperatorVersion, gpuOperatorVersionDefaultCDIDeprecated) >= 0
 }
 
 // IsGPUOperatorNRIPluginEnabled returns whether the GPU Operator ClusterPolicy enables the CDI NRI plugin.
