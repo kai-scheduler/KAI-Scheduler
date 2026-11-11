@@ -15,6 +15,7 @@ import (
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 )
 
 // specialClaimInMemName is the placeholder name for an in-memory synthetic claim.
@@ -85,4 +86,21 @@ func podExtendedResourcesNeedingDRA(
 		result[rName] = crq
 	}
 	return result
+}
+
+// gpuRequestHasNoDeviceSource reports a pod requesting nvidia.com/gpu on a DRA-only node where no DeviceClass maps it to DRA.
+func gpuRequestHasNoDeviceSource(
+	task *pod_info.PodInfo,
+	nodeInfo *node_info.NodeInfo,
+	dbc *extendedresourcecache.ExtendedResourceCache,
+) bool {
+	gpu := v1.ResourceName(resource_info.GPUResourceName)
+	if !nodeInfo.HasDRAGPUs || dbc.GetDeviceClass(gpu) != nil {
+		return false
+	}
+	if allocatable, ok := nodeInfo.Node.Status.Allocatable[gpu]; ok && !allocatable.IsZero() {
+		return false
+	}
+	request := resourcehelper.PodRequests(task.Pod, resourcehelper.PodResourcesOptions{})[gpu]
+	return !request.IsZero()
 }

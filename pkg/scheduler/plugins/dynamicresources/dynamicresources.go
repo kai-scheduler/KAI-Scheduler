@@ -22,6 +22,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	"github.com/kai-scheduler/api/constants"
@@ -225,6 +226,11 @@ func (drap *draPlugin) preFilter(task *pod_info.PodInfo, job *podgroup_info.PodG
 
 func (drap *draPlugin) filter(task *pod_info.PodInfo, _ *podgroup_info.PodGroupInfo, nodeInfo *node_info.NodeInfo) error {
 	pod := task.Pod
+
+	if gpuRequestHasNoDeviceSource(task, nodeInfo, drap.deviceClassByResource) {
+		return fmt.Errorf("node %s reports no %s, its GPUs are only available through DRA, and no DeviceClass maps %s to DRA",
+			nodeInfo.Name, resource_info.GPUResourceName, resource_info.GPUResourceName)
+	}
 
 	hasDRAExtResources := task.ExtendedResourceClaim != nil
 	if !hasDRAExtResources && (len(pod.Spec.ResourceClaims) == 0 || drap.manager == nil) {
