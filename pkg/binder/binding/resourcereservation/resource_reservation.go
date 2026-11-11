@@ -25,6 +25,7 @@ import (
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding/resourcereservation/group_mutex"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/metrics"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/fips"
 	"github.com/kai-scheduler/api/constants"
 	schedulingv1alpha2 "github.com/kai-scheduler/api/scheduling/v1alpha2"
@@ -443,7 +444,9 @@ func (rsc *service) createGPUReservationPodAndGetIndex(
 		return unknownGpuIndicator, err
 	}
 
-	gpuIndex = rsc.waitForGPUReservationPodAllocation(ctx, nodeName, pod.Name)
+	waitStart := time.Now()
+	gpuIndex, waitResult := rsc.waitForGPUReservationPodAllocation(ctx, nodeName, pod.Name)
+	metrics.ObserveReservationPodAllocation(waitResult, time.Since(waitStart))
 	if gpuIndex == unknownGpuIndicator {
 		deleteErr := rsc.deleteReservationPod(ctx, pod)
 		if deleteErr != nil {
@@ -546,7 +549,7 @@ func (rsc *service) createGPUReservationPod(
 
 func (rsc *service) waitForGPUReservationPodAllocation(
 	ctx context.Context, nodeName, gpuReservationPodName string,
-) string {
+) (gpuIndex string, result string) {
 	logger := log.FromContext(ctx)
 	pods := &v1.PodList{}
 	watcher, err := rsc.kubeClient.Watch(
@@ -556,7 +559,7 @@ func (rsc *service) waitForGPUReservationPodAllocation(
 	)
 	if err != nil {
 		logger.Error(err, "Failed to watch for GPU reservation pod")
-		return unknownGpuIndicator
+		return unknownGpuIndicator, metrics.ReservationError
 	}
 	defer watcher.Stop()
 
@@ -567,30 +570,30 @@ func (rsc *service) waitForGPUReservationPodAllocation(
 			logger.Error(ctx.Err(),
 				"Context done while waiting for GPU reservation pod to be allocated",
 				"nodeName", nodeName, "name", gpuReservationPodName)
-			return unknownGpuIndicator
+			return unknownGpuIndicator, metrics.ReservationError
 		case <-timeout:
 			logger.Error(fmt.Errorf("timeout"),
 				"Reached timeout while waiting for GPU reservation pod to be allocated",
 				"nodeName", nodeName, "name", gpuReservationPodName)
-			return unknownGpuIndicator
+			return unknownGpuIndicator, metrics.ReservationTimeout
 		case event, ok := <-watcher.ResultChan():
 			if !ok {
 				logger.Error(nil,
 					"GPU reservation pod watch channel closed while waiting for allocation",
 					"nodeName", nodeName, "name", gpuReservationPodName)
-				return unknownGpuIndicator
+				return unknownGpuIndicator, metrics.ReservationError
 			}
 
 			if event.Type == watch.Error {
 				logger.Error(fmt.Errorf("watch error"),
 					"Error event received while waiting for GPU reservation pod allocation",
 					"nodeName", nodeName, "name", gpuReservationPodName, "event", fmt.Sprintf("%v", event.Object))
-				return unknownGpuIndicator
+				return unknownGpuIndicator, metrics.ReservationError
 			}
 
 			pod, ok := event.Object.(*v1.Pod)
 			if pod.Annotations != nil && pod.Annotations[gpuIndexAnnotationName] != "" {
-				return pod.Annotations[gpuIndexAnnotationName]
+				return pod.Annotations[gpuIndexAnnotationName], metrics.ReservationAllocated
 			}
 		}
 	}

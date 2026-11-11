@@ -83,6 +83,19 @@ Zero-valued series for `pod_group_evicted_pods_total` and `pod_group_eviction_ev
 
 ---
 
+## Binder Metrics
+
+Metrics related to BindRequest processing and GPU-sharing reservation pods. They are served on the binder's metrics endpoint (`--metrics-bind-address`).
+
+| Metric Name | Type | Labels | Description |
+|---|---|---|---|
+| `binder_bind_requests_total` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `result`, `reason` | Cumulative count of BindRequest reconcile attempts by outcome. `result` is `succeeded` or `failed`. `reason` is `bound` or `already_bound` for successes, and `pod_lookup_failed`, `node_lookup_failed`, `bind_failed`, `invalid_crd` or `panic` for failures. |
+| `binder_bind_retries_total` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | Cumulative count of failed BindRequest attempts that were requeued for another attempt because the BindRequest's backoff limit was not reached yet. |
+| `binder_bind_request_to_bound_duration_seconds` | Histogram | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | Duration in seconds from BindRequest creation until the binder bound its pod, including any retries. Buckets: [5ms, 10ms, 20ms, ..., 163.84s] (exponential). |
+| `binder_reservation_pod_allocation_duration_seconds` | Histogram | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `result` | Duration in seconds the binder waits for a GPU-sharing reservation pod to report its GPU index. `result` is `allocated`, `timeout` or `error`. Buckets: [50ms, 100ms, 200ms, ..., 409.6s] (exponential). |
+
+---
+
 ## Common Label Definitions
 
 All metrics include these standard Prometheus scrape labels:
@@ -99,7 +112,8 @@ Business/Resource Labels:
 - **`queue_display_name`**: The Queue's `spec.displayName`. Empty string when unset.
 - **`action`**: Scheduling action name
 - **`generator`**: Scenario generator name
-- **`result`**: Scenario search result (`solved`, `deadline_exhausted`, `generators_exhausted`, `no_generator`, `not_attempted`, `unsolved`, or `validator_rejected`, depending on the metric)
+- **`result`**: Scenario search result (`solved`, `deadline_exhausted`, `generators_exhausted`, `no_generator`, `not_attempted`, `unsolved`, or `validator_rejected`, depending on the metric); for binder metrics, the BindRequest or reservation pod outcome
+- **`reason`**: Why a BindRequest attempt ended as it did (binder metrics only)
 - **`reduced_budget`**: Whether the scenario search ran after the action budget was reduced (`true` or `false`)
 - **`state`**: Scenario lifecycle state (`emitted`, `simulated`, or `validator_rejected`)
 - **`plugin`**: Plugin name
