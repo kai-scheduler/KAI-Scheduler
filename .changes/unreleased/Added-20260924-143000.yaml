@@ -1,5 +1,5 @@
 kind: Added
-body: FullNodeFirst reclaim scenario generator. For a pending workload that needs a whole node, it proposes a node-scoped "free this node" victim set for the first reclaimable node it finds, so reclaim finds a scenario in near-constant time on large clusters instead of searching victim combinations.
+body: FullNodeFirst reclaim scenario generator. For a pending workload that needs a whole node, it proposes a node-scoped "free this node" victim set for the first reclaimable node it finds, so reclaim finds a scenario in near-constant time on large clusters instead of searching victim combinations. The `fullNodeThreshold` plugin argument (default 1.0, range above 0.5 up to 1.0) lets tasks that request at least that fraction of a node's capacity on one resource count as whole-node.
 time: 2026-09-24T14:30:00.000000+00:00
 custom:
     Author: mohitvinchoo

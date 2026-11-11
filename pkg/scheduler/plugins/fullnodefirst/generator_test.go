@@ -61,9 +61,15 @@ func victimNodeNames(t *testing.T, sn *scenario.ByNodeScenario) map[string]int {
 
 func newGenerator(t *testing.T, ssn *framework.Session, pendingJobName string, recordedVictims ...*podgroup_info.PodGroupInfo) framework.ScenarioGenerator {
 	t.Helper()
+	return newGeneratorWithThreshold(t, ssn, pendingJobName, fullnodefirst.DefaultFullNodeThreshold, recordedVictims...)
+}
+
+func newGeneratorWithThreshold(t *testing.T, ssn *framework.Session, pendingJobName string, threshold float64,
+	recordedVictims ...*podgroup_info.PodGroupInfo) framework.ScenarioGenerator {
+	t.Helper()
 
 	pendingJob := findJobByName(t, ssn, pendingJobName)
-	generator := fullnodefirst.NewFullNodeFirstGenerator(&solvers.SolveContext{
+	generator := fullnodefirst.NewFullNodeFirstGeneratorFactory(threshold)(&solvers.SolveContext{
 		Session:             ssn,
 		ActionType:          framework.Reclaim,
 		PartialPendingJob:   pendingJob,
@@ -427,6 +433,159 @@ func multiNodeBorrower(name string, nodeNames ...string) *jobs_fake.TestJobBasic
 		Priority:            constants.PriorityTrainNumber,
 		QueueName:           borrowerQueue,
 		Tasks:               tasks,
+	}
+}
+
+// TestServesWholeNodeWhenExactlyOneResourceMatches: a pod that fills the node on a single resource is served,
+// whatever it requests of the other resources.
+func TestServesWholeNodeWhenExactlyOneResourceMatches(t *testing.T) {
+	const (
+		nodeGPUs   = 8
+		nodeMillis = 8000.0
+		nodeMemory = 8e9
+	)
+	cases := []struct {
+		name                    string
+		gpus, millis, memoryReq float64
+	}{
+		{name: "gpu matches, cpu and memory below capacity", gpus: nodeGPUs, millis: 3000, memoryReq: 3e9},
+		{name: "cpu matches, gpu and memory below capacity", gpus: 3, millis: nodeMillis, memoryReq: 3e9},
+		{name: "memory matches, gpu and cpu below capacity", gpus: 3, millis: 3000, memoryReq: nodeMemory},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			defer gock.Off()
+			test_utils.InitTestingInfrastructure()
+			controller := gomock.NewController(t)
+			defer controller.Finish()
+
+			reclaimer := &jobs_fake.TestJobBasic{
+				Name:                  "reclaimer",
+				RequiredGPUsPerTask:   tc.gpus,
+				RequiredCPUsPerTask:   tc.millis,
+				RequiredMemoryPerTask: tc.memoryReq,
+				Priority:              constants.PriorityBuildNumber,
+				QueueName:             reclaimerQueue,
+				Tasks:                 []*tasks_fake.TestTaskBasic{{State: pod_status.Pending}},
+			}
+			occupant := &jobs_fake.TestJobBasic{
+				Name:                  "occupant",
+				RequiredGPUsPerTask:   nodeGPUs,
+				RequiredCPUsPerTask:   nodeMillis,
+				RequiredMemoryPerTask: nodeMemory,
+				Priority:              constants.PriorityTrainNumber,
+				QueueName:             borrowerQueue,
+				Tasks:                 []*tasks_fake.TestTaskBasic{{NodeName: "node-0", State: pod_status.Running}},
+			}
+			ssn := test_utils.BuildSession(test_utils.TestTopologyBasic{
+				Name: "full node first - one matching resource",
+				Jobs: []*jobs_fake.TestJobBasic{reclaimer, occupant},
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node-0": {GPUs: nodeGPUs, CPUMillis: nodeMillis, CPUMemory: nodeMemory},
+				},
+				Queues: []test_utils.TestQueueBasic{
+					{
+						Name: reclaimerQueue, DeservedGPUs: nodeGPUs,
+						DeservedCPUs:   test_utils.CreateFloat64Pointer(nodeMillis),
+						DeservedMemory: test_utils.CreateFloat64Pointer(nodeMemory),
+					},
+					{
+						Name: borrowerQueue, DeservedGPUs: 0,
+						DeservedCPUs:   test_utils.CreateFloat64Pointer(0),
+						DeservedMemory: test_utils.CreateFloat64Pointer(0),
+					},
+				},
+				Mocks: &test_utils.TestMock{CacheRequirements: &test_utils.CacheMocking{}},
+			}, controller)
+
+			scenarios := drainScenarios(t, newGenerator(t, ssn, "reclaimer"))
+
+			require.Len(t, scenarios, 1, "a pod filling one resource of the node is a whole-node request")
+			require.Equal(t, map[string]int{"node-0": 1}, victimNodeNames(t, scenarios[0]))
+		})
+	}
+}
+
+// TestThresholdControlsWhichTasksCountAsWholeNode: a task is whole-node when it requests at least threshold of the
+// node's capacity on one resource, and must still fit the node on every resource.
+func TestThresholdControlsWhichTasksCountAsWholeNode(t *testing.T) {
+	const (
+		nodeGPUs   = 8
+		nodeMillis = 8000.0
+		nodeMemory = 8e9
+	)
+	cases := []struct {
+		name                    string
+		threshold               float64
+		gpus, millis, memoryReq float64
+		served                  bool
+	}{
+		{name: "default requires the full node, 7 of 8 GPUs is left to other generators", threshold: 1.0, gpus: 7, millis: 3000, memoryReq: 3e9},
+		{name: "7 of 8 GPUs meets 0.875", threshold: 0.875, gpus: 7, millis: 3000, memoryReq: 3e9, served: true},
+		{name: "7 of 8 GPUs is below 0.9", threshold: 0.9, gpus: 7, millis: 3000, memoryReq: 3e9},
+		{name: "cpu at the threshold", threshold: 0.75, gpus: 3, millis: 6000, memoryReq: 3e9, served: true},
+		{name: "cpu just below the threshold", threshold: 0.75, gpus: 3, millis: 5999, memoryReq: 3e9},
+		{name: "memory at the threshold", threshold: 0.75, gpus: 3, millis: 3000, memoryReq: 6e9, served: true},
+		{name: "every resource below the threshold", threshold: 0.75, gpus: 5, millis: 5000, memoryReq: 5e9},
+		{name: "full on one resource but over capacity on another", threshold: 0.75, gpus: 8, millis: 9000, memoryReq: 3e9},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			defer gock.Off()
+			test_utils.InitTestingInfrastructure()
+			controller := gomock.NewController(t)
+			defer controller.Finish()
+
+			reclaimer := &jobs_fake.TestJobBasic{
+				Name:                  "reclaimer",
+				RequiredGPUsPerTask:   tc.gpus,
+				RequiredCPUsPerTask:   tc.millis,
+				RequiredMemoryPerTask: tc.memoryReq,
+				Priority:              constants.PriorityBuildNumber,
+				QueueName:             reclaimerQueue,
+				Tasks:                 []*tasks_fake.TestTaskBasic{{State: pod_status.Pending}},
+			}
+			occupant := &jobs_fake.TestJobBasic{
+				Name:                  "occupant",
+				RequiredGPUsPerTask:   nodeGPUs,
+				RequiredCPUsPerTask:   nodeMillis,
+				RequiredMemoryPerTask: nodeMemory,
+				Priority:              constants.PriorityTrainNumber,
+				QueueName:             borrowerQueue,
+				Tasks:                 []*tasks_fake.TestTaskBasic{{NodeName: "node-0", State: pod_status.Running}},
+			}
+			ssn := test_utils.BuildSession(test_utils.TestTopologyBasic{
+				Name: "full node first - threshold",
+				Jobs: []*jobs_fake.TestJobBasic{reclaimer, occupant},
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node-0": {GPUs: nodeGPUs, CPUMillis: nodeMillis, CPUMemory: nodeMemory},
+				},
+				Queues: []test_utils.TestQueueBasic{
+					{
+						Name: reclaimerQueue, DeservedGPUs: nodeGPUs,
+						DeservedCPUs:   test_utils.CreateFloat64Pointer(nodeMillis),
+						DeservedMemory: test_utils.CreateFloat64Pointer(nodeMemory),
+					},
+					{
+						Name: borrowerQueue, DeservedGPUs: 0,
+						DeservedCPUs:   test_utils.CreateFloat64Pointer(0),
+						DeservedMemory: test_utils.CreateFloat64Pointer(0),
+					},
+				},
+				Mocks: &test_utils.TestMock{CacheRequirements: &test_utils.CacheMocking{}},
+			}, controller)
+
+			scenarios := drainScenarios(t, newGeneratorWithThreshold(t, ssn, "reclaimer", tc.threshold))
+
+			if !tc.served {
+				require.Empty(t, scenarios)
+				return
+			}
+			require.Len(t, scenarios, 1)
+			require.Equal(t, map[string]int{"node-0": 1}, victimNodeNames(t, scenarios[0]))
+		})
 	}
 }
 

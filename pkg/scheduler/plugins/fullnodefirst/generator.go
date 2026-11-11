@@ -29,6 +29,8 @@ type sizeDemand struct {
 
 type fullNodeFirstGenerator struct {
 	solveCtx *solvers.SolveContext
+	// threshold is the fraction of a node's capacity, on at least one resource, that a task must request to count as whole-node.
+	threshold float64
 
 	initialized   bool
 	inert         bool
@@ -40,13 +42,25 @@ type fullNodeFirstGenerator struct {
 	recordedDone  bool
 }
 
-// NewFullNodeFirstGenerator builds the generator, or nil if the context isn't a reclaim context it can serve.
+// NewFullNodeFirstGenerator builds the generator with the default threshold, or nil if the context isn't a reclaim context it can serve.
 func NewFullNodeFirstGenerator(ctx framework.ScenarioGeneratorContext) framework.ScenarioGenerator {
+	return newGeneratorWithThreshold(ctx, DefaultFullNodeThreshold)
+}
+
+// NewFullNodeFirstGeneratorFactory returns a generator factory that treats a task as whole-node
+// when it requests at least the given fraction of a node's capacity on one resource.
+func NewFullNodeFirstGeneratorFactory(threshold float64) framework.ScenarioGeneratorFactory {
+	return func(ctx framework.ScenarioGeneratorContext) framework.ScenarioGenerator {
+		return newGeneratorWithThreshold(ctx, threshold)
+	}
+}
+
+func newGeneratorWithThreshold(ctx framework.ScenarioGeneratorContext, threshold float64) framework.ScenarioGenerator {
 	solveCtx, _, ok := solvers.ValidateScenarioGeneratorContext(ctx)
 	if !ok {
 		return nil
 	}
-	return &fullNodeFirstGenerator{solveCtx: solveCtx}
+	return &fullNodeFirstGenerator{solveCtx: solveCtx, threshold: threshold}
 }
 
 func (g *fullNodeFirstGenerator) Name() string {
@@ -171,7 +185,7 @@ func (g *fullNodeFirstGenerator) reduceByRecordedFreedNodes() {
 			if g.demand[i].count == 0 {
 				continue
 			}
-			if needsEntireNode(g.demand[i].req, node.AllocatableVector) && g.demand[i].req.LessEqual(available) {
+			if needsEntireNode(g.demand[i].req, node.AllocatableVector, g.threshold) && g.demand[i].req.LessEqual(available) {
 				g.demand[i].count--
 				g.recordedNodes[nodeName] = struct{}{}
 				break
@@ -220,7 +234,7 @@ func (g *fullNodeFirstGenerator) matchNode(name string, need []sizeDemand) ([]*p
 			continue
 		}
 		// Skip nodes this size does not fully fill (not a whole-node task here).
-		if !needsEntireNode(req, node.AllocatableVector) {
+		if !needsEntireNode(req, node.AllocatableVector, g.threshold) {
 			continue
 		}
 		// Skip nodes that already fit this size on idle (no reclaim needed).
@@ -234,10 +248,11 @@ func (g *fullNodeFirstGenerator) matchNode(name string, need []sizeDemand) ([]*p
 	return nil, 0, false
 }
 
-// needsEntireNode reports whether the task exactly fills at least one of the node's resources.
-func needsEntireNode(taskReq, allocatable resource_info.ResourceVector) bool {
+// needsEntireNode reports whether the task requests at least threshold of the node's capacity on one of its resources.
+// The caller has already checked that the task fits the node, so a threshold of 1 means exactly filling it.
+func needsEntireNode(taskReq, allocatable resource_info.ResourceVector, threshold float64) bool {
 	for i := range taskReq {
-		if capacity := allocatable.Get(i); capacity > 0 && taskReq[i] == capacity {
+		if capacity := allocatable.Get(i); capacity > 0 && taskReq[i] >= threshold*capacity {
 			return true
 		}
 	}
