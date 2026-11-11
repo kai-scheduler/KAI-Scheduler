@@ -4,6 +4,8 @@
 package cache
 
 import (
+	"time"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/core/v1"
@@ -14,6 +16,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal"
 	commonconstants "github.com/kai-scheduler/api/constants"
 )
 
@@ -147,6 +150,51 @@ var _ = Describe("compactSchedulerPod", func() {
 			Expect(compact.Spec.Containers[0].Resources.Requests).To(HaveKey(v1.ResourceCPU))
 			Expect(compact.Annotations).To(HaveLen(2))
 			Expect(compact.ManagedFields).To(BeNil())
+		})
+
+		It("keeps the conditions the scheduler reads or writes and drops the rest", func() {
+			pod := succeededPod()
+			pod.Status.Phase = v1.PodPending
+			pod.Status.Conditions = []v1.PodCondition{
+				{Type: v1.PodReady},
+				{Type: v1.PodScheduled, Status: v1.ConditionFalse, Reason: v1.PodReasonUnschedulable},
+				{Type: v1.DisruptionTarget, Status: v1.ConditionTrue},
+				{Type: v1.PodResizePending, Status: v1.ConditionTrue},
+				{Type: v1.ContainersReady},
+			}
+
+			transformed, err := compactSchedulerPod(pod)
+			Expect(err).NotTo(HaveOccurred())
+
+			types := []v1.PodConditionType{}
+			for _, c := range transformed.(*v1.Pod).Status.Conditions {
+				types = append(types, c.Type)
+			}
+			Expect(types).To(ConsistOf(v1.PodScheduled, v1.DisruptionTarget, v1.PodResizePending))
+		})
+
+		It("lets an unchanged PodScheduled condition be detected as unchanged", func() {
+			pod := succeededPod()
+			pod.Status.Phase = v1.PodPending
+			pod.Status.Conditions = []v1.PodCondition{{
+				Type:               v1.PodScheduled,
+				Status:             v1.ConditionFalse,
+				Reason:             v1.PodReasonUnschedulable,
+				Message:            "0/3 nodes are available",
+				LastTransitionTime: metav1.NewTime(metav1.Now().Add(-time.Minute)),
+			}}
+
+			transformed, err := compactSchedulerPod(pod)
+			Expect(err).NotTo(HaveOccurred())
+
+			compact := transformed.(*v1.Pod)
+			changed := k8s_internal.UpdatePodCondition(&compact.Status, &v1.PodCondition{
+				Type:    v1.PodScheduled,
+				Status:  v1.ConditionFalse,
+				Reason:  v1.PodReasonUnschedulable,
+				Message: "0/3 nodes are available",
+			})
+			Expect(changed).To(BeFalse())
 		})
 	})
 })
