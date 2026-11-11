@@ -5,8 +5,10 @@ package recorder
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"sort"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -32,8 +34,8 @@ func init() {
 }
 
 // replayCycle runs one action against the saved state copy and returns the
-// committed placements and evictions, sorted.
-func replayCycle(state schedrec.StateRecord, actionName string) []string {
+// committed placements and evictions, sorted, plus a summary of the session.
+func replayCycle(state schedrec.StateRecord, actionName string) ([]string, string) {
 	Expect(state.RawObjects).NotTo(BeNil())
 	Expect(state.Config).NotTo(BeNil())
 	params := state.SchedulerParams
@@ -73,7 +75,45 @@ func replayCycle(state schedrec.StateRecord, actionName string) []string {
 	Expect(action).NotTo(BeNil())
 	action.Execute(session)
 	sort.Strings(decisions)
-	return decisions
+	return decisions, replaySummary(state, actionName, session, decisions)
+}
+
+func replaySummary(state schedrec.StateRecord, actionName string, session *framework.Session, decisions []string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "session %s action %s decisions %v\n", state.SessionID, actionName, decisions)
+	if state.Config != nil {
+		fmt.Fprintf(&b, "config actions %q\n", state.Config.Actions)
+	}
+	if state.SchedulerParams != nil && state.SchedulerParams.PartitionParams != nil {
+		fmt.Fprintf(&b, "partition key=%q value=%q\n",
+			state.SchedulerParams.PartitionParams.NodePoolLabelKey,
+			state.SchedulerParams.PartitionParams.NodePoolLabelValue)
+	}
+	if state.RawObjects != nil {
+		fmt.Fprintf(&b, "snapshot nodes=%d pods=%d queues=%d podgroups=%d priorityClasses=%d\n",
+			len(state.RawObjects.Nodes), len(state.RawObjects.Pods), len(state.RawObjects.Queues),
+			len(state.RawObjects.PodGroups), len(state.RawObjects.PriorityClasses))
+	}
+	if session == nil || session.ClusterInfo == nil {
+		b.WriteString("replay session has no cluster info\n")
+		return b.String()
+	}
+	fmt.Fprintf(&b, "replay session nodes=%d queues=%d jobs=%d\n",
+		len(session.ClusterInfo.Nodes), len(session.ClusterInfo.Queues), len(session.ClusterInfo.PodGroupInfos))
+	lines := make([]string, 0, len(session.ClusterInfo.PodGroupInfos))
+	for _, job := range session.ClusterInfo.PodGroupInfos {
+		if job == nil {
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("job %s queue=%s priority=%d pending=%d allocated=%d",
+			job.Name, job.Queue, job.Priority, len(job.GetPendingTasks()), job.GetNumAllocatedTasks()))
+	}
+	sort.Strings(lines)
+	for _, line := range lines {
+		b.WriteString(line)
+		b.WriteByte('\n')
+	}
+	return b.String()
 }
 
 func actionByName(name string) framework.Action {

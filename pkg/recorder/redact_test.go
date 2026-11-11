@@ -65,6 +65,13 @@ func TestRedactSwapsNamesAndDropsUnlistedPodFields(t *testing.T) {
 				ConnectionString: "https://user:password@prometheus.example",
 			},
 		},
+		SchedulerParams: &conf.SchedulerParams{
+			QueueLabelKey: "kai.scheduler/queue",
+			PartitionParams: &conf.SchedulingNodePoolParams{
+				NodePoolLabelKey:   "kai.scheduler/node-pool",
+				NodePoolLabelValue: "pool-a",
+			},
+		},
 		RawObjects: &snapshot.RawKubernetesObjects{
 			Pods: []*v1.Pod{pod},
 			Nodes: []*v1.Node{{
@@ -112,6 +119,9 @@ func TestRedactSwapsNamesAndDropsUnlistedPodFields(t *testing.T) {
 	require.Equal(t, hasher.Hash("pool-a"), got.Spec.NodeSelector["kai.scheduler/node-pool"])
 	node := redacted.RawObjects.Nodes[0]
 	require.Equal(t, hasher.Hash("pool-a"), node.Labels["kai.scheduler/node-pool"])
+	require.Equal(t, "kai.scheduler/node-pool", redacted.SchedulerParams.PartitionParams.NodePoolLabelKey)
+	require.Equal(t, hasher.Hash("pool-a"), redacted.SchedulerParams.PartitionParams.NodePoolLabelValue)
+	require.Equal(t, "kai.scheduler/queue", redacted.SchedulerParams.QueueLabelKey)
 	require.Equal(t, hasher.Hash("train"), redacted.RawObjects.PriorityClasses[0].Name)
 	require.Equal(t, int32(40), redacted.RawObjects.PriorityClasses[0].Value)
 

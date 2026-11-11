@@ -23,13 +23,20 @@ func NewHasher(key []byte) Hasher {
 }
 
 // Hash returns a stable hex id. Empty input stays empty so unset fields stay unset.
+// The id is capped at 63 characters, the Kubernetes label-value limit. Replay
+// selects nodes and queues with hashed node-pool values, and a longer value
+// cannot be used as a selector.
 func (h Hasher) Hash(value string) string {
 	if value == "" || len(h.key) == 0 {
 		return value
 	}
 	mac := hmac.New(sha256.New, h.key)
 	_, _ = mac.Write([]byte(value))
-	return hex.EncodeToString(mac.Sum(nil))
+	sum := hex.EncodeToString(mac.Sum(nil))
+	if len(sum) > 63 {
+		return sum[:63]
+	}
+	return sum
 }
 
 func (h Hasher) HashEach(values []string) []string {

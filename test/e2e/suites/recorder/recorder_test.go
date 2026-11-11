@@ -231,8 +231,8 @@ var _ = Describe("Recorder", Ordered, ContinueOnFailure, Label("recorder"), func
 		key := hashKey(ctx, testCtx, live)
 		h := schedrec.NewHasher(key)
 		state, recorded := preemptCycle(body, h.Hash(victimPod.Name), h.Hash(preemptorPod.Name))
-		replayed := replayCycle(state, "preempt")
-		Expect(replayed).To(Equal(recorded))
+		replayed, summary := replayCycle(state, "preempt")
+		Expect(replayed).To(Equal(recorded), "recorded %v\n%s", recorded, summary)
 	})
 })
 

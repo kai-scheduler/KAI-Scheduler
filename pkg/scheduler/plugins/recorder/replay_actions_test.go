@@ -86,6 +86,55 @@ func TestReplayReclaimPreemptAndConsolidation(t *testing.T) {
 	}
 }
 
+func TestReplayRedactedPartitionedPreempt(t *testing.T) {
+	actions.InitDefaultActions()
+	framework.RegisterPluginBuilder("predicates", predicates.New)
+	framework.RegisterPluginBuilder("proportion", proportion.New)
+	framework.RegisterPluginBuilder("priority", priority.New)
+	framework.RegisterPluginBuilder(nodelocalgreedy.Name, nodelocalgreedy.New)
+	framework.RegisterPluginBuilder(multinodegang.Name, multinodegang.New)
+
+	const poolKey = "kai.scheduler/node-pool"
+	const poolValue = "pool-a"
+	objects := preemptObjects()
+	for _, node := range objects.Nodes {
+		node.Labels = map[string]string{poolKey: poolValue}
+	}
+	for _, queue := range objects.Queues {
+		queue.Labels = map[string]string{poolKey: poolValue}
+	}
+	for _, group := range objects.PodGroups {
+		group.Labels = map[string]string{poolKey: poolValue}
+	}
+	params := actionParams(false)
+	params.PartitionParams = &conf.SchedulingNodePoolParams{
+		NodePoolLabelKey:   poolKey,
+		NodePoolLabelValue: poolValue,
+	}
+	config := actionConfig(string(framework.Preempt))
+	recorded, events := runRecordedAction(t, config, params, objects, preempt.New())
+	require.Equal(t, []string{
+		"preempt evict team/victim-0@node-a",
+		"preempt pipeline team/pending-0@node-a",
+	}, recorded)
+
+	state := recordedState(t, events)
+	raw, err := json.Marshal(state)
+	require.NoError(t, err)
+	env := &recorder.Envelope{Kind: recorder.KindState, Record: raw}
+	hasher := recorder.NewHasher([]byte("replay-key"))
+	require.NoError(t, recorder.RedactEnvelope(env, hasher))
+	var redacted recorder.StateRecord
+	require.NoError(t, json.Unmarshal(env.Record, &redacted))
+	require.Equal(t, hasher.Hash(poolValue), redacted.SchedulerParams.PartitionParams.NodePoolLabelValue)
+
+	replayed, _ := runRecordedAction(t, config, redacted.SchedulerParams, redacted.RawObjects, preempt.New())
+	require.Equal(t, []string{
+		"preempt evict " + hasher.Hash("team") + "/" + hasher.Hash("victim-0") + "@" + hasher.Hash("node-a"),
+		"preempt pipeline " + hasher.Hash("team") + "/" + hasher.Hash("pending-0") + "@" + hasher.Hash("node-a"),
+	}, replayed)
+}
+
 func runRecordedAction(
 	t *testing.T, config *conf.SchedulerConfiguration, params *conf.SchedulerParams,
 	objects *snapshot.RawKubernetesObjects, action framework.Action,

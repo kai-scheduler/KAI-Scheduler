@@ -73,7 +73,7 @@ func redactState(in StateRecord, h Hasher) StateRecord {
 	in.ClusterName = h.Hash(in.ClusterName)
 	in.ShardName = h.Hash(in.ShardName)
 	in.Config = redactConfig(in.Config)
-	in.SchedulerParams = cloneParams(in.SchedulerParams)
+	in.SchedulerParams = redactParams(in.SchedulerParams, h)
 	if in.RawObjects != nil {
 		in.RawObjects = redactRaw(in.RawObjects, h)
 	}
@@ -577,6 +577,23 @@ func redactConfig(in *conf.SchedulerConfiguration) *conf.SchedulerConfiguration 
 		}
 	}
 	return &out
+}
+
+// redactParams hashes the partition value with the same rule as node-pool labels.
+// Replay builds its node and queue selector from these fields, so a plaintext
+// value would match nothing in the redacted snapshot.
+func redactParams(in *conf.SchedulerParams, h Hasher) *conf.SchedulerParams {
+	out := cloneParams(in)
+	if out == nil {
+		return nil
+	}
+	if out.PartitionParams != nil {
+		key := out.PartitionParams.NodePoolLabelKey
+		out.PartitionParams.NodePoolLabelKey = h.LabelKey(key)
+		out.PartitionParams.NodePoolLabelValue = h.LabelValue(key, out.PartitionParams.NodePoolLabelValue)
+	}
+	out.QueueLabelKey = h.LabelKey(out.QueueLabelKey)
+	return out
 }
 
 func cloneParams(in *conf.SchedulerParams) *conf.SchedulerParams {
