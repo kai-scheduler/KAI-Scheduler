@@ -112,6 +112,35 @@ var _ = Describe("New", func() {
 			Expect(SetDRAFeatureGate(discoveryClient)).NotTo(Succeed())
 			Expect(DynamicResourcesEnabled()).To(BeTrue())
 		})
+
+		DescribeTable("should record the server minor version",
+			func(serverMajor, serverMinor string, atLeast int, expect bool) {
+				DeferCleanup(SetDynamicResourcesEnabledForTest, false)
+				DeferCleanup(SetServerMinorVersionForTest, 0)
+
+				Expect(SetDRAFeatureGate(discoveryForVersion(serverMajor, serverMinor))).To(Succeed())
+				Expect(ServerVersionAtLeast(atLeast)).To(Equal(expect))
+			},
+			Entry("1.37 is at least 1.36", "1", "37", 36, true),
+			Entry("1.36+ is at least 1.36", "1", "36+", 36, true),
+			Entry("1.35 is not at least 1.36", "1", "35", 36, false),
+			Entry("unparsable minor is unknown", "1", "x", 1, false),
+			Entry("unparsable major is unknown", "", "37", 1, false),
+		)
+
+		It("should leave the server version untouched when discovery fails", func() {
+			SetServerMinorVersionForTest(36)
+			DeferCleanup(SetServerMinorVersionForTest, 0)
+
+			discoveryClient := &erroringDiscovery{
+				DiscoveryInterface: discoveryForVersion("1", "37"),
+				groupsErr:          errors.New("connection refused"),
+			}
+
+			Expect(SetDRAFeatureGate(discoveryClient)).NotTo(Succeed())
+			Expect(ServerVersionAtLeast(36)).To(BeTrue())
+			Expect(ServerVersionAtLeast(37)).To(BeFalse())
+		})
 	})
 
 	Context("NodeResourceTopology Feature Gate", func() {
