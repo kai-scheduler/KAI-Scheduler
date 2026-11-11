@@ -30,6 +30,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding/resourcereservation"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/metrics"
 
 	schedulingv1alpha2 "github.com/kai-scheduler/api/scheduling/v1alpha2"
 )
@@ -106,13 +107,16 @@ func (r *BindRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return result, nil
 	}
 
+	outcomeReason := metrics.ReasonBound
 	defer func() {
 		var finalError error
 		if r := recover(); r != nil {
 			finalError = fmt.Errorf("Internal Error: %v\n%s", r, string(debug.Stack()))
 			err = fmt.Errorf("Internal Error: %v", r)
+			outcomeReason = metrics.ReasonPanic
 		}
 
+		recordBindRequestOutcome(bindRequest, err, outcomeReason)
 		result, err = r.UpdateStatus(ctx, bindRequest, result, err)
 		if pod != nil {
 			r.updatePodCondition(ctx, bindRequest, pod)
@@ -130,11 +134,13 @@ func (r *BindRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		},
 	}
 	if err = r.Client.Get(ctx, client.ObjectKeyFromObject(pod), pod); err != nil {
+		outcomeReason = metrics.ReasonPodLookupFailed
 		return result, err
 	}
 	if pod.Spec.NodeName != "" {
 		logger.Info("Pod is already bound to node", "name", pod.Name, "namespace", pod.Namespace,
 			"node", pod.Spec.NodeName)
+		outcomeReason = metrics.ReasonAlreadyBound
 		return result, nil
 	}
 
@@ -144,6 +150,7 @@ func (r *BindRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		},
 	}
 	if err = r.Client.Get(ctx, client.ObjectKeyFromObject(node), node); err != nil {
+		outcomeReason = metrics.ReasonNodeLookupFailed
 		return result, err
 	}
 
@@ -155,7 +162,10 @@ func (r *BindRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		logger.Info("This binding request seems to be created by failed conversion from the previous version."+
 			" Delete it and a new, valid one will be created.", "pod", pod.Name,
 			"namespace", pod.Namespace)
+		outcomeReason = metrics.ReasonInvalidCrd
 		err = r.Client.Delete(ctx, bindRequest)
+	} else if err != nil {
+		outcomeReason = metrics.ReasonBindFailed
 	}
 	if err != nil {
 		logger.Error(err, "Failed to bind pod to node", "pod", pod.Name, "namespace", pod.Namespace,
@@ -167,6 +177,23 @@ func (r *BindRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		}
 	}
 	return result, err
+}
+
+// recordBindRequestOutcome records the outcome of one reconcile attempt of an actionable BindRequest.
+func recordBindRequestOutcome(bindRequest *schedulingv1alpha2.BindRequest, bindErr error, reason string) {
+	succeeded := bindErr == nil && (reason == metrics.ReasonBound || reason == metrics.ReasonAlreadyBound)
+	if !succeeded {
+		if reason == metrics.ReasonBound {
+			reason = metrics.ReasonBindFailed
+		}
+		metrics.RecordBindRequest(metrics.ResultFailed, reason)
+		return
+	}
+
+	metrics.RecordBindRequest(metrics.ResultSucceeded, reason)
+	if reason == metrics.ReasonBound && !bindRequest.CreationTimestamp.IsZero() {
+		metrics.ObserveBindRequestToBound(time.Since(bindRequest.CreationTimestamp.Time))
+	}
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -242,6 +269,7 @@ func (r *BindRequestReconciler) UpdateStatus(
 		if bindRequest.Spec.BackoffLimit != nil && *bindRequest.Spec.BackoffLimit > bindRequest.Status.FailedAttempts {
 			result.RequeueAfter = (1 << bindRequest.Status.FailedAttempts) * time.Second
 			bindRequest.Status.FailedAttempts++
+			metrics.IncBindRetries()
 		}
 		bindRequest.Status.Phase = schedulingv1alpha2.BindRequestPhaseFailed
 		bindRequest.Status.Reason = err.Error()

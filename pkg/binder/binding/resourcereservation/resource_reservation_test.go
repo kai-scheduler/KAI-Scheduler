@@ -25,6 +25,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/metrics"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/fips"
 	"github.com/kai-scheduler/api/constants"
 	schedulingv1alpha2 "github.com/kai-scheduler/api/scheduling/v1alpha2"
@@ -112,6 +113,7 @@ var _ = Describe("ResourceReservationService", func() {
 			numReservationPods    int
 			expectedGPUIndex      string
 			expectedErrorContains string
+			expectedWaitResult    string
 		}{
 			"reservation pod exists": {
 				groupName: existingGroup,
@@ -183,6 +185,7 @@ var _ = Describe("ResourceReservationService", func() {
 				},
 				expectedGPUIndex:   "5",
 				numReservationPods: 1,
+				expectedWaitResult: metrics.ReservationAllocated,
 			},
 			"no reservation pod - create new reservation pod - delay with pod": {
 				clientInterceptFuncs: interceptor.Funcs{
@@ -275,6 +278,7 @@ var _ = Describe("ResourceReservationService", func() {
 				numReservationPods:    0,
 				expectedGPUIndex:      unknownGpuIndicator,
 				expectedErrorContains: "failed waiting for GPU",
+				expectedWaitResult:    metrics.ReservationTimeout,
 			},
 			"failed to watch reservation pod": {
 				clientInterceptFuncs: interceptor.Funcs{
@@ -284,6 +288,7 @@ var _ = Describe("ResourceReservationService", func() {
 				},
 				expectedGPUIndex:      unknownGpuIndicator,
 				expectedErrorContains: "failed waiting for GPU reservation pod to allocate",
+				expectedWaitResult:    metrics.ReservationError,
 			},
 			"watch channel closed": {
 				clientInterceptFuncs: interceptor.Funcs{
@@ -293,6 +298,7 @@ var _ = Describe("ResourceReservationService", func() {
 				},
 				expectedGPUIndex:      unknownGpuIndicator,
 				expectedErrorContains: "failed waiting for GPU reservation pod to allocate",
+				expectedWaitResult:    metrics.ReservationError,
 			},
 			"failed to update gpu group": {
 				clientInterceptFuncs: interceptor.Funcs{
@@ -340,6 +346,11 @@ var _ = Describe("ResourceReservationService", func() {
 				fakeClient := interceptor.NewClient(clientWithObjs, testData.clientInterceptFuncs)
 				rsc := initializeTestService(fakeClient)
 
+				var waitSamplesBefore uint64
+				if testData.expectedWaitResult != "" {
+					waitSamplesBefore = metrics.ReservationPodAllocationSampleCount(testData.expectedWaitResult)
+				}
+
 				gpuIndex, err := rsc.ReserveGpuDevice(
 					context.TODO(), fractionPod, nodeName,
 					schedulingv1alpha2.FractionalGpuGroup{
@@ -347,6 +358,10 @@ var _ = Describe("ResourceReservationService", func() {
 						ComputeSharingMode: schedulingv1alpha2.GPUComputeSharingModeTimeSlicing,
 					})
 				Expect(gpuIndex).To(Equal(testData.expectedGPUIndex))
+				if testData.expectedWaitResult != "" {
+					Expect(metrics.ReservationPodAllocationSampleCount(testData.expectedWaitResult)).
+						To(Equal(waitSamplesBefore + 1))
+				}
 				if testData.expectedErrorContains == "" {
 					Expect(err).To(BeNil())
 					Expect(fractionPod.Labels[constants.GPUGroup], testData.groupName)

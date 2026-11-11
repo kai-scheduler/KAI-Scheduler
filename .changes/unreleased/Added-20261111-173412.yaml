@@ -1,0 +1,6 @@
+kind: Added
+body: 'Binder metrics: binder_bind_requests_total{result,reason}, binder_bind_retries_total, a BindRequest creation to bound histogram, and a histogram of how long GPU-sharing reservation pods take to report their GPU index'
+time: 2026-11-11T17:34:12.064218001-05:00
+custom:
+    Issue: "2619"
+    Author: dundysm
