@@ -145,6 +145,9 @@ var _ = Describe("Recorder", Ordered, ContinueOnFailure, Label("recorder"), func
 	})
 
 	It("records allocate and preempt with hashed names", func(ctx context.Context) {
+		// InitQueues uses the context captured when the client was created.
+		// The BeforeAll context is already canceled, so refresh it for this spec.
+		testCtx = testcontext.GetConnectivity(ctx, Default)
 		ensureRecorder(ctx, testCtx, live)
 		allocateNode, preemptNode := waitForGPUNodes(ctx, testCtx.KubeClientset)
 		labelNode(ctx, testCtx.KubeClientset, allocateNode, allocatePool)
