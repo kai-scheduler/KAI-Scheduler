@@ -5,6 +5,7 @@ package dynamicresources
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -17,6 +18,7 @@ import (
 	"k8s.io/dynamic-resource-allocation/structured"
 	ksf "k8s.io/kube-scheduler/framework"
 	k8splfeature "k8s.io/kubernetes/pkg/scheduler/framework/plugins/feature"
+	"k8s.io/kubernetes/pkg/scheduler/util/assumecache"
 
 	featuregates "github.com/kai-scheduler/KAI-scheduler/pkg/common/feature_gates"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/k8s_utils"
@@ -437,6 +439,15 @@ func extendedResourceClaimName(pod *v1.Pod) string {
 	return pod.Status.ExtendedResourceClaimStatus.ResourceClaimName
 }
 
+// logExtendedResourceClaimLookupFailure is quiet for a claim that no longer exists, which is expected for a terminating pod.
+func logExtendedResourceClaimLookupFailure(task *pod_info.PodInfo, claimName string, err error) {
+	if errors.Is(err, assumecache.ErrNotFound) {
+		log.InfraLogger.V(4).Infof("Extended resource claim %s/%s of pod %s does not exist", task.Namespace, claimName, task.Name)
+		return
+	}
+	log.InfraLogger.Errorf("Failed to get extended resource claim %s/%s of pod %s: %v", task.Namespace, claimName, task.Name, err)
+}
+
 // releaseExtendedResourceClaim frees the devices of the pod's extended-resource claim, as deallocateResourceClaim does for spec claims.
 func (drap *draPlugin) releaseExtendedResourceClaim(task *pod_info.PodInfo) {
 	claimName := extendedResourceClaimName(task.Pod)
@@ -449,8 +460,7 @@ func (drap *draPlugin) releaseExtendedResourceClaim(task *pod_info.PodInfo) {
 
 	originalClaim, err := drap.manager.ResourceClaims().Get(task.Namespace, claimName)
 	if err != nil {
-		log.InfraLogger.Errorf("Failed to get extended resource claim %s/%s of pod %s: %v",
-			task.Namespace, claimName, task.Name, err)
+		logExtendedResourceClaimLookupFailure(task, claimName, err)
 		return
 	}
 	if originalClaim.Status.Allocation == nil {
@@ -485,8 +495,10 @@ func (drap *draPlugin) restoreExtendedResourceClaim(task *pod_info.PodInfo) {
 	claimName := extendedResourceClaimName(task.Pod)
 	originalClaim, err := drap.manager.ResourceClaims().Get(task.Namespace, claimName)
 	if err != nil {
-		log.InfraLogger.Errorf("Failed to get extended resource claim %s/%s of pod %s: %v",
-			task.Namespace, claimName, task.Name, err)
+		if errors.Is(err, assumecache.ErrNotFound) {
+			delete(drap.releasedExtendedClaims, task.Pod.UID)
+		}
+		logExtendedResourceClaimLookupFailure(task, claimName, err)
 		return
 	}
 
