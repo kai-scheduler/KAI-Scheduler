@@ -6,6 +6,10 @@
 package nodeassignment
 
 import (
+	"fmt"
+	"slices"
+	"strings"
+
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -55,6 +59,7 @@ func (p *nodeAssignmentPlugin) OnSessionClose(_ *framework.Session) {
 
 func (p *nodeAssignmentPlugin) buildOwners(ssn *framework.Session) map[string]common_info.QueueID {
 	owners := map[string]common_info.QueueID{}
+	var invalid []string
 	for name, node := range ssn.ClusterInfo.Nodes {
 		if node.Node == nil {
 			continue
@@ -63,29 +68,22 @@ func (p *nodeAssignmentPlugin) buildOwners(ssn *framework.Session) map[string]co
 		if !found {
 			continue
 		}
-		owners[name] = p.validOwner(ssn, name, common_info.QueueID(value))
+		queueID := common_info.QueueID(value)
+		if queue, found := ssn.ClusterInfo.Queues[queueID]; !found || !queue.IsLeafQueue() {
+			owners[name] = unknownQueue
+			invalid = append(invalid, fmt.Sprintf("%s=%s", name, value))
+			continue
+		}
+		owners[name] = queueID
+	}
+
+	if len(invalid) > 0 {
+		slices.Sort(invalid)
+		log.InfraLogger.V(2).Warnf(
+			"%d nodes are assigned to a queue that is not a leaf queue in this shard; no queue is preferred on them: %s",
+			len(invalid), strings.Join(invalid, ", "))
 	}
 	return owners
-}
-
-// validOwner returns the queue, or unknownQueue if the label doesn't name a leaf queue of this shard.
-func (p *nodeAssignmentPlugin) validOwner(
-	ssn *framework.Session, nodeName string, queueID common_info.QueueID,
-) common_info.QueueID {
-	queue, found := ssn.ClusterInfo.Queues[queueID]
-	if !found {
-		log.InfraLogger.V(2).Warnf(
-			"Node <%s> is assigned to queue <%s>, which does not exist in this shard; no queue will be preferred on it",
-			nodeName, queueID)
-		return unknownQueue
-	}
-	if !queue.IsLeafQueue() {
-		log.InfraLogger.V(2).Warnf(
-			"Node <%s> is assigned to queue <%s>, which is not a leaf queue; no queue will be preferred on it",
-			nodeName, queueID)
-		return unknownQueue
-	}
-	return queueID
 }
 
 func (p *nodeAssignmentPlugin) nodeOrderFn(task *pod_info.PodInfo, node *node_info.NodeInfo) (float64, error) {

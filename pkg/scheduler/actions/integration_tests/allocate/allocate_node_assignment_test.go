@@ -43,7 +43,7 @@ func TestNodeAssignmentAllocation(t *testing.T) {
 			Name: "pod prefers a node owned by its queue",
 			TestTopologyBasic: test_utils.TestTopologyBasic{
 				Jobs: []*jobs_fake.TestJobBasic{
-					pendingJob("job-a", "queue-a"),
+					nodeAssignmentPendingJob("job-a", "queue-a"),
 				},
 				Nodes:  nodes,
 				Queues: queues,
@@ -57,7 +57,7 @@ func TestNodeAssignmentAllocation(t *testing.T) {
 			Name: "pod of a queue without nodes prefers an unassigned node",
 			TestTopologyBasic: test_utils.TestTopologyBasic{
 				Jobs: []*jobs_fake.TestJobBasic{
-					pendingJob("job-c", "queue-c"),
+					nodeAssignmentPendingJob("job-c", "queue-c"),
 				},
 				Nodes:  nodes,
 				Queues: queues,
@@ -71,8 +71,8 @@ func TestNodeAssignmentAllocation(t *testing.T) {
 			Name: "pod uses another queue's node when unassigned nodes are full",
 			TestTopologyBasic: test_utils.TestTopologyBasic{
 				Jobs: []*jobs_fake.TestJobBasic{
-					runningJob("running-c", "queue-c", "node-2", 2),
-					pendingJob("job-c", "queue-c"),
+					nodeAssignmentRunningJob("running-c", "queue-c", "node-2", 2),
+					nodeAssignmentPendingJob("job-c", "queue-c"),
 				},
 				Nodes:  nodes,
 				Queues: queues,
@@ -90,7 +90,7 @@ func TestNodeAssignmentAllocation(t *testing.T) {
 	}
 }
 
-func pendingJob(name, queue string) *jobs_fake.TestJobBasic {
+func nodeAssignmentPendingJob(name, queue string) *jobs_fake.TestJobBasic {
 	return &jobs_fake.TestJobBasic{
 		Name:                name,
 		RequiredGPUsPerTask: 1,
@@ -100,7 +100,7 @@ func pendingJob(name, queue string) *jobs_fake.TestJobBasic {
 	}
 }
 
-func runningJob(name, queue, node string, gpus float64) *jobs_fake.TestJobBasic {
+func nodeAssignmentRunningJob(name, queue, node string, gpus float64) *jobs_fake.TestJobBasic {
 	return &jobs_fake.TestJobBasic{
 		Name:                name,
 		RequiredGPUsPerTask: gpus,

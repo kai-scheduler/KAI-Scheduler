@@ -4,6 +4,10 @@
 package nodeassignment
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -105,11 +109,45 @@ func TestNodeOrder(t *testing.T) {
 	}
 }
 
-func TestNodeOrderDoesNotOverrideTopology(t *testing.T) {
-	lowerTiers := scores.MaxHighDensity + scores.ResourceType + scores.Numa + scores.Availability + scores.GpuSharing
-	require.Greater(t, float64(unassigned-foreign), float64(lowerTiers))
-	require.Greater(t, float64(native-unassigned), float64(lowerTiers))
-	require.Less(t, float64(native), float64(scores.Topology))
+func TestScoreTier(t *testing.T) {
+	var lowerTiers, nextTier int64
+	for _, tier := range scoreTiers(t) {
+		switch {
+		case tier < scores.NodeAssignment:
+			lowerTiers += tier
+		case tier > scores.NodeAssignment && (nextTier == 0 || tier < nextTier):
+			nextTier = tier
+		}
+	}
+
+	require.Greater(t, float64(unassigned-foreign), float64(lowerTiers), "lower tiers can override node assignment")
+	require.Greater(t, float64(native-unassigned), float64(lowerTiers), "lower tiers can override node assignment")
+	require.Less(t, float64(native), float64(nextTier), "node assignment can override the next tier")
+}
+
+// scoreTiers reads every constant in the scores package, so new tiers are covered without editing this test.
+func scoreTiers(t *testing.T) []int64 {
+	file, err := parser.ParseFile(token.NewFileSet(), "../scores/scores.go", nil, 0)
+	require.NoError(t, err)
+
+	var tiers []int64
+	for _, decl := range file.Decls {
+		gen, ok := decl.(*ast.GenDecl)
+		if !ok || gen.Tok != token.CONST {
+			continue
+		}
+		for _, spec := range gen.Specs {
+			for _, value := range spec.(*ast.ValueSpec).Values {
+				lit, ok := value.(*ast.BasicLit)
+				require.True(t, ok, "score tiers must be integer literals")
+				tier, err := strconv.ParseInt(lit.Value, 10, 64)
+				require.NoError(t, err)
+				tiers = append(tiers, tier)
+			}
+		}
+	}
+	require.Contains(t, tiers, int64(scores.NodeAssignment))
+	return tiers
 }
 
 func TestOnSessionCloseClearsState(t *testing.T) {
