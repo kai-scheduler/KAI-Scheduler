@@ -1,6 +1,0 @@
-kind: Changed
-body: |-
-  Updated gpu-fractioning chart dependency to v0.1.5
-custom:
-  Author: "davidLif"
-  Issue: "2280"

@@ -1,5 +1,0 @@
-kind: Fixed
-body: Bump go-openapi/swag, golang.org/x/crypto and golang.org/x/mod to fix known CVEs
-custom:
-    Author: SiorMeir
-    Issue: "2247"
