@@ -64,16 +64,19 @@ func TestTopologyPlugin_subsetNodesFn_requiredLevelAboveCommonDomain(t *testing.
 			if err != nil {
 				t.Fatalf("subSetNodesFn: %v", err)
 			}
-			offered := 0
+			offered := map[string]bool{}
 			for _, s := range subsets {
-				offered += len(s)
+				for _, n := range s {
+					offered[n.Name] = true
+				}
 			}
-			if offered == 0 {
+			// every idle node fits the 1-GPU job, so every node must be offered, not just some of them
+			if len(offered) != len(tc.nodes) {
 				var msgs []string
 				for _, e := range j.JobFitErrors {
 					msgs = append(msgs, e.Messages()...)
 				}
-				t.Errorf("no node offered for a 1-GPU job on idle 1-GPU nodes: %v", msgs)
+				t.Errorf("offered %d of %d idle 1-GPU nodes for a 1-GPU job: %v", len(offered), len(tc.nodes), msgs)
 			}
 		})
 	}
