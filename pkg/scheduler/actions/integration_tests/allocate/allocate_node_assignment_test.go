@@ -32,10 +32,13 @@ func TestNodeAssignmentAllocation(t *testing.T) {
 		"node-2": {GPUs: 2},
 		"node-3": {GPUs: 2, Labels: map[string]string{nodeassignment.DefaultLabelKey: "queue-a"}},
 	}
+	fullUnassignedNode := nodeAssignmentRunningJob("running-c", "queue-c", "node-2", 2)
+	fullUnassignedNode.Priority = constants.PriorityBuildNumber
+
 	queues := []test_utils.TestQueueBasic{
 		{Name: "queue-a", DeservedGPUs: 2},
 		{Name: "queue-b", DeservedGPUs: 2},
-		{Name: "queue-c", DeservedGPUs: 2},
+		{Name: "queue-c", DeservedGPUs: 4},
 	}
 
 	for testNumber, testData := range []integration_tests_utils.TestTopologyMetadata{
@@ -68,7 +71,7 @@ func TestNodeAssignmentAllocation(t *testing.T) {
 			},
 		},
 		{
-			Name: "pod uses another queue's node when unassigned nodes are full",
+			Name: "preemptible pod uses another queue's node when unassigned nodes are full",
 			TestTopologyBasic: test_utils.TestTopologyBasic{
 				Jobs: []*jobs_fake.TestJobBasic{
 					nodeAssignmentRunningJob("running-c", "queue-c", "node-2", 2),
@@ -79,6 +82,38 @@ func TestNodeAssignmentAllocation(t *testing.T) {
 				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
 					"running-c": {NodeName: "node-2", GPUsRequired: 2, Status: pod_status.Running},
 					"job-c":     {GPUsRequired: 1, Status: pod_status.Running},
+				},
+				Mocks: nodeAssignmentMocks(1),
+			},
+		},
+		{
+			Name: "non-preemptible pod stays pending when only other queues' nodes are free",
+			TestTopologyBasic: test_utils.TestTopologyBasic{
+				Jobs: []*jobs_fake.TestJobBasic{
+					fullUnassignedNode,
+					nodeAssignmentNonPreemptibleJob("job-c", "queue-c"),
+				},
+				Nodes:  nodes,
+				Queues: queues,
+				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"running-c": {NodeName: "node-2", GPUsRequired: 2, Status: pod_status.Running},
+					"job-c":     {GPUsRequired: 1, Status: pod_status.Pending},
+				},
+				Mocks: nodeAssignmentMocks(0),
+			},
+		},
+		{
+			Name: "non-preemptible pod runs on a node owned by its queue",
+			TestTopologyBasic: test_utils.TestTopologyBasic{
+				Jobs: []*jobs_fake.TestJobBasic{
+					fullUnassignedNode,
+					nodeAssignmentNonPreemptibleJob("job-a", "queue-a"),
+				},
+				Nodes:  nodes,
+				Queues: queues,
+				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"running-c": {NodeName: "node-2", GPUsRequired: 2, Status: pod_status.Running},
+					"job-a":     {NodeName: "node-3", GPUsRequired: 1, Status: pod_status.Running},
 				},
 				Mocks: nodeAssignmentMocks(1),
 			},
@@ -98,6 +133,12 @@ func nodeAssignmentPendingJob(name, queue string) *jobs_fake.TestJobBasic {
 		QueueName:           queue,
 		Tasks:               []*tasks_fake.TestTaskBasic{{State: pod_status.Pending}},
 	}
+}
+
+func nodeAssignmentNonPreemptibleJob(name, queue string) *jobs_fake.TestJobBasic {
+	job := nodeAssignmentPendingJob(name, queue)
+	job.Priority = constants.PriorityBuildNumber
+	return job
 }
 
 func nodeAssignmentRunningJob(name, queue, node string, gpus float64) *jobs_fake.TestJobBasic {
