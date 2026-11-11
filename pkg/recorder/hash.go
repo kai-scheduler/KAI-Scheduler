@@ -56,6 +56,7 @@ var identityKeys = map[string]struct{}{
 	"pod-group-name":              {},
 	"kai.scheduler/subgroup-name": {},
 	"kai.scheduler/queue":         {},
+	"kai.scheduler/node-pool":     {},
 	"runai-gpu-group":             {},
 }
 

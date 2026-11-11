@@ -79,8 +79,7 @@ type ActionStat struct {
 	Commits           int   `json:"commits,omitempty"`
 }
 
-// FailReason is a pending pod's unschedulable reason codes for the cycle.
-// Reason is the aggregated reason text the scheduler already stores, not a node-by-node trace.
+// FailReason is one unschedulable reason code for a pod group. Reason is the code only.
 type FailReason struct {
 	PodUID    string `json:"podUID,omitempty"`
 	Namespace string `json:"namespace,omitempty"`

@@ -198,6 +198,10 @@ func startReplayCache(t *testing.T, params *conf.SchedulerParams, objects *snaps
 		_, err := kaiClient.SchedulingV2alpha2().PodGroups(group.Namespace).Create(context.Background(), group.DeepCopy(), metav1.CreateOptions{})
 		require.NoError(t, err)
 	}
+	for _, priorityClass := range objects.PriorityClasses {
+		_, err := kubeClient.SchedulingV1().PriorityClasses().Create(context.Background(), priorityClass.DeepCopy(), metav1.CreateOptions{})
+		require.NoError(t, err)
+	}
 	schedCache, err := cache.New(&cache.SchedulerCacheParams{
 		KubeClient:                  kubeClient,
 		KAISchedulerClient:          kaiClient,

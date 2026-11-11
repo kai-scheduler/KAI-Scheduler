@@ -111,9 +111,6 @@ func redactSessionEnd(in SessionEndRecord, h Hasher) SessionEndRecord {
 		in.FailReasons[i].PodUID = h.Hash(in.FailReasons[i].PodUID)
 		in.FailReasons[i].Namespace = h.Hash(in.FailReasons[i].Namespace)
 		in.FailReasons[i].Name = h.Hash(in.FailReasons[i].Name)
-		if FreeTextIsName(in.FailReasons[i].Reason) {
-			in.FailReasons[i].Reason = ""
-		}
 	}
 	return in
 }
@@ -139,7 +136,9 @@ func redactRaw(in *snapshot.RawKubernetesObjects, h Hasher) *snapshot.RawKuberne
 		BindRequests: mapSlice(in.BindRequests, func(br *schedulingv1alpha2.BindRequest) *schedulingv1alpha2.BindRequest {
 			return redactBindRequest(br, h)
 		}),
-		PriorityClasses:        mapSlice(in.PriorityClasses, redactPriorityClass),
+		PriorityClasses: mapSlice(in.PriorityClasses, func(pc *schedulingv1.PriorityClass) *schedulingv1.PriorityClass {
+			return redactPriorityClass(pc, h)
+		}),
 		ConfigMaps:             mapSlice(in.ConfigMaps, func(cm *v1.ConfigMap) *v1.ConfigMap { return redactConfigMap(cm, h) }),
 		PersistentVolumes:      mapSlice(in.PersistentVolumes, func(pv *v1.PersistentVolume) *v1.PersistentVolume { return redactPV(pv, h) }),
 		PersistentVolumeClaims: mapSlice(in.PersistentVolumeClaims, func(pvc *v1.PersistentVolumeClaim) *v1.PersistentVolumeClaim { return redactPVC(pvc, h) }),
@@ -179,7 +178,7 @@ func redactPod(in *v1.Pod, h Hasher) *v1.Pod {
 		Spec: v1.PodSpec{
 			SchedulerName:             in.Spec.SchedulerName,
 			Priority:                  in.Spec.Priority,
-			PriorityClassName:         in.Spec.PriorityClassName,
+			PriorityClassName:         h.Hash(in.Spec.PriorityClassName),
 			NodeName:                  h.Hash(in.Spec.NodeName),
 			NodeSelector:              redactSelector(in.Spec.NodeSelector, h),
 			Affinity:                  redactAffinity(in.Spec.Affinity, h),
@@ -244,6 +243,7 @@ func redactPodGroup(in *enginev2alpha2.PodGroup, h Hasher) *enginev2alpha2.PodGr
 	}
 	spec := in.DeepCopy().Spec
 	spec.Queue = h.Hash(spec.Queue)
+	spec.PriorityClassName = h.Hash(spec.PriorityClassName)
 	spec.TopologyConstraint.Topology = h.Hash(spec.TopologyConstraint.Topology)
 	spec.SubGroups = redactSubGroups(spec.SubGroups, h)
 	return &enginev2alpha2.PodGroup{
@@ -346,12 +346,12 @@ func redactBindRequest(in *schedulingv1alpha2.BindRequest, h Hasher) *scheduling
 	}
 }
 
-func redactPriorityClass(in *schedulingv1.PriorityClass) *schedulingv1.PriorityClass {
+func redactPriorityClass(in *schedulingv1.PriorityClass, h Hasher) *schedulingv1.PriorityClass {
 	if in == nil {
 		return nil
 	}
 	return &schedulingv1.PriorityClass{
-		ObjectMeta:       metav1.ObjectMeta{Name: in.Name},
+		ObjectMeta:       metav1.ObjectMeta{Name: h.Hash(in.Name)},
 		Value:            in.Value,
 		GlobalDefault:    in.GlobalDefault,
 		PreemptionPolicy: in.PreemptionPolicy,
@@ -497,7 +497,29 @@ func redactSliceMeta(in *resourceapi.ResourceSlice, h Hasher) *resourceapi.Resou
 		UID:    types.UID(h.Hash(string(in.UID))),
 		Labels: redactLabels(in.Labels, h),
 	}
+	hashDeniedDRAAttributes(out, h)
 	return out
+}
+
+// draAttributeValueDenylist names DRA device attributes whose string values are hashed.
+// It is empty, so attribute strings stay readable.
+var draAttributeValueDenylist = map[string]struct{}{}
+
+func hashDeniedDRAAttributes(slice *resourceapi.ResourceSlice, h Hasher) {
+	if slice == nil || len(draAttributeValueDenylist) == 0 {
+		return
+	}
+	for i := range slice.Spec.Devices {
+		attrs := slice.Spec.Devices[i].Attributes
+		for name, attr := range attrs {
+			if _, deny := draAttributeValueDenylist[string(name)]; !deny || attr.StringValue == nil {
+				continue
+			}
+			hashed := h.Hash(*attr.StringValue)
+			attr.StringValue = &hashed
+			attrs[name] = attr
+		}
+	}
 }
 
 func redactDeviceClass(in *resourceapi.DeviceClass, h Hasher) *resourceapi.DeviceClass {

@@ -203,6 +203,8 @@ spec:
                   resources:
                     type: object
                     x-kubernetes-preserve-unknown-fields: true
+                  hashKeySecretName:
+                    type: string
                   storageSecretName:
                     type: string
                 type: object

@@ -272,16 +272,15 @@ func failReasons(ssn *framework.Session) []recorder.FailReason {
 	}
 	var reasons []recorder.FailReason
 	for _, job := range ssn.ClusterInfo.PodGroupInfos {
-		for uid, fit := range job.TasksFitErrors {
+		for _, fit := range job.JobFitErrors {
 			if fit == nil {
 				continue
 			}
-			reason := recorder.FailReason{PodUID: string(uid), Reason: fit.Error()}
-			if task, found := job.GetAllPodsMap()[uid]; found && task != nil {
-				reason.Namespace = task.Namespace
-				reason.Name = task.Name
-			}
-			reasons = append(reasons, reason)
+			reasons = append(reasons, recorder.FailReason{
+				Namespace: job.Namespace,
+				Name:      job.Name,
+				Reason:    string(fit.Reason()),
+			})
 		}
 	}
 	return reasons

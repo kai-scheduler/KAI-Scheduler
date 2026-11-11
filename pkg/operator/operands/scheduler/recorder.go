@@ -5,17 +5,20 @@ package scheduler
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"strconv"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	recorderv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/recorder/v1"
+	operatorcommon "github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common"
 	kaiv1 "github.com/kai-scheduler/api/kai/v1"
 	"github.com/kai-scheduler/api/kai/v1/common"
 )
@@ -155,13 +158,15 @@ func appendRecorderSidecar(deployment *appsv1.Deployment, spec *recorderv1.Recor
 			"--listen=" + spec.Address,
 			"--roll-interval=" + rollInterval,
 			"--roll-bytes=" + strconv.FormatInt(rollBytes, 10),
-			"--hmac-key-file=/var/run/kai-recorder/hmac-key",
+			"--hmac-key-file=/var/run/kai-recorder-hash/" + recorderv1.HMACKeyDataKey,
 			"--dir=/var/lib/kai-recorder",
 		},
 		Resources: resources,
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: "recorder-storage", MountPath: "/var/run/kai-recorder", ReadOnly: true},
+			{Name: "recorder-hash-key", MountPath: "/var/run/kai-recorder-hash", ReadOnly: true},
 			{Name: "recorder-data", MountPath: "/var/lib/kai-recorder"},
+			{Name: "recorder-no-sa-token", MountPath: serviceAccountTokenPath, ReadOnly: true},
 		},
 	})
 	deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes,
@@ -172,10 +177,55 @@ func appendRecorderSidecar(deployment *appsv1.Deployment, spec *recorderv1.Recor
 			},
 		},
 		corev1.Volume{
+			Name: "recorder-hash-key",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{SecretName: spec.HashKeySecretName},
+			},
+		},
+		corev1.Volume{
 			Name: "recorder-data",
 			VolumeSource: corev1.VolumeSource{
 				EmptyDir: &corev1.EmptyDirVolumeSource{},
 			},
 		},
+		corev1.Volume{
+			Name: "recorder-no-sa-token",
+			VolumeSource: corev1.VolumeSource{
+				EmptyDir: &corev1.EmptyDirVolumeSource{},
+			},
+		},
 	)
+}
+
+const serviceAccountTokenPath = "/var/run/secrets/kubernetes.io/serviceaccount"
+
+func (s *SchedulerForShard) hashKeySecretForShard(
+	ctx context.Context, readerClient client.Reader, kaiConfig *kaiv1.Config, shard *kaiv1.SchedulingShard,
+) (client.Object, error) {
+	spec, err := s.resolveRecorder(ctx, readerClient, kaiConfig, shard)
+	if err != nil {
+		return nil, err
+	}
+	if spec == nil || !spec.EnabledValue() {
+		return nil, nil
+	}
+	obj, err := operatorcommon.ObjectForKAIConfig(ctx, readerClient, &corev1.Secret{}, spec.HashKeySecretName, kaiConfig.Spec.Namespace)
+	if err != nil {
+		return nil, err
+	}
+	secret := obj.(*corev1.Secret)
+	secret.TypeMeta = metav1.TypeMeta{Kind: "Secret", APIVersion: "v1"}
+	secret.Type = corev1.SecretTypeOpaque
+	if len(secret.Data[recorderv1.HMACKeyDataKey]) > 0 {
+		return secret, nil
+	}
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		return nil, err
+	}
+	if secret.Data == nil {
+		secret.Data = map[string][]byte{}
+	}
+	secret.Data[recorderv1.HMACKeyDataKey] = key
+	return secret, nil
 }

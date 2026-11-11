@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	v1 "k8s.io/api/core/v1"
+	schedulingv1 "k8s.io/api/scheduling/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -48,7 +49,10 @@ func TestRedactSwapsNamesAndDropsUnlistedPodFields(t *testing.T) {
 					Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1")},
 				},
 			}},
-			NodeSelector: map[string]string{"example.com/user": "alice"},
+			NodeSelector: map[string]string{
+				"example.com/user":        "alice",
+				"kai.scheduler/node-pool": "pool-a",
+			},
 		},
 		Status: v1.PodStatus{Phase: v1.PodPending},
 	}
@@ -61,7 +65,19 @@ func TestRedactSwapsNamesAndDropsUnlistedPodFields(t *testing.T) {
 				ConnectionString: "https://user:password@prometheus.example",
 			},
 		},
-		RawObjects: &snapshot.RawKubernetesObjects{Pods: []*v1.Pod{pod}},
+		RawObjects: &snapshot.RawKubernetesObjects{
+			Pods: []*v1.Pod{pod},
+			Nodes: []*v1.Node{{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "node-a",
+					Labels: map[string]string{"kai.scheduler/node-pool": "pool-a"},
+				},
+			}},
+			PriorityClasses: []*schedulingv1.PriorityClass{{
+				ObjectMeta: metav1.ObjectMeta{Name: "train"},
+				Value:      40,
+			}},
+		},
 	}
 	raw, err := json.Marshal(state)
 	require.NoError(t, err)
@@ -80,7 +96,7 @@ func TestRedactSwapsNamesAndDropsUnlistedPodFields(t *testing.T) {
 	require.Equal(t, hasher.Hash("team-a"), got.Namespace)
 	require.Equal(t, hasher.Hash("node-a"), got.Spec.NodeName)
 	require.Equal(t, "kai-scheduler", got.Spec.SchedulerName)
-	require.Equal(t, "train", got.Spec.PriorityClassName)
+	require.Equal(t, hasher.Hash("train"), got.Spec.PriorityClassName)
 	require.Equal(t, "node-a", got.Labels["kubernetes.io/hostname"])
 	require.Equal(t, hasher.Hash("alice"), got.Labels[hasher.Hash("example.com/user")])
 	require.Equal(t, hasher.Hash("workers"), got.Labels[commonconstants.SubGroupLabelKey])
@@ -93,6 +109,11 @@ func TestRedactSwapsNamesAndDropsUnlistedPodFields(t *testing.T) {
 	require.Empty(t, got.Spec.Containers[0].Env)
 	require.Equal(t, resource.MustParse("1"), got.Spec.Containers[0].Resources.Requests[v1.ResourceCPU])
 	require.Equal(t, hasher.Hash("alice"), got.Spec.NodeSelector[hasher.Hash("example.com/user")])
+	require.Equal(t, hasher.Hash("pool-a"), got.Spec.NodeSelector["kai.scheduler/node-pool"])
+	node := redacted.RawObjects.Nodes[0]
+	require.Equal(t, hasher.Hash("pool-a"), node.Labels["kai.scheduler/node-pool"])
+	require.Equal(t, hasher.Hash("train"), redacted.RawObjects.PriorityClasses[0].Name)
+	require.Equal(t, int32(40), redacted.RawObjects.PriorityClasses[0].Value)
 
 	again := hasher.Hash("training-job")
 	require.Equal(t, got.Name, again)

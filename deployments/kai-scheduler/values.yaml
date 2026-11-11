@@ -223,6 +223,7 @@ scheduler:
         cpu: 500m
         memory: 512Mi
     storageSecretName: kai-recorder-storage
+    hashKeySecretName: kai-recorder-hash-key
     batch:
       rollInterval: 5m
       rollSizeMB: 64
