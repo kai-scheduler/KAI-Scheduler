@@ -64,6 +64,7 @@ var (
 	queueGPUUsage                                  *prometheus.GaugeVec
 	usageQueryLatency                              *prometheus.HistogramVec
 	podGroupEvictedPodsTotal                       *prometheus.CounterVec
+	podGroupFirstStartWaitSeconds                  *prometheus.HistogramVec
 	podGroupEvictionEventsTotal                    *prometheus.CounterVec
 	scenarioSearchJobsTotal                        *prometheus.CounterVec
 	scenarioSearchActionBudgetConfiguredSeconds    *prometheus.GaugeVec
@@ -236,6 +237,14 @@ func InitMetrics(namespace string) {
 			"podgroup", "namespace", "nodepool", "action",
 			"owner_group", "owner_kind", "owner_name", "owner_uid",
 		})
+
+	podGroupFirstStartWaitSeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: namespace,
+			Name:      "pod_group_first_start_wait_seconds",
+			Help:      "Seconds from pod group creation until the scheduler first started it, per queue.",
+			Buckets:   prometheus.ExponentialBuckets(1, 2, 18),
+		}, []string{"queue_name", "queue_metadata_name", "queue_display_name"})
 
 	scenarioSearchJobsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
@@ -579,6 +588,13 @@ func deletePodGroupEvictionSeries(
 func deleteEvictedPodSeries(podGroup *enginev2alpha2.PodGroup, nodepool, action, subgroup string) {
 	labelValues := append(podGroupEvictionLabels(podGroup, nodepool, action), subgroup)
 	podGroupEvictedPodsTotal.DeleteLabelValues(labelValues...)
+}
+
+// ObservePodGroupFirstStartWait records how long a pod group waited from its creation until the scheduler
+// first started it. See UpdateQueueFairShare for the meaning of each label.
+func ObservePodGroupFirstStartWait(queueName, queueMetadataName, queueDisplayName string, wait time.Duration) {
+	podGroupFirstStartWaitSeconds.WithLabelValues(queueName, queueMetadataName, queueDisplayName).
+		Observe(wait.Seconds())
 }
 
 func IncScenarioSearchJobs[A ~string](action A, result string, reducedBudget bool) {
