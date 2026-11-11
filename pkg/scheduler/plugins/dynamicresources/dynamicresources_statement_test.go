@@ -11,6 +11,7 @@ import (
 	. "go.uber.org/mock/gomock"
 	"gopkg.in/h2non/gock.v1"
 	resourceapi "k8s.io/api/resource/v1"
+	"k8s.io/dynamic-resource-allocation/structured"
 
 	featuregates "github.com/kai-scheduler/KAI-scheduler/pkg/common/feature_gates"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
@@ -585,6 +586,86 @@ func TestStatementEvictUnevict_WithDRAClaims(t *testing.T) {
 			assertTaskStateRestored(t, task, initialState, "unevict")
 		})
 	}
+}
+
+// Evicting a pod frees the devices of its extended-resource claim (KEP-5004), and undoing the eviction restores them.
+func TestStatementEvictUnevict_WithExtendedResourceClaim(t *testing.T) {
+	test_utils.InitTestingInfrastructure()
+	controller := NewController(t)
+	defer controller.Finish()
+	defer gock.Off()
+
+	const (
+		claimName = "test-job-0-extended-resources"
+		podName   = "test-job-0"
+	)
+	deviceID := structured.MakeDeviceID("nvidia.com/gpu", "node0", "0")
+
+	topology := test_utils.TestTopologyBasic{
+		Queues: []test_utils.TestQueueBasic{{Name: "q-1"}},
+		Jobs: []*jobs_fake.TestJobBasic{
+			{
+				Name:      "test-job",
+				Namespace: "test",
+				QueueName: "q-1",
+				Tasks: []*tasks_fake.TestTaskBasic{
+					{
+						Name:                      "test-task",
+						State:                     pod_status.Running,
+						NodeName:                  "node0",
+						ExtendedResourceClaimName: claimName,
+					},
+				},
+			},
+		},
+		Nodes: map[string]nodes_fake.TestNodeBasic{"node0": {GPUs: 1}},
+		TestDRAObjects: dra_fake.TestDRAObjects{
+			DeviceClasses: []string{"nvidia.com/gpu"},
+			ResourceSlices: []*dra_fake.TestResourceSlice{
+				{Name: "node0-gpu", DeviceClassName: "nvidia.com/gpu", NodeName: "node0", Count: 1},
+			},
+			ResourceClaims: []*dra_fake.TestResourceClaim{
+				dra_fake.NewTestResourceClaim(claimName, "test", "q-1").
+					WithAllocation("node0", "0", podName).
+					ExtendedResourceFor(podName),
+			},
+		},
+	}
+
+	ssn := setupTestSession(t, topology, controller)
+	task := getTaskByStatus(t, ssn, "test-job", pod_status.Running)
+	claims := ssn.InternalK8sPlugins().SessionDRAManager.ResourceClaims()
+
+	deviceAllocated := func() bool {
+		state, err := claims.GatherAllocatedState()
+		assert.NoError(t, err)
+		return state.AllocatedDevices.Has(deviceID)
+	}
+	getClaim := func() *resourceapi.ResourceClaim {
+		claim, err := claims.Get("test", claimName)
+		assert.NoError(t, err)
+		return claim
+	}
+
+	initialAllocation := getClaim().Status.Allocation.DeepCopy()
+	assert.True(t, deviceAllocated(), "The running pod holds the device")
+
+	stmt := ssn.Statement()
+	cp := stmt.Checkpoint()
+
+	err := stmt.Evict(task, "test eviction", eviction_info.EvictionMetadata{EvictionGangSize: 1, Action: "reclaim"})
+	assert.NoError(t, err)
+	assert.Equal(t, pod_status.Releasing, task.Status)
+	assert.False(t, deviceAllocated(), "Evicting the pod frees the device of its extended resource claim")
+	assert.Nil(t, getClaim().Status.Allocation)
+	assert.Empty(t, getClaim().Status.ReservedFor)
+
+	err = stmt.Rollback(cp)
+	assert.NoError(t, err)
+	assert.Equal(t, pod_status.Running, task.Status)
+	assert.True(t, deviceAllocated(), "Undoing the eviction gives the device back")
+	assert.Equal(t, initialAllocation, getClaim().Status.Allocation)
+	assert.Len(t, getClaim().Status.ReservedFor, 1)
 }
 
 func TestStatementPipelineUnpipeline_WithDRAClaims(t *testing.T) {

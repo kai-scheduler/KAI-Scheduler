@@ -444,6 +444,9 @@ func getResourceClaims(testMetadata TestTopologyBasic) []*resourceapi.ResourceCl
 			resourceClaimObject.Status = *resourceClaim.ClaimStatus
 		}
 		resourceClaimObject.Finalizers = resourceClaim.Finalizers
+		if resourceClaim.ExtendedResource {
+			resourceClaimObject.Annotations = map[string]string{resourceapi.ExtendedResourceClaimAnnotation: "true"}
+		}
 		if resourceClaim.OwnerPodName != "" {
 			resourceClaimObject.OwnerReferences = []metav1.OwnerReference{{
 				APIVersion: "v1",

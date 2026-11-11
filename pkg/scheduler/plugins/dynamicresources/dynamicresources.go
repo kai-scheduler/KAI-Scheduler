@@ -10,6 +10,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/component-helpers/scheduling/corev1/nodeaffinity"
 	"k8s.io/dynamic-resource-allocation/cel"
 	"k8s.io/dynamic-resource-allocation/deviceclass/extendedresourcecache"
@@ -40,6 +41,9 @@ type draPlugin struct {
 	allocatorFeatures     structured.Features
 	queueLabelKey         string
 	deviceClassByResource *extendedresourcecache.ExtendedResourceCache
+
+	// releasedExtendedClaims remembers each evicted pod's extended-resource claim allocation, to restore on unevict.
+	releasedExtendedClaims map[types.UID]*resourceapi.AllocationResult
 }
 
 // +kubebuilder:rbac:groups="resource.k8s.io",resources=deviceclasses;resourceslices;resourceclaims,verbs=get;list;watch
@@ -77,6 +81,7 @@ func (drap *draPlugin) Name() string {
 }
 
 func (drap *draPlugin) OnSessionOpen(ssn *framework.Session) {
+	drap.releasedExtendedClaims = map[types.UID]*resourceapi.AllocationResult{}
 	drap.queueLabelKey = ssn.SchedulerParams.QueueLabelKey
 	drap.deviceClassByResource = ssn.ClusterInfo.DeviceClassByResource
 
@@ -349,6 +354,8 @@ func (drap *draPlugin) allocateHandlerFn(ssn *framework.Session) func(event *fra
 		node := ssn.ClusterInfo.Nodes[nodeName].Node
 		nodeInfo := ssn.ClusterInfo.Nodes[nodeName]
 
+		drap.restoreExtendedResourceClaim(event.Task)
+
 		for _, podClaim := range pod.Spec.ResourceClaims {
 			err := drap.allocateResourceClaim(event.Task, &podClaim, node)
 			if err != nil {
@@ -417,7 +424,86 @@ func (drap *draPlugin) deallocateHandlerFn(_ *framework.Session) func(event *fra
 			}
 			event.Task.ExtendedResourceClaim = nil
 		}
+
+		drap.releaseExtendedResourceClaim(event.Task)
 	}
+}
+
+// extendedResourceClaimName returns the pod's extended-resource claim, which only the pod status lists.
+func extendedResourceClaimName(pod *v1.Pod) string {
+	if pod.Status.ExtendedResourceClaimStatus == nil {
+		return ""
+	}
+	return pod.Status.ExtendedResourceClaimStatus.ResourceClaimName
+}
+
+// releaseExtendedResourceClaim frees the devices of the pod's extended-resource claim, as deallocateResourceClaim does for spec claims.
+func (drap *draPlugin) releaseExtendedResourceClaim(task *pod_info.PodInfo) {
+	claimName := extendedResourceClaimName(task.Pod)
+	if claimName == "" || drap.manager == nil {
+		return
+	}
+	if _, released := drap.releasedExtendedClaims[task.Pod.UID]; released {
+		return
+	}
+
+	originalClaim, err := drap.manager.ResourceClaims().Get(task.Namespace, claimName)
+	if err != nil {
+		log.InfraLogger.Errorf("Failed to get extended resource claim %s/%s of pod %s: %v",
+			task.Namespace, claimName, task.Name, err)
+		return
+	}
+	if originalClaim.Status.Allocation == nil {
+		return
+	}
+
+	claim := originalClaim.DeepCopy() // Modifying the original object will cause the manager to think there were no updates
+	resources.RemoveReservedFor(claim, task.Pod)
+	if len(claim.Status.ReservedFor) == 0 {
+		claim.Status.Allocation = nil
+	}
+	if err := drap.manager.ResourceClaims().AssumeClaimAfterAPICall(claim); err != nil {
+		log.InfraLogger.Errorf("Failed to release extended resource claim %s/%s of pod %s: %v",
+			task.Namespace, claimName, task.Name, err)
+		return
+	}
+	drap.releasedExtendedClaims[task.Pod.UID] = originalClaim.Status.Allocation.DeepCopy()
+
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("Released extended resource claim <%s/%s>, devices <%s>.",
+			task.Namespace, claimName, getClaimDevicesString(originalClaim))
+	})
+}
+
+// restoreExtendedResourceClaim gives back the devices released on eviction, unless the pod is being placed anew.
+func (drap *draPlugin) restoreExtendedResourceClaim(task *pod_info.PodInfo) {
+	allocation, released := drap.releasedExtendedClaims[task.Pod.UID]
+	if !released || task.ExtendedResourceClaim != nil {
+		return
+	}
+
+	claimName := extendedResourceClaimName(task.Pod)
+	originalClaim, err := drap.manager.ResourceClaims().Get(task.Namespace, claimName)
+	if err != nil {
+		log.InfraLogger.Errorf("Failed to get extended resource claim %s/%s of pod %s: %v",
+			task.Namespace, claimName, task.Name, err)
+		return
+	}
+
+	claim := originalClaim.DeepCopy()
+	claim.Status.Allocation = allocation.DeepCopy()
+	resources.UpsertReservedFor(claim, task.Pod)
+	if err := drap.manager.ResourceClaims().AssumeClaimAfterAPICall(claim); err != nil {
+		log.InfraLogger.Errorf("Failed to restore extended resource claim %s/%s of pod %s: %v",
+			task.Namespace, claimName, task.Name, err)
+		return
+	}
+	delete(drap.releasedExtendedClaims, task.Pod.UID)
+
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("Restored extended resource claim <%s/%s>, devices <%s>.",
+			task.Namespace, claimName, getClaimDevicesString(claim))
+	})
 }
 
 func (drap *draPlugin) OnSessionClose(_ *framework.Session) {}

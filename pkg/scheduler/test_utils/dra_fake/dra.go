@@ -106,6 +106,8 @@ type TestResourceClaim struct {
 	Finalizers []string
 	// OwnerPodName makes the claim one generated for that pod, whose fake UID is its name.
 	OwnerPodName string
+	// ExtendedResource marks the claim as the one created for the pod's DRA-backed extended resources.
+	ExtendedResource bool
 }
 
 func RandomReservedForReferences(numReferences int) []resourceapi.ResourceClaimConsumerReference {
@@ -153,5 +155,12 @@ func (c *TestResourceClaim) WithAllocation(nodeName, device, podName string) *Te
 // GeneratedFor marks the claim as generated from a template for the pod, which owns it.
 func (c *TestResourceClaim) GeneratedFor(podName string) *TestResourceClaim {
 	c.OwnerPodName = podName
+	return c
+}
+
+// ExtendedResourceFor marks the claim as the extended-resource claim the pod owns.
+func (c *TestResourceClaim) ExtendedResourceFor(podName string) *TestResourceClaim {
+	c.OwnerPodName = podName
+	c.ExtendedResource = true
 	return c
 }
