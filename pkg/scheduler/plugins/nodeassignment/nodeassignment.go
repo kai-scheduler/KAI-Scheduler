@@ -3,6 +3,7 @@
 
 // Package nodeassignment lets admins assign nodes to leaf queues with a node label.
 // Pods prefer nodes owned by their queue, then unassigned nodes, then nodes owned by other queues.
+// Non-preemptible pods of other queues are not allowed on owned nodes.
 package nodeassignment
 
 import (
@@ -13,6 +14,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/scores"
@@ -22,6 +24,8 @@ const (
 	Name            = "nodeassignment"
 	DefaultLabelKey = "kai.scheduler/assigned-queue"
 	labelKeyArg     = "labelKey"
+
+	foreignNonPreemptibleReason = "node(s) are assigned to another queue; non-preemptible pods of other queues are not allowed"
 
 	// unknownQueue owns nodes whose label is invalid, so no pod is native to them.
 	unknownQueue common_info.QueueID = ""
@@ -50,6 +54,7 @@ func (p *nodeAssignmentPlugin) OnSessionOpen(ssn *framework.Session) {
 	p.ssn = ssn
 	p.owners = p.buildOwners(ssn)
 	ssn.AddNodeOrderFn(p.nodeOrderFn)
+	ssn.AddPredicateFn(p.predicateFn)
 }
 
 func (p *nodeAssignmentPlugin) OnSessionClose(_ *framework.Session) {
@@ -100,9 +105,27 @@ func (p *nodeAssignmentPlugin) score(task *pod_info.PodInfo, node *node_info.Nod
 	if !assigned {
 		return scores.NodeAssignment
 	}
-	job, found := p.ssn.ClusterInfo.PodGroupInfos[task.Job]
-	if found && owner != unknownQueue && owner == job.Queue {
+	if job, found := p.ssn.ClusterInfo.PodGroupInfos[task.Job]; found && isNative(owner, job) {
 		return 2 * scores.NodeAssignment
 	}
 	return 0
+}
+
+// predicateFn keeps owned nodes free of pods that reclaim can't evict. Semi-preemptible jobs count as
+// non-preemptible, since their protected core can change.
+func (p *nodeAssignmentPlugin) predicateFn(
+	task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo,
+) error {
+	owner, assigned := p.owners[node.Name]
+	if !assigned || job == nil || job.IsPreemptibleJob() || isNative(owner, job) {
+		return nil
+	}
+	return common_info.NewFitErrorWithDetailedMessage(task.Name, task.Namespace, node.Name,
+		[]string{foreignNonPreemptibleReason},
+		fmt.Sprintf("node is assigned to queue %s; non-preemptible pods of other queues are not allowed",
+			node.Node.Labels[p.labelKey]))
+}
+
+func isNative(owner common_info.QueueID, job *podgroup_info.PodGroupInfo) bool {
+	return owner != unknownQueue && owner == job.Queue
 }

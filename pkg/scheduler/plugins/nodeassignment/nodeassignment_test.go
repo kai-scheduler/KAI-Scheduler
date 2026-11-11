@@ -22,6 +22,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/scores"
+	"github.com/kai-scheduler/api/scheduling/v2alpha2"
 )
 
 const (
@@ -105,6 +106,71 @@ func TestNodeOrder(t *testing.T) {
 			score, err := ssn.NodeOrderFns[0](task, node)
 			require.NoError(t, err)
 			require.Equal(t, tt.want, score)
+		})
+	}
+}
+
+func TestPredicate(t *testing.T) {
+	tests := []struct {
+		name           string
+		nodeLabel      map[string]string
+		preemptibility v2alpha2.Preemptibility
+		wantDetail     string
+	}{
+		{
+			name:           "non-preemptible pod on an unassigned node",
+			preemptibility: v2alpha2.NonPreemptible,
+		},
+		{
+			name:           "non-preemptible pod on a node owned by its queue",
+			nodeLabel:      map[string]string{DefaultLabelKey: "team-a"},
+			preemptibility: v2alpha2.NonPreemptible,
+		},
+		{
+			name:           "preemptible pod on a node owned by another queue",
+			nodeLabel:      map[string]string{DefaultLabelKey: "team-b"},
+			preemptibility: v2alpha2.Preemptible,
+		},
+		{
+			name:           "non-preemptible pod on a node owned by another queue",
+			nodeLabel:      map[string]string{DefaultLabelKey: "team-b"},
+			preemptibility: v2alpha2.NonPreemptible,
+			wantDetail:     "node is assigned to queue team-b; non-preemptible pods of other queues are not allowed",
+		},
+		{
+			name:           "semi-preemptible pod on a node owned by another queue",
+			nodeLabel:      map[string]string{DefaultLabelKey: "team-b"},
+			preemptibility: v2alpha2.SemiPreemptible,
+			wantDetail:     "node is assigned to queue team-b; non-preemptible pods of other queues are not allowed",
+		},
+		{
+			name:           "non-preemptible pod on a node owned by a queue that does not exist",
+			nodeLabel:      map[string]string{DefaultLabelKey: "missing"},
+			preemptibility: v2alpha2.NonPreemptible,
+			wantDetail:     "node is assigned to queue missing; non-preemptible pods of other queues are not allowed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			node := newNode("node-1", tt.nodeLabel)
+			task := &pod_info.PodInfo{Name: "pod-1", Namespace: "ns", Job: "job-1"}
+			job := &podgroup_info.PodGroupInfo{UID: "job-1", Queue: "team-a", Preemptibility: tt.preemptibility}
+			ssn := newSession([]*node_info.NodeInfo{node}, job)
+
+			New(nil).OnSessionOpen(ssn)
+			require.Len(t, ssn.PredicateFns, 1)
+
+			err := ssn.PredicateFns[0](task, job, node)
+			if tt.wantDetail == "" {
+				require.NoError(t, err)
+				return
+			}
+			var fitErr *common_info.TasksFitError
+			require.ErrorAs(t, err, &fitErr)
+			require.Equal(t, "node-1", fitErr.NodeName)
+			require.Equal(t, []string{foreignNonPreemptibleReason}, fitErr.Reasons)
+			require.Equal(t, []string{tt.wantDetail}, fitErr.DetailedReasons)
 		})
 	}
 }
