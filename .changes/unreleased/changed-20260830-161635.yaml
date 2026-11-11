@@ -1,3 +1,0 @@
-kind: Changed
-body: |-
-  Replace pod-group eviction metrics with workload labels and an events counter

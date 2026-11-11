@@ -1,6 +1,0 @@
-kind: Fixed
-body: |-
-  CRD upgrade now fails early, naming the CRD, when stale storedVersions would break the apply
-custom:
-  Author: "SiorMeir"
-  Issue: "2381"
