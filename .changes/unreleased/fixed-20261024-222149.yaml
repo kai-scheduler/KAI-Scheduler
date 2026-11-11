@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Keep queue metric mappings unchanged when a flag value is invalid
+custom:
+  Author: "jackiectl2"
+  Issue: "2503"
