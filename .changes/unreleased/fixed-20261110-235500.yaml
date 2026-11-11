@@ -1,0 +1,7 @@
+kind: Fixed
+body: |-
+  Reclaim and preempt can now evict a victim whose GPU came through a DRA-backed extended resource (KEP-5004). Evicting such a pod in the scheduler's simulation now frees the devices of its extended-resource claim, and undoing the eviction gives them back, as is done for claims in the pod spec. Before, the pending pod stayed Pending forever
+time: 2026-11-10T23:55:00.000000+00:00
+custom:
+    Author: mohitvinchoo
+    Issue: "2610"

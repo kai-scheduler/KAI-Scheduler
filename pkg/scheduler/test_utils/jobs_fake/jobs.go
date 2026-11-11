@@ -273,6 +273,9 @@ func getDraClaimsForPod(task *tasks_fake.TestTaskBasic, draClaimsMap map[string]
 			draPodClaims = append(draPodClaims, draClaim)
 		}
 	}
+	if draClaim, ok := draClaimsMap[task.ExtendedResourceClaimName]; ok {
+		draPodClaims = append(draPodClaims, draClaim)
+	}
 	return draPodClaims
 }
 
