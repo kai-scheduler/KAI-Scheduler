@@ -40,11 +40,6 @@ type Statement struct {
 	operations []Operation
 	ssn        *Session
 	sessionID  string
-	id         int
-	// action is the action current when the statement was opened. Commit prefers the
-	// session's action at publish time so a statement held across the cycle is tagged
-	// with the action that actually commits it.
-	action string
 }
 
 type Checkpoint int
@@ -590,25 +585,27 @@ func (s *Statement) Discard() {
 		return
 	}
 
-	discardedOps := 0
-	if s.recording() {
-		for i := range s.operations {
-			if s.operationValid(i) {
-				discardedOps++
-			}
-		}
-	}
-
 	log.InfraLogger.V(6).Do(func() {
 		log.InfraLogger.Infof("Discarding operations ...")
 	})
+	discardedOps := 0
 	for i := len(s.operations) - 1; i >= 0; i-- {
-		_ = s.undoOperation(i)
+		if !s.operationValid(i) {
+			continue
+		}
+		if err := s.undoOperation(i); err != nil {
+			continue
+		}
+		discardedOps++
 	}
 
 	s.clearOperations()
-	if discardedOps > 0 {
-		s.publishCommit(nil, true, discardedOps)
+	if discardedOps > 0 && s.ssn != nil {
+		s.ssn.publishCommit(&CommitEvent{
+			SessionID:        s.sessionID,
+			Action:           s.ssn.currentAction,
+			DiscardedOpCount: discardedOps,
+		})
 	}
 }
 
@@ -619,19 +616,18 @@ func (s *Statement) Commit() error {
 	}
 
 	var err error
-	recording := s.recording()
-	var recorded []CommitOp
+	opErrors := make([]string, len(s.operations))
+	failedAt := -1
 	type evictionEventKey struct {
 		podGroup common_info.PodGroupID
 		action   string
 	}
 	committedEvictions := map[evictionEventKey]*podgroup_info.PodGroupInfo{}
 	defer func() {
+		defer s.clearOperations()
+		s.publishCommitResult(opErrors, failedAt)
 		for key, podGroup := range committedEvictions {
 			s.ssn.Cache.RecordPodGroupEvictionEvent(podGroup, key.action)
-		}
-		if recording {
-			s.publishCommit(recorded, false, 0)
 		}
 	}()
 
@@ -642,10 +638,6 @@ func (s *Statement) Commit() error {
 		}
 
 		taskInfo := op.TaskInfo()
-		recordedOp := CommitOp{}
-		if recording {
-			recordedOp = commitOpFrom(op)
-		}
 		switch op.Name() {
 		case evict:
 			log.InfraLogger.V(4).Infof("Evicting task: %v/%v", taskInfo.Namespace, taskInfo.Name)
@@ -653,9 +645,7 @@ func (s *Statement) Commit() error {
 			if err = s.commitEvict(taskInfo, evictOp); err != nil {
 				log.InfraLogger.Errorf("Failed to evict task <%v/%v>, error: <%v>",
 					taskInfo.Namespace, taskInfo.Name, err)
-				if recording {
-					recordedOp.Error = err.Error()
-				}
+				opErrors[i] = err.Error()
 			} else {
 				key := evictionEventKey{podGroup: taskInfo.Job, action: evictOp.evictionMetadata.Action}
 				committedEvictions[key] = s.ssn.ClusterInfo.PodGroupInfos[taskInfo.Job]
@@ -668,69 +658,41 @@ func (s *Statement) Commit() error {
 			err = s.commitAllocate(taskInfo)
 			if err != nil {
 				log.InfraLogger.Errorf("Failed to allocate task. error: %s", err.Error())
-				if recording {
-					recordedOp.Error = err.Error()
-					recorded = append(recorded, recordedOp)
-					recorded = append(recorded, s.unattemptedOps(i+1)...)
-				}
-				s.clearOperations()
+				opErrors[i] = err.Error()
+				failedAt = i
 				return err
 			}
 		}
-		if recording {
-			recorded = append(recorded, recordedOp)
-		}
 	}
-
-	s.clearOperations()
 
 	return err
 }
 
-func (s *Statement) recording() bool {
-	return s != nil && s.ssn != nil && len(s.ssn.commitHandlers) > 0
-}
-
-func (s *Statement) publishAction() string {
-	if s.ssn != nil && s.ssn.currentAction != "" {
-		return s.ssn.currentAction
-	}
-	return s.action
-}
-
-func (s *Statement) publishCommit(ops []CommitOp, discarded bool, discardedOps int) {
-	if !s.recording() {
+func (s *Statement) publishCommitResult(opErrors []string, failedAt int) {
+	if s.ssn == nil || !s.ssn.hasOnCommit() {
 		return
 	}
-	if !discarded && len(ops) == 0 {
-		return
-	}
-	event := &CommitEvent{
-		SessionID:        s.sessionID,
-		Action:           s.publishAction(),
-		StatementID:      fmt.Sprintf("%d", s.id),
-		Ops:              ops,
-		Discarded:        discarded,
-		DiscardedOpCount: discardedOps,
-	}
-	for _, handler := range s.ssn.commitHandlers {
-		if handler != nil && handler.OnCommit != nil {
-			handler.OnCommit(event)
-		}
-	}
-}
-
-func (s *Statement) unattemptedOps(from int) []CommitOp {
-	var ops []CommitOp
-	for i := from; i < len(s.operations); i++ {
+	recorded := make([]CommitOp, 0, len(s.operations))
+	for i, op := range s.operations {
 		if !s.operationValid(i) {
 			continue
 		}
-		op := commitOpFrom(s.operations[i])
-		op.NotAttempted = true
-		ops = append(ops, op)
+		recordedOp := commitOpFrom(op)
+		if failedAt >= 0 && i > failedAt {
+			recordedOp.NotAttempted = true
+		} else if i < len(opErrors) {
+			recordedOp.Error = opErrors[i]
+		}
+		recorded = append(recorded, recordedOp)
 	}
-	return ops
+	if len(recorded) == 0 {
+		return
+	}
+	s.ssn.publishCommit(&CommitEvent{
+		SessionID: s.sessionID,
+		Action:    s.ssn.currentAction,
+		Ops:       recorded,
+	})
 }
 
 func commitOpFrom(op Operation) CommitOp {
@@ -748,10 +710,6 @@ func commitOpFrom(op Operation) CommitOp {
 		}
 		recorded.Message = typed.message
 		recorded.Eviction = typed.evictionMetadata
-		if typed.evictionMetadata.Preemptor != nil {
-			preemptor := *typed.evictionMetadata.Preemptor
-			recorded.Eviction.Preemptor = &preemptor
-		}
 	case pipelineOperation:
 		recorded.Node = typed.nextNode
 		recorded.Message = typed.message

@@ -11,8 +11,12 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	corelisters "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 
+	kubeaischedulerinfo "github.com/kai-scheduler/api/client/informers/externalversions"
+	enginev2alpha2listers "github.com/kai-scheduler/api/client/listers/scheduling/v2alpha2"
+	commonconstants "github.com/kai-scheduler/api/constants"
 	schedulingv1alpha2 "github.com/kai-scheduler/api/scheduling/v1alpha2"
 	enginev2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
 
@@ -52,7 +56,14 @@ type recorderPlugin struct {
 	committed bool
 }
 
-var informersOnce sync.Once
+var (
+	informersOnce           sync.Once
+	kaiInformersUnavailable bool
+)
+
+type kaiInformerCache interface {
+	KubeAiSchedulerInformerFactory() kubeaischedulerinfo.SharedInformerFactory
+}
 
 func New(arguments framework.PluginArguments) framework.Plugin {
 	cycleBuffer, err := arguments.GetInt("cycleBuffer", defaultCycleBuffer)
@@ -110,11 +121,14 @@ func (p *recorderPlugin) OnSessionOpen(ssn *framework.Session) {
 			p.discovery <- snapshot.CollectDiscovery(context.Background(), client.Discovery())
 		}()
 		informersOnce.Do(func() { p.registerInformers(ssn) })
+		if kaiInformersUnavailable {
+			p.partial = true
+		}
 	} else {
 		p.partial = true
 	}
 
-	ssn.AddCommitHandler(&framework.CommitHandler{OnCommit: p.onCommit})
+	ssn.AddEventHandler(&framework.EventHandler{OnCommit: p.onCommit})
 }
 
 func (p *recorderPlugin) OnSessionClose(ssn *framework.Session) {
@@ -156,7 +170,7 @@ func (p *recorderPlugin) onCommit(event *framework.CommitEvent) {
 	}
 	p.mu.Lock()
 	stat := p.stat(event.Action)
-	if event.Discarded {
+	if event.DiscardedOpCount > 0 && len(event.Ops) == 0 {
 		stat.DiscardedAttempts++
 		stat.DiscardedOps += event.DiscardedOpCount
 		p.mu.Unlock()
@@ -170,12 +184,34 @@ func (p *recorderPlugin) onCommit(event *framework.CommitEvent) {
 		}
 	}
 	p.mu.Unlock()
-	p.enqueue(recorder.StreamCycle, recorder.KindDecision, recorder.DecisionRecord{
-		SessionID:   event.SessionID,
-		StatementID: event.StatementID,
-		Action:      event.Action,
-		Ops:         append([]framework.CommitOp{}, event.Ops...),
-	})
+	p.enqueue(recorder.StreamCycle, recorder.KindDecision, decisionRecord(event))
+}
+
+func decisionRecord(event *framework.CommitEvent) recorder.DecisionRecord {
+	ops := make([]recorder.DecisionOp, len(event.Ops))
+	for i, op := range event.Ops {
+		eviction := op.Eviction
+		if op.Eviction.Preemptor != nil {
+			preemptor := *op.Eviction.Preemptor
+			eviction.Preemptor = &preemptor
+		}
+		ops[i] = recorder.DecisionOp{
+			Kind:         op.Kind,
+			UID:          op.UID,
+			Namespace:    op.Namespace,
+			Name:         op.Name,
+			Node:         op.Node,
+			Message:      op.Message,
+			Error:        op.Error,
+			NotAttempted: op.NotAttempted,
+			Eviction:     eviction,
+		}
+	}
+	return recorder.DecisionRecord{
+		SessionID: event.SessionID,
+		Action:    event.Action,
+		Ops:       ops,
+	}
 }
 
 func (p *recorderPlugin) stat(action string) *recorder.ActionStat {
@@ -264,33 +300,50 @@ func (p *recorderPlugin) registerInformers(ssn *framework.Session) {
 			selector = parsed
 		}
 	}
+	var nodeLister corelisters.NodeLister
+	var groupLister enginev2alpha2listers.PodGroupLister
 	kube := ssn.Cache.KubeInformerFactory()
 	if kube != nil {
-		p.watchPods(kube.Core().V1().Pods().Informer(), selector)
+		nodeLister = kube.Core().V1().Nodes().Lister()
 		p.watchNodes(kube.Core().V1().Nodes().Informer(), selector)
 	}
-	kai := ssn.Cache.KubeAiSchedulerInformerFactory()
-	if kai == nil {
-		return
+	kaiCache, ok := ssn.Cache.(kaiInformerCache)
+	if !ok {
+		kaiInformersUnavailable = true
+		log.InfraLogger.Errorf("Recorder cache does not expose KubeAiSchedulerInformerFactory; pod group and bind request lifecycle will be missing and cycles are marked partial")
+	} else if kai := kaiCache.KubeAiSchedulerInformerFactory(); kai == nil {
+		kaiInformersUnavailable = true
+		log.InfraLogger.Errorf("Recorder KAI informer factory is nil; pod group and bind request lifecycle will be missing and cycles are marked partial")
+	} else {
+		groupLister = kai.Scheduling().V2alpha2().PodGroups().Lister()
+		p.watchPodGroups(kai.Scheduling().V2alpha2().PodGroups().Informer(), selector)
+		p.watchBindRequests(kai.Scheduling().V1alpha2().BindRequests().Informer(), selector)
 	}
-	p.watchPodGroups(kai.Scheduling().V2alpha2().PodGroups().Informer(), selector)
-	p.watchBindRequests(kai.Scheduling().V1alpha2().BindRequests().Informer(), selector)
+	if kube != nil {
+		p.watchPods(kube.Core().V1().Pods().Informer(), selector, nodeLister, groupLister)
+	}
 }
 
-func (p *recorderPlugin) watchPods(informer cache.SharedIndexInformer, selector labels.Selector) {
+func (p *recorderPlugin) watchPods(
+	informer cache.SharedIndexInformer, selector labels.Selector,
+	nodes corelisters.NodeLister, groups enginev2alpha2listers.PodGroupLister,
+) {
+	keep := func(pod *v1.Pod) bool {
+		return podInShard(pod, selector, nodes, groups)
+	}
 	addDetailedHandler(informer, func(obj any, initial bool) {
 		if initial {
 			return
 		}
 		pod, ok := unwrap[*v1.Pod](obj)
-		if !ok || !podInPartition(pod, selector) {
+		if !ok || !keep(pod) {
 			return
 		}
 		p.enqueue(recorder.StreamLifecycle, recorder.KindLifecycle, podLifecycle("add", pod))
 	}, func(oldObj, newObj any) {
 		oldPod, oldOK := unwrap[*v1.Pod](oldObj)
 		newPod, newOK := unwrap[*v1.Pod](newObj)
-		if !newOK || !podInPartition(newPod, selector) {
+		if !newOK || !keep(newPod) {
 			return
 		}
 		if oldOK && samePodLife(oldPod, newPod) {
@@ -299,7 +352,7 @@ func (p *recorderPlugin) watchPods(informer cache.SharedIndexInformer, selector 
 		p.enqueue(recorder.StreamLifecycle, recorder.KindLifecycle, podLifecycle("update", newPod))
 	}, func(obj any) {
 		pod, ok := unwrap[*v1.Pod](obj)
-		if !ok || !podInPartition(pod, selector) {
+		if !ok || !keep(pod) {
 			return
 		}
 		p.enqueue(recorder.StreamLifecycle, recorder.KindLifecycle, podLifecycle("delete", pod))
@@ -419,14 +472,31 @@ func unwrap[T any](obj any) (T, bool) {
 	return typed, ok
 }
 
-func podInPartition(pod *v1.Pod, selector labels.Selector) bool {
+func podInShard(pod *v1.Pod, selector labels.Selector, nodes corelisters.NodeLister, groups enginev2alpha2listers.PodGroupLister) bool {
 	if pod == nil {
 		return false
 	}
-	if selector.Empty() || selector.String() == "" {
+	if selector == nil || selector.Empty() {
 		return true
 	}
-	return selector.Matches(labels.Set(pod.Labels))
+	if pod.Spec.NodeName != "" && nodes != nil {
+		node, err := nodes.Get(pod.Spec.NodeName)
+		if err == nil && selector.Matches(labels.Set(node.Labels)) {
+			return true
+		}
+	}
+	if groups == nil {
+		return false
+	}
+	name := pod.Annotations[commonconstants.PodGroupAnnotationForPod]
+	if name == "" {
+		return false
+	}
+	group, err := groups.PodGroups(pod.Namespace).Get(name)
+	if err != nil {
+		return false
+	}
+	return selector.Matches(labels.Set(group.Labels))
 }
 
 func podLifecycle(op string, pod *v1.Pod) recorder.LifecycleRecord {

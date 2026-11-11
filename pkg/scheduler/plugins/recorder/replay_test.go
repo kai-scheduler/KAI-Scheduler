@@ -88,8 +88,8 @@ func runAllocate(t *testing.T, config *conf.SchedulerConfiguration, params *conf
 	session, err := framework.OpenSession(schedCache, config, params, "replay", http.NewServeMux())
 	require.NoError(t, err)
 	plugin.OnSessionOpen(session)
-	session.AddCommitHandler(&framework.CommitHandler{OnCommit: func(event *framework.CommitEvent) {
-		if event.Discarded {
+	session.AddEventHandler(&framework.EventHandler{OnCommit: func(event *framework.CommitEvent) {
+		if event.DiscardedOpCount > 0 && len(event.Ops) == 0 {
 			return
 		}
 		for _, op := range event.Ops {

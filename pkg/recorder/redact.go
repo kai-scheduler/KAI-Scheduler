@@ -16,7 +16,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/snapshot"
 	commonconstants "github.com/kai-scheduler/api/constants"
 	kaiv1alpha1 "github.com/kai-scheduler/api/kai/v1alpha1"
@@ -82,9 +81,9 @@ func redactState(in StateRecord, h Hasher) StateRecord {
 }
 
 func redactDecision(in DecisionRecord, h Hasher) DecisionRecord {
-	ops := make([]framework.CommitOp, len(in.Ops))
+	ops := make([]DecisionOp, len(in.Ops))
 	for i, op := range in.Ops {
-		ops[i] = framework.CommitOp{
+		ops[i] = DecisionOp{
 			Kind:         op.Kind,
 			UID:          h.Hash(op.UID),
 			Namespace:    h.Hash(op.Namespace),

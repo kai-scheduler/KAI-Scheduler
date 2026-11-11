@@ -17,7 +17,7 @@ func TestCommitEventRecordsActionAndUnattemptedOps(t *testing.T) {
 	stmt, task, _ := buildEvictMarkerSession()
 	stmt.ssn.SetCurrentAction(string(Allocate))
 	var got *CommitEvent
-	stmt.ssn.AddCommitHandler(&CommitHandler{OnCommit: func(event *CommitEvent) {
+	stmt.ssn.AddEventHandler(&EventHandler{OnCommit: func(event *CommitEvent) {
 		got = event
 	}})
 	task.NodeName = "missing-node"
@@ -42,7 +42,7 @@ func TestDiscardEventCountsOpsOnly(t *testing.T) {
 	stmt, task, _ := buildEvictMarkerSession()
 	stmt.ssn.SetCurrentAction(string(Reclaim))
 	var got *CommitEvent
-	stmt.ssn.AddCommitHandler(&CommitHandler{OnCommit: func(event *CommitEvent) {
+	stmt.ssn.AddEventHandler(&EventHandler{OnCommit: func(event *CommitEvent) {
 		got = event
 	}})
 	require.NoError(t, stmt.Evict(task, "reclaim", eviction_info.EvictionMetadata{Action: string(Reclaim)}))
@@ -50,7 +50,6 @@ func TestDiscardEventCountsOpsOnly(t *testing.T) {
 	stmt.Discard()
 
 	require.NotNil(t, got)
-	require.True(t, got.Discarded)
 	require.Equal(t, 1, got.DiscardedOpCount)
 	require.Empty(t, got.Ops)
 	require.Equal(t, string(Reclaim), got.Action)
@@ -64,7 +63,7 @@ func TestSessionEvictEmitsOneOp(t *testing.T) {
 	stmt.ssn.Cache = cacheMock
 	stmt.ssn.SetCurrentAction(string(StaleGangEviction))
 	var got *CommitEvent
-	stmt.ssn.AddCommitHandler(&CommitHandler{OnCommit: func(event *CommitEvent) {
+	stmt.ssn.AddEventHandler(&EventHandler{OnCommit: func(event *CommitEvent) {
 		got = event
 	}})
 
@@ -72,7 +71,6 @@ func TestSessionEvictEmitsOneOp(t *testing.T) {
 
 	require.NotNil(t, got)
 	require.Equal(t, string(StaleGangEviction), got.Action)
-	require.Equal(t, "session-evict", got.StatementID)
 	require.Len(t, got.Ops, 1)
 	require.Equal(t, evict, got.Ops[0].Kind)
 	require.Equal(t, task.Name, got.Ops[0].Name)

@@ -34,34 +34,29 @@ type Event struct {
 type EventHandler struct {
 	AllocateFunc   func(event *Event)
 	DeallocateFunc func(event *Event)
-}
-
-// CommitOp is one operation inside a committed or discarded statement.
-// Values are copied at publish time so a handler can retain the event.
-type CommitOp struct {
-	Kind         string                         `json:"kind"`
-	UID          string                         `json:"uid,omitempty"`
-	Namespace    string                         `json:"namespace,omitempty"`
-	Name         string                         `json:"name,omitempty"`
-	Node         string                         `json:"node,omitempty"`
-	Message      string                         `json:"message,omitempty"`
-	Error        string                         `json:"error,omitempty"`
-	NotAttempted bool                           `json:"notAttempted,omitempty"`
-	Eviction     eviction_info.EvictionMetadata `json:"eviction,omitempty"`
-}
-
-// CommitEvent is emitted once per Statement.Commit, Statement.Discard, and Session.Evict.
-// Discarded events carry only DiscardedOpCount. Handlers run on the scheduling goroutine
-// and must not block.
-type CommitEvent struct {
-	SessionID        string     `json:"sessionID"`
-	Action           string     `json:"action,omitempty"`
-	StatementID      string     `json:"statementID,omitempty"`
-	Ops              []CommitOp `json:"ops,omitempty"`
-	Discarded        bool       `json:"discarded,omitempty"`
-	DiscardedOpCount int        `json:"discardedOpCount,omitempty"`
-}
-
-type CommitHandler struct {
+	// OnCommit runs inline on the scheduling goroutine for Statement.Commit,
+	// Statement.Discard, and Session.Evict. It must not block.
 	OnCommit func(event *CommitEvent)
+}
+
+// CommitOp is one operation inside a commit. Fields are the values read off the operation.
+type CommitOp struct {
+	Kind         string
+	UID          string
+	Namespace    string
+	Name         string
+	Node         string
+	Message      string
+	Error        string
+	NotAttempted bool
+	Eviction     eviction_info.EvictionMetadata
+}
+
+// CommitEvent is one commit, or a discard. DiscardedOpCount is the number of
+// operations undone by Statement.Discard, and Ops is empty in that case.
+type CommitEvent struct {
+	SessionID        string
+	Action           string
+	Ops              []CommitOp
+	DiscardedOpCount int
 }

@@ -8,8 +8,8 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/snapshot"
 )
 
@@ -51,14 +51,24 @@ type StateRecord struct {
 	Discovery       *snapshot.DiscoverySnapshot    `json:"discovery,omitempty"`
 }
 
-// DecisionRecord is one committed statement, or a discard counted only by its operation count.
+// DecisionOp is one committed operation. It is the recorder's copy of a framework commit op.
+type DecisionOp struct {
+	Kind         string                         `json:"kind"`
+	UID          string                         `json:"uid,omitempty"`
+	Namespace    string                         `json:"namespace,omitempty"`
+	Name         string                         `json:"name,omitempty"`
+	Node         string                         `json:"node,omitempty"`
+	Message      string                         `json:"message,omitempty"`
+	Error        string                         `json:"error,omitempty"`
+	NotAttempted bool                           `json:"notAttempted,omitempty"`
+	Eviction     eviction_info.EvictionMetadata `json:"eviction,omitempty"`
+}
+
+// DecisionRecord is one committed statement.
 type DecisionRecord struct {
-	SessionID        string               `json:"sessionID"`
-	StatementID      string               `json:"statementID,omitempty"`
-	Action           string               `json:"action,omitempty"`
-	Discarded        bool                 `json:"discarded,omitempty"`
-	DiscardedOpCount int                  `json:"discardedOpCount,omitempty"`
-	Ops              []framework.CommitOp `json:"ops,omitempty"`
+	SessionID string       `json:"sessionID"`
+	Action    string       `json:"action,omitempty"`
+	Ops       []DecisionOp `json:"ops,omitempty"`
 }
 
 // ActionStat is the per-action summary for one cycle.
