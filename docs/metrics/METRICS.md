@@ -83,6 +83,17 @@ Zero-valued series for `pod_group_evicted_pods_total` and `pod_group_eviction_ev
 
 ---
 
+## Pod Grouper Metrics
+
+Metrics exposed by the pod-grouper, which creates a PodGroup for each workload. Like the other metrics, they carry the metrics namespace prefix (`kai_` by default).
+
+| Metric Name | Type | Labels | Description |
+|---|---|---|---|
+| `podgrouper_podgroups_created_total` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `plugin`, `owner_gvk` | Total number of PodGroups created by the pod-grouper, by the grouper plugin that handled the workload and the top owner's kind. PodGroup updates are not counted. |
+| `podgrouper_errors_total` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `plugin` | Total number of errors returned by a grouper plugin while computing PodGroup metadata. A pod whose workload keeps failing is retried, so a persistent failure keeps incrementing the counter. |
+
+---
+
 ## Common Label Definitions
 
 All metrics include these standard Prometheus scrape labels:
@@ -103,6 +114,7 @@ Business/Resource Labels:
 - **`reduced_budget`**: Whether the scenario search ran after the action budget was reduced (`true` or `false`)
 - **`state`**: Scenario lifecycle state (`emitted`, `simulated`, or `validator_rejected`)
 - **`plugin`**: Plugin name
+- **`owner_gvk`**: API version and kind of the top-level workload object, formatted as `<apiVersion>/<kind>` (e.g., `apps/v1/Deployment`)
 - **`OnSession`**: Session lifecycle phase (`OnSessionOpen` or `OnSessionClose`)
 - **`podgroup`**: PodGroup resource identifier
 - **`nodepool`**: Node pool identifier for resource allocation

@@ -29,7 +29,9 @@ func NewHandler(client client.Client, nodePoolKey string, queueLabelKey string) 
 	}
 }
 
-func (h *Handler) ApplyToCluster(ctx context.Context, pgMetadata Metadata) error {
+// ApplyToCluster creates the PodGroup described by pgMetadata, or updates the existing one if it differs.
+// It reports whether a new PodGroup was created.
+func (h *Handler) ApplyToCluster(ctx context.Context, pgMetadata Metadata) (created bool, err error) {
 	newPodGroup := h.createPodGroupForMetadata(pgMetadata)
 
 	oldPodGroup := &schedulingv2alpha2.PodGroup{}
@@ -37,13 +39,13 @@ func (h *Handler) ApplyToCluster(ctx context.Context, pgMetadata Metadata) error
 		Namespace: pgMetadata.Namespace,
 		Name:      pgMetadata.Name,
 	}
-	err := h.client.Get(ctx, key, oldPodGroup)
+	err = h.client.Get(ctx, key, oldPodGroup)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			err = h.client.Create(ctx, newPodGroup)
-			return err
+			return err == nil, err
 		}
-		return err
+		return false, err
 	}
 
 	newPodGroup = h.ignoreFields(oldPodGroup, newPodGroup)
@@ -51,13 +53,13 @@ func (h *Handler) ApplyToCluster(ctx context.Context, pgMetadata Metadata) error
 	// If we got here then oldPodGroup exists - update if necessary
 	if podGroupsEqual(oldPodGroup, newPodGroup) {
 		// The objects are equal - no need to update.
-		return nil
+		return false, nil
 	}
 
 	updatePodGroup(oldPodGroup, newPodGroup)
 
 	err = h.client.Update(ctx, oldPodGroup)
-	return err
+	return false, err
 }
 
 func (h *Handler) ignoreFields(oldPodGroup, newPodGroup *schedulingv2alpha2.PodGroup) *schedulingv2alpha2.PodGroup {

@@ -17,10 +17,12 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper"
 	pluginshub "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/hub"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/grouper"
 	commonconsts "github.com/kai-scheduler/api/constants"
 )
 
@@ -375,4 +377,57 @@ func compareMetadata(expected, got *podgroup.Metadata) error {
 	}
 
 	return err
+}
+
+type failingGrouper struct{}
+
+func (failingGrouper) Name() string { return "test-failing-plugin" }
+
+func (failingGrouper) GetPodGroupMetadata(
+	_ *unstructured.Unstructured, _ *v1.Pod, _ ...*metav1.PartialObjectMetadata,
+) (*podgroup.Metadata, error) {
+	return nil, fmt.Errorf("failed to group")
+}
+
+type singlePluginHub struct{ plugin grouper.Grouper }
+
+func (h singlePluginHub) GetPodGrouperPlugin(_ metav1.GroupVersionKind) grouper.Grouper {
+	return h.plugin
+}
+
+func TestGetPGMetadataCountsPluginErrors(t *testing.T) {
+	client := fake.NewClientBuilder().Build()
+	podGrouper := podgrouper.NewPodgrouper(client, client, singlePluginHub{plugin: failingGrouper{}})
+	topOwner := &unstructured.Unstructured{Object: map[string]interface{}{
+		"apiVersion": "test.kai.scheduler/v1",
+		"kind":       "TestWorkload",
+	}}
+
+	assert.Equal(t, "test-failing-plugin", podGrouper.GetPluginName(topOwner))
+	before := pluginErrors(t, "test-failing-plugin")
+
+	_, err := podGrouper.GetPGMetadata(context.Background(), &pod, topOwner, nil)
+
+	assert.Error(t, err)
+	assert.Equal(t, before+1, pluginErrors(t, "test-failing-plugin"))
+}
+
+func pluginErrors(t *testing.T, plugin string) float64 {
+	t.Helper()
+
+	families, err := ctrlmetrics.Registry.Gather()
+	assert.NoError(t, err)
+	for _, family := range families {
+		if family.GetName() != "kai_podgrouper_errors_total" {
+			continue
+		}
+		for _, metric := range family.GetMetric() {
+			for _, label := range metric.GetLabel() {
+				if label.GetName() == "plugin" && label.GetValue() == plugin {
+					return metric.GetCounter().GetValue()
+				}
+			}
+		}
+	}
+	return 0
 }
