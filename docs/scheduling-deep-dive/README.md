@@ -102,7 +102,7 @@ For reclaim to occur:
 1. The reclaimer and victim are in **different queues**
 2. The victim is **preemptible**
 3. The reclaiming queue is **below its fair-share or deserved quota**
-4. The victim's queue is **above its fair-share or deserved quota** (i.e., using over-quota resources) — unless the opt-in `queuePriorityInQuotaReclaim` strategy applies (see below)
+4. The victim's queue is **above its fair-share or deserved quota** (i.e., using over-quota resources) — unless the opt-in `queuePriorityInQuotaReclaim` strategy applies (see below), or the opt-in `steadyFairShareReclaim` compares GPU queues by their share by over-quota weight instead (see [Fairness](../fairness/README.md#steady-fair-share-reclaim))
 
 ### The Quota Protection Guarantee
 

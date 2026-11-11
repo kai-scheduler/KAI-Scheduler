@@ -178,6 +178,13 @@ func BuildQueueInfoMap(testMetadata TestTopologyBasic) map[common_info.QueueID]*
 			queueResource.Spec.Resources.Memory.Limit = *queue.MaxAllowedMemory
 		}
 
+		if queue.CPUOverQuotaWeight != nil {
+			queueResource.Spec.Resources.CPU.OverQuotaWeight = *queue.CPUOverQuotaWeight
+		}
+		if queue.MemoryOverQuotaWeight != nil {
+			queueResource.Spec.Resources.Memory.OverQuotaWeight = *queue.MemoryOverQuotaWeight
+		}
+
 		if queue.V1 {
 			queueResource.Spec.Resources = nil
 		}
