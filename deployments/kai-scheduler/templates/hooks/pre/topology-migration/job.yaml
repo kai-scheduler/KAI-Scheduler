@@ -41,7 +41,7 @@ spec:
       containers:
       - name: migration
         image: "{{ .Values.global.registry }}/{{ .Values.topologyMigration.image.name }}:{{ include "kai-scheduler.imageTag" (dict "root" $ "tag" .Values.topologyMigration.image.tag) }}"
-        imagePullPolicy: {{ .Values.topologyMigration.image.pullPolicy }}
+        imagePullPolicy: {{ .Values.topologyMigration.image.pullPolicy | default .Values.global.imagePullPolicy }}
         {{- with .Values.topologyMigration.resources }}
         resources:
           {{- toYaml . | nindent 10 }}
