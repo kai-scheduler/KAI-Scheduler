@@ -39,7 +39,7 @@ A workload with `kai.scheduler/safe-to-disrupt: "false"`:
 
 Only preemptible workloads are moved by consolidation, so the setting has no effect on non-preemptible or semi-preemptible workloads.
 
-To apply the setting to a class of workloads, for example every pod of a priority class or queue, add the annotation with an admission policy. Scheduler plugins can also restrict which workloads consolidation moves by registering `Session.AddConsolidationVictimFilterFn` (see [Plugin Framework](../developer/plugin-framework.md)).
+To apply the setting to a class of workloads, for example every pod of a priority class or queue, add the annotation with an admission policy.
 
 ## Example
 

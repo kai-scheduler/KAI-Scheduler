@@ -77,36 +77,12 @@ func TestOrderedVictimsQueueRescansCandidatesWithFiniteLimit(t *testing.T) {
 	require.Equal(t, 2, secondQueue.Len())
 }
 
-func TestOrderedVictimsQueueAppliesConsolidationVictimFilterFns(t *testing.T) {
-	for _, maxPreemptees := range []int{noConsolidationPreempteesRestrcition, 10} {
-		t.Run(fmt.Sprintf("max preemptees %d", maxPreemptees), func(t *testing.T) {
-			ssn, preemptor, acceptedVictim, queueID := newConsolidationVictimQueueTestSession()
-			ssn.OverrideMaxNumberConsolidationPreemptees(maxPreemptees)
-			rejectedVictim, _ := newConsolidationVictimQueueTestJob("rejected-victim", queueID, v1.PodRunning)
-			ssn.ClusterInfo.PodGroupInfos[rejectedVictim.UID] = rejectedVictim
-			ssn.AddConsolidationVictimFilterFn(func(filterPreemptor, victim *podgroup_info.PodGroupInfo) bool {
-				require.Same(t, preemptor, filterPreemptor)
-				return victim != rejectedVictim
-			})
-
-			victimsQueue := getOrderedVictimsQueue(ssn, preemptor)()
-
-			require.Equal(t, 1, victimsQueue.Len())
-			require.Same(t, acceptedVictim, victimsQueue.PopNextJob())
-		})
-	}
-}
-
-func TestPreemptibleFilterExcludedJobsDoNotUsePreempteeBudget(t *testing.T) {
-	ssn, preemptor, _, queueID := newConsolidationVictimQueueTestSession()
+func TestNotSafeToDisruptJobsDoNotUsePreempteeBudget(t *testing.T) {
+	_, preemptor, _, queueID := newConsolidationVictimQueueTestSession()
 	notSafeToDisrupt, _ := newConsolidationVictimQueueTestJob("not-safe-to-disrupt", queueID, v1.PodRunning)
 	notSafeToDisrupt.PodGroup = &schedulingv2alpha2.PodGroup{
 		ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{safe_to_disrupt.AnnotationKey: "false"}},
 	}
-	rejectedByPlugin, _ := newConsolidationVictimQueueTestJob("rejected-by-plugin", queueID, v1.PodRunning)
-	ssn.AddConsolidationVictimFilterFn(func(_, victim *podgroup_info.PodGroupInfo) bool {
-		return victim != rejectedByPlugin
-	})
 	var eligible []*podgroup_info.PodGroupInfo
 	for i := range 3 {
 		job, _ := newConsolidationVictimQueueTestJob(fmt.Sprintf("eligible-%d", i), queueID, v1.PodRunning)
@@ -114,7 +90,7 @@ func TestPreemptibleFilterExcludedJobsDoNotUsePreempteeBudget(t *testing.T) {
 	}
 
 	admitted := func(jobs []*podgroup_info.PodGroupInfo) []*podgroup_info.PodGroupInfo {
-		filter := buildPreemptibleFilterFunc(ssn, preemptor, 1)
+		filter := buildPreemptibleFilterFunc(preemptor, 1)
 		var result []*podgroup_info.PodGroupInfo
 		for _, job := range jobs {
 			if filter(job) {
@@ -126,8 +102,7 @@ func TestPreemptibleFilterExcludedJobsDoNotUsePreempteeBudget(t *testing.T) {
 
 	withoutExcluded := admitted(eligible)
 	require.Less(t, len(withoutExcluded), len(eligible), "the preemptee limit must bind")
-	require.Equal(t, withoutExcluded,
-		admitted(append([]*podgroup_info.PodGroupInfo{notSafeToDisrupt, rejectedByPlugin}, eligible...)))
+	require.Equal(t, withoutExcluded, admitted(append([]*podgroup_info.PodGroupInfo{notSafeToDisrupt}, eligible...)))
 }
 
 func newConsolidationVictimQueueTestSession() (

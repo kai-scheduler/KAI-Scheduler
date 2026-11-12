@@ -160,7 +160,7 @@ func allPodsReallocated(scenario api.ScenarioInfo) bool {
 }
 
 func buildConsolidationVictimsQueue(ssn *framework.Session, preemptor *podgroup_info.PodGroupInfo) *utils.JobsOrderByQueues {
-	filter := buildPreemptibleFilterFunc(ssn, preemptor, ssn.GetMaxNumberConsolidationPreemptees())
+	filter := buildPreemptibleFilterFunc(preemptor, ssn.GetMaxNumberConsolidationPreemptees())
 	return utils.GetVictimsQueue(ssn, filter)
 }
 
@@ -175,7 +175,7 @@ func getOrderedVictimsQueue(ssn *framework.Session, preemptor *podgroup_info.Pod
 	return utils.NewCachedVictimsQueueGenerator(
 		ssn,
 		func() map[common_info.PodGroupID]*podgroup_info.PodGroupInfo {
-			filter := buildPreemptibleFilterFunc(ssn, preemptor, maxPreempteesToTest)
+			filter := buildPreemptibleFilterFunc(preemptor, maxPreempteesToTest)
 			return utils.GetVictimCandidates(ssn, filter)
 		},
 		utils.JobsOrderInitOptions{
@@ -185,7 +185,7 @@ func getOrderedVictimsQueue(ssn *framework.Session, preemptor *podgroup_info.Pod
 	)
 }
 
-func buildPreemptibleFilterFunc(ssn *framework.Session, preemptor *podgroup_info.PodGroupInfo, maxPreempteesToTest int) func(*podgroup_info.PodGroupInfo) bool {
+func buildPreemptibleFilterFunc(preemptor *podgroup_info.PodGroupInfo, maxPreempteesToTest int) func(*podgroup_info.PodGroupInfo) bool {
 	preempteeJobsCounter := 0
 
 	return func(job *podgroup_info.PodGroupInfo) bool {
@@ -206,10 +206,6 @@ func buildPreemptibleFilterFunc(ssn *framework.Session, preemptor *podgroup_info
 		}
 
 		if job.GetActiveAllocatedTasksCount() == 0 {
-			return false
-		}
-
-		if !ssn.ConsolidationVictimFilter(preemptor, job) {
 			return false
 		}
 
