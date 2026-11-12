@@ -127,6 +127,11 @@ func (v ResourceVector) LessEqual(other ResourceVector) bool {
 	return true
 }
 
+// Equal reports whether the two vectors are identical across all resource dimensions.
+func (v ResourceVector) Equal(other ResourceVector) bool {
+	return v.LessEqual(other) && other.LessEqual(v)
+}
+
 func (v ResourceVector) Get(index int) float64 {
 	if index < 0 || index >= len(v) {
 		return 0
