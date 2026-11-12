@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  PodGrouper no longer fails to group the leader pod of a LeaderWorkerSet that uses LeaderReady startup together with subGroupSize
+custom:
+  Author: "Arthur031221"
+  Issue: ""
