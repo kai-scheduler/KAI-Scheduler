@@ -1,0 +1,49 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+name: Auto-approve dependency backports
+
+# workflow_run always executes the default-branch copy, so this does not need to be backported.
+on:
+  workflow_run:
+    workflows: ["KAI Scheduler - Pull Request"]
+    types: [completed]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  approve:
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'pull_request'
+    steps:
+      - uses: actions/github-script@v9
+        env:
+          BOT_LOGIN: KaiPilotBot
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const allowed = [/^go\.mod$/, /^go\.sum$/, /^\.changes\/unreleased\/[^/]+\.yaml$/];
+
+            for (const { number } of context.payload.workflow_run.pull_requests) {
+              const pr = (await github.rest.pulls.get({ owner, repo, pull_number: number })).data;
+
+              const match = /^backport-(\d+)-to-v\d+\.\d+$/.exec(pr.head.ref);
+              if (pr.user.login !== process.env.BOT_LOGIN || !match || !/^v\d+\.\d+$/.test(pr.base.ref)) continue;
+              if (pr.head.sha !== context.payload.workflow_run.head_sha) continue;
+
+              const source = (await github.rest.pulls.get({ owner, repo, pull_number: Number(match[1]) })).data;
+              if (!source.merged || source.base.ref !== 'main') continue;
+
+              const files = await github.paginate(github.rest.pulls.listFiles, { owner, repo, pull_number: number, per_page: 100 });
+              const outside = files.filter(f => !allowed.some(re => re.test(f.filename)));
+              if (outside.length) {
+                core.info(`#${number}: not auto-approving, touches ${outside.map(f => f.filename).join(', ')}`);
+                continue;
+              }
+
+              await github.rest.pulls.createReview({
+                owner, repo, pull_number: number, commit_id: pr.head.sha, event: 'APPROVE',
+                body: `Auto-approved: backport of #${source.number} touching only dependency files and changelog fragments.`,
+              });
+            }
