@@ -1,5 +1,0 @@
-kind: Added
-body: |-
-  Adds support for gpu-memory.limit and gpu-fraction.limit for fractions when NvFraction mode is used.
-custom:
-    Author: davidLif

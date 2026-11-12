@@ -80,3 +80,48 @@ tests:
           path: spec.template.spec.containers[0].volumeMounts[0].mountPath
           value: /manifest
         template: hooks/post/kai-config-deployer/job.yaml
+
+  - it: should omit pod securityContext on the deployer Job by default
+    asserts:
+      - notExists:
+          path: spec.template.spec.securityContext
+        template: hooks/post/kai-config-deployer/job.yaml
+
+  - it: should apply global.podSecurityContext to the deployer Job
+    set:
+      global.podSecurityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.runAsNonRoot
+          value: true
+        template: hooks/post/kai-config-deployer/job.yaml
+      - equal:
+          path: spec.template.spec.securityContext.runAsUser
+          value: 1000
+        template: hooks/post/kai-config-deployer/job.yaml
+      - equal:
+          path: spec.template.spec.securityContext.fsGroup
+          value: 1000
+        template: hooks/post/kai-config-deployer/job.yaml
+
+  - it: should keep the OpenShift pod securityContext when openshift is set
+    set:
+      openshift: true
+      global.podSecurityContext:
+        runAsUser: 1000
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.runAsUser
+          value: 10000
+        template: hooks/post/kai-config-deployer/job.yaml
+      - equal:
+          path: spec.template.spec.securityContext.runAsNonRoot
+          value: true
+        template: hooks/post/kai-config-deployer/job.yaml
+      - equal:
+          path: spec.template.spec.securityContext.fsGroup
+          value: 10000
+        template: hooks/post/kai-config-deployer/job.yaml

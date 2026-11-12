@@ -101,6 +101,14 @@ includes only single-node blocks; cross-NUMA memory blocks are not split between
 - **List:** complete groups; `[]` means no groups, including all non-Guaranteed pods.
 - **JSON `null`:** incomplete or invalid observation, not an empty allocation.
 
+On nodes labeled `run.ai/fake.gpu=true`, NPE mirrors the scheduler's predicted memory-group
+annotation instead of interpreting simulated memory blocks. The node label is read at startup;
+restart NPE after changing it. Missing or malformed predictions leave the observed annotation
+absent, removing any stale observation. Non-Guaranteed pods still report `[]`, and CPU/device
+placement reporting is unchanged. Mirrored groups support scheduler simulation, not independent
+verification of actual allocation or prediction drift. Guaranteed pods without predictions can
+still leave scheduler ownership unknown. Real nodes retain the observation rules below.
+
 A complete record requires every application and restartable init container requesting memory
 to have started and reported its requested memory/hugepage blocks. Partial startup, missing
 blocks, and invalid block topology or amounts produce `null`.
