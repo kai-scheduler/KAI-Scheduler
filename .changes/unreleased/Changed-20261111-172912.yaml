@@ -1,0 +1,6 @@
+kind: Changed
+body: PodGroup Evict events now name the evicting action and the preemptor PodGroup in the message when the message does not already name it, e.g. "Evicted by consolidation for team-b/train-42"
+time: 2026-11-11T17:29:12.391759638-05:00
+custom:
+    Issue: "2625"
+    Author: dundysm
