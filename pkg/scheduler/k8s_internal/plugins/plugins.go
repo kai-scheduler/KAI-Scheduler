@@ -15,6 +15,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/interpodaffinity"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/nodeaffinity"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/nodeports"
+	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/podtopologyspread"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/tainttoleration"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/volumebinding"
 
@@ -30,11 +31,12 @@ type K8sPlugins struct {
 	ResourceSliceTracker *resourceslicetracker.Tracker
 	SessionDRAManager    ksf.SharedDRAManager
 
-	NodePorts       ksf.Plugin
-	TaintToleration ksf.Plugin
-	NodeAffinity    ksf.Plugin
-	PodAffinity     ksf.Plugin
-	VolumeBinding   ksf.Plugin
+	NodePorts         ksf.Plugin
+	TaintToleration   ksf.Plugin
+	NodeAffinity      ksf.Plugin
+	PodAffinity       ksf.Plugin
+	PodTopologySpread ksf.Plugin
+	VolumeBinding     ksf.Plugin
 }
 
 func InitializeInternalPlugins(
@@ -86,6 +88,14 @@ func InitializeInternalPlugins(
 		initiatedPlugins.PodAffinity = nil
 	} else {
 		initiatedPlugins.PodAffinity = plugin
+	}
+
+	if plugin, err := podtopologyspread.New(context.Background(),
+		&config.PodTopologySpreadArgs{DefaultingType: config.ListDefaulting}, k8sFrameworkHandle, features); err != nil {
+		log.InfraLogger.Errorf("Failed to create podtopologyspread plugin: %v", err)
+		initiatedPlugins.PodTopologySpread = nil
+	} else {
+		initiatedPlugins.PodTopologySpread = plugin
 	}
 
 	if plugin, err := volumebinding.New(context.Background(), &config.VolumeBindingArgs{}, k8sFrameworkHandle, features); err != nil {
