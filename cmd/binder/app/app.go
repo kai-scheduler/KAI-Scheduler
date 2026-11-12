@@ -158,10 +158,11 @@ func (app *App) Run(ctx context.Context) error {
 	}()
 
 	if err = (&controllers.PodReconciler{
-		Client:              app.manager.GetClient(),
-		Scheme:              app.manager.GetScheme(),
-		ResourceReservation: app.rrs,
-		SchedulerName:       app.Options.SchedulerName,
+		Client:               app.manager.GetClient(),
+		Scheme:               app.manager.GetScheme(),
+		ResourceReservation:  app.rrs,
+		SchedulerName:        app.Options.SchedulerName,
+		ReservationNamespace: app.Options.ResourceReservationNamespace,
 	}).SetupWithManager(app.manager, app.reconcilerParams); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Pod")
 		return err
