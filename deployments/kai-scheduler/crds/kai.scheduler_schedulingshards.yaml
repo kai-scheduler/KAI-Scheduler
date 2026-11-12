@@ -167,6 +167,43 @@ spec:
                 description: QueueDepthPerAction max number of jobs to try for action
                   per queue
                 type: object
+              recorder:
+                description: |-
+                  Recorder runs an optional sidecar that stores scheduling decisions for this shard.
+                  The field is defined here ahead of the kai-scheduler/api type that will own it.
+                properties:
+                  address:
+                    type: string
+                  batch:
+                    properties:
+                      rollInterval:
+                        type: string
+                      rollSizeMB:
+                        type: integer
+                    type: object
+                  enabled:
+                    type: boolean
+                  image:
+                    properties:
+                      digest:
+                        type: string
+                      name:
+                        type: string
+                      pullPolicy:
+                        type: string
+                      repository:
+                        type: string
+                      tag:
+                        type: string
+                    type: object
+                  resources:
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                  hashKeySecretName:
+                    type: string
+                  storageSecretName:
+                    type: string
+                type: object
               scenarioSearchBudgets:
                 description: ScenarioSearchBudgets configures alpha/experimental time
                   budgets for scenario search.

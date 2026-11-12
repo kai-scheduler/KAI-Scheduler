@@ -67,6 +67,18 @@ type ClusterInfo struct {
 	fairnessLevelType         FairnessLevelType
 	collectUsageData          bool
 	stuckInReleasingThreshold time.Duration
+	now                       func() time.Time
+}
+
+func (c *ClusterInfo) SetNow(now func() time.Time) {
+	c.now = now
+}
+
+func (c *ClusterInfo) clock() time.Time {
+	if c != nil && c.now != nil {
+		return c.now()
+	}
+	return time.Now()
 }
 
 type FairnessLevelType string
@@ -529,6 +541,7 @@ func (c *ClusterInfo) getPodInfo(
 		})
 		podInfo = pod_info.NewTaskInfo(pod, vectorMap, pod_info.TaskInfoOptions{
 			StuckInReleasingThreshold: c.stuckInReleasingThreshold,
+			Now:                       c.clock(),
 		})
 		existingPods[common_info.PodID(pod.UID)] = podInfo
 	}
@@ -561,6 +574,7 @@ func (c *ClusterInfo) getNodeToPodInfosMap(allPods []*v1.Pod, bindRequests bindr
 			BindRequest:               podBindRequest,
 			DraPodClaims:              draPodClaims,
 			StuckInReleasingThreshold: c.stuckInReleasingThreshold,
+			Now:                       c.clock(),
 		})
 
 		if pod_info.IsResourceReservationTask(podInfo.Pod) {

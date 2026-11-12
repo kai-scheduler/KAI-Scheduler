@@ -31,6 +31,7 @@ type minruntimePlugin struct {
 	queues                   map[common_info.QueueID]*queue_info.QueueInfo
 
 	resolver *resolver
+	now      func() time.Time
 }
 
 func parseMinRuntime(arguments framework.PluginArguments, minRuntimeConfig string) metav1.Duration {
@@ -74,7 +75,15 @@ func (mr *minruntimePlugin) OnSessionOpen(ssn *framework.Session) {
 	ssn.AddReclaimScenarioValidatorFn(mr.reclaimScenarioValidatorFn)
 	ssn.AddPreemptScenarioValidatorFn(mr.preemptScenarioValidatorFn)
 	mr.queues = ssn.ClusterInfo.Queues
+	mr.now = ssn.Now
 	mr.resolver = NewResolver(mr.queues, mr.defaultPreemptMinRuntime, mr.defaultReclaimMinRuntime)
+}
+
+func (mr *minruntimePlugin) clock() time.Time {
+	if mr.now != nil {
+		return mr.now()
+	}
+	return time.Now()
 }
 
 func (mr *minruntimePlugin) OnSessionClose(ssn *framework.Session) {
@@ -148,7 +157,7 @@ func (mr *minruntimePlugin) isReclaimMinRuntimeProtected(pendingJob *podgroup_in
 	// the victim is protected from reclaim
 	if victim.LastStartTimestamp != nil && !victim.LastStartTimestamp.IsZero() {
 		protectedUntil := victim.LastStartTimestamp.Add(minRuntime.Duration)
-		return time.Now().Before(protectedUntil)
+		return mr.clock().Before(protectedUntil)
 	}
 	return false
 }
@@ -166,7 +175,7 @@ func (mr *minruntimePlugin) isPreemptMinRuntimeProtected(_ *podgroup_info.PodGro
 	// the victim is protected from preemption
 	if victim.LastStartTimestamp != nil && !victim.LastStartTimestamp.IsZero() {
 		protectedUntil := victim.LastStartTimestamp.Add(minRuntime.Duration)
-		return time.Now().Before(protectedUntil)
+		return mr.clock().Before(protectedUntil)
 	}
 
 	return false

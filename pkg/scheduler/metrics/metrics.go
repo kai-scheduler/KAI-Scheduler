@@ -78,7 +78,15 @@ func init() {
 	InitMetrics("")
 }
 
+var metricNamespace string
+
+// Namespace is the prefix InitMetrics registered scheduler metrics under.
+func Namespace() string {
+	return metricNamespace
+}
+
 func InitMetrics(namespace string) {
+	metricNamespace = namespace
 	e2eSchedulingLatency = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Namespace: namespace,

@@ -21,7 +21,6 @@ package framework
 
 import (
 	"fmt"
-	"time"
 
 	"golang.org/x/exp/slices"
 
@@ -159,7 +158,7 @@ func (s *Statement) commitEvict(reclaimee *pod_info.PodInfo, evictOp evictOperat
 	}
 	reclaimee.IsVirtualStatus = false
 
-	evictionTime := time.Now()
+	evictionTime := s.ssn.Now()
 	reclaimeePodGroup.LastEvictionTimestamp = &evictionTime
 
 	return nil
@@ -602,12 +601,23 @@ func (s *Statement) Commit() error {
 	}
 
 	var err error
+	var opErrors []string
+	recording := s.ssn != nil && s.ssn.hasOnCommit()
+	if recording {
+		opErrors = make([]string, len(s.operations))
+	}
+	failedAt := -1
 	type evictionEventKey struct {
 		podGroup common_info.PodGroupID
 		action   string
 	}
 	committedEvictions := map[evictionEventKey]*podgroup_info.PodGroupInfo{}
 	defer func() {
+		// Clear last: publishCommitResult reads s.operations. The eviction metrics below only use the saved pod groups.
+		defer s.clearOperations()
+		if recording {
+			s.publishCommitResult(opErrors, failedAt)
+		}
 		for key, podGroup := range committedEvictions {
 			s.ssn.Cache.RecordPodGroupEvictionEvent(podGroup, key.action)
 		}
@@ -627,6 +637,7 @@ func (s *Statement) Commit() error {
 			if err = s.commitEvict(taskInfo, evictOp); err != nil {
 				log.InfraLogger.Errorf("Failed to evict task <%v/%v>, error: <%v>",
 					taskInfo.Namespace, taskInfo.Name, err)
+				noteError(opErrors, i, err)
 			} else {
 				key := evictionEventKey{podGroup: taskInfo.Job, action: evictOp.evictionMetadata.Action}
 				committedEvictions[key] = s.ssn.ClusterInfo.PodGroupInfos[taskInfo.Job]
@@ -639,15 +650,62 @@ func (s *Statement) Commit() error {
 			err = s.commitAllocate(taskInfo)
 			if err != nil {
 				log.InfraLogger.Errorf("Failed to allocate task. error: %s", err.Error())
-				s.clearOperations()
+				noteError(opErrors, i, err)
+				failedAt = i
 				return err
 			}
 		}
 	}
 
-	s.clearOperations()
-
 	return err
+}
+
+func noteError(opErrors []string, i int, err error) {
+	if opErrors == nil {
+		return
+	}
+	opErrors[i] = err.Error()
+}
+
+func (s *Statement) publishCommitResult(opErrors []string, failedAt int) {
+	recorded := make([]CommitOp, 0, len(s.operations))
+	for i, op := range s.operations {
+		if op.Name() == undo || !s.operationValid(i) {
+			continue
+		}
+		recordedOp := commitOpFrom(op)
+		if failedAt >= 0 && i > failedAt {
+			recordedOp.NotAttempted = true
+		} else if i < len(opErrors) {
+			recordedOp.Error = opErrors[i]
+		}
+		recorded = append(recorded, recordedOp)
+	}
+	s.ssn.publishCommit(recorded)
+}
+
+func commitOpFrom(op Operation) CommitOp {
+	task := op.TaskInfo()
+	recorded := CommitOp{Kind: op.Name()}
+	if task != nil {
+		recorded.UID = string(task.UID)
+		recorded.Namespace = task.Namespace
+		recorded.Name = task.Name
+	}
+	switch typed := op.(type) {
+	case evictOperation:
+		if typed.previousNode != nil {
+			recorded.Node = typed.previousNode.Name
+		}
+		recorded.Message = typed.message
+		recorded.Eviction = typed.evictionMetadata
+	case pipelineOperation:
+		recorded.Node = typed.nextNode
+		recorded.Message = typed.message
+	case allocateOperation:
+		recorded.Node = typed.nextNode
+	}
+	return recorded
 }
 
 // undoEarliestValidOperation will undo the earliest valid operation of the given type

@@ -109,6 +109,7 @@ type Session struct {
 	// pluginsInOrder records the order plugins were opened in, so they can be closed in reverse.
 	pluginsInOrder  []Plugin
 	eventHandlers   []*EventHandler
+	currentAction   string
 	SchedulerParams conf.SchedulerParams
 	mux             *http.ServeMux
 
@@ -120,6 +121,50 @@ type Session struct {
 
 func (ssn *Session) Statement() *Statement {
 	return &Statement{ssn: ssn, sessionID: ssn.ID}
+}
+
+// SetCurrentAction names the action whose commits are about to be published.
+func (ssn *Session) SetCurrentAction(action string) {
+	ssn.currentAction = action
+}
+
+// Now is the cycle clock. Replay freezes it at the recorded open time.
+func (ssn *Session) Now() time.Time {
+	if ssn != nil && ssn.SchedulerParams.NowOverride != nil {
+		return ssn.SchedulerParams.NowOverride()
+	}
+	return time.Now()
+}
+
+// publishCommit invokes OnCommit inline. Handlers must not block.
+// The event is built only when a plugin registered OnCommit.
+func (ssn *Session) publishCommit(ops []CommitOp) {
+	if ssn == nil || len(ops) == 0 {
+		return
+	}
+	var event *CommitEvent
+	for _, handler := range ssn.eventHandlers {
+		if handler == nil || handler.OnCommit == nil {
+			continue
+		}
+		if event == nil {
+			event = &CommitEvent{
+				SessionID: ssn.ID,
+				Action:    ssn.currentAction,
+				Ops:       ops,
+			}
+		}
+		handler.OnCommit(event)
+	}
+}
+
+func (ssn *Session) hasOnCommit() bool {
+	for _, handler := range ssn.eventHandlers {
+		if handler != nil && handler.OnCommit != nil {
+			return true
+		}
+	}
+	return false
 }
 
 func (ssn *Session) GetSessionStateForResource(uid types.UID) k8s_internal.SessionState {
@@ -165,6 +210,20 @@ func (ssn *Session) Evict(pod *pod_info.PodInfo, message string, evictionMetadat
 	}
 	if err := ssn.Cache.Evict(pod.Pod, podGroup, evictionMetadata, message); err != nil {
 		return err
+	}
+	// Publish only when a plugin registered OnCommit, which is the recorder.
+	// Stale-gang eviction calls Session.Evict and never reaches Statement.Commit,
+	// so the recorder would miss the eviction without this.
+	if ssn.hasOnCommit() {
+		ssn.publishCommit([]CommitOp{{
+			Kind:      evict,
+			UID:       string(pod.UID),
+			Namespace: pod.Namespace,
+			Name:      pod.Name,
+			Node:      pod.NodeName,
+			Message:   message,
+			Eviction:  evictionMetadata,
+		}})
 	}
 	if err := ssn.updatePodOnSession(pod, pod_status.Releasing); err != nil {
 		return err
@@ -463,6 +522,7 @@ func (ssn *Session) clear() {
 	ssn.plugins = nil
 	ssn.pluginsInOrder = nil
 	ssn.eventHandlers = nil
+	ssn.currentAction = ""
 	ssn.GpuOrderFns = nil
 	ssn.NodePreOrderFns = nil
 	ssn.NodeOrderFns = nil

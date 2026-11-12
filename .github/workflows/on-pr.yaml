@@ -472,6 +472,42 @@ jobs:
         run: |
           go tool ginkgo -r --keep-going --trace -vv --label-filter 'upgrade' --output-dir=. --json-report=e2e-upgrade-report.json ./test/e2e/suites/upgrade
 
+  e2e-recorder-tests:
+    name: Run E2E Recorder Tests
+    needs: [ build, check-build-and-test-required ]
+    if: needs.check-build-and-test-required.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup e2e cluster
+        uses: ./.github/actions/setup-e2e-cluster
+        with:
+          package_version: ${{ needs.build.outputs.package_version }}
+
+      - name: Install KAI-scheduler
+        env:
+          PACKAGE_VERSION: ${{ needs.build.outputs.package_version }}
+        run: |
+          helm upgrade -i kai-scheduler /mnt/images/kai-scheduler-$PACKAGE_VERSION.tgz -n kai-scheduler --create-namespace \
+            --values ./hack/kai-scheduler-fake-npe-values.yaml \
+            --set "global.gpuSharing=true" --set "global.registry=localhost:30100" --set "prometheus.enabled=true" --debug --wait
+          kubectl create clusterrole pods-patcher --verb=patch --resource=pods
+          kubectl create rolebinding fake-status-updater --clusterrole=pods-patcher --serviceaccount=gpu-operator:status-updater -n kai-resource-reservation
+
+      - name: Run recorder e2e tests
+        run: |
+          go tool ginkgo -r --keep-going --trace -vv --label-filter 'recorder' --output-dir=. --json-report=e2e-recorder-report.json ./test/e2e/suites/recorder
+
+      - name: Upload recorder E2E report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-recorder-report
+          path: e2e-recorder-report.json
+          if-no-files-found: warn
+
   e2e-gitops-tests:
     name: Run E2E GitOps Tests
     needs: [ build, check-build-and-test-required ]
@@ -508,6 +544,7 @@ jobs:
       - prepare-e2e-buckets
       - e2e-tests
       - e2e-upgrade-tests
+      - e2e-recorder-tests
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -522,6 +559,7 @@ jobs:
           PREPARE_RESULT: ${{ needs.prepare-e2e-buckets.result }}
           MAIN_RESULT: ${{ needs.e2e-tests.result }}
           UPGRADE_RESULT: ${{ needs.e2e-upgrade-tests.result }}
+          RECORDER_RESULT: ${{ needs.e2e-recorder-tests.result }}
         run: |
           if [[ "$CHECK_RESULT" != "success" ]]; then
             echo "The change-detection job did not succeed."
@@ -542,6 +580,7 @@ jobs:
             "Prepare E2E Buckets:$PREPARE_RESULT"
             "Main E2E Buckets:$MAIN_RESULT"
             "Upgrade E2E:$UPGRADE_RESULT"
+            "Recorder E2E:$RECORDER_RESULT"
           )
           for result_entry in "${results[@]}"; do
             job_name=${result_entry%%:*}
@@ -579,7 +618,7 @@ jobs:
 
   cleanup-images-cache:
     name: Cleanup Images Cache
-    needs: [ e2e-tests, e2e-upgrade-tests, e2e-gitops-tests, check-build-and-test-required ]
+    needs: [ e2e-tests, e2e-upgrade-tests, e2e-recorder-tests, e2e-gitops-tests, check-build-and-test-required ]
     # No always(): a failed e2e job must keep the cache so "Re-run failed
     # jobs" can restore images; stale entries fall to GitHub cache eviction.
     if: success() && needs.check-build-and-test-required.outputs.code == 'true'

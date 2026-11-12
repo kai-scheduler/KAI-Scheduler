@@ -978,8 +978,27 @@ func TestGetTaskStatusStuckInReleasing(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := getTaskStatus(tt.pod, nil, tt.threshold)
+			got := getTaskStatus(tt.pod, nil, tt.threshold, time.Time{})
 			assert.Equal(t, tt.expected, got)
 		})
 	}
+
+	// A deletion in 2024 is years old on the wall clock. The recorded cycle time
+	// still classifies it as releasing when it is inside the threshold.
+	recorded := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	deleted := metav1.NewTime(recorded.Add(-30 * time.Second))
+	assert.Equal(t, pod_status.Releasing, getTaskStatus(runningPod(&deleted), nil, 2*time.Minute, recorded))
+	assert.Equal(t, pod_status.StuckInReleasing, getTaskStatus(runningPod(&deleted), nil, 2*time.Minute, recorded.Add(time.Hour)))
+}
+
+func TestApplyToListCopiesTheRecordedTime(t *testing.T) {
+	opened := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	var opts TaskInfoOptions
+	opts.ApplyToList(TaskInfoOptions{Now: opened, StuckInReleasingThreshold: time.Minute})
+	assert.Assert(t, opts.Now.Equal(opened))
+	assert.Equal(t, time.Minute, opts.StuckInReleasingThreshold)
+
+	var untouched TaskInfoOptions
+	untouched.ApplyToList(TaskInfoOptions{})
+	assert.Assert(t, untouched.Now.IsZero())
 }

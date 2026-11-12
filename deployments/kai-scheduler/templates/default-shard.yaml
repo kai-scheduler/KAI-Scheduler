@@ -36,4 +36,22 @@ spec:
   scenarioSearchBudgets:
     {{- toYaml .Values.scheduler.scenarioSearchBudgets | nindent 4 }}
   {{- end }}
+  {{- if .Values.scheduler.recorder.enabled }}
+  recorder:
+    enabled: {{ .Values.scheduler.recorder.enabled }}
+    {{- if .Values.scheduler.recorder.storageSecretName }}
+    storageSecretName: {{ .Values.scheduler.recorder.storageSecretName }}
+    {{- end }}
+    {{- if .Values.scheduler.recorder.hashKeySecretName }}
+    hashKeySecretName: {{ .Values.scheduler.recorder.hashKeySecretName }}
+    {{- end }}
+    {{- if .Values.scheduler.recorder.batch }}
+    batch:
+      {{- toYaml .Values.scheduler.recorder.batch | nindent 6 }}
+    {{- end }}
+    {{- if .Values.scheduler.recorder.resources }}
+    resources:
+      {{- toYaml .Values.scheduler.recorder.resources | nindent 6 }}
+    {{- end }}
+  {{- end }}
 {{- end }}

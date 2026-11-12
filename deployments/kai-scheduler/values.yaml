@@ -209,6 +209,24 @@ scheduler:
   actions: {}
   # Alpha/experimental scenario search time budgets. Values are Go duration strings.
   scenarioSearchBudgets: {}
+  # recorder stores scheduling decisions from this shard. Off unless a shard turns it on.
+  recorder:
+    enabled: false
+    image:
+      name: recorder
+      pullPolicy: IfNotPresent
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+    storageSecretName: kai-recorder-storage
+    hashKeySecretName: kai-recorder-hash-key
+    batch:
+      rollInterval: 5m
+      rollSizeMB: 64
   # PDB is created only when scheduler replicas > 1 (global.replicaCount / scheduler.replicas).
   # For HA: set operator.replicaCount: 2 (or override scheduler.replicas in Config).
   podDisruptionBudget:

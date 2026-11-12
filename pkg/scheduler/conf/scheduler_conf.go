@@ -48,6 +48,8 @@ type SchedulerParams struct {
 	DetailedFitErrors                 bool                        `json:"detailedFitErrors,omitempty"`
 	UpdatePodEvictionCondition        bool                        `json:"updatePodEvictionCondition,omitempty"`
 	QueueLabelKey                     string                      `json:"queueLabelKey,omitempty"`
+	// NowOverride replaces time.Now for this cycle. Nil in production; set by replay and tests.
+	NowOverride func() time.Time `json:"-"`
 }
 
 // SchedulerConfiguration defines the configuration of scheduler.

@@ -20,8 +20,12 @@ limitations under the License.
 package framework
 
 import (
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 )
+
+// SessionCloseAction tags commits that run while plugins close, after the configured actions.
+const SessionCloseAction = "session-close"
 
 type Event struct {
 	Task *pod_info.PodInfo
@@ -30,4 +34,27 @@ type Event struct {
 type EventHandler struct {
 	AllocateFunc   func(event *Event)
 	DeallocateFunc func(event *Event)
+	// OnCommit runs inline on the scheduling goroutine for Statement.Commit
+	// and Session.Evict. Discard does not publish. It must not block.
+	OnCommit func(event *CommitEvent)
+}
+
+// CommitOp is one operation inside a commit. Fields are the values read off the operation.
+type CommitOp struct {
+	Kind         string                         `json:"kind"`
+	UID          string                         `json:"uid,omitempty"`
+	Namespace    string                         `json:"namespace,omitempty"`
+	Name         string                         `json:"name,omitempty"`
+	Node         string                         `json:"node,omitempty"`
+	Message      string                         `json:"message,omitempty"`
+	Error        string                         `json:"error,omitempty"`
+	NotAttempted bool                           `json:"notAttempted,omitempty"`
+	Eviction     eviction_info.EvictionMetadata `json:"eviction"`
+}
+
+// CommitEvent is one committed statement. Undo operations are not included.
+type CommitEvent struct {
+	SessionID string     `json:"sessionID"`
+	Action    string     `json:"action,omitempty"`
+	Ops       []CommitOp `json:"ops,omitempty"`
 }

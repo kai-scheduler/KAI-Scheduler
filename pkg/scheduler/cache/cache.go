@@ -167,6 +167,7 @@ type SchedulerCacheParams struct {
 	NRTClient                   nrtclientset.Interface
 	UsageDBParams               *usageapi.UsageParams
 	UsageDBClient               usageapi.Interface
+	Now                         func() time.Time
 	DetailedFitErrors           bool
 	ScheduleCSIStorage          bool
 	FullHierarchyFairness       bool
@@ -285,6 +286,7 @@ func newSchedulerCache(schedulerCacheParams *SchedulerCacheParams) (*SchedulerCa
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cluster info object: %w", err)
 	}
+	clusterInfo.SetNow(schedulerCacheParams.Now)
 	sc.clusterInfo = clusterInfo
 
 	return sc, nil

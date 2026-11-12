@@ -64,7 +64,7 @@ func (alloc *allocateAction) Execute(ssn *framework.Session) {
 			metrics.IncPodgroupScheduledByAction()
 			err := stmt.Commit()
 			if err == nil && !pipelined && !alreadyAllocated {
-				setLastStartTimestamp(job)
+				setLastStartTimestamp(job, ssn.Now())
 			}
 			if err == nil && podgroup_info.HasTasksToAllocate(job, podgroup_info.RealTaskAllocation) {
 				jobsOrderByQueues.PushJob(job)
@@ -112,7 +112,6 @@ func attemptToAllocateJob(ssn *framework.Session, stmt *framework.Statement, job
 	return true, pipelined
 }
 
-func setLastStartTimestamp(job *podgroup_info.PodGroupInfo) {
-	timeNow := time.Now()
-	job.LastStartTimestamp = &timeNow
+func setLastStartTimestamp(job *podgroup_info.PodGroupInfo, now time.Time) {
+	job.LastStartTimestamp = &now
 }
