@@ -235,7 +235,9 @@ func (s *SchedulerForShard) EnsureSharedHashKey(
 	if _, err := rand.Read(key); err != nil {
 		return err
 	}
-	controller := true
+	// Not a controller owner. The Config operand deletes every Secret it controls
+	// that is absent from its desired set, which removed this key and left the
+	// scheduler pod unable to mount it.
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      spec.HashKeySecretName,
@@ -245,7 +247,6 @@ func (s *SchedulerForShard) EnsureSharedHashKey(
 				Kind:       "Config",
 				Name:       kaiConfig.Name,
 				UID:        kaiConfig.UID,
-				Controller: &controller,
 			}},
 		},
 		Type: corev1.SecretTypeOpaque,

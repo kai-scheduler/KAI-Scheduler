@@ -422,8 +422,34 @@ func describeSchedulerPods(ctx context.Context, testCtx *testcontext.TestContext
 	var b strings.Builder
 	fmt.Fprintf(&b, "wanted partition %q\n", wantedPartition)
 	for _, pod := range pods.Items {
-		fmt.Fprintf(&b, "pod %s phase=%s deleting=%v args=%v\n",
-			pod.Name, pod.Status.Phase, pod.DeletionTimestamp != nil, schedulerArgs(&pod, live.containerName))
+		fmt.Fprintf(&b, "pod %s phase=%s deleting=%v node=%s args=%v\n",
+			pod.Name, pod.Status.Phase, pod.DeletionTimestamp != nil, pod.Spec.NodeName, schedulerArgs(&pod, live.containerName))
+		for _, volume := range pod.Spec.Volumes {
+			if volume.Secret != nil {
+				fmt.Fprintf(&b, "  volume %s secret=%s\n", volume.Name, volume.Secret.SecretName)
+			}
+		}
+		for _, condition := range pod.Status.Conditions {
+			fmt.Fprintf(&b, "  condition %s status=%s reason=%s message=%s\n",
+				condition.Type, condition.Status, condition.Reason, condition.Message)
+		}
+		for _, status := range append(pod.Status.InitContainerStatuses, pod.Status.ContainerStatuses...) {
+			waiting := ""
+			if status.State.Waiting != nil {
+				waiting = status.State.Waiting.Reason + ": " + status.State.Waiting.Message
+			}
+			fmt.Fprintf(&b, "  container %s waiting=%q ready=%v\n", status.Name, waiting, status.Ready)
+		}
+		events, err := testCtx.KubeClientset.CoreV1().Events(live.namespace).List(ctx, metav1.ListOptions{
+			FieldSelector: "involvedObject.name=" + pod.Name,
+		})
+		if err != nil {
+			fmt.Fprintf(&b, "  events: %s\n", err)
+			continue
+		}
+		for _, event := range events.Items {
+			fmt.Fprintf(&b, "  event %s %s: %s\n", event.Reason, event.Type, event.Message)
+		}
 	}
 	return b.String()
 }

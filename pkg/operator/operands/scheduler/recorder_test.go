@@ -169,6 +169,7 @@ func TestHashKeySecretIsSharedByShardsAndNotRotated(t *testing.T) {
 	require.NotEmpty(t, first.Data[recorderv1.HMACKeyDataKey])
 	require.Equal(t, "Config", first.OwnerReferences[0].Kind)
 	require.Equal(t, config.Name, first.OwnerReferences[0].Name)
+	require.False(t, first.OwnerReferences[0].Controller != nil && *first.OwnerReferences[0].Controller)
 
 	require.NoError(t, operand.EnsureSharedHashKey(ctx, kube, kube, config, shardB))
 	second := &corev1.Secret{}
