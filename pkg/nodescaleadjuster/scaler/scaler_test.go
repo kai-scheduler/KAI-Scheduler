@@ -161,7 +161,8 @@ func TestIsScalingPodExists(t *testing.T) {
 	scaler := NewScaler(client, consts.DefaultScalingPodImage, testutils.ScalingPodNamespace,
 		testutils.ScalingPodAppLabel, testutils.ScalingPodServiceAccount, false)
 
-	exists := scaler.IsScalingPodExistsForUnschedulablePod(unschedulablePod)
+	exists, err := scaler.IsScalingPodExistsForUnschedulablePod(unschedulablePod)
+	assert.NoError(t, err)
 	assert.True(t, exists, "Scaling pod does not exists")
 }
 
@@ -171,7 +172,8 @@ func TestIsScalingPodDoesNotExist(t *testing.T) {
 	scaler := NewScaler(client, consts.DefaultScalingPodImage, testutils.ScalingPodNamespace,
 		testutils.ScalingPodAppLabel, testutils.ScalingPodServiceAccount, false)
 
-	exits := scaler.IsScalingPodExistsForUnschedulablePod(unschedulablePod)
+	exits, err := scaler.IsScalingPodExistsForUnschedulablePod(unschedulablePod)
+	assert.NoError(t, err)
 	assert.False(t, exits, "Scaling pod should not exist")
 }
 
