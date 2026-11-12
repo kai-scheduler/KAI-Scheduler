@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Select victim batches intersecting target nodes
+custom:
+  Author: "parthivsaikia"
+  Issue: "2427"
