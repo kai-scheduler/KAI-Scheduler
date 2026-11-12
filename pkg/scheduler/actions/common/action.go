@@ -60,16 +60,15 @@ func getEvictionMessages(ssn *framework.Session, tasks []*pod_info.PodInfo, pree
 
 func GetJobsToAllocate(ssn *framework.Session, preempteeTasks []*pod_info.PodInfo,
 	preemptor *podgroup_info.PodGroupInfo) *utils.JobsOrderByQueues {
-	allJobsToAllocate := utils.GetAllPendingJobs(ssn)
+	jobsToAllocate := map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{}
 	for _, task := range preempteeTasks {
 		preempteeJob := ssn.ClusterInfo.PodGroupInfos[task.Job]
-		allJobsToAllocate[preempteeJob.UID] = preempteeJob
+		jobsToAllocate[preempteeJob.UID] = preempteeJob
 	}
-	// add preemptor to allJobsToAllocate if it's not there
-	allJobsToAllocate[preemptor.UID] = preemptor
+	jobsToAllocate[preemptor.UID] = preemptor
 	jobsToAllocateQueue := utils.NewJobsOrderByQueues(
 		ssn, utils.JobsOrderInitOptions{MaxJobsQueueDepth: scheduler_util.QueueCapacityInfinite})
-	jobsToAllocateQueue.InitializeWithJobs(allJobsToAllocate)
+	jobsToAllocateQueue.InitializeWithJobs(jobsToAllocate)
 	return &jobsToAllocateQueue
 }
 
