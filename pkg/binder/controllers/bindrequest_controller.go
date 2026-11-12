@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"runtime/debug"
 	"time"
 
@@ -249,7 +250,7 @@ func (r *BindRequestReconciler) UpdateStatus(
 		bindRequest.Status.Phase = schedulingv1alpha2.BindRequestPhaseSucceeded
 	}
 
-	if originalBindRequest.Status.Phase == bindRequest.Status.Phase {
+	if reflect.DeepEqual(originalBindRequest.Status, bindRequest.Status) {
 		return result, nil
 	}
 
@@ -273,6 +274,7 @@ func (r *BindRequestReconciler) UpdateStatus(
 		}
 		logger.Error(patchErr, "Failed to patch status for BindRequest",
 			"Namespace", bindRequest.Namespace, "Name", bindRequest.Name)
+		return ctrl.Result{}, patchErr
 	}
 
 	if err != nil && result.RequeueAfter == 0 {
