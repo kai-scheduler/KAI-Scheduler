@@ -27,6 +27,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	vpav1 "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -40,6 +41,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/scheduler"
 	"github.com/kai-scheduler/api/constants"
 	kaiv1 "github.com/kai-scheduler/api/kai/v1"
+	kaiprometheus "github.com/kai-scheduler/api/kai/v1/prometheus"
 )
 
 func OperandsForShard(shard *kaiv1.SchedulingShard) []operands.Operand {
@@ -121,6 +123,7 @@ func (r *SchedulingShardReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		logger.Info("Failed to get the singleton KAI Config instance")
 		return ctrl.Result{}, err
 	}
+	defaultServiceMonitorEnabled(&kaiConfig.Spec)
 	kaiConfig.Spec.SetDefaultsWhereNeeded()
 	kaiConfig.Name = shard.Name
 
@@ -272,4 +275,20 @@ func (r *SchedulingShardReconciler) getKaiConfig(ctx context.Context) *kaiv1.Con
 	}
 	kaiConfig.Spec.SetDefaultsWhereNeeded()
 	return kaiConfig
+}
+
+// defaultServiceMonitorEnabled defaults an unset prometheus.serviceMonitor.enabled to
+// prometheus.enabled. The API default is true, and the scheduler Service turns off its
+// prometheus.io/scrape annotation when ServiceMonitors are enabled, so without this every
+// install opts the scheduler out of annotation-based scraping.
+func defaultServiceMonitorEnabled(spec *kaiv1.ConfigSpec) {
+	if spec.Prometheus == nil {
+		spec.Prometheus = &kaiprometheus.Prometheus{}
+	}
+	if spec.Prometheus.ServiceMonitor == nil {
+		spec.Prometheus.ServiceMonitor = &kaiprometheus.ServiceMonitor{}
+	}
+	if spec.Prometheus.ServiceMonitor.Enabled == nil {
+		spec.Prometheus.ServiceMonitor.Enabled = ptr.To(ptr.Deref(spec.Prometheus.Enabled, false))
+	}
 }
