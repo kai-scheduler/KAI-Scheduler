@@ -160,12 +160,14 @@ func (s *Scheduler) runOnce() {
 	for _, action := range actions {
 		log.InfraLogger.SetAction(string(action.Name()))
 		metrics.SetCurrentAction(string(action.Name()))
+		// Name the action so a published commit or eviction can say which action made it.
 		ssn.SetCurrentAction(string(action.Name()))
 		actionStartTime := time.Now()
 		action.Execute(ssn)
 		metrics.UpdateActionDuration(string(action.Name()), metrics.Duration(actionStartTime))
 	}
-	// Plugins close from the deferred CloseSession. Tag those commits separately from the last action.
+	// OnSessionClose can still commit or evict after the action loop. session-close
+	// marks that cleanup; a blank label would leave those records unattributed.
 	ssn.SetCurrentAction(framework.SessionCloseAction)
 	log.InfraLogger.RemoveActionLogger()
 }

@@ -35,7 +35,7 @@ func NewReplayCache(
 ) (cache.Cache, context.CancelFunc, error) {
 	DisableWatchListClientForFakeReplay()
 	if params != nil && now != nil {
-		params.Now = now
+		params.NowOverride = now
 	}
 	kubeClient, kaiClient, nrtClient := LoadClientsWithSnapshot(objects, nil)
 	cacheParams := &cache.SchedulerCacheParams{

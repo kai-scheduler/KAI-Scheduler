@@ -590,6 +590,7 @@ func (s *Statement) Discard() {
 	for i := len(s.operations) - 1; i >= 0; i-- {
 		_ = s.undoOperation(i)
 	}
+
 	s.clearOperations()
 }
 
@@ -601,7 +602,8 @@ func (s *Statement) Commit() error {
 
 	var err error
 	var opErrors []string
-	if s.ssn != nil && s.ssn.hasOnCommit() {
+	recording := s.ssn != nil && s.ssn.hasOnCommit()
+	if recording {
 		opErrors = make([]string, len(s.operations))
 	}
 	failedAt := -1
@@ -611,8 +613,11 @@ func (s *Statement) Commit() error {
 	}
 	committedEvictions := map[evictionEventKey]*podgroup_info.PodGroupInfo{}
 	defer func() {
+		// Clear last: publishCommitResult reads s.operations. The eviction metrics below only use the saved pod groups.
 		defer s.clearOperations()
-		s.publishCommitResult(opErrors, failedAt)
+		if recording {
+			s.publishCommitResult(opErrors, failedAt)
+		}
 		for key, podGroup := range committedEvictions {
 			s.ssn.Cache.RecordPodGroupEvictionEvent(podGroup, key.action)
 		}
@@ -632,9 +637,7 @@ func (s *Statement) Commit() error {
 			if err = s.commitEvict(taskInfo, evictOp); err != nil {
 				log.InfraLogger.Errorf("Failed to evict task <%v/%v>, error: <%v>",
 					taskInfo.Namespace, taskInfo.Name, err)
-				if opErrors != nil {
-					opErrors[i] = err.Error()
-				}
+				noteError(opErrors, i, err)
 			} else {
 				key := evictionEventKey{podGroup: taskInfo.Job, action: evictOp.evictionMetadata.Action}
 				committedEvictions[key] = s.ssn.ClusterInfo.PodGroupInfos[taskInfo.Job]
@@ -647,9 +650,7 @@ func (s *Statement) Commit() error {
 			err = s.commitAllocate(taskInfo)
 			if err != nil {
 				log.InfraLogger.Errorf("Failed to allocate task. error: %s", err.Error())
-				if opErrors != nil {
-					opErrors[i] = err.Error()
-				}
+				noteError(opErrors, i, err)
 				failedAt = i
 				return err
 			}
@@ -659,10 +660,14 @@ func (s *Statement) Commit() error {
 	return err
 }
 
-func (s *Statement) publishCommitResult(opErrors []string, failedAt int) {
-	if s.ssn == nil || !s.ssn.hasOnCommit() {
+func noteError(opErrors []string, i int, err error) {
+	if opErrors == nil {
 		return
 	}
+	opErrors[i] = err.Error()
+}
+
+func (s *Statement) publishCommitResult(opErrors []string, failedAt int) {
 	recorded := make([]CommitOp, 0, len(s.operations))
 	for i, op := range s.operations {
 		if op.Name() == undo || !s.operationValid(i) {
@@ -676,14 +681,7 @@ func (s *Statement) publishCommitResult(opErrors []string, failedAt int) {
 		}
 		recorded = append(recorded, recordedOp)
 	}
-	if len(recorded) == 0 {
-		return
-	}
-	s.ssn.publishCommit(&CommitEvent{
-		SessionID: s.sessionID,
-		Action:    s.ssn.currentAction,
-		Ops:       recorded,
-	})
+	s.ssn.publishCommit(recorded)
 }
 
 func commitOpFrom(op Operation) CommitOp {

@@ -130,21 +130,31 @@ func (ssn *Session) SetCurrentAction(action string) {
 
 // Now is the cycle clock. Replay freezes it at the recorded open time.
 func (ssn *Session) Now() time.Time {
-	if ssn != nil && ssn.SchedulerParams.Now != nil {
-		return ssn.SchedulerParams.Now()
+	if ssn != nil && ssn.SchedulerParams.NowOverride != nil {
+		return ssn.SchedulerParams.NowOverride()
 	}
 	return time.Now()
 }
 
 // publishCommit invokes OnCommit inline. Handlers must not block.
-func (ssn *Session) publishCommit(event *CommitEvent) {
-	if ssn == nil || event == nil {
+// The event is built only when a plugin registered OnCommit.
+func (ssn *Session) publishCommit(ops []CommitOp) {
+	if ssn == nil || len(ops) == 0 {
 		return
 	}
+	var event *CommitEvent
 	for _, handler := range ssn.eventHandlers {
-		if handler != nil && handler.OnCommit != nil {
-			handler.OnCommit(event)
+		if handler == nil || handler.OnCommit == nil {
+			continue
 		}
+		if event == nil {
+			event = &CommitEvent{
+				SessionID: ssn.ID,
+				Action:    ssn.currentAction,
+				Ops:       ops,
+			}
+		}
+		handler.OnCommit(event)
 	}
 }
 
@@ -201,20 +211,19 @@ func (ssn *Session) Evict(pod *pod_info.PodInfo, message string, evictionMetadat
 	if err := ssn.Cache.Evict(pod.Pod, podGroup, evictionMetadata, message); err != nil {
 		return err
 	}
+	// Publish only when a plugin registered OnCommit, which is the recorder.
+	// Stale-gang eviction calls Session.Evict and never reaches Statement.Commit,
+	// so the recorder would miss the eviction without this.
 	if ssn.hasOnCommit() {
-		ssn.publishCommit(&CommitEvent{
-			SessionID: ssn.ID,
-			Action:    ssn.currentAction,
-			Ops: []CommitOp{{
-				Kind:      evict,
-				UID:       string(pod.UID),
-				Namespace: pod.Namespace,
-				Name:      pod.Name,
-				Node:      pod.NodeName,
-				Message:   message,
-				Eviction:  evictionMetadata,
-			}},
-		})
+		ssn.publishCommit([]CommitOp{{
+			Kind:      evict,
+			UID:       string(pod.UID),
+			Namespace: pod.Namespace,
+			Name:      pod.Name,
+			Node:      pod.NodeName,
+			Message:   message,
+			Eviction:  evictionMetadata,
+		}})
 	}
 	if err := ssn.updatePodOnSession(pod, pod_status.Releasing); err != nil {
 		return err

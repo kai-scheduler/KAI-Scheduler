@@ -114,7 +114,7 @@ var _ = Describe("MinRuntime Plugin", func() {
 			It("uses the session clock recorded for the cycle", func() {
 				opened := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 				session := &framework.Session{ClusterInfo: &api.ClusterInfo{Queues: queues}}
-				session.SchedulerParams.Now = func() time.Time { return opened }
+				session.SchedulerParams.NowOverride = func() time.Time { return opened }
 				plugin.OnSessionOpen(session)
 
 				start := opened.Add(-10 * time.Second)
