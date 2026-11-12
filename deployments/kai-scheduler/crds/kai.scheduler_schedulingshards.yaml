@@ -199,6 +199,118 @@ spec:
                 description: UsageDBConfig defines configuration for the usage db
                   client
                 properties:
+                  auth:
+                    description: |-
+                      Auth configures how the client authenticates to the usage database.
+                      If not set, requests carry no credentials.
+                    properties:
+                      authorization:
+                        description: |-
+                          Authorization authenticates with an "Authorization: <type> <credentials>"
+                          header, such as a bearer token.
+                        properties:
+                          credentials:
+                            description: Credentials is the Secret key that holds
+                              the credentials.
+                            properties:
+                              key:
+                                description: The key of the secret to select from.  Must
+                                  be a valid secret key.
+                                type: string
+                              name:
+                                default: ""
+                                description: |-
+                                  Name of the referent.
+                                  This field is effectively required, but due to backwards compatibility is
+                                  allowed to be empty. Instances of this type with an empty value here are
+                                  almost certainly wrong.
+                                  More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                type: string
+                              optional:
+                                description: Specify whether the Secret or its key
+                                  must be defined
+                                type: boolean
+                            required:
+                            - key
+                            type: object
+                            x-kubernetes-map-type: atomic
+                          credentialsFile:
+                            description: |-
+                              CredentialsFile is the path of a file that holds the credentials. The
+                              operator sets it in the scheduler configuration from Credentials.
+                            type: string
+                          type:
+                            description: |-
+                              Type is the authentication type. Defaults to "Bearer". "Basic" is not
+                              accepted: use BasicAuth.
+                            type: string
+                        type: object
+                      basicAuth:
+                        description: BasicAuth authenticates with a username and a
+                          password.
+                        properties:
+                          password:
+                            description: Password is the Secret key that holds the
+                              password.
+                            properties:
+                              key:
+                                description: The key of the secret to select from.  Must
+                                  be a valid secret key.
+                                type: string
+                              name:
+                                default: ""
+                                description: |-
+                                  Name of the referent.
+                                  This field is effectively required, but due to backwards compatibility is
+                                  allowed to be empty. Instances of this type with an empty value here are
+                                  almost certainly wrong.
+                                  More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                type: string
+                              optional:
+                                description: Specify whether the Secret or its key
+                                  must be defined
+                                type: boolean
+                            required:
+                            - key
+                            type: object
+                            x-kubernetes-map-type: atomic
+                          passwordFile:
+                            description: |-
+                              PasswordFile is the path of a file that holds the password. The operator
+                              sets it in the scheduler configuration from Password.
+                            type: string
+                          username:
+                            description: Username is the Secret key that holds the
+                              username.
+                            properties:
+                              key:
+                                description: The key of the secret to select from.  Must
+                                  be a valid secret key.
+                                type: string
+                              name:
+                                default: ""
+                                description: |-
+                                  Name of the referent.
+                                  This field is effectively required, but due to backwards compatibility is
+                                  allowed to be empty. Instances of this type with an empty value here are
+                                  almost certainly wrong.
+                                  More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                type: string
+                              optional:
+                                description: Specify whether the Secret or its key
+                                  must be defined
+                                type: boolean
+                            required:
+                            - key
+                            type: object
+                            x-kubernetes-map-type: atomic
+                          usernameFile:
+                            description: |-
+                              UsernameFile is the path of a file that holds the username. The operator
+                              sets it in the scheduler configuration from Username.
+                            type: string
+                        type: object
+                    type: object
                   clientType:
                     type: string
                   connectionString:

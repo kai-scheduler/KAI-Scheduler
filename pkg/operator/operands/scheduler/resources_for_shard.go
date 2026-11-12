@@ -133,6 +133,21 @@ func (s *SchedulerForShard) deploymentForShard(
 		},
 	}
 
+	if shard.Spec.UsageDBConfig != nil {
+		auth := shard.Spec.UsageDBConfig.Auth
+		if err = auth.Validate(); err != nil {
+			return nil, fmt.Errorf("invalid usageDBConfig.auth: %w", err)
+		}
+		if err = validateUsageDBAuthSecrets(ctx, readerClient, kaiConfig.Spec.Namespace, auth); err != nil {
+			return nil, err
+		}
+		if authVolume, authMount := usageDBAuthVolume(auth); authVolume != nil {
+			deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes, *authVolume)
+			deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(
+				deployment.Spec.Template.Spec.Containers[0].VolumeMounts, *authMount)
+		}
+	}
+
 	return deployment, nil
 }
 
@@ -276,6 +291,11 @@ func getUsageDBConfig(shard *kaiv1.SchedulingShard, kaiConfig *kaiv1.Config) (*u
 	}
 
 	usageDBConfig := shard.Spec.UsageDBConfig.DeepCopy()
+
+	if err := usageDBConfig.Auth.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid usageDBConfig.auth: %w", err)
+	}
+	usageDBConfig.Auth = usageDBAuthWithMountedFiles(usageDBConfig.Auth)
 
 	if usageDBConfig.ClientType != "prometheus" {
 		return usageDBConfig, nil
