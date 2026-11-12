@@ -33,11 +33,20 @@ type SchedulerForShard struct {
 	recorderOverride *recorderv1.RecorderSpec
 	// apiReader bypasses the typed cache, which drops spec.recorder until the api module has the field.
 	apiReader client.Reader
+	// resolvedRecorder is the spec read once per reconcile, while the Config still has its real name.
+	resolvedRecorder *recorderv1.RecorderSpec
+	recorderResolved bool
 }
 
 // SetAPIReader selects the client used to read spec.recorder.
 func (s *SchedulerForShard) SetAPIReader(reader client.Reader) {
 	s.apiReader = reader
+}
+
+// SetResolvedRecorder stores the spec for this reconcile so later renders do not read it again.
+func (s *SchedulerForShard) SetResolvedRecorder(spec *recorderv1.RecorderSpec) {
+	s.recorderResolved = true
+	s.resolvedRecorder = spec.DeepCopy()
 }
 
 type SchedulerForConfig struct {

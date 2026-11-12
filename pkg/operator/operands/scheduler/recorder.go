@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"strconv"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -24,29 +25,60 @@ import (
 	"github.com/kai-scheduler/api/kai/v1/common"
 )
 
-// recorderOverride is set by tests. The generated SchedulingShard type cannot carry spec.recorder
-// until github.com/kai-scheduler/api publishes the field.
+// RecorderUnavailable is a read or decode failure when neither object enables the recorder.
+// The reconcile logs it and continues, so a recorder-off cluster is unchanged when the read fails.
+type RecorderUnavailable struct {
+	Err error
+}
+
+func (e *RecorderUnavailable) Error() string {
+	if e == nil || e.Err == nil {
+		return "recorder spec is unavailable"
+	}
+	return e.Err.Error()
+}
+
+func (e *RecorderUnavailable) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
+
+// ResolveRecorder reads the shard and Config recorder specs once.
+// The Config argument must still carry its real name. The generated types cannot
+// hold spec.recorder until github.com/kai-scheduler/api publishes the field.
+func (s *SchedulerForShard) ResolveRecorder(
+	ctx context.Context, reader client.Reader, kaiConfig *kaiv1.Config, shard *kaiv1.SchedulingShard,
+) (*recorderv1.RecorderSpec, error) {
+	if s.recorderResolved {
+		return s.resolvedRecorder, nil
+	}
+	return s.resolveRecorder(ctx, reader, kaiConfig, shard)
+}
+
 func (s *SchedulerForShard) resolveRecorder(
 	ctx context.Context, reader client.Reader, kaiConfig *kaiv1.Config, shard *kaiv1.SchedulingShard,
 ) (*recorderv1.RecorderSpec, error) {
 	var shardSpec, configSpec *recorderv1.RecorderSpec
-	var err error
+	var shardErr, configErr error
 	if s.apiReader != nil {
 		reader = s.apiReader
 	}
 	if s.recorderOverride != nil {
 		shardSpec = s.recorderOverride.DeepCopy()
 	} else if shard != nil && shard.Name != "" {
-		shardSpec, err = readRecorderSpec(ctx, reader, kaiv1.GroupVersion.WithKind("SchedulingShard"), client.ObjectKey{Name: shard.Name}, "spec", recorderName)
-		if err != nil {
-			return nil, err
-		}
+		shardSpec, shardErr = readRecorderSpec(ctx, reader, kaiv1.GroupVersion.WithKind("SchedulingShard"), client.ObjectKey{Name: shard.Name}, "spec", recorderName)
 	}
 	if kaiConfig != nil && kaiConfig.Name != "" {
-		configSpec, err = readRecorderSpec(ctx, reader, kaiv1.GroupVersion.WithKind("Config"), client.ObjectKey{Name: kaiConfig.Name}, "spec", "scheduler", recorderName)
-		if err != nil {
+		configSpec, configErr = readRecorderSpec(ctx, reader, kaiv1.GroupVersion.WithKind("Config"), client.ObjectKey{Name: kaiConfig.Name}, "spec", "scheduler", recorderName)
+	}
+	if shardErr != nil || configErr != nil {
+		err := errors.Join(shardErr, configErr)
+		if shardSpec.EnabledValue() || configSpec.EnabledValue() {
 			return nil, err
 		}
+		return nil, &RecorderUnavailable{Err: err}
 	}
 	merged := recorderv1.Merge(configSpec, shardSpec)
 	var fallback *common.Image
@@ -55,6 +87,15 @@ func (s *SchedulerForShard) resolveRecorder(
 	}
 	recorderv1.ApplyDefaults(merged, fallback)
 	return merged, nil
+}
+
+func (s *SchedulerForShard) recorderForShard(
+	ctx context.Context, reader client.Reader, kaiConfig *kaiv1.Config, shard *kaiv1.SchedulingShard,
+) (*recorderv1.RecorderSpec, error) {
+	if s.recorderResolved {
+		return s.resolvedRecorder, nil
+	}
+	return s.resolveRecorder(ctx, reader, kaiConfig, shard)
 }
 
 func readRecorderSpec(ctx context.Context, reader client.Reader, gvk schema.GroupVersionKind, key client.ObjectKey, path ...string) (*recorderv1.RecorderSpec, error) {
@@ -81,15 +122,32 @@ func readRecorderSpec(ctx context.Context, reader client.Reader, gvk schema.Grou
 		}
 		current = next
 	}
+	enabled := recorderEnabled(current)
 	raw, err := json.Marshal(current)
 	if err != nil {
-		return nil, err
+		return enabledSpec(enabled), err
 	}
 	spec := &recorderv1.RecorderSpec{}
 	if err := json.Unmarshal(raw, spec); err != nil {
-		return nil, err
+		return enabledSpec(enabled), err
 	}
 	return spec, nil
+}
+
+func recorderEnabled(value any) bool {
+	asMap, ok := value.(map[string]any)
+	if !ok {
+		return false
+	}
+	enabled, _ := asMap["enabled"].(bool)
+	return enabled
+}
+
+func enabledSpec(enabled bool) *recorderv1.RecorderSpec {
+	if !enabled {
+		return nil
+	}
+	return &recorderv1.RecorderSpec{Enabled: &enabled}
 }
 
 func pluginsWithRecorder(plugins map[string]kaiv1.PluginConfig, spec *recorderv1.RecorderSpec, kaiConfig *kaiv1.Config, shard *kaiv1.SchedulingShard) map[string]kaiv1.PluginConfig {
@@ -216,7 +274,7 @@ func (s *SchedulerForShard) EnsureSharedHashKey(
 	if s.apiReader == nil {
 		s.apiReader = reader
 	}
-	spec, err := s.resolveRecorder(ctx, reader, kaiConfig, shard)
+	spec, err := s.recorderForShard(ctx, reader, kaiConfig, shard)
 	if err != nil || spec == nil || !spec.EnabledValue() {
 		return err
 	}

@@ -36,7 +36,7 @@ spec:
   scenarioSearchBudgets:
     {{- toYaml .Values.scheduler.scenarioSearchBudgets | nindent 4 }}
   {{- end }}
-  {{- if .Values.scheduler.recorder }}
+  {{- if .Values.scheduler.recorder.enabled }}
   recorder:
     enabled: {{ .Values.scheduler.recorder.enabled }}
     {{- if .Values.scheduler.recorder.storageSecretName }}

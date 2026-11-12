@@ -181,8 +181,6 @@ spec:
                       rollSizeMB:
                         type: integer
                     type: object
-                  cycleBufferSize:
-                    type: integer
                   enabled:
                     type: boolean
                   image:
@@ -198,8 +196,6 @@ spec:
                       tag:
                         type: string
                     type: object
-                  lifecycleBufferSize:
-                    type: integer
                   resources:
                     type: object
                     x-kubernetes-preserve-unknown-fields: true

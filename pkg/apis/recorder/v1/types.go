@@ -26,28 +26,24 @@ import (
 )
 
 const (
-	DefaultAddress             = "127.0.0.1:9095"
-	DefaultStorageSecretName   = "kai-recorder-storage"
-	DefaultHashKeySecretName   = "kai-recorder-hash-key"
-	HMACKeyDataKey             = "hmac-key"
-	DefaultCycleBufferSize     = 4
-	DefaultLifecycleBufferSize = 1024
-	DefaultRollInterval        = 5 * time.Minute
-	DefaultRollSizeMB          = 64
-	PluginPriority             = 450
+	DefaultAddress           = "127.0.0.1:9095"
+	DefaultStorageSecretName = "kai-recorder-storage"
+	DefaultHashKeySecretName = "kai-recorder-hash-key"
+	HMACKeyDataKey           = "hmac-key"
+	DefaultRollInterval      = 5 * time.Minute
+	DefaultRollSizeMB        = 64
+	PluginPriority           = 450
 )
 
 // RecorderSpec configures the scheduling recorder for one shard, or the defaults inherited from Config.
 type RecorderSpec struct {
-	Enabled             *bool                        `json:"enabled,omitempty"`
-	Image               *common.Image                `json:"image,omitempty"`
-	Resources           *corev1.ResourceRequirements `json:"resources,omitempty"`
-	StorageSecretName   string                       `json:"storageSecretName,omitempty"`
-	HashKeySecretName   string                       `json:"hashKeySecretName,omitempty"`
-	Batch               *RecorderBatch               `json:"batch,omitempty"`
-	Address             string                       `json:"address,omitempty"`
-	CycleBufferSize     *int                         `json:"cycleBufferSize,omitempty"`
-	LifecycleBufferSize *int                         `json:"lifecycleBufferSize,omitempty"`
+	Enabled           *bool                        `json:"enabled,omitempty"`
+	Image             *common.Image                `json:"image,omitempty"`
+	Resources         *corev1.ResourceRequirements `json:"resources,omitempty"`
+	StorageSecretName string                       `json:"storageSecretName,omitempty"`
+	HashKeySecretName string                       `json:"hashKeySecretName,omitempty"`
+	Batch             *RecorderBatch               `json:"batch,omitempty"`
+	Address           string                       `json:"address,omitempty"`
 }
 
 // RecorderBatch controls how the sidecar rolls captured records.
@@ -87,12 +83,6 @@ func (s *RecorderSpec) DeepCopy() *RecorderSpec {
 			batch.RollSizeMB = ptr.To(*s.Batch.RollSizeMB)
 		}
 		out.Batch = &batch
-	}
-	if s.CycleBufferSize != nil {
-		out.CycleBufferSize = ptr.To(*s.CycleBufferSize)
-	}
-	if s.LifecycleBufferSize != nil {
-		out.LifecycleBufferSize = ptr.To(*s.LifecycleBufferSize)
 	}
 	return &out
 }
@@ -139,12 +129,6 @@ func apply(dst, src *RecorderSpec) {
 	if src.Address != "" {
 		dst.Address = src.Address
 	}
-	if src.CycleBufferSize != nil {
-		dst.CycleBufferSize = ptr.To(*src.CycleBufferSize)
-	}
-	if src.LifecycleBufferSize != nil {
-		dst.LifecycleBufferSize = ptr.To(*src.LifecycleBufferSize)
-	}
 }
 
 // ApplyDefaults fills every unset field. imageFallback supplies registry and tag when the recorder image omits them.
@@ -160,12 +144,6 @@ func ApplyDefaults(spec *RecorderSpec, imageFallback *common.Image) {
 	}
 	if spec.HashKeySecretName == "" {
 		spec.HashKeySecretName = DefaultHashKeySecretName
-	}
-	if spec.CycleBufferSize == nil {
-		spec.CycleBufferSize = ptr.To(DefaultCycleBufferSize)
-	}
-	if spec.LifecycleBufferSize == nil {
-		spec.LifecycleBufferSize = ptr.To(DefaultLifecycleBufferSize)
 	}
 	if spec.Batch == nil {
 		spec.Batch = &RecorderBatch{}

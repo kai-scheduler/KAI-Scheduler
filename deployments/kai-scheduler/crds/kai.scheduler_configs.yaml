@@ -10548,15 +10548,11 @@ spec:
                       batch:
                         type: object
                         x-kubernetes-preserve-unknown-fields: true
-                      cycleBufferSize:
-                        type: integer
                       enabled:
                         type: boolean
                       image:
                         type: object
                         x-kubernetes-preserve-unknown-fields: true
-                      lifecycleBufferSize:
-                        type: integer
                       resources:
                         type: object
                         x-kubernetes-preserve-unknown-fields: true

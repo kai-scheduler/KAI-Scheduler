@@ -1,7 +1,7 @@
 // Copyright 2026 NVIDIA CORPORATION
 // SPDX-License-Identifier: Apache-2.0
 
-package snapshot
+package replay
 
 import (
 	"context"
@@ -16,6 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/version"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/snapshot"
 	kaiv1alpha1 "github.com/kai-scheduler/api/kai/v1alpha1"
 	schedulingv1alpha2 "github.com/kai-scheduler/api/scheduling/v1alpha2"
 	enginev2 "github.com/kai-scheduler/api/scheduling/v2"
@@ -24,7 +25,7 @@ import (
 
 func TestLoadClientsWithSnapshotRestoresListedObjects(t *testing.T) {
 	DisableWatchListClientForFakeReplay()
-	raw := &RawKubernetesObjects{
+	raw := &snapshot.RawKubernetesObjects{
 		Pods: []*v1.Pod{
 			{ObjectMeta: metav1.ObjectMeta{Namespace: "team", Name: "job-0"}},
 			{ObjectMeta: metav1.ObjectMeta{Name: ""}},
@@ -98,7 +99,7 @@ func TestLoadClientsUsesAnExplicitDiscoverySnapshot(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, pods.Items)
 
-	kubeClient, _, _ = LoadClientsWithSnapshot(&RawKubernetesObjects{}, &DiscoverySnapshot{
+	kubeClient, _, _ = LoadClientsWithSnapshot(&snapshot.RawKubernetesObjects{}, &snapshot.DiscoverySnapshot{
 		ServerVersion: &version.Info{Major: "1", Minor: "34"},
 		Resources: []*metav1.APIResourceList{{
 			GroupVersion: "v1",
@@ -111,12 +112,12 @@ func TestLoadClientsUsesAnExplicitDiscoverySnapshot(t *testing.T) {
 }
 
 func TestLoadClientsReportsACreateFailureAndKeepsTheRest(t *testing.T) {
-	kubeClient, _, _ := LoadClientsWithSnapshot(&RawKubernetesObjects{
+	kubeClient, _, _ := LoadClientsWithSnapshot(&snapshot.RawKubernetesObjects{
 		Nodes: []*v1.Node{
 			{ObjectMeta: metav1.ObjectMeta{Name: "node-a"}},
 			{ObjectMeta: metav1.ObjectMeta{Name: "node-a"}},
 		},
-	}, &DiscoverySnapshot{})
+	}, &snapshot.DiscoverySnapshot{})
 	_, err := kubeClient.CoreV1().Nodes().Get(context.Background(), "node-a", metav1.GetOptions{})
 	require.NoError(t, err)
 }

@@ -34,8 +34,8 @@ type Event struct {
 type EventHandler struct {
 	AllocateFunc   func(event *Event)
 	DeallocateFunc func(event *Event)
-	// OnCommit runs inline on the scheduling goroutine for Statement.Commit,
-	// Statement.Discard, and Session.Evict. It must not block.
+	// OnCommit runs inline on the scheduling goroutine for Statement.Commit
+	// and Session.Evict. Discard does not publish. It must not block.
 	OnCommit func(event *CommitEvent)
 }
 
@@ -49,7 +49,7 @@ type CommitOp struct {
 	Message      string                         `json:"message,omitempty"`
 	Error        string                         `json:"error,omitempty"`
 	NotAttempted bool                           `json:"notAttempted,omitempty"`
-	Eviction     eviction_info.EvictionMetadata `json:"eviction,omitempty"`
+	Eviction     eviction_info.EvictionMetadata `json:"eviction"`
 }
 
 // CommitEvent is one committed statement. Undo operations are not included.

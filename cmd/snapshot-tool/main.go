@@ -24,6 +24,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/snapshot"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/replay"
 )
 
 func main() {
@@ -39,8 +40,6 @@ func main() {
 		return
 	}
 
-	snapshot.DisableWatchListClientForFakeReplay()
-
 	if err := log.InitLoggers(int(*verbosity), false); err != nil {
 		fmt.Printf("Failed to initialize logger: %v", err)
 		return
@@ -55,8 +54,6 @@ func main() {
 
 	runStart := time.Now()
 
-	loadClients := snapshot.LoadClientsWithSnapshot
-	disableWatchList := snapshot.DisableWatchListClientForFakeReplay
 	loaded, err := loadSnapshot(*filename)
 	if err != nil {
 		log.InfraLogger.Fatalf(err.Error(), err)
@@ -65,8 +62,8 @@ func main() {
 	actions.InitDefaultActions()
 	plugins.InitDefaultPlugins()
 
-	disableWatchList()
-	kubeClient, kaiClient, nrtClient := loadClients(loaded.RawObjects, loaded.Discovery)
+	replay.DisableWatchListClientForFakeReplay()
+	kubeClient, kaiClient, nrtClient := replay.LoadClientsWithSnapshot(loaded.RawObjects, loaded.Discovery)
 
 	schedulerCacheParams := &cache.SchedulerCacheParams{
 		KubeClient:                  kubeClient,

@@ -65,9 +65,7 @@ func TestDeepCopyDoesNotSharePointers(t *testing.T) {
 		Resources: &corev1.ResourceRequirements{Requests: corev1.ResourceList{
 			corev1.ResourceCPU: resource.MustParse("100m"),
 		}},
-		Batch:               &RecorderBatch{RollInterval: &metav1.Duration{Duration: time.Second}, RollSizeMB: ptr.To(4)},
-		CycleBufferSize:     ptr.To(2),
-		LifecycleBufferSize: ptr.To(3),
+		Batch: &RecorderBatch{RollInterval: &metav1.Duration{Duration: time.Second}, RollSizeMB: ptr.To(4)},
 	}
 	copied := original.DeepCopy()
 	*copied.Enabled = false

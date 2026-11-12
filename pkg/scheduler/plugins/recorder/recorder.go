@@ -25,13 +25,20 @@ type recorderPlugin struct {
 	decisions []framework.CommitEvent
 }
 
+var (
+	processSenderOnce sync.Once
+	processSender     *Sender
+)
+
 func New(arguments framework.PluginArguments) framework.Plugin {
 	address := ""
 	if arguments != nil {
 		address = arguments.GetString("address", "")
 	}
-	sender := newSender(senderConfig{Address: address})
-	return newPlugin(arguments, sender.tryEnqueue)
+	processSenderOnce.Do(func() {
+		processSender = newSender(senderConfig{Address: address})
+	})
+	return newPlugin(arguments, processSender.tryEnqueue)
 }
 
 func newPlugin(arguments framework.PluginArguments, enqueue enqueueFunc) *recorderPlugin {

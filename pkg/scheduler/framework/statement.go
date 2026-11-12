@@ -588,9 +588,7 @@ func (s *Statement) Discard() {
 		log.InfraLogger.Infof("Discarding operations ...")
 	})
 	for i := len(s.operations) - 1; i >= 0; i-- {
-		if err := s.undoOperation(i); err != nil {
-			log.InfraLogger.Errorf("Failed to undo operation %d: %v", i, err)
-		}
+		_ = s.undoOperation(i)
 	}
 	s.clearOperations()
 }

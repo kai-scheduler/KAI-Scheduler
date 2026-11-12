@@ -1,7 +1,7 @@
 // Copyright 2026 NVIDIA CORPORATION
 // SPDX-License-Identifier: Apache-2.0
 
-package snapshot
+package replay
 
 import (
 	"context"
@@ -16,6 +16,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/snapshot"
 	kaischedulerfake "github.com/kai-scheduler/api/client/clientset/versioned/fake"
 	draversionawareclient "github.com/kai-scheduler/api/utilities/resources/dra_version_aware_client"
 )
@@ -35,7 +36,7 @@ func DisableWatchListClientForFakeReplay() {
 }
 
 // LoadClientsWithSnapshot loads raw snapshot objects into fake clients for replay.
-func LoadClientsWithSnapshot(rawObjects *RawKubernetesObjects, discoverySnapshot *DiscoverySnapshot) (kubernetes.Interface, *kaischedulerfake.Clientset, *nrtfake.Clientset) {
+func LoadClientsWithSnapshot(rawObjects *snapshot.RawKubernetesObjects, discoverySnapshot *snapshot.DiscoverySnapshot) (kubernetes.Interface, *kaischedulerfake.Clientset, *nrtfake.Clientset) {
 	kubeClient := fake.NewSimpleClientset()
 	kaiClient := kaischedulerfake.NewSimpleClientset()
 	nrtClient := nrtfake.NewSimpleClientset()
@@ -138,7 +139,7 @@ func LoadClientsWithSnapshot(rawObjects *RawKubernetesObjects, discoverySnapshot
 	return draClient, kaiClient, nrtClient
 }
 
-func synthesizeDiscoveryFromSnapshot(rawObjects *RawKubernetesObjects) *DiscoverySnapshot {
+func synthesizeDiscoveryFromSnapshot(rawObjects *snapshot.RawKubernetesObjects) *snapshot.DiscoverySnapshot {
 	hasDRAResources := len(rawObjects.ResourceClaims) > 0 ||
 		len(rawObjects.ResourceSlices) > 0 ||
 		len(rawObjects.DeviceClasses) > 0
@@ -146,8 +147,9 @@ func synthesizeDiscoveryFromSnapshot(rawObjects *RawKubernetesObjects) *Discover
 	if !hasDRAResources && !hasNRTResources {
 		return nil
 	}
-	discoverySnapshot := &DiscoverySnapshot{ServerVersion: &version.Info{Major: "1", Minor: "32"}}
+	discoverySnapshot := &snapshot.DiscoverySnapshot{ServerVersion: &version.Info{Major: "1", Minor: "32"}}
 	if hasDRAResources {
+		log.InfraLogger.V(2).Infof("Synthesizing discovery data from snapshot DRA resources")
 		discoverySnapshot.Resources = append(discoverySnapshot.Resources, &v1.APIResourceList{
 			GroupVersion: "resource.k8s.io/v1",
 			APIResources: []v1.APIResource{
@@ -158,6 +160,7 @@ func synthesizeDiscoveryFromSnapshot(rawObjects *RawKubernetesObjects) *Discover
 		})
 	}
 	if hasNRTResources {
+		log.InfraLogger.V(2).Infof("Synthesizing discovery data from snapshot NRT resources")
 		discoverySnapshot.Resources = append(discoverySnapshot.Resources, &v1.APIResourceList{
 			GroupVersion: "topology.node.k8s.io/v1alpha2",
 			APIResources: []v1.APIResource{
@@ -168,7 +171,7 @@ func synthesizeDiscoveryFromSnapshot(rawObjects *RawKubernetesObjects) *Discover
 	return discoverySnapshot
 }
 
-func applyDiscoverySnapshot(kubeClient *fake.Clientset, discoverySnapshot *DiscoverySnapshot) {
+func applyDiscoverySnapshot(kubeClient *fake.Clientset, discoverySnapshot *snapshot.DiscoverySnapshot) {
 	if kubeClient == nil || discoverySnapshot == nil {
 		return
 	}

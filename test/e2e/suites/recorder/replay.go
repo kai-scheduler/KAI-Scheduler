@@ -18,8 +18,8 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf_util"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins"
-	plug "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/recorder"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/snapshot"
+	schedreplay "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/replay"
 )
 
 func init() {
@@ -59,7 +59,7 @@ func replayCycle(state recordedCycle) ([]string, string) {
 		opened := state.OpenedAt
 		now = func() time.Time { return opened }
 	}
-	schedCache, stop, err := plug.NewReplayCache(params, state.RawObjects, state.Usage, now)
+	schedCache, stop, err := schedreplay.NewReplayCache(params, state.RawObjects, state.Usage, now)
 	Expect(err).NotTo(HaveOccurred())
 	defer stop()
 	session, err := framework.OpenSession(schedCache, &config, params, "e2e-replay", http.NewServeMux())

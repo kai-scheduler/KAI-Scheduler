@@ -55,8 +55,8 @@ type SchedulingShardReconciler struct {
 	shardOperandsForShard func(*kaiv1.SchedulingShard) []operands.Operand
 	deployablePerShard    map[string]*deployable.DeployableOperands
 	statusReconcilers     map[string]*status_reconciler.StatusReconciler
-	// APIReader is an uncached reader. The generated SchedulingShard type does not yet
-	// include spec.recorder, and the typed cache drops that field on decode.
+	// APIReader is an uncached reader. spec.recorder is not on the generated types yet,
+	// and the typed cache drops it. Reconcile reads it once, before the Config name is replaced.
 	APIReader client.Reader
 }
 
@@ -92,13 +92,6 @@ func (r *SchedulingShardReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	shard.Spec.SetDefaultsWhereNeeded()
 
 	shardOperands := r.shardOperandsForShard(shard)
-	if r.APIReader != nil {
-		for _, operand := range shardOperands {
-			if shardOperand, ok := operand.(*scheduler.SchedulerForShard); ok {
-				shardOperand.SetAPIReader(r.APIReader)
-			}
-		}
-	}
 	r.deployablePerShard[shard.Name] = deployable.New(
 		shardOperands,
 		known_types.SchedulingShardRegisteredCollectable,
@@ -133,12 +126,31 @@ func (r *SchedulingShardReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, err
 	}
 	kaiConfig.Spec.SetDefaultsWhereNeeded()
-	hashKeyOperand := scheduler.NewSchedulerForShard(shard)
-	if r.APIReader != nil {
-		hashKeyOperand.SetAPIReader(r.APIReader)
+	recorderSpec, recorderErr := scheduler.NewSchedulerForShard(shard).ResolveRecorder(ctx, r.APIReader, kaiConfig, shard)
+	var unavailable *scheduler.RecorderUnavailable
+	if errors.As(recorderErr, &unavailable) {
+		logger.Error(recorderErr, "Skipping the scheduling recorder because it is not enabled and its spec could not be read")
+		recorderSpec = nil
+		recorderErr = nil
 	}
-	if err := hashKeyOperand.EnsureSharedHashKey(ctx, r.Client, r.APIReader, kaiConfig, shard); err != nil {
-		return ctrl.Result{}, err
+	if recorderErr != nil {
+		return ctrl.Result{}, recorderErr
+	}
+	var hashKeyOperand *scheduler.SchedulerForShard
+	for _, operand := range shardOperands {
+		shardOperand, ok := operand.(*scheduler.SchedulerForShard)
+		if !ok {
+			continue
+		}
+		shardOperand.SetResolvedRecorder(recorderSpec)
+		if hashKeyOperand == nil {
+			hashKeyOperand = shardOperand
+		}
+	}
+	if hashKeyOperand != nil {
+		if err := hashKeyOperand.EnsureSharedHashKey(ctx, r.Client, r.Client, kaiConfig, shard); err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 	kaiConfig.Name = shard.Name
 

@@ -24,6 +24,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/predicates"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/snapshot"
+	schedreplay "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/replay"
 	commonconstants "github.com/kai-scheduler/api/constants"
 	enginev2 "github.com/kai-scheduler/api/scheduling/v2"
 	enginev2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
@@ -163,7 +164,7 @@ func replayObjects() *snapshot.RawKubernetesObjects {
 
 func startReplayCache(t *testing.T, params *conf.SchedulerParams, objects *snapshot.RawKubernetesObjects, usage *queue_info.ClusterUsage, now func() time.Time) cache.Cache {
 	t.Helper()
-	schedCache, cancel, err := NewReplayCache(params, objects, usage, now)
+	schedCache, cancel, err := schedreplay.NewReplayCache(params, objects, usage, now)
 	require.NoError(t, err)
 	t.Cleanup(cancel)
 	return schedCache

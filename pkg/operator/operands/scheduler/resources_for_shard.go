@@ -133,7 +133,7 @@ func (s *SchedulerForShard) deploymentForShard(
 		},
 	}
 
-	recorderSpec, err := s.resolveRecorder(ctx, readerClient, kaiConfig, shard)
+	recorderSpec, err := s.recorderForShard(ctx, readerClient, kaiConfig, shard)
 	if err != nil {
 		return nil, err
 	}
@@ -158,7 +158,7 @@ func (s *SchedulerForShard) configMapForShard(
 	}
 	innerConfig := conf.SchedulerConfiguration{}
 
-	recorderSpec, err := s.resolveRecorder(ctx, readerClient, kaiConfig, shard)
+	recorderSpec, err := s.recorderForShard(ctx, readerClient, kaiConfig, shard)
 	if err != nil {
 		return nil, err
 	}

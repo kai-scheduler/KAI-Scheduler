@@ -5,6 +5,7 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -211,6 +212,57 @@ func TestResolveRecorderReadsShardAndConfigObjects(t *testing.T) {
 	empty, err := readRecorderSpec(ctx, nil, kaiv1.GroupVersion.WithKind("Config"), client.ObjectKey{}, "spec")
 	require.NoError(t, err)
 	require.Nil(t, empty)
+}
+
+func TestResolveRecorderKeepsConfigDefaultsForAnotherShard(t *testing.T) {
+	ctx := context.Background()
+	config, shard := recorderFixture()
+	shard.Name = "other"
+	reader := specReader{objects: map[string]map[string]any{
+		shard.Name: {"spec": map[string]any{}},
+		config.Name: {"spec": map[string]any{"scheduler": map[string]any{"recorder": map[string]any{
+			"enabled":           true,
+			"hashKeySecretName": "from-config",
+		}}}},
+	}}
+	operand := &SchedulerForShard{}
+	spec, err := operand.ResolveRecorder(ctx, reader, config, shard)
+	require.NoError(t, err)
+	require.True(t, spec.EnabledValue())
+	require.Equal(t, "from-config", spec.HashKeySecretName)
+
+	operand.SetResolvedRecorder(spec)
+	config.Name = shard.Name
+	deployment := recorderDeployment(t, ctx, operand, config, shard)
+	require.Len(t, deployment.Spec.Template.Spec.Containers, 2)
+	for _, volume := range deployment.Spec.Template.Spec.Volumes {
+		if volume.Name == "recorder-hash-key" {
+			require.Equal(t, "from-config", volume.Secret.SecretName)
+		}
+	}
+}
+
+func TestResolveRecorderDoesNotFailWhenNothingIsEnabled(t *testing.T) {
+	ctx := context.Background()
+	config, shard := recorderFixture()
+	operand := &SchedulerForShard{}
+	spec, err := operand.ResolveRecorder(ctx, specReader{fail: shard.Name}, config, shard)
+	require.Error(t, err)
+	var unavailable *RecorderUnavailable
+	require.ErrorAs(t, err, &unavailable)
+	require.Nil(t, spec)
+
+	enabledConfig := specReader{
+		fail: shard.Name,
+		objects: map[string]map[string]any{
+			config.Name: {"spec": map[string]any{"scheduler": map[string]any{"recorder": map[string]any{
+				"enabled": true,
+			}}}},
+		},
+	}
+	_, err = operand.ResolveRecorder(ctx, enabledConfig, config, shard)
+	require.Error(t, err)
+	require.False(t, errors.As(err, &unavailable))
 }
 
 func TestEnsureSharedHashKeyReportsASecretReadError(t *testing.T) {

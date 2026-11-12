@@ -1,7 +1,7 @@
 // Copyright 2026 NVIDIA CORPORATION
 // SPDX-License-Identifier: Apache-2.0
 
-package recorder
+package replay
 
 import (
 	"context"
@@ -33,11 +33,11 @@ func NewReplayCache(
 	params *conf.SchedulerParams, objects *snapshot.RawKubernetesObjects,
 	usage *queue_info.ClusterUsage, now func() time.Time,
 ) (cache.Cache, context.CancelFunc, error) {
-	snapshot.DisableWatchListClientForFakeReplay()
+	DisableWatchListClientForFakeReplay()
 	if params != nil && now != nil {
 		params.Now = now
 	}
-	kubeClient, kaiClient, nrtClient := snapshot.LoadClientsWithSnapshot(objects, nil)
+	kubeClient, kaiClient, nrtClient := LoadClientsWithSnapshot(objects, nil)
 	cacheParams := &cache.SchedulerCacheParams{
 		KubeClient:                  kubeClient,
 		KAISchedulerClient:          kaiClient,

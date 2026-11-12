@@ -375,7 +375,7 @@ spec:
     schedulerService:
       port: {{ .Values.scheduler.ports.metricsPort }}
     {{- end }}
-    {{- if .Values.scheduler.recorder }}
+    {{- if .Values.scheduler.recorder.enabled }}
     recorder:
       enabled: {{ .Values.scheduler.recorder.enabled }}
       image:
