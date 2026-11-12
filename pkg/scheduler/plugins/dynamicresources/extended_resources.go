@@ -4,6 +4,8 @@
 package dynamicresources
 
 import (
+	"sort"
+
 	v1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -15,6 +17,7 @@ import (
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 )
 
 // specialClaimInMemName is the placeholder name for an in-memory synthetic claim.
@@ -85,4 +88,34 @@ func podExtendedResourcesNeedingDRA(
 		result[rName] = crq
 	}
 	return result
+}
+
+// requestedGpuResources returns the GPU resources the pod requests, in a stable order.
+func requestedGpuResources(pod *v1.Pod) []v1.ResourceName {
+	var names []v1.ResourceName
+	for name, quantity := range resourcehelper.PodRequests(pod, resourcehelper.PodResourcesOptions{}) {
+		if resource_info.IsGpuResourceName(name) && !quantity.IsZero() {
+			names = append(names, name)
+		}
+	}
+	sort.Slice(names, func(i, j int) bool { return names[i] < names[j] })
+	return names
+}
+
+// gpuResourceWithoutDeviceSource returns a requested GPU resource that nothing on the DRA-only node can provide.
+func gpuResourceWithoutDeviceSource(
+	requested []v1.ResourceName,
+	nodeInfo *node_info.NodeInfo,
+	dbc *extendedresourcecache.ExtendedResourceCache,
+) (v1.ResourceName, bool) {
+	for _, name := range requested {
+		if dbc.GetDeviceClass(name) != nil {
+			continue
+		}
+		if allocatable, ok := nodeInfo.Node.Status.Allocatable[name]; ok && !allocatable.IsZero() {
+			continue
+		}
+		return name, true
+	}
+	return "", false
 }
