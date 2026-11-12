@@ -1,0 +1,6 @@
+kind: Fixed
+body: Ray pod grouper now skips worker groups with suspend set (it read a non-existent suspended field), so a RayJob that deletes its workers no longer keeps them in the PodGroup minMember
+time: 2026-11-12T09:00:00.000000-05:00
+custom:
+  Author: dundysm
+  Issue: "2669"

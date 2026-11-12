@@ -330,7 +330,9 @@ func getReplicaCountersForWorkerGroup(groupSpec interface{}, groupIndex int) (
 	var found bool
 	workerGroupSpec := groupSpec.(map[string]interface{})
 
-	suspendedWorkerGroup, found, err := unstructured.NestedBool(workerGroupSpec, "suspended")
+	// KubeRay sets workerGroupSpecs[].suspend (for example for the RayJob DeleteWorkers
+	// deletion policy) and deletes every Pod of a suspended group.
+	suspendedWorkerGroup, found, err := unstructured.NestedBool(workerGroupSpec, "suspend")
 	if err != nil {
 		return 0, 0, err
 	}
