@@ -49,6 +49,7 @@ func init() {
 	registerCustomResourceDefinitions()
 	registerPrometheus()
 	registerVerticalPodAutoscalers()
+	registerHorizontalPodAutoscalers()
 	registerPodDisruptionBudgets()
 }
 
