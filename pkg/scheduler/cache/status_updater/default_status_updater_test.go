@@ -1242,7 +1242,7 @@ func TestEvicted_EventMessageNamesActionAndPreemptor(t *testing.T) {
 				Preemptor: &types.NamespacedName{Namespace: "team-b", Name: "train-42"},
 			},
 			message:         "Pod team-a/p-0 was preempted by workload team-b/train-42.",
-			expectedMessage: "Evicted by reclaim for team-b/train-42: Pod team-a/p-0 was preempted by workload team-b/train-42.",
+			expectedMessage: "Evicted by reclaim: Pod team-a/p-0 was preempted by workload team-b/train-42.",
 		},
 		{
 			name: "consolidation with preemptor",
@@ -1252,6 +1252,33 @@ func TestEvicted_EventMessageNamesActionAndPreemptor(t *testing.T) {
 			},
 			message:         "Pod team-a/p-0 was preempted and rescheduled due to bin packing (resource consolidation) procedure",
 			expectedMessage: "Evicted by consolidation for team-b/train-42: Pod team-a/p-0 was preempted and rescheduled due to bin packing (resource consolidation) procedure",
+		},
+		{
+			name: "message naming a different podgroup keeps the preemptor",
+			metadata: eviction_info.EvictionMetadata{
+				Action:    "reclaim",
+				Preemptor: &types.NamespacedName{Namespace: "team-b", Name: "train-4"},
+			},
+			message:         "Pod team-a/p-0 was preempted by workload team-b/train-42.",
+			expectedMessage: "Evicted by reclaim for team-b/train-4: Pod team-a/p-0 was preempted by workload team-b/train-42.",
+		},
+		{
+			name: "preemptor without namespace already in the message",
+			metadata: eviction_info.EvictionMetadata{
+				Action:    "preempt",
+				Preemptor: &types.NamespacedName{Name: "train-42"},
+			},
+			message:         "Pod p-0 was preempted by workload train-42.",
+			expectedMessage: "Evicted by preempt: Pod p-0 was preempted by workload train-42.",
+		},
+		{
+			name: "preemptor name only as a namespaced suffix is not a mention",
+			metadata: eviction_info.EvictionMetadata{
+				Action:    "preempt",
+				Preemptor: &types.NamespacedName{Name: "train-42"},
+			},
+			message:         "Pod p-0 was preempted by workload team-b/train-42.",
+			expectedMessage: "Evicted by preempt for train-42: Pod p-0 was preempted by workload team-b/train-42.",
 		},
 		{
 			name:            "stale gang eviction without preemptor",

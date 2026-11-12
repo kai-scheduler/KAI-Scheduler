@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -132,7 +133,9 @@ func (su *defaultStatusUpdater) Evicted(
 
 // evictionEventMessage prefixes the eviction message with the evicting action and the
 // preemptor PodGroup, so that both show up in `kubectl describe` and `kubectl get events`
-// and not only in the event annotations.
+// and not only in the event annotations. The preemptor is left out of the prefix when the
+// message already names it (reclaim and preempt messages end with it), so it is not
+// repeated on one line.
 func evictionEventMessage(evictionMetadata eviction_info.EvictionMetadata, message string) string {
 	if evictionMetadata.Action == "" {
 		return message
@@ -144,12 +147,44 @@ func evictionEventMessage(evictionMetadata eviction_info.EvictionMetadata, messa
 		if evictionMetadata.Preemptor.Namespace != "" {
 			preemptor = evictionMetadata.Preemptor.Namespace + "/" + preemptor
 		}
-		summary += " for " + preemptor
+		if !mentionsName(message, preemptor) {
+			summary += " for " + preemptor
+		}
 	}
 	if message == "" {
 		return summary
 	}
 	return summary + ": " + message
+}
+
+// mentionsName reports whether message contains name as a whole object name, so that
+// "team-b/train-42" is not taken as a mention of "train-4" or of "b/train-42".
+func mentionsName(message, name string) bool {
+	for offset := 0; ; {
+		index := strings.Index(message[offset:], name)
+		if index < 0 {
+			return false
+		}
+		start := offset + index
+		end := start + len(name)
+		if (start == 0 || !isNameByte(message[start-1], true)) &&
+			(end == len(message) || !isNameByte(message[end], false)) {
+			return true
+		}
+		offset = start + 1
+	}
+}
+
+// isNameByte reports whether b can be part of a Kubernetes object name; before a name,
+// a '/' also counts, since it joins a namespace to the name.
+func isNameByte(b byte, before bool) bool {
+	switch {
+	case b >= 'a' && b <= 'z', b >= 'A' && b <= 'Z', b >= '0' && b <= '9', b == '-':
+		return true
+	case b == '/':
+		return before
+	}
+	return false
 }
 
 // +kubebuilder:rbac:groups="",resources=pods,verbs=update;patch
