@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  scheduler: do not count a GPU as idle while a reservation pod holds it for a gpu group that has no fractional pods, so a node is never over-committed with a new gpu group
+custom:
+  Author: "tiffany-yu-ai"
+  Issue: ""
