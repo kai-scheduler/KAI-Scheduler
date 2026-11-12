@@ -16,9 +16,11 @@ import (
 	kaiv1 "github.com/kai-scheduler/api/kai/v1"
 	kaiv1alpha1 "github.com/kai-scheduler/api/kai/v1alpha1"
 
+	appsv1 "k8s.io/api/apps/v1"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -74,21 +76,9 @@ func New() (*App, error) {
 	clientConfig.QPS = float32(opts.Qps)
 	clientConfig.Burst = opts.Burst
 
-	// Pods, Leases and EndpointSlices are watched only to reconcile scheduler
-	// shards, and all relevant objects live in the KAI namespace. Without this
-	// scoping the shared cache stores every such object in the cluster, and
-	// operator memory grows linearly with cluster size.
-	kaiNamespace := map[string]cache.Config{opts.Namespace: {}}
 	mgr, err := ctrl.NewManager(clientConfig, ctrl.Options{
 		Scheme: scheme,
-		Cache: cache.Options{
-			DefaultTransform: cache.TransformStripManagedFields(),
-			ByObject: map[client.Object]cache.ByObject{
-				&corev1.Pod{}:                {Namespaces: kaiNamespace},
-				&coordinationv1.Lease{}:      {Namespaces: kaiNamespace},
-				&discoveryv1.EndpointSlice{}: {Namespaces: kaiNamespace},
-			},
-		},
+		Cache:  NewCacheOptions(opts.Namespace),
 		Metrics: server.Options{
 			BindAddress: opts.MetricsAddr,
 		},
@@ -125,6 +115,32 @@ func New() (*App, error) {
 		configReconciler: configReconciler,
 		shardReconciler:  shardReconciler,
 	}, nil
+}
+
+// NewCacheOptions scopes the manager informer cache for namespaced resources
+// that the operator only watches or reconciles within the KAI namespace.
+// Without this scoping the shared cache stores every such object in the
+// cluster, and operator memory grows linearly with cluster size.
+//
+// ServiceAccount is intentionally left unscoped because the binder and
+// node-scale-adjuster operands also reconcile ServiceAccounts in their
+// dedicated resource-reservation and scale-adjust namespaces.
+func NewCacheOptions(namespace string) cache.Options {
+	kaiNamespace := map[string]cache.Config{namespace: {}}
+	return cache.Options{
+		DefaultTransform: cache.TransformStripManagedFields(),
+		ByObject: map[client.Object]cache.ByObject{
+			&corev1.Pod{}:                   {Namespaces: kaiNamespace},
+			&coordinationv1.Lease{}:         {Namespaces: kaiNamespace},
+			&discoveryv1.EndpointSlice{}:    {Namespaces: kaiNamespace},
+			&corev1.ConfigMap{}:             {Namespaces: kaiNamespace},
+			&corev1.Secret{}:                {Namespaces: kaiNamespace},
+			&appsv1.Deployment{}:            {Namespaces: kaiNamespace},
+			&appsv1.DaemonSet{}:             {Namespaces: kaiNamespace},
+			&corev1.Service{}:               {Namespaces: kaiNamespace},
+			&policyv1.PodDisruptionBudget{}: {Namespaces: kaiNamespace},
+		},
+	}
 }
 
 func (app *App) InitOperands(configOperands []operands.Operand, shardOperandsForShard func(*kaiv1.SchedulingShard) []operands.Operand) {
