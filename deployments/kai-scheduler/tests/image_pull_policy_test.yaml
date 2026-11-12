@@ -1,0 +1,89 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+suite: test imagePullPolicy falls back to global.imagePullPolicy
+
+templates:
+  - services/operator.yaml
+  - hooks/post/kai-config-deployer/job.yaml
+  - hooks/post/post-delete-job.yaml
+  - hooks/pre/crd-upgrader.yaml
+  - hooks/pre/topology-migration/job.yaml
+tests:
+  - it: should default to IfNotPresent with default values
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: IfNotPresent
+        template: services/operator.yaml
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: IfNotPresent
+        template: hooks/post/kai-config-deployer/job.yaml
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: IfNotPresent
+        template: hooks/post/post-delete-job.yaml
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: IfNotPresent
+        template: hooks/pre/crd-upgrader.yaml
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: IfNotPresent
+        template: hooks/pre/topology-migration/job.yaml
+
+  - it: should use global.imagePullPolicy with default component values
+    set:
+      global.imagePullPolicy: Always
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: Always
+        template: services/operator.yaml
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: Always
+        template: hooks/post/kai-config-deployer/job.yaml
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: Always
+        template: hooks/post/post-delete-job.yaml
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: Always
+        template: hooks/pre/crd-upgrader.yaml
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: Always
+        template: hooks/pre/topology-migration/job.yaml
+
+  - it: should prefer component pullPolicy over global.imagePullPolicy
+    set:
+      global.imagePullPolicy: Always
+      operator.image.pullPolicy: Never
+      kaiConfigDeployer.image.pullPolicy: Never
+      postCleanup.image.pullPolicy: Never
+      crdupgrader.image.pullPolicy: Never
+      topologyMigration.image.pullPolicy: Never
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: Never
+        template: services/operator.yaml
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: Never
+        template: hooks/post/kai-config-deployer/job.yaml
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: Never
+        template: hooks/post/post-delete-job.yaml
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: Never
+        template: hooks/pre/crd-upgrader.yaml
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: Never
+        template: hooks/pre/topology-migration/job.yaml
