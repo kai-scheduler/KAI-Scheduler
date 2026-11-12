@@ -5,9 +5,7 @@ package recorder
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
-	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -17,7 +15,6 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/utils/ptr"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/recorder"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/allocate"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
@@ -40,47 +37,33 @@ func TestReplayAllocateMatchesRecordedDecision(t *testing.T) {
 
 	config, params := replayConfig()
 	first, events := runAllocate(t, config, params, replayObjects())
-	require.NotEmpty(t, events, "allocate should commit a decision")
+	require.NotEmpty(t, first, "allocate should commit a decision")
 
-	var state recorder.StateRecord
-	var found bool
-	for _, event := range events {
-		if event.Kind != recorder.KindState {
-			continue
-		}
-		require.NoError(t, json.Unmarshal(event.Record, &state))
-		found = true
-	}
-	require.True(t, found, "a pending cycle should record its state copy")
-	require.NotNil(t, state.RawObjects)
+	require.NotNil(t, events)
+	require.NotNil(t, events.RawObjects)
 
-	second, _ := runAllocate(t, config, params, state.RawObjects)
+	second, _ := runAllocate(t, config, params, events.RawObjects)
 	require.Equal(t, decisionsByAction(first), decisionsByAction(second))
 }
 
 func TestIdleCycleIsNotRecorded(t *testing.T) {
-	var events []recorder.Envelope
-	plugin := newPlugin(nil, func(_, _ string, _ any) bool {
-		events = append(events, recorder.Envelope{})
+	var events int
+	plugin := newPlugin(nil, func(*cycleRecord) bool {
+		events++
 		return true
 	})
 	session := &framework.Session{ID: "idle", ClusterInfo: &api.ClusterInfo{}}
 	plugin.OnSessionOpen(session)
 	plugin.OnSessionClose(session)
-	require.Empty(t, events)
+	require.Zero(t, events)
 }
 
-func runAllocate(t *testing.T, config *conf.SchedulerConfiguration, params *conf.SchedulerParams, objects *snapshot.RawKubernetesObjects) ([]framework.CommitOp, []recorder.Envelope) {
+func runAllocate(t *testing.T, config *conf.SchedulerConfiguration, params *conf.SchedulerParams, objects *snapshot.RawKubernetesObjects) ([]framework.CommitOp, *cycleRecord) {
 	t.Helper()
-	var mu sync.Mutex
-	var events []recorder.Envelope
+	var recorded *cycleRecord
 	var ops []framework.CommitOp
-	plugin := newPlugin(nil, func(stream, kind string, payload any) bool {
-		raw, err := json.Marshal(payload)
-		require.NoError(t, err)
-		mu.Lock()
-		events = append(events, recorder.Envelope{Stream: stream, Kind: kind, Record: raw})
-		mu.Unlock()
+	plugin := newPlugin(nil, func(payload *cycleRecord) bool {
+		recorded = payload
 		return true
 	})
 
@@ -89,7 +72,7 @@ func runAllocate(t *testing.T, config *conf.SchedulerConfiguration, params *conf
 	require.NoError(t, err)
 	plugin.OnSessionOpen(session)
 	session.AddEventHandler(&framework.EventHandler{OnCommit: func(event *framework.CommitEvent) {
-		if event.DiscardedOpCount > 0 && len(event.Ops) == 0 {
+		if len(event.Ops) == 0 {
 			return
 		}
 		for _, op := range event.Ops {
@@ -103,7 +86,7 @@ func runAllocate(t *testing.T, config *conf.SchedulerConfiguration, params *conf
 	allocate.New().Execute(session)
 	plugin.OnSessionClose(session)
 	framework.CloseSession(session)
-	return ops, events
+	return ops, recorded
 }
 
 func decisionsByAction(ops []framework.CommitOp) map[string][]string {
@@ -142,9 +125,10 @@ func replayObjects() *snapshot.RawKubernetesObjects {
 		}},
 		Queues: []*enginev2.Queue{{
 			ObjectMeta: metav1.ObjectMeta{Name: "team-a"},
-			Spec: enginev2.QueueSpec{Resources: &enginev2.QueueResources{
-				CPU:    enginev2.QueueResource{Quota: 4, Limit: 4, OverQuotaWeight: 1},
-				Memory: enginev2.QueueResource{Quota: 8, Limit: 8, OverQuotaWeight: 1},
+			Spec: enginev2.QueueSpec{ParentQueue: "department", Resources: &enginev2.QueueResources{
+				CPU:    enginev2.QueueResource{Quota: -1, Limit: -1, OverQuotaWeight: 1},
+				Memory: enginev2.QueueResource{Quota: -1, Limit: -1, OverQuotaWeight: 1},
+				GPU:    enginev2.QueueResource{Quota: -1, Limit: -1, OverQuotaWeight: 1},
 			}},
 		}},
 		PodGroups: []*enginev2alpha2.PodGroup{{

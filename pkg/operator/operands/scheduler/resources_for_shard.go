@@ -137,7 +137,7 @@ func (s *SchedulerForShard) deploymentForShard(
 	if err != nil {
 		return nil, err
 	}
-	appendRecorderSidecar(deployment, recorderSpec)
+	appendRecorderSidecar(deployment, recorderSpec, kaiConfig)
 
 	return deployment, nil
 }

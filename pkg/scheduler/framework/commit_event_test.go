@@ -38,7 +38,7 @@ func TestCommitEventRecordsActionAndUnattemptedOps(t *testing.T) {
 	require.True(t, got.Ops[1].NotAttempted)
 }
 
-func TestDiscardEventCountsOpsOnly(t *testing.T) {
+func TestDiscardDoesNotPublish(t *testing.T) {
 	stmt, task, _ := buildEvictMarkerSession()
 	stmt.ssn.SetCurrentAction(string(Reclaim))
 	var got *CommitEvent
@@ -49,10 +49,49 @@ func TestDiscardEventCountsOpsOnly(t *testing.T) {
 
 	stmt.Discard()
 
+	require.Nil(t, got)
+}
+
+func TestUndoOpsAreNotPublished(t *testing.T) {
+	stmt, task, node := buildEvictMarkerSession()
+	controller := gomock.NewController(t)
+	cacheMock := cache.NewMockCache(controller)
+	cacheMock.EXPECT().Bind(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	stmt.ssn.Cache = cacheMock
+	stmt.ssn.SetCurrentAction(string(Allocate))
+	task.NodeName = node.Name
+	var got *CommitEvent
+	stmt.ssn.AddEventHandler(&EventHandler{OnCommit: func(event *CommitEvent) {
+		got = event
+	}})
+	stmt.operations = []Operation{
+		allocateOperation{taskInfo: task, nextNode: node.Name},
+		undoOperation{operationIndex: 5, reverseOperation: func() error { return nil }},
+	}
+
+	require.NoError(t, stmt.Commit())
 	require.NotNil(t, got)
-	require.Equal(t, 1, got.DiscardedOpCount)
-	require.Empty(t, got.Ops)
-	require.Equal(t, string(Reclaim), got.Action)
+	require.Equal(t, []string{allocate}, opKinds(got))
+}
+
+func opKinds(event *CommitEvent) []string {
+	kinds := make([]string, 0, len(event.Ops))
+	for _, op := range event.Ops {
+		kinds = append(kinds, op.Kind)
+	}
+	return kinds
+}
+
+func TestNetZeroStatementPublishesNothing(t *testing.T) {
+	stmt, task, _ := buildEvictMarkerSession()
+	var commits int
+	stmt.ssn.AddEventHandler(&EventHandler{OnCommit: func(event *CommitEvent) {
+		commits++
+	}})
+	require.NoError(t, stmt.Evict(task, "reclaim", eviction_info.EvictionMetadata{Action: string(Reclaim)}))
+	require.NoError(t, stmt.Unevict(task))
+	require.NoError(t, stmt.Commit())
+	require.Zero(t, commits)
 }
 
 func TestSessionEvictEmitsOneOp(t *testing.T) {

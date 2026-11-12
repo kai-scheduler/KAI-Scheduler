@@ -12,6 +12,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -108,9 +109,9 @@ func pluginsWithRecorder(plugins map[string]kaiv1.PluginConfig, spec *recorderv1
 	for key, value := range existing.Arguments {
 		args[key] = value
 	}
-	args["address"] = spec.Address
-	args["cycleBuffer"] = strconv.Itoa(*spec.CycleBufferSize)
-	args["lifecycleBuffer"] = strconv.Itoa(*spec.LifecycleBufferSize)
+	if spec.Address != "" {
+		args["address"] = spec.Address
+	}
 	if kaiConfig != nil {
 		args["clusterName"] = kaiConfig.Name
 	}
@@ -126,7 +127,7 @@ func pluginsWithRecorder(plugins map[string]kaiv1.PluginConfig, spec *recorderv1
 	return merged
 }
 
-func appendRecorderSidecar(deployment *appsv1.Deployment, spec *recorderv1.RecorderSpec) {
+func appendRecorderSidecar(deployment *appsv1.Deployment, spec *recorderv1.RecorderSpec, kaiConfig *kaiv1.Config) {
 	if deployment == nil || spec == nil || !spec.EnabledValue() {
 		return
 	}
@@ -150,10 +151,21 @@ func appendRecorderSidecar(deployment *appsv1.Deployment, spec *recorderv1.Recor
 	if spec.Batch != nil && spec.Batch.RollSizeMB != nil {
 		rollBytes = int64(*spec.Batch.RollSizeMB) << 20
 	}
+	var global *kaiv1.GlobalConfig
+	if kaiConfig != nil {
+		global = kaiConfig.Spec.Global
+	}
+	sizeLimit := resource.MustParse("256Mi")
+	var securityContext *corev1.SecurityContext
+	if global != nil {
+		securityContext = global.GetSecurityContext()
+	}
 	deployment.Spec.Template.Spec.Containers = append(deployment.Spec.Template.Spec.Containers, corev1.Container{
 		Name:            "recorder",
 		Image:           image,
 		ImagePullPolicy: pullPolicy,
+		SecurityContext: securityContext,
+		Env:             operatorcommon.FIPSOnlyEnv(global),
 		Args: []string{
 			"--listen=" + spec.Address,
 			"--roll-interval=" + rollInterval,
@@ -163,19 +175,12 @@ func appendRecorderSidecar(deployment *appsv1.Deployment, spec *recorderv1.Recor
 		},
 		Resources: resources,
 		VolumeMounts: []corev1.VolumeMount{
-			{Name: "recorder-storage", MountPath: "/var/run/kai-recorder", ReadOnly: true},
 			{Name: "recorder-hash-key", MountPath: "/var/run/kai-recorder-hash", ReadOnly: true},
 			{Name: "recorder-data", MountPath: "/var/lib/kai-recorder"},
 			{Name: "recorder-no-sa-token", MountPath: serviceAccountTokenPath, ReadOnly: true},
 		},
 	})
 	deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes,
-		corev1.Volume{
-			Name: "recorder-storage",
-			VolumeSource: corev1.VolumeSource{
-				Secret: &corev1.SecretVolumeSource{SecretName: spec.StorageSecretName},
-			},
-		},
 		corev1.Volume{
 			Name: "recorder-hash-key",
 			VolumeSource: corev1.VolumeSource{
@@ -185,7 +190,7 @@ func appendRecorderSidecar(deployment *appsv1.Deployment, spec *recorderv1.Recor
 		corev1.Volume{
 			Name: "recorder-data",
 			VolumeSource: corev1.VolumeSource{
-				EmptyDir: &corev1.EmptyDirVolumeSource{},
+				EmptyDir: &corev1.EmptyDirVolumeSource{SizeLimit: &sizeLimit},
 			},
 		},
 		corev1.Volume{
@@ -199,33 +204,52 @@ func appendRecorderSidecar(deployment *appsv1.Deployment, spec *recorderv1.Recor
 
 const serviceAccountTokenPath = "/var/run/secrets/kubernetes.io/serviceaccount"
 
-func (s *SchedulerForShard) hashKeySecretForShard(
-	ctx context.Context, readerClient client.Reader, kaiConfig *kaiv1.Config, shard *kaiv1.SchedulingShard,
-) (client.Object, error) {
-	spec, err := s.resolveRecorder(ctx, readerClient, kaiConfig, shard)
-	if err != nil {
-		return nil, err
+// EnsureSharedHashKey creates the HMAC secret once, owned by the Config.
+// A later shard reconcile must not update the data or take ownership.
+func (s *SchedulerForShard) EnsureSharedHashKey(
+	ctx context.Context, writer client.Client, reader client.Reader,
+	kaiConfig *kaiv1.Config, shard *kaiv1.SchedulingShard,
+) error {
+	if s.apiReader == nil {
+		s.apiReader = reader
 	}
-	if spec == nil || !spec.EnabledValue() {
-		return nil, nil
+	spec, err := s.resolveRecorder(ctx, reader, kaiConfig, shard)
+	if err != nil || spec == nil || !spec.EnabledValue() {
+		return err
 	}
-	obj, err := operatorcommon.ObjectForKAIConfig(ctx, readerClient, &corev1.Secret{}, spec.HashKeySecretName, kaiConfig.Spec.Namespace)
-	if err != nil {
-		return nil, err
+	if reader == nil {
+		reader = writer
 	}
-	secret := obj.(*corev1.Secret)
-	secret.TypeMeta = metav1.TypeMeta{Kind: "Secret", APIVersion: "v1"}
-	secret.Type = corev1.SecretTypeOpaque
-	if len(secret.Data[recorderv1.HMACKeyDataKey]) > 0 {
-		return secret, nil
+	existing := &corev1.Secret{}
+	err = reader.Get(ctx, client.ObjectKey{Name: spec.HashKeySecretName, Namespace: kaiConfig.Spec.Namespace}, existing)
+	if err == nil && len(existing.Data[recorderv1.HMACKeyDataKey]) > 0 {
+		return nil
+	}
+	if err != nil && !apierrors.IsNotFound(err) {
+		return err
 	}
 	key := make([]byte, 32)
 	if _, err := rand.Read(key); err != nil {
-		return nil, err
+		return err
 	}
-	if secret.Data == nil {
-		secret.Data = map[string][]byte{}
+	controller := true
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      spec.HashKeySecretName,
+			Namespace: kaiConfig.Spec.Namespace,
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: kaiv1.GroupVersion.String(),
+				Kind:       "Config",
+				Name:       kaiConfig.Name,
+				UID:        kaiConfig.UID,
+				Controller: &controller,
+			}},
+		},
+		Type: corev1.SecretTypeOpaque,
+		Data: map[string][]byte{recorderv1.HMACKeyDataKey: key},
 	}
-	secret.Data[recorderv1.HMACKeyDataKey] = key
-	return secret, nil
+	if err := writer.Create(ctx, secret); err != nil && !apierrors.IsAlreadyExists(err) {
+		return err
+	}
+	return nil
 }

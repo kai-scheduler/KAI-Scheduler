@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"sort"
-	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -77,9 +76,10 @@ func TestReplayReclaimPreemptAndConsolidation(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			config := actionConfig(string(tc.action.Name()))
-			recorded, events := runRecordedAction(t, config, tc.params, tc.objects, tc.action)
+			recorded, state := runRecordedAction(t, config, tc.params, tc.objects, tc.action)
 			require.Equal(t, tc.expected, recorded)
-			state := recordedState(t, events)
+			require.NotNil(t, state)
+			require.NotNil(t, state.RawObjects)
 			replayed, _ := runRecordedAction(t, config, tc.params, state.RawObjects, tc.action)
 			require.Equal(t, recorded, replayed)
 		})
@@ -112,19 +112,18 @@ func TestReplayRedactedPartitionedPreempt(t *testing.T) {
 		NodePoolLabelValue: poolValue,
 	}
 	config := actionConfig(string(framework.Preempt))
-	recorded, events := runRecordedAction(t, config, params, objects, preempt.New())
+	recorded, state := runRecordedAction(t, config, params, objects, preempt.New())
 	require.Equal(t, []string{
 		"preempt evict team/victim-0@node-a",
 		"preempt pipeline team/pending-0@node-a",
 	}, recorded)
 
-	state := recordedState(t, events)
 	raw, err := json.Marshal(state)
 	require.NoError(t, err)
-	env := &recorder.Envelope{Kind: recorder.KindState, Record: raw}
+	env := &recorder.Envelope{Kind: recorder.KindCycle, Record: raw}
 	hasher := recorder.NewHasher([]byte("replay-key"))
 	require.NoError(t, recorder.RedactEnvelope(env, hasher))
-	var redacted recorder.StateRecord
+	var redacted cycleRecord
 	require.NoError(t, json.Unmarshal(env.Record, &redacted))
 	require.Equal(t, hasher.Hash(poolValue), redacted.SchedulerParams.PartitionParams.NodePoolLabelValue)
 
@@ -138,17 +137,12 @@ func TestReplayRedactedPartitionedPreempt(t *testing.T) {
 func runRecordedAction(
 	t *testing.T, config *conf.SchedulerConfiguration, params *conf.SchedulerParams,
 	objects *snapshot.RawKubernetesObjects, action framework.Action,
-) ([]string, []recorder.Envelope) {
+) ([]string, *cycleRecord) {
 	t.Helper()
-	var mu sync.Mutex
-	var events []recorder.Envelope
+	var recorded *cycleRecord
 	var decisions []string
-	plugin := newPlugin(nil, func(_, kind string, payload any) bool {
-		raw, err := json.Marshal(payload)
-		require.NoError(t, err)
-		mu.Lock()
-		events = append(events, recorder.Envelope{Kind: kind, Record: raw})
-		mu.Unlock()
+	plugin := newPlugin(nil, func(payload *cycleRecord) bool {
+		recorded = payload
 		return true
 	})
 	schedCache := startReplayCache(t, params, objects)
@@ -156,9 +150,6 @@ func runRecordedAction(
 	require.NoError(t, err)
 	plugin.OnSessionOpen(session)
 	session.AddEventHandler(&framework.EventHandler{OnCommit: func(event *framework.CommitEvent) {
-		if event.DiscardedOpCount > 0 && len(event.Ops) == 0 {
-			return
-		}
 		for _, op := range event.Ops {
 			if op.NotAttempted {
 				continue
@@ -171,22 +162,7 @@ func runRecordedAction(
 	plugin.OnSessionClose(session)
 	framework.CloseSession(session)
 	sort.Strings(decisions)
-	return decisions, events
-}
-
-func recordedState(t *testing.T, events []recorder.Envelope) recorder.StateRecord {
-	t.Helper()
-	for _, event := range events {
-		if event.Kind != recorder.KindState {
-			continue
-		}
-		var state recorder.StateRecord
-		require.NoError(t, json.Unmarshal(event.Record, &state))
-		require.NotNil(t, state.RawObjects)
-		return state
-	}
-	t.Fatal("recorded cycle has no state copy")
-	return recorder.StateRecord{}
+	return decisions, recorded
 }
 
 func actionConfig(action string) *conf.SchedulerConfiguration {

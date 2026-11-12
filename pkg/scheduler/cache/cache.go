@@ -581,10 +581,6 @@ func (sc *SchedulerCache) KubeInformerFactory() informers.SharedInformerFactory 
 	return sc.informerFactory
 }
 
-func (sc *SchedulerCache) KubeAiSchedulerInformerFactory() kubeaischedulerinfo.SharedInformerFactory {
-	return sc.kubeAiSchedulerInformerFactory
-}
-
 func (sc *SchedulerCache) SnapshotSharedLister() ksf.NodeInfoLister {
 	return &sc.K8sClusterPodAffinityInfo
 }

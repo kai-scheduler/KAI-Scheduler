@@ -27,8 +27,11 @@ func NewHasher(key []byte) Hasher {
 // selects nodes and queues with hashed node-pool values, and a longer value
 // cannot be used as a selector.
 func (h Hasher) Hash(value string) string {
-	if value == "" || len(h.key) == 0 {
+	if value == "" {
 		return value
+	}
+	if len(h.key) == 0 {
+		return ""
 	}
 	mac := hmac.New(sha256.New, h.key)
 	_, _ = mac.Write([]byte(value))
@@ -50,21 +53,31 @@ func (h Hasher) HashEach(values []string) []string {
 	return out
 }
 
-var wellKnownDomains = []string{
-	"kubernetes.io",
-	"nvidia.com",
-	"kai.scheduler",
-	"run.ai",
+// keptLabelKeys are non-identifying. The key and the value both stay.
+var keptLabelKeys = map[string]struct{}{
+	"topology.kubernetes.io/zone":      {},
+	"node.kubernetes.io/instance-type": {},
+	"gpu-fraction":                     {},
+	"gpu-memory":                       {},
 }
 
 // identityKeys are scheduling keys whose values are object names. The key stays so
-// joins still work; the value is hashed.
+// joins still work; the value is hashed. Both sides of a selector use Label.
 var identityKeys = map[string]struct{}{
 	"pod-group-name":              {},
 	"kai.scheduler/subgroup-name": {},
 	"kai.scheduler/queue":         {},
 	"kai.scheduler/node-pool":     {},
+	"kubernetes.io/hostname":      {},
+	"metadata.name":               {},
 	"runai-gpu-group":             {},
+}
+
+// annotationAllow is the only annotation keys that are recorded.
+var annotationAllow = map[string]struct{}{
+	"pod-group-name": {},
+	"gpu-fraction":   {},
+	"gpu-memory":     {},
 }
 
 func isIdentityKey(key string) bool {
@@ -74,35 +87,43 @@ func isIdentityKey(key string) bool {
 	return strings.HasPrefix(key, "runai-gpu-group/")
 }
 
-// WellKnownKey reports keys whose domain is one of the scheduling domains.
-// A suffix match keeps keys such as topology.kubernetes.io/zone intact.
-func WellKnownKey(key string) bool {
-	name := key
-	if i := strings.Index(key, "/"); i >= 0 {
-		name = key[:i]
+func isKeptLabelKey(key string) bool {
+	if _, found := keptLabelKeys[key]; found {
+		return true
 	}
-	for _, domain := range wellKnownDomains {
-		if name == domain || strings.HasSuffix(name, "."+domain) {
-			return true
-		}
-	}
-	return false
+	return strings.HasPrefix(key, "nvidia.com/gpu.")
 }
 
-// LabelKey hashes custom label keys and leaves well-known keys unchanged.
+func annotationKept(key string) bool {
+	_, found := annotationAllow[key]
+	return found
+}
+
+// Label rewrites one selector entry. Kept keys stay plaintext. Identity keys keep
+// the key and hash the value. Every other key and value is hashed.
+func (h Hasher) Label(key, value string) (string, string) {
+	if key == "" {
+		return "", ""
+	}
+	if isKeptLabelKey(key) {
+		return key, value
+	}
+	if isIdentityKey(key) {
+		return key, h.Hash(value)
+	}
+	return h.Hash(key), h.Hash(value)
+}
+
+// LabelKey is the key half of Label, used for selector keys stored outside a label map.
 func (h Hasher) LabelKey(key string) string {
-	if WellKnownKey(key) || isIdentityKey(key) {
-		return key
-	}
-	return h.Hash(key)
+	out, _ := h.Label(key, "")
+	return out
 }
 
-// LabelValue hashes values that identify objects. Well-known non-identity values stay.
+// LabelValue is the value half of Label.
 func (h Hasher) LabelValue(key, value string) string {
-	if WellKnownKey(key) && !isIdentityKey(key) {
-		return value
-	}
-	return h.Hash(value)
+	_, out := h.Label(key, value)
+	return out
 }
 
 // FreeTextIsName reports whether a string is unsafe to keep as a reason code.

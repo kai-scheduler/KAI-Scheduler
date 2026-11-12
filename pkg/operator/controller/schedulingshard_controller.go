@@ -133,6 +133,13 @@ func (r *SchedulingShardReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, err
 	}
 	kaiConfig.Spec.SetDefaultsWhereNeeded()
+	hashKeyOperand := scheduler.NewSchedulerForShard(shard)
+	if r.APIReader != nil {
+		hashKeyOperand.SetAPIReader(r.APIReader)
+	}
+	if err := hashKeyOperand.EnsureSharedHashKey(ctx, r.Client, r.APIReader, kaiConfig, shard); err != nil {
+		return ctrl.Result{}, err
+	}
 	kaiConfig.Name = shard.Name
 
 	if err = statusReconciler.UpdateStartReconcileStatus(

@@ -1,4 +1,4 @@
-// Copyright 2025 NVIDIA CORPORATION
+// Copyright 2026 NVIDIA CORPORATION
 // SPDX-License-Identifier: Apache-2.0
 
 package recorder
@@ -19,22 +19,21 @@ import (
 
 func TestBatchRollsRedactedGzip(t *testing.T) {
 	dir := t.TempDir()
-	sinkDir := filepath.Join(dir, "sink")
-	writer, err := NewBatchWriter(filepath.Join(dir, "open"), LocalSink{Dir: sinkDir}, 1, []byte("key"))
+	writer, err := NewBatchWriter(dir, 1, []byte("key"))
 	require.NoError(t, err)
 
 	body, err := json.Marshal(Envelope{
 		Stream: StreamCycle,
 		Seq:    1,
 		Epoch:  "epoch-1",
-		Kind:   KindLifecycle,
-		Record: mustJSON(t, LifecycleRecord{Name: "visible-name", Phase: "Running"}),
+		Kind:   KindCycle,
+		Record: mustJSON(t, map[string]any{"metadata": map[string]any{"name": "visible-name"}, "phase": "Running"}),
 	})
 	require.NoError(t, err)
 	require.NoError(t, writer.Append(context.Background(), body))
 	require.NoError(t, writer.Roll(context.Background()))
 
-	matches, err := filepath.Glob(filepath.Join(sinkDir, "records-*.jsonl.gz"))
+	matches, err := filepath.Glob(filepath.Join(dir, "records-*.jsonl.gz"))
 	require.NoError(t, err)
 	require.Len(t, matches, 1)
 	file, err := os.Open(matches[0])
@@ -49,9 +48,16 @@ func TestBatchRollsRedactedGzip(t *testing.T) {
 	require.Contains(t, string(payload), "Running")
 }
 
+func TestAppendCountsUnreadableDrops(t *testing.T) {
+	writer, err := NewBatchWriter(t.TempDir(), 1<<20, []byte("key"))
+	require.NoError(t, err)
+	require.NoError(t, writer.Append(context.Background(), []byte("not-json")))
+	require.Equal(t, uint64(1), writer.Drops())
+}
+
 func TestServeAcceptsOneRecord(t *testing.T) {
 	dir := t.TempDir()
-	writer, err := NewBatchWriter(dir, LocalSink{Dir: filepath.Join(dir, "sink")}, 1<<20, []byte("key"))
+	writer, err := NewBatchWriter(dir, 1<<20, []byte("key"))
 	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -74,11 +80,11 @@ func TestServeAcceptsOneRecord(t *testing.T) {
 	conn, err := net.Dial("tcp", listener.Addr().String())
 	require.NoError(t, err)
 	body, err := json.Marshal(Envelope{
-		Stream: StreamLifecycle,
+		Stream: StreamCycle,
 		Seq:    2,
 		Epoch:  "epoch-2",
-		Kind:   KindLifecycle,
-		Record: mustJSON(t, LifecycleRecord{Name: "pod-a", Phase: "Pending", SeenAt: time.Now().UTC()}),
+		Kind:   KindCycle,
+		Record: mustJSON(t, map[string]string{"name": "pod-a", "phase": "Pending"}),
 	})
 	require.NoError(t, err)
 	_, err = conn.Write(append(body, '\n'))

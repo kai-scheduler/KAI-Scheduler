@@ -9,18 +9,16 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/client-go/kubernetes/fake"
 
-	schedrec "github.com/kai-scheduler/KAI-scheduler/pkg/recorder"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/allocate"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/preempt"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf_util"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/snapshot"
@@ -33,9 +31,16 @@ func init() {
 	plugins.InitDefaultPlugins()
 }
 
-// replayCycle runs one action against the saved state copy and returns the
-// committed placements and evictions, sorted, plus a summary of the session.
-func replayCycle(state schedrec.StateRecord, actionName string) ([]string, string) {
+// recordedCycle is one line the sidecar stored for a scheduling cycle.
+type recordedCycle struct {
+	snapshot.Snapshot
+	SessionID string                  `json:"sessionID"`
+	OpenedAt  time.Time               `json:"openedAt"`
+	Decisions []framework.CommitEvent `json:"decisions,omitempty"`
+}
+
+// replayCycle runs the recorded action sequence against the saved state copy.
+func replayCycle(state recordedCycle) ([]string, string) {
 	Expect(state.RawObjects).NotTo(BeNil())
 	Expect(state.Config).NotTo(BeNil())
 	params := state.SchedulerParams
@@ -50,7 +55,6 @@ func replayCycle(state schedrec.StateRecord, actionName string) ([]string, strin
 	}
 
 	config := *state.Config
-	config.Actions = actionName
 	config.Tiers = dropRecorderPlugin(config.Tiers)
 
 	schedCache := replayCache(params, state.RawObjects)
@@ -60,9 +64,6 @@ func replayCycle(state schedrec.StateRecord, actionName string) ([]string, strin
 
 	var decisions []string
 	session.AddEventHandler(&framework.EventHandler{OnCommit: func(event *framework.CommitEvent) {
-		if event.DiscardedOpCount > 0 && len(event.Ops) == 0 {
-			return
-		}
 		for _, op := range event.Ops {
 			if op.NotAttempted {
 				continue
@@ -70,17 +71,18 @@ func replayCycle(state schedrec.StateRecord, actionName string) ([]string, strin
 			decisions = append(decisions, event.Action+" "+op.Kind+" "+op.Namespace+"/"+op.Name+"@"+op.Node)
 		}
 	}})
-	session.SetCurrentAction(actionName)
-	action := actionByName(actionName)
-	Expect(action).NotTo(BeNil())
-	action.Execute(session)
-	sort.Strings(decisions)
-	return decisions, replaySummary(state, actionName, session, decisions)
+	actionList, err := conf_util.GetActionsFromConfig(&config)
+	Expect(err).NotTo(HaveOccurred())
+	for _, action := range actionList {
+		session.SetCurrentAction(string(action.Name()))
+		action.Execute(session)
+	}
+	return decisions, replaySummary(state, session, decisions)
 }
 
-func replaySummary(state schedrec.StateRecord, actionName string, session *framework.Session, decisions []string) string {
+func replaySummary(state recordedCycle, session *framework.Session, decisions []string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "session %s action %s decisions %v\n", state.SessionID, actionName, decisions)
+	fmt.Fprintf(&b, "session %s decisions %v\n", state.SessionID, decisions)
 	if state.Config != nil {
 		fmt.Fprintf(&b, "config actions %q\n", state.Config.Actions)
 	}
@@ -114,19 +116,6 @@ func replaySummary(state schedrec.StateRecord, actionName string, session *frame
 		b.WriteByte('\n')
 	}
 	return b.String()
-}
-
-func actionByName(name string) framework.Action {
-	switch framework.ActionType(name) {
-	case framework.Allocate:
-		return allocate.New()
-	case framework.Reclaim:
-		return reclaim.New()
-	case framework.Preempt:
-		return preempt.New()
-	default:
-		return nil
-	}
 }
 
 func dropRecorderPlugin(tiers []conf.Tier) []conf.Tier {

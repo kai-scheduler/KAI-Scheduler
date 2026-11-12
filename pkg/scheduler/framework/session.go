@@ -110,7 +110,6 @@ type Session struct {
 	pluginsInOrder  []Plugin
 	eventHandlers   []*EventHandler
 	currentAction   string
-	actionDurations map[string]time.Duration
 	SchedulerParams conf.SchedulerParams
 	mux             *http.ServeMux
 
@@ -127,19 +126,6 @@ func (ssn *Session) Statement() *Statement {
 // SetCurrentAction names the action whose commits are about to be published.
 func (ssn *Session) SetCurrentAction(action string) {
 	ssn.currentAction = action
-}
-
-// NoteActionDuration records how long an action's Execute call took.
-func (ssn *Session) NoteActionDuration(action string, d time.Duration) {
-	if ssn.actionDurations == nil {
-		ssn.actionDurations = map[string]time.Duration{}
-	}
-	ssn.actionDurations[action] = d
-}
-
-// ActionDurations returns the durations recorded for this session.
-func (ssn *Session) ActionDurations() map[string]time.Duration {
-	return ssn.actionDurations
 }
 
 // publishCommit invokes OnCommit inline. Handlers must not block.
@@ -207,20 +193,7 @@ func (ssn *Session) Evict(pod *pod_info.PodInfo, message string, evictionMetadat
 	if err := ssn.Cache.Evict(pod.Pod, podGroup, evictionMetadata, message); err != nil {
 		return err
 	}
-	if err := ssn.updatePodOnSession(pod, pod_status.Releasing); err != nil {
-		return err
-	}
-	if err := ssn.updatePodOnNode(pod); err != nil {
-		return err
-	}
-	for _, eh := range ssn.eventHandlers {
-		if eh.DeallocateFunc != nil {
-			eh.DeallocateFunc(&Event{
-				Task: pod,
-			})
-		}
-	}
-	if pod != nil {
+	if ssn.hasOnCommit() {
 		ssn.publishCommit(&CommitEvent{
 			SessionID: ssn.ID,
 			Action:    ssn.currentAction,
@@ -234,6 +207,19 @@ func (ssn *Session) Evict(pod *pod_info.PodInfo, message string, evictionMetadat
 				Eviction:  evictionMetadata,
 			}},
 		})
+	}
+	if err := ssn.updatePodOnSession(pod, pod_status.Releasing); err != nil {
+		return err
+	}
+	if err := ssn.updatePodOnNode(pod); err != nil {
+		return err
+	}
+	for _, eh := range ssn.eventHandlers {
+		if eh.DeallocateFunc != nil {
+			eh.DeallocateFunc(&Event{
+				Task: pod,
+			})
+		}
 	}
 	return nil
 }
@@ -520,7 +506,6 @@ func (ssn *Session) clear() {
 	ssn.pluginsInOrder = nil
 	ssn.eventHandlers = nil
 	ssn.currentAction = ""
-	ssn.actionDurations = nil
 	ssn.GpuOrderFns = nil
 	ssn.NodePreOrderFns = nil
 	ssn.NodeOrderFns = nil

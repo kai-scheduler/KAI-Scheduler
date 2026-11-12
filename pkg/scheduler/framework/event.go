@@ -41,22 +41,20 @@ type EventHandler struct {
 
 // CommitOp is one operation inside a commit. Fields are the values read off the operation.
 type CommitOp struct {
-	Kind         string
-	UID          string
-	Namespace    string
-	Name         string
-	Node         string
-	Message      string
-	Error        string
-	NotAttempted bool
-	Eviction     eviction_info.EvictionMetadata
+	Kind         string                         `json:"kind"`
+	UID          string                         `json:"uid,omitempty"`
+	Namespace    string                         `json:"namespace,omitempty"`
+	Name         string                         `json:"name,omitempty"`
+	Node         string                         `json:"node,omitempty"`
+	Message      string                         `json:"message,omitempty"`
+	Error        string                         `json:"error,omitempty"`
+	NotAttempted bool                           `json:"notAttempted,omitempty"`
+	Eviction     eviction_info.EvictionMetadata `json:"eviction,omitempty"`
 }
 
-// CommitEvent is one commit, or a discard. DiscardedOpCount is the number of
-// operations undone by Statement.Discard, and Ops is empty in that case.
+// CommitEvent is one committed statement. Undo operations are not included.
 type CommitEvent struct {
-	SessionID        string
-	Action           string
-	Ops              []CommitOp
-	DiscardedOpCount int
+	SessionID string     `json:"sessionID"`
+	Action    string     `json:"action,omitempty"`
+	Ops       []CommitOp `json:"ops,omitempty"`
 }

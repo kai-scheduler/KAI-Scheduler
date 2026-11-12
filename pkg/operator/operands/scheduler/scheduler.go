@@ -68,7 +68,6 @@ func (s *SchedulerForShard) DesiredState(
 	objects := []client.Object{}
 	for _, resourceFunc := range []resourceForShard{
 		s.deploymentForShard,
-		s.hashKeySecretForShard,
 		s.podDisruptionBudgetForShard,
 		s.configMapForShard,
 		s.serviceForShard,

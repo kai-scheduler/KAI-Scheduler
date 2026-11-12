@@ -231,7 +231,7 @@ var _ = Describe("Recorder", Ordered, ContinueOnFailure, Label("recorder"), func
 		key := hashKey(ctx, testCtx, live)
 		h := schedrec.NewHasher(key)
 		state, recorded := preemptCycle(body, h.Hash(victimPod.Name), h.Hash(preemptorPod.Name))
-		replayed, summary := replayCycle(state, "preempt")
+		replayed, summary := replayCycle(state)
 		Expect(replayed).To(Equal(recorded), "recorded %v\n%s", recorded, summary)
 	})
 })
@@ -395,11 +395,6 @@ func recorderSecretNames(ctx context.Context, testCtx *testcontext.TestContext, 
 }
 
 func ensureRecorder(ctx context.Context, testCtx *testcontext.TestContext, live liveScheduler) {
-	secret := &v1.Secret{ObjectMeta: metav1.ObjectMeta{Name: live.storageSecret, Namespace: live.namespace}}
-	_, err := testCtx.KubeClientset.CoreV1().Secrets(live.namespace).Create(ctx, secret, metav1.CreateOptions{})
-	if err != nil && !errors.IsAlreadyExists(err) {
-		Expect(err).NotTo(HaveOccurred())
-	}
 	patchRecorderEnabled(ctx, testCtx.ControllerClient, live.shardName, true)
 	Eventually(func(g Gomega) {
 		pod := schedulerPod(ctx, testCtx, live)
@@ -819,76 +814,57 @@ func execContainer(ctx context.Context, kube *kubernetes.Clientset, config *rest
 
 func decisionLines(body, action string) []string {
 	var lines []string
-	for _, line := range strings.Split(body, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || !strings.Contains(line, `"kind":"decision"`) && !strings.Contains(line, `"kind": "decision"`) {
-			continue
-		}
-		var env schedrec.Envelope
-		if json.Unmarshal([]byte(line), &env) != nil || env.Kind != schedrec.KindDecision {
-			continue
-		}
-		var decision schedrec.DecisionRecord
-		if json.Unmarshal(env.Record, &decision) != nil || decision.Action != action {
-			continue
-		}
-		for _, op := range decision.Ops {
-			if op.NotAttempted {
-				continue
-			}
-			lines = append(lines, decision.Action+" "+op.Kind+" "+op.Namespace+"/"+op.Name+"@"+op.Node)
-		}
-	}
-	return lines
-}
-
-func preemptCycle(body, victimHash, preemptorHash string) (schedrec.StateRecord, []string) {
-	states := map[string]schedrec.StateRecord{}
-	opsBySession := map[string][]string{}
-	for _, line := range strings.Split(body, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || !strings.HasPrefix(line, "{") {
-			continue
-		}
-		var env schedrec.Envelope
-		if json.Unmarshal([]byte(line), &env) != nil {
-			continue
-		}
-		switch env.Kind {
-		case schedrec.KindState:
-			var state schedrec.StateRecord
-			if json.Unmarshal(env.Record, &state) == nil && state.SessionID != "" {
-				states[state.SessionID] = state
-			}
-		case schedrec.KindDecision:
-			var decision schedrec.DecisionRecord
-			if json.Unmarshal(env.Record, &decision) != nil || decision.Action != "preempt" {
+	for _, cycle := range cyclesIn(body) {
+		for _, decision := range cycle.Decisions {
+			if decision.Action != action {
 				continue
 			}
 			for _, op := range decision.Ops {
 				if op.NotAttempted {
 					continue
 				}
-				opsBySession[decision.SessionID] = append(opsBySession[decision.SessionID],
-					decision.Action+" "+op.Kind+" "+op.Namespace+"/"+op.Name+"@"+op.Node)
+				lines = append(lines, decision.Action+" "+op.Kind+" "+op.Namespace+"/"+op.Name+"@"+op.Node)
 			}
 		}
 	}
-	for sessionID, ops := range opsBySession {
-		joined := strings.Join(ops, "\n")
-		if !strings.Contains(joined, victimHash) || !strings.Contains(joined, preemptorHash) {
-			continue
-		}
-		state, found := states[sessionID]
-		Expect(found).To(BeTrue(), "preempt session %s has no state copy", sessionID)
-		return state, sortedCopy(ops)
-	}
-	Fail("recorded preempt cycle for the test pods was not found")
-	return schedrec.StateRecord{}, nil
+	return lines
 }
 
-func sortedCopy(in []string) []string {
-	out := append([]string(nil), in...)
-	sort.Strings(out)
-	return out
+func preemptCycle(body, victimHash, preemptorHash string) (recordedCycle, []string) {
+	for _, cycle := range cyclesIn(body) {
+		var ops []string
+		for _, decision := range cycle.Decisions {
+			for _, op := range decision.Ops {
+				if op.NotAttempted {
+					continue
+				}
+				ops = append(ops, decision.Action+" "+op.Kind+" "+op.Namespace+"/"+op.Name+"@"+op.Node)
+			}
+		}
+		joined := strings.Join(ops, "\n")
+		if strings.Contains(joined, victimHash) && strings.Contains(joined, preemptorHash) {
+			return cycle, ops
+		}
+	}
+	Fail("recorded preempt cycle for the test pods was not found")
+	return recordedCycle{}, nil
+}
+
+func cyclesIn(body string) []recordedCycle {
+	var cycles []recordedCycle
+	for _, line := range strings.Split(body, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || !strings.HasPrefix(line, "{") {
+			continue
+		}
+		var env schedrec.Envelope
+		if json.Unmarshal([]byte(line), &env) != nil || env.Kind != schedrec.KindCycle {
+			continue
+		}
+		var cycle recordedCycle
+		if json.Unmarshal(env.Record, &cycle) == nil && cycle.SessionID != "" {
+			cycles = append(cycles, cycle)
+		}
+	}
+	return cycles
 }

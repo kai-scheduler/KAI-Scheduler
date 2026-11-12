@@ -1,133 +1,142 @@
-// Copyright 2025 NVIDIA CORPORATION
+// Copyright 2026 NVIDIA CORPORATION
 // SPDX-License-Identifier: Apache-2.0
 
 package recorder
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	v1 "k8s.io/api/core/v1"
-	schedulingv1 "k8s.io/api/scheduling/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	usagedbapi "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/snapshot"
-	commonconstants "github.com/kai-scheduler/api/constants"
 )
 
-func TestRedactSwapsNamesAndDropsUnlistedPodFields(t *testing.T) {
+// TestRedactionCanary puts a customer-style name into every field kind the
+// scheduler records and fails if that name survives.
+func TestRedactionCanary(t *testing.T) {
+	const (
+		customer = "acme-customer-name"
+		zone     = "us-east-1a"
+		gpuMem   = "11441"
+		fraction = "0.5"
+		reason   = "InsufficientResources"
+		secret   = "literal-secret-value"
+	)
 	hasher := NewHasher([]byte("customer-key"))
-	pod := &v1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "training-job",
-			Namespace: "team-a",
-			Labels: map[string]string{
-				"kubernetes.io/hostname":         "node-a",
-				"example.com/user":               "alice",
-				commonconstants.SubGroupLabelKey: "workers",
-			},
-			Annotations: map[string]string{
-				commonconstants.PodGroupAnnotationForPod: "job-1",
-				commonconstants.GpuFraction:              "0.5",
-				"example.com/note":                       "secret-name",
-			},
+	record := map[string]any{
+		"clusterName": customer,
+		"shardName":   customer,
+		"config": map[string]any{
+			"tiers": []any{map[string]any{"plugins": []any{map[string]any{
+				"name": "recorder",
+				"arguments": map[string]any{
+					"clusterName": customer,
+					"shardName":   customer,
+					"address":     "127.0.0.1:9095",
+				},
+			}}}},
+			"usageDBConfig": map[string]any{"connectionString": "https://user:" + secret + "@prometheus.example"},
 		},
-		Spec: v1.PodSpec{
-			NodeName:          "node-a",
-			SchedulerName:     "kai-scheduler",
-			PriorityClassName: "train",
-			Containers: []v1.Container{{
-				Name:    "worker",
-				Image:   "registry.example/train:latest",
-				Command: []string{"python", "train.py"},
-				Env:     []v1.EnvVar{{Name: "TOKEN", Value: "s3cret"}},
-				Resources: v1.ResourceRequirements{
-					Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1")},
+		"schedulerParams": map[string]any{
+			"partitionParams": map[string]any{
+				"NodePoolLabelKey":   "kai.scheduler/node-pool",
+				"NodePoolLabelValue": customer,
+			},
+			"queueLabelKey": "kai.scheduler/queue",
+		},
+		"rawObjects": map[string]any{
+			"pods": []any{map[string]any{
+				"metadata": map[string]any{
+					"name": customer, "namespace": customer, "uid": customer,
+					"creationTimestamp": "2026-01-02T03:04:05Z",
+					"deletionTimestamp": "2026-01-02T04:04:05Z",
+					"labels": map[string]any{
+						"kubernetes.io/hostname":           customer,
+						"kai.scheduler/node-pool":          customer,
+						"kai.scheduler/queue":              customer,
+						"batch.kubernetes.io/job-name":     customer,
+						"app.kubernetes.io/instance":       customer,
+						"topology.kubernetes.io/zone":      zone,
+						"node.kubernetes.io/instance-type": "g4dn.xlarge",
+						"nvidia.com/gpu.memory":            gpuMem,
+						"example.com/user":                 customer,
+					},
+					"annotations": map[string]any{
+						"pod-group-name": customer,
+						"gpu-fraction":   fraction,
+						"kubectl.kubernetes.io/last-applied-configuration": `{"metadata":{"name":"` + customer + `"}}`,
+						"example.com/note": customer,
+					},
+					"managedFields": []any{map[string]any{"manager": customer}},
+				},
+				"spec": map[string]any{
+					"nodeName":          customer,
+					"schedulerName":     "kai-scheduler",
+					"priorityClassName": customer,
+					"schedulingGates":   []any{map[string]any{"name": customer}},
+					"nodeSelector":      map[string]any{"kubernetes.io/hostname": customer, "kai.scheduler/node-pool": customer},
+					"affinity": map[string]any{"nodeAffinity": map[string]any{
+						"requiredDuringSchedulingIgnoredDuringExecution": map[string]any{
+							"nodeSelectorTerms": []any{map[string]any{
+								"matchExpressions": []any{map[string]any{"key": "kubernetes.io/hostname", "operator": "In", "values": []any{customer}}},
+								"matchFields":      []any{map[string]any{"key": "metadata.name", "operator": "In", "values": []any{customer}}},
+							}},
+						},
+					}},
+					"resourceClaims": []any{map[string]any{"name": customer, "resourceClaimName": customer}},
+					"containers": []any{map[string]any{
+						"name":    "worker",
+						"image":   "registry.example/" + customer + ":latest",
+						"command": []any{customer},
+						"ports":   []any{map[string]any{"containerPort": 8080, "name": "http"}},
+						"env": []any{
+							map[string]any{"name": "TOKEN", "value": secret},
+							map[string]any{"name": "CFG", "valueFrom": map[string]any{"configMapKeyRef": map[string]any{"name": customer, "key": "data"}}},
+						},
+						"resources": map[string]any{"requests": map[string]any{"cpu": "1", "nvidia.com/gpu": "1"}},
+					}},
 				},
 			}},
-			NodeSelector: map[string]string{
-				"example.com/user":        "alice",
-				"kai.scheduler/node-pool": "pool-a",
-			},
-		},
-		Status: v1.PodStatus{Phase: v1.PodPending},
-	}
-	state := StateRecord{
-		ClusterName: "prod",
-		ShardName:   "gpu",
-		Config: &conf.SchedulerConfiguration{
-			Actions: "allocate",
-			UsageDBConfig: &usagedbapi.UsageDBConfig{
-				ConnectionString: "https://user:password@prometheus.example",
-			},
-		},
-		SchedulerParams: &conf.SchedulerParams{
-			QueueLabelKey: "kai.scheduler/queue",
-			PartitionParams: &conf.SchedulingNodePoolParams{
-				NodePoolLabelKey:   "kai.scheduler/node-pool",
-				NodePoolLabelValue: "pool-a",
-			},
-		},
-		RawObjects: &snapshot.RawKubernetesObjects{
-			Pods: []*v1.Pod{pod},
-			Nodes: []*v1.Node{{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:   "node-a",
-					Labels: map[string]string{"kai.scheduler/node-pool": "pool-a"},
-				},
+			"nodes": []any{map[string]any{
+				"metadata": map[string]any{"name": customer, "labels": map[string]any{"kubernetes.io/hostname": customer, "kai.scheduler/node-pool": customer}},
 			}},
-			PriorityClasses: []*schedulingv1.PriorityClass{{
-				ObjectMeta: metav1.ObjectMeta{Name: "train"},
-				Value:      40,
+			"queues":    []any{map[string]any{"metadata": map[string]any{"name": customer, "creationTimestamp": "2026-01-02T03:04:05Z"}, "spec": map[string]any{"parentQueue": customer}}},
+			"podGroups": []any{map[string]any{"metadata": map[string]any{"name": customer, "namespace": customer}, "spec": map[string]any{"queue": customer, "priorityClassName": customer, "topologyConstraint": map[string]any{"topology": customer, "requiredTopologyLevel": customer, "preferredTopologyLevel": customer}}, "status": map[string]any{"schedulingConditions": []any{map[string]any{"nodePool": customer, "reason": reason, "message": "pod " + customer + " did not fit"}}}}},
+			"resourceClaims": []any{map[string]any{
+				"metadata": map[string]any{"name": customer, "namespace": customer},
+				"spec":     map[string]any{"devices": map[string]any{"requests": []any{map[string]any{"exactly": map[string]any{"deviceClassName": customer}}}}},
+				"status":   map[string]any{"reservedFor": []any{map[string]any{"name": customer, "uid": customer}}, "allocation": map[string]any{"devices": map[string]any{"results": []any{map[string]any{"pool": customer, "device": "gpu-0"}}}}},
 			}},
+			"resourceSlices": []any{map[string]any{"spec": map[string]any{
+				"pool":         map[string]any{"name": customer},
+				"nodeSelector": map[string]any{"nodeSelectorTerms": []any{map[string]any{"matchExpressions": []any{map[string]any{"key": "kubernetes.io/hostname", "operator": "In", "values": []any{customer}}}}}},
+				"devices":      []any{map[string]any{"name": "gpu-0", "attributes": map[string]any{"product": map[string]any{"string": "Tesla-K80"}}}},
+			}}},
+			"deviceClasses": []any{map[string]any{"metadata": map[string]any{"name": customer}}},
 		},
+		"decisions": []any{map[string]any{"action": "preempt", "ops": []any{map[string]any{
+			"kind": "evict", "namespace": customer, "name": customer, "node": customer, "uid": customer,
+			"message": "evict " + customer, "error": `bindrequests.scheduling.run.ai "` + customer + `" already exists`,
+			"eviction": map[string]any{"action": "preempt", "preemptor": map[string]any{"namespace": customer, "name": customer}},
+		}}}},
 	}
-	raw, err := json.Marshal(state)
+	raw, err := json.Marshal(record)
 	require.NoError(t, err)
-	env := &Envelope{Kind: KindState, Record: raw}
+	env := &Envelope{Kind: KindCycle, Record: raw}
 	require.NoError(t, RedactEnvelope(env, hasher))
-
-	var redacted StateRecord
-	require.NoError(t, json.Unmarshal(env.Record, &redacted))
-	require.Equal(t, hasher.Hash("prod"), redacted.ClusterName)
-	require.Equal(t, hasher.Hash("gpu"), redacted.ShardName)
-	require.Nil(t, redacted.Config.UsageDBConfig)
-	require.Equal(t, "allocate", redacted.Config.Actions)
-
-	got := redacted.RawObjects.Pods[0]
-	require.Equal(t, hasher.Hash("training-job"), got.Name)
-	require.Equal(t, hasher.Hash("team-a"), got.Namespace)
-	require.Equal(t, hasher.Hash("node-a"), got.Spec.NodeName)
-	require.Equal(t, "kai-scheduler", got.Spec.SchedulerName)
-	require.Equal(t, hasher.Hash("train"), got.Spec.PriorityClassName)
-	require.Equal(t, "node-a", got.Labels["kubernetes.io/hostname"])
-	require.Equal(t, hasher.Hash("alice"), got.Labels[hasher.Hash("example.com/user")])
-	require.Equal(t, hasher.Hash("workers"), got.Labels[commonconstants.SubGroupLabelKey])
-	require.Equal(t, hasher.Hash("job-1"), got.Annotations[commonconstants.PodGroupAnnotationForPod])
-	require.Equal(t, "0.5", got.Annotations[commonconstants.GpuFraction])
-	require.NotContains(t, got.Annotations, "example.com/note")
-	require.Empty(t, got.Spec.Containers[0].Name)
-	require.Empty(t, got.Spec.Containers[0].Image)
-	require.Empty(t, got.Spec.Containers[0].Command)
-	require.Empty(t, got.Spec.Containers[0].Env)
-	require.Equal(t, resource.MustParse("1"), got.Spec.Containers[0].Resources.Requests[v1.ResourceCPU])
-	require.Equal(t, hasher.Hash("alice"), got.Spec.NodeSelector[hasher.Hash("example.com/user")])
-	require.Equal(t, hasher.Hash("pool-a"), got.Spec.NodeSelector["kai.scheduler/node-pool"])
-	node := redacted.RawObjects.Nodes[0]
-	require.Equal(t, hasher.Hash("pool-a"), node.Labels["kai.scheduler/node-pool"])
-	require.Equal(t, "kai.scheduler/node-pool", redacted.SchedulerParams.PartitionParams.NodePoolLabelKey)
-	require.Equal(t, hasher.Hash("pool-a"), redacted.SchedulerParams.PartitionParams.NodePoolLabelValue)
-	require.Equal(t, "kai.scheduler/queue", redacted.SchedulerParams.QueueLabelKey)
-	require.Equal(t, hasher.Hash("train"), redacted.RawObjects.PriorityClasses[0].Name)
-	require.Equal(t, int32(40), redacted.RawObjects.PriorityClasses[0].Value)
-
-	again := hasher.Hash("training-job")
-	require.Equal(t, got.Name, again)
-	require.NotContains(t, string(env.Record), "training-job")
-	require.NotContains(t, string(env.Record), "registry.example")
-	require.NotContains(t, string(env.Record), "password@prometheus")
+	body := string(env.Record)
+	require.NotContains(t, body, customer)
+	require.NotContains(t, body, secret)
+	require.NotContains(t, body, "last-applied-configuration")
+	require.NotContains(t, body, "usageDBConfig")
+	require.Contains(t, body, zone)
+	require.Contains(t, body, "g4dn.xlarge")
+	require.Contains(t, body, gpuMem)
+	require.Contains(t, body, fraction)
+	require.Contains(t, body, reason)
+	require.Contains(t, body, "Tesla-K80")
+	require.Contains(t, body, "2026-01-02T03:04:05Z")
+	require.Contains(t, body, "metadata.name")
+	require.Contains(t, body, hasher.Hash(customer))
+	require.False(t, strings.Contains(body, customer))
 }

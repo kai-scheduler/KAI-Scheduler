@@ -588,25 +588,12 @@ func (s *Statement) Discard() {
 	log.InfraLogger.V(6).Do(func() {
 		log.InfraLogger.Infof("Discarding operations ...")
 	})
-	discardedOps := 0
 	for i := len(s.operations) - 1; i >= 0; i-- {
-		if !s.operationValid(i) {
-			continue
-		}
 		if err := s.undoOperation(i); err != nil {
-			continue
+			log.InfraLogger.Errorf("Failed to undo operation %d: %v", i, err)
 		}
-		discardedOps++
 	}
-
 	s.clearOperations()
-	if discardedOps > 0 && s.ssn != nil {
-		s.ssn.publishCommit(&CommitEvent{
-			SessionID:        s.sessionID,
-			Action:           s.ssn.currentAction,
-			DiscardedOpCount: discardedOps,
-		})
-	}
 }
 
 func (s *Statement) Commit() error {
@@ -616,7 +603,10 @@ func (s *Statement) Commit() error {
 	}
 
 	var err error
-	opErrors := make([]string, len(s.operations))
+	var opErrors []string
+	if s.ssn != nil && s.ssn.hasOnCommit() {
+		opErrors = make([]string, len(s.operations))
+	}
 	failedAt := -1
 	type evictionEventKey struct {
 		podGroup common_info.PodGroupID
@@ -645,7 +635,9 @@ func (s *Statement) Commit() error {
 			if err = s.commitEvict(taskInfo, evictOp); err != nil {
 				log.InfraLogger.Errorf("Failed to evict task <%v/%v>, error: <%v>",
 					taskInfo.Namespace, taskInfo.Name, err)
-				opErrors[i] = err.Error()
+				if opErrors != nil {
+					opErrors[i] = err.Error()
+				}
 			} else {
 				key := evictionEventKey{podGroup: taskInfo.Job, action: evictOp.evictionMetadata.Action}
 				committedEvictions[key] = s.ssn.ClusterInfo.PodGroupInfos[taskInfo.Job]
@@ -658,7 +650,9 @@ func (s *Statement) Commit() error {
 			err = s.commitAllocate(taskInfo)
 			if err != nil {
 				log.InfraLogger.Errorf("Failed to allocate task. error: %s", err.Error())
-				opErrors[i] = err.Error()
+				if opErrors != nil {
+					opErrors[i] = err.Error()
+				}
 				failedAt = i
 				return err
 			}
@@ -674,7 +668,7 @@ func (s *Statement) publishCommitResult(opErrors []string, failedAt int) {
 	}
 	recorded := make([]CommitOp, 0, len(s.operations))
 	for i, op := range s.operations {
-		if !s.operationValid(i) {
+		if op.Name() == undo || !s.operationValid(i) {
 			continue
 		}
 		recordedOp := commitOpFrom(op)

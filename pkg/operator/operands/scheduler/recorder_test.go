@@ -12,6 +12,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/yaml"
 
@@ -46,12 +47,10 @@ func TestRecorderEnabledAddsSidecarAndPlugin(t *testing.T) {
 	sidecar := deployment.Spec.Template.Spec.Containers[1]
 	require.Equal(t, "recorder", sidecar.Name)
 	require.NotEmpty(t, deployment.Spec.Template.Spec.Containers[0].Args)
-	var storageMounted, hashMounted, tokenHidden bool
+	var hashMounted, tokenHidden bool
 	for _, mount := range sidecar.VolumeMounts {
+		require.NotEqual(t, "recorder-storage", mount.Name)
 		switch mount.Name {
-		case "recorder-storage":
-			storageMounted = true
-			require.True(t, mount.ReadOnly)
 		case "recorder-hash-key":
 			hashMounted = true
 			require.True(t, mount.ReadOnly)
@@ -61,17 +60,18 @@ func TestRecorderEnabledAddsSidecarAndPlugin(t *testing.T) {
 			require.Equal(t, "recorder-no-sa-token", mount.Name)
 		}
 	}
-	require.True(t, storageMounted)
 	require.True(t, hashMounted)
 	require.True(t, tokenHidden)
+	require.Equal(t, config.Spec.Global.GetSecurityContext(), sidecar.SecurityContext)
 	for _, mount := range deployment.Spec.Template.Spec.Containers[0].VolumeMounts {
 		require.NotEqual(t, "/var/run/secrets/kubernetes.io/serviceaccount", mount.MountPath)
 	}
 	require.True(t, deployment.Spec.Template.Spec.AutomountServiceAccountToken == nil || *deployment.Spec.Template.Spec.AutomountServiceAccountToken)
 	for _, volume := range deployment.Spec.Template.Spec.Volumes {
-		if volume.Name == "recorder-storage" {
-			require.NotNil(t, volume.Secret)
-			require.Equal(t, recorderv1.DefaultStorageSecretName, volume.Secret.SecretName)
+		require.NotEqual(t, "recorder-storage", volume.Name)
+		if volume.Name == "recorder-data" {
+			require.NotNil(t, volume.EmptyDir)
+			require.NotNil(t, volume.EmptyDir.SizeLimit)
 		}
 		if volume.Name == "recorder-hash-key" {
 			require.NotNil(t, volume.Secret)
@@ -95,30 +95,28 @@ func TestRecorderEnabledAddsSidecarAndPlugin(t *testing.T) {
 	require.True(t, found)
 }
 
-func TestHashKeySecretIsCreatedOnceAndNotRotated(t *testing.T) {
+func TestHashKeySecretIsSharedByShardsAndNotRotated(t *testing.T) {
 	ctx := context.Background()
-	config, shard := recorderFixture()
-	operand := NewSchedulerForShard(shard)
-	operand.recorderOverride = &recorderv1.RecorderSpec{Enabled: ptr.To(true)}
+	config, shardA := recorderFixture()
+	config.UID = "config-uid"
+	shardB := shardA.DeepCopy()
+	shardB.Name = "other"
 	kube := fake.NewClientBuilder().Build()
+	operand := &SchedulerForShard{recorderOverride: &recorderv1.RecorderSpec{Enabled: ptr.To(true)}}
+	operand.apiReader = kube
 
-	firstObj, err := operand.hashKeySecretForShard(ctx, kube, config, shard)
-	require.NoError(t, err)
-	first := firstObj.(*corev1.Secret)
+	require.NoError(t, operand.EnsureSharedHashKey(ctx, kube, kube, config, shardA))
+	first := &corev1.Secret{}
+	require.NoError(t, kube.Get(ctx, client.ObjectKey{Name: recorderv1.DefaultHashKeySecretName, Namespace: config.Spec.Namespace}, first))
 	require.NotEmpty(t, first.Data[recorderv1.HMACKeyDataKey])
-	require.Equal(t, recorderv1.DefaultHashKeySecretName, first.Name)
-	require.Equal(t, config.Spec.Namespace, first.Namespace)
-	require.NoError(t, kube.Create(ctx, first))
+	require.Equal(t, "Config", first.OwnerReferences[0].Kind)
+	require.Equal(t, config.Name, first.OwnerReferences[0].Name)
 
-	secondObj, err := operand.hashKeySecretForShard(ctx, kube, config, shard)
-	require.NoError(t, err)
-	second := secondObj.(*corev1.Secret)
+	require.NoError(t, operand.EnsureSharedHashKey(ctx, kube, kube, config, shardB))
+	second := &corev1.Secret{}
+	require.NoError(t, kube.Get(ctx, client.ObjectKey{Name: recorderv1.DefaultHashKeySecretName, Namespace: config.Spec.Namespace}, second))
 	require.Equal(t, first.Data[recorderv1.HMACKeyDataKey], second.Data[recorderv1.HMACKeyDataKey])
-
-	off := NewSchedulerForShard(shard)
-	none, err := off.hashKeySecretForShard(ctx, kube, config, shard)
-	require.NoError(t, err)
-	require.Nil(t, none)
+	require.Equal(t, first.OwnerReferences, second.OwnerReferences)
 }
 
 func recorderFixture() (*kaiv1.Config, *kaiv1.SchedulingShard) {
