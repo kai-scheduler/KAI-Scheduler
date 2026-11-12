@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Scope operator informer cache for owned namespaced resources to KAI namespace
+custom:
+  Author: "NVGreg"
+  Issue: "2675"

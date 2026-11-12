@@ -24,6 +24,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/kai-scheduler/KAI-scheduler/cmd/operator/app"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/controller"
 	"github.com/kai-scheduler/api/constants"
 	kaiv1 "github.com/kai-scheduler/api/kai/v1"
@@ -116,6 +117,7 @@ var _ = BeforeSuite(func() {
 
 	k8sManager, err = ctrl.NewManager(cfg, ctrl.Options{
 		Scheme: scheme,
+		Cache:  app.NewCacheOptions("kai-scheduler"),
 		Metrics: server.Options{
 			BindAddress: "0",
 		},
