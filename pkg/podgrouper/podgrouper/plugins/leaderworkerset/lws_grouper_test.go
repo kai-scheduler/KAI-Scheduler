@@ -610,3 +610,77 @@ func TestBuildSubGroups_SegmentSizeFromWorkerTemplateAnnotation(t *testing.T) {
 	assert.Nil(t, workersSG.TopologyConstraints)
 	assert.Equal(t, []string{"lws-seg-0-1"}, workersSG.PodsReferences)
 }
+
+// TestBuildSubGroups_Segmentation_SingleSegment covers replicasSize == segmentSize+1,
+// where the last segment is also the first, so fixLastSegmentSize walks all the way
+// down to worker index 0. That index is the leader, which handleLeaderInFirstSegment
+// adds on top, so counting it twice asked for a pod the set never creates.
+// Pods: segment-0={leader,w1,w2}=3. Total=3.
+func TestBuildSubGroups_Segmentation_SingleSegment(t *testing.T) {
+	lwsJob := lwsOwner("lws-seg", "LeaderCreated", 3, ptr.To(int64(2)), nil, nil)
+	pod := makeLwsPod("lws-seg-0-0", "0")
+	grouper := NewLwsGrouper(defaultgrouper.NewDefaultGrouper("", "", fake.NewFakeClient()))
+
+	subGroups, err := grouper.buildSubGroups(lwsJob, pod, 3)
+	assert.NoError(t, err)
+	assert.Len(t, subGroups, 3) // segment-0, leader, workers
+
+	seg0 := findSubGroupByName(subGroups, "segment-0")
+	assert.NotNil(t, seg0)
+	assert.Equal(t, int32(0), seg0.MinAvailable)
+	assert.Equal(t, ptr.To(int32(2)), seg0.MinSubGroup)
+
+	leaderSG := findSubGroupByName(subGroups, leaderSubGroupName)
+	assert.NotNil(t, leaderSG)
+	assert.Equal(t, int32(1), leaderSG.MinAvailable)
+	assert.Equal(t, []string{"lws-seg-0-0"}, leaderSG.PodsReferences)
+
+	workersSG := findSubGroupByName(subGroups, workersSubGroupName)
+	assert.NotNil(t, workersSG)
+	assert.Equal(t, int32(2), workersSG.MinAvailable)
+
+	assert.Equal(t, int32(3), leaderSG.MinAvailable+workersSG.MinAvailable)
+}
+
+// TestBuildSubGroups_Segmentation_LeaderExcluded_SingleSegment is the same shape under
+// LeaderExcluded, where the leader gets its own top-level subgroup.
+// Pods: leader=1, segment-0={w1,w2}=2. Total=3.
+func TestBuildSubGroups_Segmentation_LeaderExcluded_SingleSegment(t *testing.T) {
+	lwsJob := lwsOwner("lws-seg", "LeaderCreated", 3, ptr.To(int64(2)),
+		ptr.To(lws.SubGroupPolicyTypeLeaderExcluded), nil)
+	pod := makeLwsPod("lws-seg-0-1", "1")
+	grouper := NewLwsGrouper(defaultgrouper.NewDefaultGrouper("", "", fake.NewFakeClient()))
+
+	subGroups, err := grouper.buildSubGroups(lwsJob, pod, 3)
+	assert.NoError(t, err)
+	assert.Len(t, subGroups, 2) // leader, segment-0
+
+	assert.Equal(t, leaderSubGroupName, subGroups[0].Name)
+	assert.Equal(t, int32(1), subGroups[0].MinAvailable)
+
+	assert.Equal(t, "segment-0", subGroups[1].Name)
+	assert.Equal(t, int32(2), subGroups[1].MinAvailable)
+	assert.Equal(t, []string{"lws-seg-0-1"}, subGroups[1].PodsReferences)
+
+	assert.Equal(t, int32(3), subGroups[0].MinAvailable+subGroups[1].MinAvailable)
+}
+
+// TestBuildSubGroups_Segmentation_SingleSegmentNotDivisible pins the other single-segment
+// shape, where replicasSize is not divisible so the leader is one of the segment's own
+// slots and must keep being counted.
+// Pods: segment-0={leader,w1,w2,w3}=4. Total=4.
+func TestBuildSubGroups_Segmentation_SingleSegmentNotDivisible(t *testing.T) {
+	lwsJob := lwsOwner("lws-seg", "LeaderCreated", 4, ptr.To(int64(4)), nil, nil)
+	pod := makeLwsPod("lws-seg-0-0", "0")
+	grouper := NewLwsGrouper(defaultgrouper.NewDefaultGrouper("", "", fake.NewFakeClient()))
+
+	subGroups, err := grouper.buildSubGroups(lwsJob, pod, 4)
+	assert.NoError(t, err)
+
+	leaderSG := findSubGroupByName(subGroups, leaderSubGroupName)
+	assert.NotNil(t, leaderSG)
+	workersSG := findSubGroupByName(subGroups, workersSubGroupName)
+	assert.NotNil(t, workersSG)
+	assert.Equal(t, int32(3), workersSG.MinAvailable)
+	assert.Equal(t, int32(4), leaderSG.MinAvailable+workersSG.MinAvailable)
+}
