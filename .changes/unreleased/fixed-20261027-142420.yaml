@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Scheduling signatures include node declared feature requirements, so reclaim, preempt and consolidation do not skip eligible jobs
+custom:
+  Author: "Re1lya"
+  Issue: "2133"
