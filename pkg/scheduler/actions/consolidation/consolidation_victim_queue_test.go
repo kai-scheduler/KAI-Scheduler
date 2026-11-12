@@ -4,11 +4,14 @@
 package consolidation
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/safe_to_disrupt"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
@@ -72,6 +75,34 @@ func TestOrderedVictimsQueueRescansCandidatesWithFiniteLimit(t *testing.T) {
 	secondQueue := generateVictimsQueue()
 
 	require.Equal(t, 2, secondQueue.Len())
+}
+
+func TestNotSafeToDisruptJobsDoNotUsePreempteeBudget(t *testing.T) {
+	_, preemptor, _, queueID := newConsolidationVictimQueueTestSession()
+	notSafeToDisrupt, _ := newConsolidationVictimQueueTestJob("not-safe-to-disrupt", queueID, v1.PodRunning)
+	notSafeToDisrupt.PodGroup = &schedulingv2alpha2.PodGroup{
+		ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{safe_to_disrupt.AnnotationKey: "false"}},
+	}
+	var eligible []*podgroup_info.PodGroupInfo
+	for i := range 3 {
+		job, _ := newConsolidationVictimQueueTestJob(fmt.Sprintf("eligible-%d", i), queueID, v1.PodRunning)
+		eligible = append(eligible, job)
+	}
+
+	admitted := func(jobs []*podgroup_info.PodGroupInfo) []*podgroup_info.PodGroupInfo {
+		filter := buildPreemptibleFilterFunc(preemptor, 1)
+		var result []*podgroup_info.PodGroupInfo
+		for _, job := range jobs {
+			if filter(job) {
+				result = append(result, job)
+			}
+		}
+		return result
+	}
+
+	withoutExcluded := admitted(eligible)
+	require.Less(t, len(withoutExcluded), len(eligible), "the preemptee limit must bind")
+	require.Equal(t, withoutExcluded, admitted(append([]*podgroup_info.PodGroupInfo{notSafeToDisrupt}, eligible...)))
 }
 
 func newConsolidationVictimQueueTestSession() (

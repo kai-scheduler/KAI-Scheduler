@@ -31,6 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/safe_to_disrupt"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
@@ -1903,6 +1904,45 @@ func TestPreemptionDelayEnd(t *testing.T) {
 				assert.False(t, pgi.IsWithinPreemptionDelay(creation))
 			}
 		})
+	}
+}
+
+func TestIsSafeToDisrupt(t *testing.T) {
+	tests := []struct {
+		name     string
+		podGroup *enginev2alpha2.PodGroup
+		expected bool
+	}{
+		{name: "no podgroup", podGroup: nil, expected: true},
+		{name: "not set", podGroup: &enginev2alpha2.PodGroup{}, expected: true},
+		{
+			name:     "set to true",
+			podGroup: podGroupWithSafeToDisrupt("true"),
+			expected: true,
+		},
+		{
+			name:     "set to false",
+			podGroup: podGroupWithSafeToDisrupt("false"),
+			expected: false,
+		},
+		{
+			name:     "invalid value is ignored",
+			podGroup: podGroupWithSafeToDisrupt("never"),
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pgi := &PodGroupInfo{PodGroup: tt.podGroup}
+			assert.Equal(t, tt.expected, pgi.IsSafeToDisrupt())
+		})
+	}
+}
+
+func podGroupWithSafeToDisrupt(value string) *enginev2alpha2.PodGroup {
+	return &enginev2alpha2.PodGroup{
+		ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{safe_to_disrupt.AnnotationKey: value}},
 	}
 }
 
