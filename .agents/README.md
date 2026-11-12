@@ -35,3 +35,4 @@ Other agent harnesses should treat `.agents/skills/` as the source of truth and 
 
 - [`snapshots`](skills/snapshots/SKILL.md): capture KAI Scheduler snapshots, inspect archives, replay them with `snapshot-tool`, and compare behavior across refs.
 - [`kai-pending`](skills/kai-pending/SKILL.md): diagnose why a pod or PodGroup is stuck Pending
+- [`kai-explain-queue-fairshare`](skills/kai-explain-queue-fairshare/SKILL.md): explain a queue's deserved quota, fair share of surplus, borrow/lend position, and reclaim exposure
