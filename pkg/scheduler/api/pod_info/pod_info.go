@@ -128,6 +128,7 @@ type TaskInfoOptions struct {
 	BindRequest               *bindrequest_info.BindRequestInfo
 	DraPodClaims              []*resourceapi.ResourceClaim
 	StuckInReleasingThreshold time.Duration
+	Now                       time.Time
 }
 
 func (pi *PodInfo) GetAllStorageClaims() map[storageclaim_info.Key]*storageclaim_info.StorageClaimInfo {
@@ -209,7 +210,7 @@ func NewTaskInfo(pod *v1.Pod, vectorMap *resource_info.ResourceVectorMap, opts .
 		Namespace:                      pod.Namespace,
 		SubGroupName:                   pod.Labels[commonconstants.SubGroupLabelKey],
 		NodeName:                       nodeName,
-		Status:                         getTaskStatus(pod, options.BindRequest, options.StuckInReleasingThreshold),
+		Status:                         getTaskStatus(pod, options.BindRequest, options.StuckInReleasingThreshold, options.Now),
 		IsVirtualStatus:                false,
 		IsLegacyMIGtask:                false,
 		Pod:                            pod,
@@ -463,11 +464,14 @@ func getPodResourceRequest(pod *v1.Pod) *resource_info.ResourceRequirements {
 	return result
 }
 
-func getTaskStatus(pod *v1.Pod, bindRequest *bindrequest_info.BindRequestInfo, stuckInReleasingThreshold time.Duration) pod_status.PodStatus {
+func getTaskStatus(pod *v1.Pod, bindRequest *bindrequest_info.BindRequestInfo, stuckInReleasingThreshold time.Duration, now time.Time) pod_status.PodStatus {
+	if now.IsZero() {
+		now = time.Now()
+	}
 	switch pod.Status.Phase {
 	case v1.PodRunning:
 		if pod.DeletionTimestamp != nil {
-			if time.Since(pod.DeletionTimestamp.Time) > stuckInReleasingThreshold {
+			if now.Sub(pod.DeletionTimestamp.Time) > stuckInReleasingThreshold {
 				return pod_status.StuckInReleasing
 			}
 			return pod_status.Releasing
@@ -606,5 +610,8 @@ func (o *TaskInfoOptions) ApplyToList(inputOptions TaskInfoOptions) {
 	}
 	if inputOptions.StuckInReleasingThreshold > 0 {
 		o.StuckInReleasingThreshold = inputOptions.StuckInReleasingThreshold
+	}
+	if !inputOptions.Now.IsZero() {
+		o.Now = inputOptions.Now
 	}
 }

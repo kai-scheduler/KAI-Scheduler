@@ -45,7 +45,7 @@ type generatorSearchBudget struct {
 
 // NewActionSearchBudget parses scenario search budget config for one scheduler action.
 func NewActionSearchBudget(ssn *framework.Session, action framework.ActionType) (*ActionSearchBudget, error) {
-	return newActionSearchBudgetWithClock(ssn, action, time.Now)
+	return newActionSearchBudgetWithClock(ssn, action, ssn.Now)
 }
 
 func newActionSearchBudgetWithClock(

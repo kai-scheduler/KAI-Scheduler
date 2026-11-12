@@ -29,7 +29,7 @@ type JobsOrderInitOptions struct {
 
 func (jobsOrder *JobsOrderByQueues) InitializeWithJobs(
 	jobsToOrder map[common_info.PodGroupID]*podgroup_info.PodGroupInfo) {
-	now := time.Now()
+	now := jobsOrder.ssn.Now()
 	for _, job := range jobsToOrder {
 		if jobsOrder.options.FilterUnready && !job.IsReadyForScheduling() {
 			continue

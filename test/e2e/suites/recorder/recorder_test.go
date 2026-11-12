@@ -129,6 +129,12 @@ var _ = Describe("Recorder", Ordered, ContinueOnFailure, Label("recorder"), func
 		stored, err := testCtx.KubeClientset.CoreV1().Secrets(live.namespace).Get(ctx, live.hashSecret, metav1.GetOptions{})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(stored.Data[recorderv1.HMACKeyDataKey]).To(Equal(first))
+
+		_, err = testCtx.KubeClientset.CoreV1().Secrets(live.namespace).Get(ctx, live.storageSecret, metav1.GetOptions{})
+		Expect(errors.IsNotFound(err)).To(BeTrue())
+		pod := schedulerPod(ctx, testCtx, live)
+		Expect(rd.IsPodRunning(&pod)).To(BeTrue())
+		Expect(volumeNames(pod)).NotTo(ContainElement("recorder-storage"))
 	})
 
 	It("hides the service account token from the sidecar and leaves it on the scheduler", func(ctx context.Context) {
@@ -212,7 +218,7 @@ var _ = Describe("Recorder", Ordered, ContinueOnFailure, Label("recorder"), func
 			requireHashed(g, h, body, lowPriorityName)
 			requireHashed(g, h, body, highPriorityName)
 			if poolKey == constants.DefaultNodePoolLabelKey {
-				values := jsonStringValues(body, poolKey)
+				values := labelValues(body, poolKey)
 				g.Expect(values).To(ContainElement(h.Hash(recorderPoolValue)))
 				g.Expect(values).NotTo(ContainElement(recorderPoolValue))
 			}
@@ -607,43 +613,42 @@ func gpuPod(q *v2.Queue, gpus int64, priorityClass, nodeName, poolKey, poolValue
 	return pod
 }
 
-func jsonStringValues(body, key string) []string {
-	needle := fmt.Sprintf("%q:", key)
+func labelValues(body, key string) []string {
 	var values []string
-	rest := body
-	for {
-		index := strings.Index(rest, needle)
-		if index < 0 {
-			return values
-		}
-		rest = rest[index+len(needle):]
-		rest = strings.TrimLeft(rest, " \t\r\n")
-		if !strings.HasPrefix(rest, `"`) {
+	for _, line := range strings.Split(body, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || !strings.HasPrefix(line, "{") {
 			continue
 		}
-		var value string
-		if err := json.Unmarshal([]byte(rest[:stringEnd(rest)]), &value); err != nil {
+		var env schedrec.Envelope
+		if json.Unmarshal([]byte(line), &env) != nil || env.Kind != schedrec.KindCycle {
 			continue
 		}
-		values = append(values, value)
+		var decoded any
+		if json.Unmarshal(env.Record, &decoded) != nil {
+			continue
+		}
+		collectStringValues(decoded, key, &values)
 	}
+	return values
 }
 
-func stringEnd(quoted string) int {
-	escaped := false
-	for i := 1; i < len(quoted); i++ {
-		if escaped {
-			escaped = false
-			continue
+func collectStringValues(value any, key string, out *[]string) {
+	switch typed := value.(type) {
+	case map[string]any:
+		for childKey, child := range typed {
+			if childKey == key {
+				if text, ok := child.(string); ok {
+					*out = append(*out, text)
+				}
+			}
+			collectStringValues(child, key, out)
 		}
-		switch quoted[i] {
-		case '\\':
-			escaped = true
-		case '"':
-			return i + 1
+	case []any:
+		for _, child := range typed {
+			collectStringValues(child, key, out)
 		}
 	}
-	return len(quoted)
 }
 
 func readRecords(ctx context.Context, testCtx *testcontext.TestContext, live liveScheduler) (string, error) {
@@ -665,7 +670,7 @@ find /volumes -type f | sort | while read -r f; do
   echo
 done
 `}
-	return execContainer(ctx, testCtx.KubeClientset, testCtx.KubeConfig, reader, "reader", command)
+	return rd.ExecInPod(ctx, testCtx.KubeClientset, testCtx.KubeConfig, reader, command), nil
 }
 
 func ensureReader(ctx context.Context, testCtx *testcontext.TestContext, live liveScheduler, sched *v1.Pod) *v1.Pod {

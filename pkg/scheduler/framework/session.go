@@ -128,6 +128,14 @@ func (ssn *Session) SetCurrentAction(action string) {
 	ssn.currentAction = action
 }
 
+// Now is the cycle clock. Replay freezes it at the recorded open time.
+func (ssn *Session) Now() time.Time {
+	if ssn != nil && ssn.SchedulerParams.Now != nil {
+		return ssn.SchedulerParams.Now()
+	}
+	return time.Now()
+}
+
 // publishCommit invokes OnCommit inline. Handlers must not block.
 func (ssn *Session) publishCommit(event *CommitEvent) {
 	if ssn == nil || event == nil {

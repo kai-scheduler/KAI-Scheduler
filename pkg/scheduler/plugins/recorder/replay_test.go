@@ -4,27 +4,26 @@
 package recorder
 
 import (
-	"context"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/utils/ptr"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/allocate"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/predicates"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/snapshot"
-	kaifake "github.com/kai-scheduler/api/client/clientset/versioned/fake"
 	commonconstants "github.com/kai-scheduler/api/constants"
 	enginev2 "github.com/kai-scheduler/api/scheduling/v2"
 	enginev2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
@@ -67,7 +66,7 @@ func runAllocate(t *testing.T, config *conf.SchedulerConfiguration, params *conf
 		return true
 	})
 
-	schedCache := startReplayCache(t, params, objects)
+	schedCache := startReplayCache(t, params, objects, nil, nil)
 	session, err := framework.OpenSession(schedCache, config, params, "replay", http.NewServeMux())
 	require.NoError(t, err)
 	plugin.OnSessionOpen(session)
@@ -162,42 +161,10 @@ func replayObjects() *snapshot.RawKubernetesObjects {
 	}
 }
 
-func startReplayCache(t *testing.T, params *conf.SchedulerParams, objects *snapshot.RawKubernetesObjects) cache.Cache {
+func startReplayCache(t *testing.T, params *conf.SchedulerParams, objects *snapshot.RawKubernetesObjects, usage *queue_info.ClusterUsage, now func() time.Time) cache.Cache {
 	t.Helper()
-	kubeClient := fake.NewSimpleClientset()
-	kaiClient := kaifake.NewSimpleClientset()
-	for _, node := range objects.Nodes {
-		_, err := kubeClient.CoreV1().Nodes().Create(context.Background(), node.DeepCopy(), metav1.CreateOptions{})
-		require.NoError(t, err)
-	}
-	for _, pod := range objects.Pods {
-		_, err := kubeClient.CoreV1().Pods(pod.Namespace).Create(context.Background(), pod.DeepCopy(), metav1.CreateOptions{})
-		require.NoError(t, err)
-	}
-	for _, queue := range objects.Queues {
-		_, err := kaiClient.SchedulingV2().Queues(queue.Namespace).Create(context.Background(), queue.DeepCopy(), metav1.CreateOptions{})
-		require.NoError(t, err)
-	}
-	for _, group := range objects.PodGroups {
-		_, err := kaiClient.SchedulingV2alpha2().PodGroups(group.Namespace).Create(context.Background(), group.DeepCopy(), metav1.CreateOptions{})
-		require.NoError(t, err)
-	}
-	for _, priorityClass := range objects.PriorityClasses {
-		_, err := kubeClient.SchedulingV1().PriorityClasses().Create(context.Background(), priorityClass.DeepCopy(), metav1.CreateOptions{})
-		require.NoError(t, err)
-	}
-	schedCache, err := cache.New(&cache.SchedulerCacheParams{
-		KubeClient:                  kubeClient,
-		KAISchedulerClient:          kaiClient,
-		SchedulerName:               params.SchedulerName,
-		NodePoolParams:              params.PartitionParams,
-		NumOfStatusRecordingWorkers: 1,
-		DiscoveryClient:             kubeClient.Discovery(),
-	})
+	schedCache, cancel, err := NewReplayCache(params, objects, usage, now)
 	require.NoError(t, err)
-	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	schedCache.Run(ctx.Done())
-	schedCache.WaitForCacheSync(ctx.Done())
 	return schedCache
 }

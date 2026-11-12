@@ -49,7 +49,7 @@ func (p *recorderPlugin) Name() string {
 
 func (p *recorderPlugin) OnSessionOpen(ssn *framework.Session) {
 	p.mu.Lock()
-	p.openedAt = time.Now().UTC()
+	p.openedAt = ssn.Now().UTC()
 	p.decisions = nil
 	p.mu.Unlock()
 	ssn.AddEventHandler(&framework.EventHandler{OnCommit: p.onCommit})

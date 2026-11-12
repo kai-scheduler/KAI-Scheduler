@@ -48,6 +48,8 @@ type SchedulerParams struct {
 	DetailedFitErrors                 bool                        `json:"detailedFitErrors,omitempty"`
 	UpdatePodEvictionCondition        bool                        `json:"updatePodEvictionCondition,omitempty"`
 	QueueLabelKey                     string                      `json:"queueLabelKey,omitempty"`
+	// Now overrides time.Now for this cycle. Replay sets the recorded open time. Not serialized.
+	Now func() time.Time `json:"-"`
 }
 
 // SchedulerConfiguration defines the configuration of scheduler.

@@ -39,7 +39,7 @@ func (action *staleGangEviction) Execute(ssn *framework.Session) {
 
 func handleStaleJob(ssn *framework.Session, job *podgroup_info.PodGroupInfo) {
 	if job.StalenessInfo.TimeStamp == nil {
-		timeNow := time.Now()
+		timeNow := ssn.Now()
 		job.StalenessInfo.TimeStamp = &timeNow
 	}
 
@@ -54,7 +54,7 @@ func handleStaleJob(ssn *framework.Session, job *podgroup_info.PodGroupInfo) {
 		return
 	}
 
-	timeInStaleStatus := time.Since(*job.StalenessInfo.TimeStamp)
+	timeInStaleStatus := ssn.Now().Sub(*job.StalenessInfo.TimeStamp)
 	if timeInStaleStatus < gracePeriod {
 		return
 	}

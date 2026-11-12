@@ -95,6 +95,29 @@ func TestRecorderEnabledAddsSidecarAndPlugin(t *testing.T) {
 	require.True(t, found)
 }
 
+func TestRecorderStartsWithoutStorageSecret(t *testing.T) {
+	ctx := context.Background()
+	config, shard := recorderFixture()
+	operand := NewSchedulerForShard(shard)
+	operand.recorderOverride = &recorderv1.RecorderSpec{Enabled: ptr.To(true)}
+	kube := fake.NewClientBuilder().Build()
+
+	object, err := operand.deploymentForShard(ctx, kube, config, shard)
+	require.NoError(t, err)
+	deployment, ok := object.(*appsv1.Deployment)
+	require.True(t, ok)
+	require.Len(t, deployment.Spec.Template.Spec.Containers, 2)
+	for _, volume := range deployment.Spec.Template.Spec.Volumes {
+		require.NotEqual(t, "recorder-storage", volume.Name)
+		if volume.Secret != nil {
+			require.NotEqual(t, recorderv1.DefaultStorageSecretName, volume.Secret.SecretName)
+		}
+	}
+	secrets := &corev1.SecretList{}
+	require.NoError(t, kube.List(ctx, secrets))
+	require.Empty(t, secrets.Items)
+}
+
 func TestHashKeySecretIsSharedByShardsAndNotRotated(t *testing.T) {
 	ctx := context.Background()
 	config, shardA := recorderFixture()

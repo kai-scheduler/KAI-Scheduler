@@ -145,7 +145,7 @@ func runRecordedAction(
 		recorded = payload
 		return true
 	})
-	schedCache := startReplayCache(t, params, objects)
+	schedCache := startReplayCache(t, params, objects, nil, nil)
 	session, err := framework.OpenSession(schedCache, config, params, "replay-"+string(action.Name()), http.NewServeMux())
 	require.NoError(t, err)
 	plugin.OnSessionOpen(session)

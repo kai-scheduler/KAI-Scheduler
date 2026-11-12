@@ -978,7 +978,7 @@ func TestGetTaskStatusStuckInReleasing(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := getTaskStatus(tt.pod, nil, tt.threshold)
+			got := getTaskStatus(tt.pod, nil, tt.threshold, time.Time{})
 			assert.Equal(t, tt.expected, got)
 		})
 	}

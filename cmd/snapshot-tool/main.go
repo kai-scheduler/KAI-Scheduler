@@ -5,7 +5,6 @@ package main
 
 import (
 	"archive/zip"
-	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -17,15 +16,6 @@ import (
 	"syscall"
 	"time"
 
-	nrtfake "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/fake"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	version "k8s.io/apimachinery/pkg/version"
-	fakediscovery "k8s.io/client-go/discovery/fake"
-	clientfeatures "k8s.io/client-go/features"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/kubernetes/fake"
-
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf_util"
@@ -34,8 +24,6 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/snapshot"
-	kaischedulerfake "github.com/kai-scheduler/api/client/clientset/versioned/fake"
-	draversionawareclient "github.com/kai-scheduler/api/utilities/resources/dra_version_aware_client"
 )
 
 func main() {
@@ -51,7 +39,7 @@ func main() {
 		return
 	}
 
-	disableWatchListClientForFakeReplay()
+	snapshot.DisableWatchListClientForFakeReplay()
 
 	if err := log.InitLoggers(int(*verbosity), false); err != nil {
 		fmt.Printf("Failed to initialize logger: %v", err)
@@ -67,7 +55,9 @@ func main() {
 
 	runStart := time.Now()
 
-	snapshot, err := loadSnapshot(*filename)
+	loadClients := snapshot.LoadClientsWithSnapshot
+	disableWatchList := snapshot.DisableWatchListClientForFakeReplay
+	loaded, err := loadSnapshot(*filename)
 	if err != nil {
 		log.InfraLogger.Fatalf(err.Error(), err)
 	}
@@ -75,21 +65,22 @@ func main() {
 	actions.InitDefaultActions()
 	plugins.InitDefaultPlugins()
 
-	kubeClient, kaiClient, nrtClient := loadClientsWithSnapshot(snapshot.RawObjects, snapshot.Discovery)
+	disableWatchList()
+	kubeClient, kaiClient, nrtClient := loadClients(loaded.RawObjects, loaded.Discovery)
 
 	schedulerCacheParams := &cache.SchedulerCacheParams{
 		KubeClient:                  kubeClient,
 		KAISchedulerClient:          kaiClient,
 		NRTClient:                   nrtClient,
-		SchedulerName:               snapshot.SchedulerParams.SchedulerName,
-		NodePoolParams:              snapshot.SchedulerParams.PartitionParams,
-		RestrictNodeScheduling:      snapshot.SchedulerParams.RestrictSchedulingNodes,
-		DetailedFitErrors:           snapshot.SchedulerParams.DetailedFitErrors,
-		ScheduleCSIStorage:          snapshot.SchedulerParams.ScheduleCSIStorage,
-		FullHierarchyFairness:       snapshot.SchedulerParams.FullHierarchyFairness,
-		AllowConsolidatingReclaim:   snapshot.SchedulerParams.AllowConsolidatingReclaim,
-		NumOfStatusRecordingWorkers: snapshot.SchedulerParams.NumOfStatusRecordingWorkers,
-		StuckInReleasingThreshold:   snapshot.SchedulerParams.StuckInReleasingThreshold,
+		SchedulerName:               loaded.SchedulerParams.SchedulerName,
+		NodePoolParams:              loaded.SchedulerParams.PartitionParams,
+		RestrictNodeScheduling:      loaded.SchedulerParams.RestrictSchedulingNodes,
+		DetailedFitErrors:           loaded.SchedulerParams.DetailedFitErrors,
+		ScheduleCSIStorage:          loaded.SchedulerParams.ScheduleCSIStorage,
+		FullHierarchyFairness:       loaded.SchedulerParams.FullHierarchyFairness,
+		AllowConsolidatingReclaim:   loaded.SchedulerParams.AllowConsolidatingReclaim,
+		NumOfStatusRecordingWorkers: loaded.SchedulerParams.NumOfStatusRecordingWorkers,
+		StuckInReleasingThreshold:   loaded.SchedulerParams.StuckInReleasingThreshold,
 		DiscoveryClient:             kubeClient.Discovery(),
 	}
 
@@ -115,7 +106,7 @@ func main() {
 	}
 
 	ssn, err := framework.OpenSession(
-		schedulerCache, snapshot.Config, snapshot.SchedulerParams, "", &http.ServeMux{},
+		schedulerCache, loaded.Config, loaded.SchedulerParams, "", &http.ServeMux{},
 	)
 	if err != nil {
 		log.InfraLogger.Fatalf(err.Error(), err)
@@ -123,7 +114,7 @@ func main() {
 	defer framework.CloseSession(ssn)
 
 	actionDurations := make(map[string]time.Duration)
-	actions, _ := conf_util.GetActionsFromConfig(snapshot.Config)
+	actions, _ := conf_util.GetActionsFromConfig(loaded.Config)
 	for _, action := range actions {
 		log.InfraLogger.SetAction(string(action.Name()))
 		metrics.SetCurrentAction(string(action.Name()))
@@ -175,25 +166,6 @@ func printRunSummary(totalDuration time.Duration, actionDurations map[string]tim
 	fmt.Println(string(out))
 }
 
-// disableWatchListClientForFakeReplay turns off client-go's WatchListClient gate (default true since
-// client-go 1.35) before any client is built. Only the NodeResourceTopology client needs this: its
-// generated informer (noderesourcetopology-api, built against client-go v0.22) hangs under the
-// watch-list reflector when backed by a fake clientset, so replayed NRTs never sync. Other clients
-// (core/KAI/DRA, modern codegen) are unaffected, and the NRT client works against a real API server.
-// The alternative fix is regenerating that client against a current client-go; disabling the gate is
-// the cheaper replay-only workaround. See https://github.com/kubernetes/kubernetes/issues/129408.
-func disableWatchListClientForFakeReplay() {
-	featureGates, ok := clientfeatures.FeatureGates().(interface {
-		Set(clientfeatures.Feature, bool) error
-	})
-	if !ok {
-		return
-	}
-	if err := featureGates.Set(clientfeatures.WatchListClient, false); err != nil {
-		utilruntime.HandleError(err)
-	}
-}
-
 func loadSnapshot(filename string) (*snapshot.Snapshot, error) {
 	zipFile, err := zip.OpenReader(filename)
 	if err != nil {
@@ -220,198 +192,4 @@ func loadSnapshot(filename string) (*snapshot.Snapshot, error) {
 	}
 
 	return nil, os.ErrNotExist
-}
-
-func loadClientsWithSnapshot(rawObjects *snapshot.RawKubernetesObjects, discoverySnapshot *snapshot.DiscoverySnapshot) (kubernetes.Interface, *kaischedulerfake.Clientset, *nrtfake.Clientset) {
-	kubeClient := fake.NewSimpleClientset()
-	kaiClient := kaischedulerfake.NewSimpleClientset()
-	nrtClient := nrtfake.NewSimpleClientset()
-
-	if discoverySnapshot == nil {
-		discoverySnapshot = synthesizeDiscoveryFromSnapshot(rawObjects)
-	}
-	applyDiscoverySnapshot(kubeClient, discoverySnapshot)
-
-	for _, pod := range rawObjects.Pods {
-		_, err := kubeClient.CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, v1.CreateOptions{})
-		if err != nil {
-			log.InfraLogger.Errorf("Failed to create pod: %v", err)
-		}
-	}
-
-	for _, node := range rawObjects.Nodes {
-		_, err := kubeClient.CoreV1().Nodes().Create(context.TODO(), node, v1.CreateOptions{})
-		if err != nil {
-			log.InfraLogger.Errorf("Failed to create node: %v", err)
-		}
-	}
-
-	for _, bindRequest := range rawObjects.BindRequests {
-		_, err := kaiClient.SchedulingV1alpha2().BindRequests(bindRequest.Namespace).Create(context.TODO(), bindRequest, v1.CreateOptions{})
-		if err != nil {
-			log.InfraLogger.Errorf("Failed to create bind request: %v", err)
-		}
-	}
-
-	for _, podGroup := range rawObjects.PodGroups {
-		_, err := kaiClient.SchedulingV2alpha2().PodGroups(podGroup.Namespace).Create(context.TODO(), podGroup, v1.CreateOptions{})
-		if err != nil {
-			log.InfraLogger.Errorf("Failed to create pod group: %v", err)
-		}
-	}
-
-	for _, queue := range rawObjects.Queues {
-		_, err := kaiClient.SchedulingV2().Queues(queue.Namespace).Create(context.TODO(), queue, v1.CreateOptions{})
-		if err != nil {
-			log.InfraLogger.Errorf("Failed to create queue: %v", err)
-		}
-	}
-
-	for _, priorityClass := range rawObjects.PriorityClasses {
-		_, err := kubeClient.SchedulingV1().PriorityClasses().Create(context.TODO(), priorityClass, v1.CreateOptions{})
-		if err != nil {
-			log.InfraLogger.Errorf("Failed to create priority class: %v", err)
-		}
-	}
-
-	for _, configMap := range rawObjects.ConfigMaps {
-		_, err := kubeClient.CoreV1().ConfigMaps(configMap.Namespace).Create(context.TODO(), configMap, v1.CreateOptions{})
-		if err != nil {
-			log.InfraLogger.Errorf("Failed to create config map: %v", err)
-		}
-	}
-
-	for _, persistentVolume := range rawObjects.PersistentVolumes {
-		_, err := kubeClient.CoreV1().PersistentVolumes().Create(context.TODO(), persistentVolume, v1.CreateOptions{})
-		if err != nil {
-			log.InfraLogger.Errorf("Failed to create persistent volume: %v", err)
-		}
-	}
-
-	for _, persistentVolumeClaim := range rawObjects.PersistentVolumeClaims {
-		_, err := kubeClient.CoreV1().PersistentVolumeClaims(persistentVolumeClaim.Namespace).Create(context.TODO(), persistentVolumeClaim, v1.CreateOptions{})
-		if err != nil {
-			log.InfraLogger.Errorf("Failed to create persistent volume claim: %v", err)
-		}
-	}
-
-	for _, csiStorageCapacity := range rawObjects.CSIStorageCapacities {
-		_, err := kubeClient.StorageV1().CSIStorageCapacities(csiStorageCapacity.Namespace).Create(context.TODO(), csiStorageCapacity, v1.CreateOptions{})
-		if err != nil {
-			log.InfraLogger.Errorf("Failed to create CSI storage capacity: %v", err)
-		}
-	}
-
-	for _, storageClass := range rawObjects.StorageClasses {
-		_, err := kubeClient.StorageV1().StorageClasses().Create(context.TODO(), storageClass, v1.CreateOptions{})
-		if err != nil {
-			log.InfraLogger.Errorf("Failed to create storage class: %v", err)
-		}
-	}
-
-	for _, csiDriver := range rawObjects.CSIDrivers {
-		_, err := kubeClient.StorageV1().CSIDrivers().Create(context.TODO(), csiDriver, v1.CreateOptions{})
-		if err != nil {
-			log.InfraLogger.Errorf("Failed to create CSI driver: %v", err)
-		}
-	}
-
-	for _, topology := range rawObjects.Topologies {
-		_, err := kaiClient.KaiV1alpha1().Topologies().Create(context.TODO(), topology, v1.CreateOptions{})
-		if err != nil {
-			log.InfraLogger.Errorf("Failed to create topology: %v", err)
-		}
-	}
-
-	for _, nrt := range rawObjects.NodeResourceTopologies {
-		_, err := nrtClient.TopologyV1alpha2().NodeResourceTopologies().Create(context.TODO(), nrt, v1.CreateOptions{})
-		if err != nil {
-			log.InfraLogger.Errorf("Failed to create node resource topology: %v", err)
-		}
-	}
-
-	draClient := draversionawareclient.NewDRAAwareClient(kubeClient)
-
-	for _, resourceClaim := range rawObjects.ResourceClaims {
-		_, err := draClient.ResourceV1().ResourceClaims(resourceClaim.Namespace).Create(context.TODO(), resourceClaim, v1.CreateOptions{})
-		if err != nil {
-			log.InfraLogger.Errorf("Failed to create resource claim: %v", err)
-		}
-	}
-
-	for _, resourceSlice := range rawObjects.ResourceSlices {
-		_, err := draClient.ResourceV1().ResourceSlices().Create(context.TODO(), resourceSlice, v1.CreateOptions{})
-		if err != nil {
-			log.InfraLogger.Errorf("Failed to create resource slice: %v", err)
-		}
-	}
-
-	for _, deviceClass := range rawObjects.DeviceClasses {
-		_, err := draClient.ResourceV1().DeviceClasses().Create(context.TODO(), deviceClass, v1.CreateOptions{})
-		if err != nil {
-			log.InfraLogger.Errorf("Failed to create device class: %v", err)
-		}
-	}
-
-	return draClient, kaiClient, nrtClient
-}
-
-func synthesizeDiscoveryFromSnapshot(rawObjects *snapshot.RawKubernetesObjects) *snapshot.DiscoverySnapshot {
-	hasDRAResources := len(rawObjects.ResourceClaims) > 0 ||
-		len(rawObjects.ResourceSlices) > 0 ||
-		len(rawObjects.DeviceClasses) > 0
-	hasNRTResources := len(rawObjects.NodeResourceTopologies) > 0
-
-	if !hasDRAResources && !hasNRTResources {
-		return nil
-	}
-
-	discoverySnapshot := &snapshot.DiscoverySnapshot{
-		ServerVersion: &version.Info{Major: "1", Minor: "32"},
-	}
-
-	if hasDRAResources {
-		log.InfraLogger.V(2).Infof("Synthesizing discovery data from snapshot DRA resources")
-		discoverySnapshot.Resources = append(discoverySnapshot.Resources, &v1.APIResourceList{
-			GroupVersion: "resource.k8s.io/v1",
-			APIResources: []v1.APIResource{
-				{Name: "resourceclaims", Kind: "ResourceClaim", Namespaced: true},
-				{Name: "resourceslices", Kind: "ResourceSlice"},
-				{Name: "deviceclasses", Kind: "DeviceClass"},
-			},
-		})
-	}
-
-	if hasNRTResources {
-		log.InfraLogger.V(2).Infof("Synthesizing discovery data from snapshot NRT resources")
-		discoverySnapshot.Resources = append(discoverySnapshot.Resources, &v1.APIResourceList{
-			GroupVersion: "topology.node.k8s.io/v1alpha2",
-			APIResources: []v1.APIResource{
-				{Name: "noderesourcetopologies", Kind: "NodeResourceTopology"},
-			},
-		})
-	}
-
-	return discoverySnapshot
-}
-
-func applyDiscoverySnapshot(kubeClient *fake.Clientset, discoverySnapshot *snapshot.DiscoverySnapshot) {
-	if kubeClient == nil || discoverySnapshot == nil {
-		return
-	}
-
-	fakeDiscoveryClient, ok := kubeClient.Discovery().(*fakediscovery.FakeDiscovery)
-	if !ok {
-		return
-	}
-
-	if discoverySnapshot.ServerVersion != nil {
-		fakeDiscoveryClient.FakedServerVersion = &version.Info{
-			Major: discoverySnapshot.ServerVersion.Major,
-			Minor: discoverySnapshot.ServerVersion.Minor,
-		}
-	}
-	if discoverySnapshot.Resources != nil {
-		kubeClient.Resources = discoverySnapshot.Resources
-	}
 }

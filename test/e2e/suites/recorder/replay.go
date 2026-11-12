@@ -4,26 +4,22 @@
 package recorder
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"sort"
 	"strings"
 	"time"
 
-	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"k8s.io/client-go/kubernetes/fake"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf_util"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins"
+	plug "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/recorder"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/snapshot"
-	kaifake "github.com/kai-scheduler/api/client/clientset/versioned/fake"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func init() {
@@ -34,9 +30,10 @@ func init() {
 // recordedCycle is one line the sidecar stored for a scheduling cycle.
 type recordedCycle struct {
 	snapshot.Snapshot
-	SessionID string                  `json:"sessionID"`
-	OpenedAt  time.Time               `json:"openedAt"`
-	Decisions []framework.CommitEvent `json:"decisions,omitempty"`
+	SessionID string                   `json:"sessionID"`
+	OpenedAt  time.Time                `json:"openedAt"`
+	Decisions []framework.CommitEvent  `json:"decisions,omitempty"`
+	Usage     *queue_info.ClusterUsage `json:"usage,omitempty"`
 }
 
 // replayCycle runs the recorded action sequence against the saved state copy.
@@ -57,7 +54,14 @@ func replayCycle(state recordedCycle) ([]string, string) {
 	config := *state.Config
 	config.Tiers = dropRecorderPlugin(config.Tiers)
 
-	schedCache := replayCache(params, state.RawObjects)
+	var now func() time.Time
+	if !state.OpenedAt.IsZero() {
+		opened := state.OpenedAt
+		now = func() time.Time { return opened }
+	}
+	schedCache, stop, err := plug.NewReplayCache(params, state.RawObjects, state.Usage, now)
+	Expect(err).NotTo(HaveOccurred())
+	defer stop()
 	session, err := framework.OpenSession(schedCache, &config, params, "e2e-replay", http.NewServeMux())
 	Expect(err).NotTo(HaveOccurred())
 	defer framework.CloseSession(session)
@@ -131,60 +135,4 @@ func dropRecorderPlugin(tiers []conf.Tier) []conf.Tier {
 		}
 	}
 	return out
-}
-
-func replayCache(params *conf.SchedulerParams, objects *snapshot.RawKubernetesObjects) cache.Cache {
-	kubeClient := fake.NewSimpleClientset()
-	kaiClient := kaifake.NewSimpleClientset()
-	for _, node := range objects.Nodes {
-		if node == nil || node.Name == "" {
-			continue
-		}
-		_, err := kubeClient.CoreV1().Nodes().Create(context.Background(), node.DeepCopy(), metav1.CreateOptions{})
-		Expect(err).NotTo(HaveOccurred())
-	}
-	for _, pod := range objects.Pods {
-		if pod == nil || pod.Name == "" || pod.Namespace == "" {
-			continue
-		}
-		_, err := kubeClient.CoreV1().Pods(pod.Namespace).Create(context.Background(), pod.DeepCopy(), metav1.CreateOptions{})
-		Expect(err).NotTo(HaveOccurred())
-	}
-	for _, queue := range objects.Queues {
-		if queue == nil || queue.Name == "" {
-			continue
-		}
-		_, err := kaiClient.SchedulingV2().Queues(queue.Namespace).Create(context.Background(), queue.DeepCopy(), metav1.CreateOptions{})
-		Expect(err).NotTo(HaveOccurred())
-	}
-	for _, group := range objects.PodGroups {
-		if group == nil || group.Name == "" || group.Namespace == "" {
-			continue
-		}
-		_, err := kaiClient.SchedulingV2alpha2().PodGroups(group.Namespace).Create(context.Background(), group.DeepCopy(), metav1.CreateOptions{})
-		Expect(err).NotTo(HaveOccurred())
-	}
-	for _, priorityClass := range objects.PriorityClasses {
-		if priorityClass == nil || priorityClass.Name == "" {
-			continue
-		}
-		_, err := kubeClient.SchedulingV1().PriorityClasses().Create(context.Background(), priorityClass.DeepCopy(), metav1.CreateOptions{})
-		Expect(err).NotTo(HaveOccurred())
-	}
-	schedCache, err := cache.New(&cache.SchedulerCacheParams{
-		KubeClient:                  kubeClient,
-		KAISchedulerClient:          kaiClient,
-		SchedulerName:               params.SchedulerName,
-		NodePoolParams:              params.PartitionParams,
-		RestrictNodeScheduling:      params.RestrictSchedulingNodes,
-		FullHierarchyFairness:       params.FullHierarchyFairness,
-		NumOfStatusRecordingWorkers: params.NumOfStatusRecordingWorkers,
-		DiscoveryClient:             kubeClient.Discovery(),
-	})
-	Expect(err).NotTo(HaveOccurred())
-	ctx, cancel := context.WithCancel(context.Background())
-	DeferCleanup(cancel)
-	schedCache.Run(ctx.Done())
-	schedCache.WaitForCacheSync(ctx.Done())
-	return schedCache
 }

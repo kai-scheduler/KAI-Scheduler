@@ -85,6 +85,12 @@ func walkMap(in map[string]any, path string, h Hasher) map[string]any {
 			out[key] = hashAnnotations(child, h)
 			continue
 		}
+		if key == "queues" {
+			if usageQueues, ok := child.(map[string]any); ok {
+				out[key] = hashNamedMap(usageQueues, h)
+				continue
+			}
+		}
 		if _, labelMap := labelMaps[key]; labelMap {
 			if flatStringMap(child) {
 				out[key] = hashLabelObject(child, h)
@@ -168,6 +174,25 @@ func dropKey(key string) bool {
 	}
 }
 
+func hashNamedMap(in map[string]any, h Hasher) map[string]any {
+	out := make(map[string]any, len(in))
+	for key, child := range in {
+		out[h.Hash(key)] = walk(child, "usage", h)
+	}
+	return out
+}
+
+func timestampAnnotation(key string) bool {
+	switch key {
+	case "kai.scheduler/stale-podgroup-timestamp",
+		"kai.scheduler/last-start-timestamp",
+		"kai.scheduler/last-eviction-timestamp":
+		return true
+	default:
+		return false
+	}
+}
+
 func hashAnnotations(value any, h Hasher) map[string]any {
 	in, ok := value.(map[string]any)
 	if !ok || len(in) == 0 {
@@ -175,10 +200,14 @@ func hashAnnotations(value any, h Hasher) map[string]any {
 	}
 	out := make(map[string]any, len(in))
 	for key, raw := range in {
+		text, _ := raw.(string)
+		if timestampAnnotation(key) {
+			out[key] = text
+			continue
+		}
 		if !annotationKept(key) {
 			continue
 		}
-		text, _ := raw.(string)
 		outKey, outValue := h.Label(key, text)
 		out[outKey] = outValue
 	}
