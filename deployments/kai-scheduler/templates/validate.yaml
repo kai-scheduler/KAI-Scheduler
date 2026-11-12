@@ -7,3 +7,9 @@ SPDX-License-Identifier: Apache-2.0
 {{- if and .Values.global.nvFractions.set .Values.global.gpuSharingMode (ne .Values.global.gpuSharingMode "NvFractions") }}
 {{- fail (printf "global.nvFractions.set=true requires global.gpuSharingMode to be empty or \"NvFractions\", got %q" .Values.global.gpuSharingMode) }}
 {{- end }}
+{{- /* admission.cdi was never wired; only binder.cdiEnabled reaches spec.binder.cdiEnabled.
+       Fail when the dead key is true so --set admission.cdi=true is not a silent no-op.
+       Leaving binder.cdiEnabled unset keeps ClusterPolicy auto-detection. */}}
+{{- if and (hasKey .Values.admission "cdi") .Values.admission.cdi }}
+{{- fail "admission.cdi is not a valid Helm value; set binder.cdiEnabled instead. Leaving binder.cdiEnabled unset keeps ClusterPolicy auto-detection." }}
+{{- end }}

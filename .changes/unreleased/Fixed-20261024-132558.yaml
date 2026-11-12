@@ -1,0 +1,6 @@
+kind: Fixed
+body: '  Reject dead admission.cdi Helm value; document unset binder.cdiEnabled for ClusterPolicy auto-detect'
+time: 2026-10-24T13:25:58.147749924+01:00
+custom:
+    Author: dttung2905
+    Issue: ""
