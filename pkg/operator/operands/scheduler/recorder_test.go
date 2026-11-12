@@ -5,12 +5,18 @@ package scheduler
 
 import (
 	"context"
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -19,6 +25,7 @@ import (
 	recorderv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/recorder/v1"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
 	kaiv1 "github.com/kai-scheduler/api/kai/v1"
+	"github.com/kai-scheduler/api/kai/v1/common"
 	kaiv1scheduler "github.com/kai-scheduler/api/kai/v1/scheduler"
 )
 
@@ -95,6 +102,34 @@ func TestRecorderEnabledAddsSidecarAndPlugin(t *testing.T) {
 	require.True(t, found)
 }
 
+func TestRecorderSidecarUsesBatchAndImageFromTheSpec(t *testing.T) {
+	ctx := context.Background()
+	config, shard := recorderFixture()
+	operand := NewSchedulerForShard(shard)
+	pull := corev1.PullAlways
+	operand.recorderOverride = &recorderv1.RecorderSpec{
+		Enabled: ptr.To(true),
+		Address: "127.0.0.1:9099",
+		Image:   &common.Image{PullPolicy: &pull, Repository: ptr.To("registry.example"), Name: ptr.To("recorder"), Tag: ptr.To("v9")},
+		Resources: &corev1.ResourceRequirements{Requests: corev1.ResourceList{
+			corev1.ResourceCPU: resource.MustParse("50m"),
+		}},
+		Batch: &recorderv1.RecorderBatch{
+			RollInterval: &metav1.Duration{Duration: time.Minute},
+			RollSizeMB:   ptr.To(8),
+		},
+	}
+
+	deployment := recorderDeployment(t, ctx, operand, config, shard)
+	sidecar := deployment.Spec.Template.Spec.Containers[1]
+	require.Equal(t, corev1.PullAlways, sidecar.ImagePullPolicy)
+	require.Contains(t, sidecar.Image, "registry.example")
+	require.Equal(t, "50m", sidecar.Resources.Requests.Cpu().String())
+	require.Contains(t, sidecar.Args, "--listen=127.0.0.1:9099")
+	require.Contains(t, sidecar.Args, "--roll-interval=1m0s")
+	require.Contains(t, sidecar.Args, "--roll-bytes=8388608")
+}
+
 func TestRecorderStartsWithoutStorageSecret(t *testing.T) {
 	ctx := context.Background()
 	config, shard := recorderFixture()
@@ -140,6 +175,100 @@ func TestHashKeySecretIsSharedByShardsAndNotRotated(t *testing.T) {
 	require.NoError(t, kube.Get(ctx, client.ObjectKey{Name: recorderv1.DefaultHashKeySecretName, Namespace: config.Spec.Namespace}, second))
 	require.Equal(t, first.Data[recorderv1.HMACKeyDataKey], second.Data[recorderv1.HMACKeyDataKey])
 	require.Equal(t, first.OwnerReferences, second.OwnerReferences)
+}
+
+func TestResolveRecorderReadsShardAndConfigObjects(t *testing.T) {
+	ctx := context.Background()
+	config, shard := recorderFixture()
+	reader := specReader{objects: map[string]map[string]any{
+		shard.Name: {"spec": map[string]any{"recorder": map[string]any{
+			"enabled": true,
+			"address": "127.0.0.1:1",
+		}}},
+		config.Name: {"spec": map[string]any{"scheduler": map[string]any{"recorder": map[string]any{
+			"hashKeySecretName": "from-config",
+		}}}},
+		"broken": {"spec": "not-a-map"},
+	}}
+	operand := &SchedulerForShard{}
+	spec, err := operand.resolveRecorder(ctx, reader, config, shard)
+	require.NoError(t, err)
+	require.True(t, spec.EnabledValue())
+	require.Equal(t, "127.0.0.1:1", spec.Address)
+	require.Equal(t, "from-config", spec.HashKeySecretName)
+
+	missing, err := operand.resolveRecorder(ctx, specReader{}, config, shard)
+	require.NoError(t, err)
+	require.False(t, missing.EnabledValue())
+
+	brokenShard := shard.DeepCopy()
+	brokenShard.Name = "broken"
+	broken, err := operand.resolveRecorder(ctx, reader, config, brokenShard)
+	require.NoError(t, err)
+	require.False(t, broken.EnabledValue())
+
+	empty, err := readRecorderSpec(ctx, nil, kaiv1.GroupVersion.WithKind("Config"), client.ObjectKey{}, "spec")
+	require.NoError(t, err)
+	require.Nil(t, empty)
+}
+
+func TestEnsureSharedHashKeyReportsASecretReadError(t *testing.T) {
+	ctx := context.Background()
+	config, shard := recorderFixture()
+	reader := specReader{fail: recorderv1.DefaultHashKeySecretName}
+	operand := &SchedulerForShard{recorderOverride: &recorderv1.RecorderSpec{Enabled: ptr.To(true)}}
+	err := operand.EnsureSharedHashKey(ctx, fake.NewClientBuilder().Build(), reader, config, shard)
+	require.ErrorContains(t, err, "boom")
+
+	disabled := &SchedulerForShard{recorderOverride: &recorderv1.RecorderSpec{Enabled: ptr.To(false)}}
+	require.NoError(t, disabled.EnsureSharedHashKey(ctx, fake.NewClientBuilder().Build(), reader, config, shard))
+}
+
+func TestRecorderPluginKeepsAnExistingPriority(t *testing.T) {
+	ctx := context.Background()
+	config, shard := recorderFixture()
+	priority := 12
+	shard.Spec.Plugins = map[string]kaiv1.PluginConfig{
+		"recorder": {Priority: &priority, Arguments: map[string]string{"extra": "kept"}},
+	}
+	operand := NewSchedulerForShard(shard)
+	operand.recorderOverride = &recorderv1.RecorderSpec{Enabled: ptr.To(true), Address: "127.0.0.1:9099"}
+	parsed := recorderSchedulerConfig(t, ctx, operand, config, shard)
+	var found bool
+	for _, plugin := range parsed.Tiers[0].Plugins {
+		if plugin.Name != "recorder" {
+			continue
+		}
+		found = true
+		require.Equal(t, "kept", plugin.Arguments["extra"])
+		require.Equal(t, "127.0.0.1:9099", plugin.Arguments["address"])
+	}
+	require.True(t, found)
+}
+
+type specReader struct {
+	objects map[string]map[string]any
+	fail    string
+}
+
+func (r specReader) Get(_ context.Context, key client.ObjectKey, obj client.Object, _ ...client.GetOption) error {
+	if key.Name == r.fail {
+		return fmt.Errorf("boom")
+	}
+	raw, ok := r.objects[key.Name]
+	if !ok {
+		return apierrors.NewNotFound(schema.GroupResource{Resource: "objects"}, key.Name)
+	}
+	target, ok := obj.(*unstructured.Unstructured)
+	if !ok {
+		return fmt.Errorf("unexpected object type %T", obj)
+	}
+	target.Object = raw
+	return nil
+}
+
+func (r specReader) List(context.Context, client.ObjectList, ...client.ListOption) error {
+	return nil
 }
 
 func recorderFixture() (*kaiv1.Config, *kaiv1.SchedulingShard) {

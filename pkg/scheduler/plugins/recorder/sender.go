@@ -221,12 +221,6 @@ func (g *gapCount) take() uint64 {
 	return n
 }
 
-func (g *gapCount) load() uint64 {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	return g.n
-}
-
 func estimateBytes(record *cycleRecord) int64 {
 	if record == nil || record.RawObjects == nil {
 		return 1024

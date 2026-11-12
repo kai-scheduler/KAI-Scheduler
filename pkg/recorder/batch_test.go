@@ -4,6 +4,7 @@
 package recorder
 
 import (
+	"bytes"
 	"compress/gzip"
 	"context"
 	"encoding/json"
@@ -48,11 +49,30 @@ func TestBatchRollsRedactedGzip(t *testing.T) {
 	require.Contains(t, string(payload), "Running")
 }
 
-func TestAppendCountsUnreadableDrops(t *testing.T) {
+func TestAppendDropsEmptyOversizedAndUnreadableLines(t *testing.T) {
 	writer, err := NewBatchWriter(t.TempDir(), 1<<20, []byte("key"))
 	require.NoError(t, err)
+	require.NoError(t, writer.Append(context.Background(), nil))
+	require.Zero(t, writer.Drops())
 	require.NoError(t, writer.Append(context.Background(), []byte("not-json")))
-	require.Equal(t, uint64(1), writer.Drops())
+	require.NoError(t, writer.Append(context.Background(), bytes.Repeat([]byte("x"), maxRecordBytes+1)))
+	require.Equal(t, uint64(2), writer.Drops())
+
+	_, err = NewBatchWriter(t.TempDir(), 0, nil)
+	require.ErrorContains(t, err, "hmac key is empty")
+}
+
+func TestPruneDropsTheOldestRolledBatch(t *testing.T) {
+	dir := t.TempDir()
+	writer, err := NewBatchWriter(dir, 1, []byte("key"))
+	require.NoError(t, err)
+	writer.maxDirBytes = 1
+	line := mustJSON(t, Envelope{Kind: KindCycle, Record: mustJSON(t, map[string]any{"phase": "Running"})})
+	require.NoError(t, writer.Append(context.Background(), line))
+	require.NoError(t, writer.Append(context.Background(), line))
+	matches, err := filepath.Glob(filepath.Join(dir, "records-*.jsonl.gz"))
+	require.NoError(t, err)
+	require.LessOrEqual(t, len(matches), 1)
 }
 
 func TestServeAcceptsOneRecord(t *testing.T) {

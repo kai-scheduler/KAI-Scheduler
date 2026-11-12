@@ -37,13 +37,13 @@ func (s *SchedulerForShard) resolveRecorder(
 	if s.recorderOverride != nil {
 		shardSpec = s.recorderOverride.DeepCopy()
 	} else if shard != nil && shard.Name != "" {
-		shardSpec, err = readRecorderSpec(ctx, reader, kaiv1.GroupVersion.WithKind("SchedulingShard"), client.ObjectKey{Name: shard.Name}, "spec", "recorder")
+		shardSpec, err = readRecorderSpec(ctx, reader, kaiv1.GroupVersion.WithKind("SchedulingShard"), client.ObjectKey{Name: shard.Name}, "spec", recorderName)
 		if err != nil {
 			return nil, err
 		}
 	}
 	if kaiConfig != nil && kaiConfig.Name != "" {
-		configSpec, err = readRecorderSpec(ctx, reader, kaiv1.GroupVersion.WithKind("Config"), client.ObjectKey{Name: kaiConfig.Name}, "spec", "scheduler", "recorder")
+		configSpec, err = readRecorderSpec(ctx, reader, kaiv1.GroupVersion.WithKind("Config"), client.ObjectKey{Name: kaiConfig.Name}, "spec", "scheduler", recorderName)
 		if err != nil {
 			return nil, err
 		}
@@ -100,7 +100,7 @@ func pluginsWithRecorder(plugins map[string]kaiv1.PluginConfig, spec *recorderv1
 	for name, cfg := range plugins {
 		merged[name] = cfg
 	}
-	existing := merged["recorder"]
+	existing := merged[recorderName]
 	priority := recorderv1.PluginPriority
 	if existing.Priority != nil {
 		priority = *existing.Priority
@@ -119,7 +119,7 @@ func pluginsWithRecorder(plugins map[string]kaiv1.PluginConfig, spec *recorderv1
 		args["shardName"] = shard.Name
 	}
 	enabled := true
-	merged["recorder"] = kaiv1.PluginConfig{
+	merged[recorderName] = kaiv1.PluginConfig{
 		Enabled:   &enabled,
 		Priority:  &priority,
 		Arguments: args,
@@ -135,7 +135,7 @@ func appendRecorderSidecar(deployment *appsv1.Deployment, spec *recorderv1.Recor
 	if spec.Image != nil && spec.Image.PullPolicy != nil {
 		pullPolicy = *spec.Image.PullPolicy
 	}
-	image := "recorder"
+	image := recorderName
 	if spec.Image != nil {
 		image = spec.Image.Url()
 	}
@@ -161,7 +161,7 @@ func appendRecorderSidecar(deployment *appsv1.Deployment, spec *recorderv1.Recor
 		securityContext = global.GetSecurityContext()
 	}
 	deployment.Spec.Template.Spec.Containers = append(deployment.Spec.Template.Spec.Containers, corev1.Container{
-		Name:            "recorder",
+		Name:            recorderName,
 		Image:           image,
 		ImagePullPolicy: pullPolicy,
 		SecurityContext: securityContext,
@@ -202,7 +202,10 @@ func appendRecorderSidecar(deployment *appsv1.Deployment, spec *recorderv1.Recor
 	)
 }
 
-const serviceAccountTokenPath = "/var/run/secrets/kubernetes.io/serviceaccount"
+const (
+	recorderName            = "recorder"
+	serviceAccountTokenPath = "/var/run/secrets/kubernetes.io/serviceaccount"
+)
 
 // EnsureSharedHashKey creates the HMAC secret once, owned by the Config.
 // A later shard reconcile must not update the data or take ownership.
