@@ -52,12 +52,6 @@ func ServerVersionAtLeast(minor int) bool {
 	return int(serverMinorVersion.Load()) >= minor
 }
 
-// SetServerMinorVersionForTest sets the API server minor version that
-// ServerVersionAtLeast compares against. Zero means unknown.
-func SetServerMinorVersionForTest(minor int) {
-	serverMinorVersion.Store(int32(minor))
-}
-
 // DynamicResourcesEnabled reports whether DRA was determined to be usable
 // against the cluster at startup. Use this instead of the upstream feature gate
 // to gate DRA-specific scheduler behaviour.

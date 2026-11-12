@@ -14,6 +14,9 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/apimachinery/pkg/version"
+	fakediscovery "k8s.io/client-go/discovery/fake"
+	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/dynamic-resource-allocation/cel"
 	"k8s.io/dynamic-resource-allocation/structured"
 	"k8s.io/utils/ptr"
@@ -21,6 +24,23 @@ import (
 	featuregates "github.com/kai-scheduler/KAI-scheduler/pkg/common/feature_gates"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/k8s_utils"
 )
+
+// setServerVersion runs SetDRAFeatureGate against a fake API server of version
+// 1.<minor> that serves resource.k8s.io/v1, so the server version takes the same
+// parsing path as in production. The DRA availability flag is left as it was.
+// An empty minor resets the version to unknown.
+func setServerVersion(minor string) {
+	draEnabled := featuregates.DynamicResourcesEnabled()
+	defer featuregates.SetDynamicResourcesEnabledForTest(draEnabled)
+
+	client := fake.NewClientset()
+	client.Resources = []*metav1.APIResourceList{{GroupVersion: "resource.k8s.io/v1"}}
+	discovery := client.Discovery().(*fakediscovery.FakeDiscovery)
+	discovery.FakedServerVersion = &version.Info{Major: "1", Minor: minor}
+	if err := featuregates.SetDRAFeatureGate(discovery); err != nil {
+		panic(err)
+	}
+}
 
 type singleDeviceClassLister struct {
 	class *resourceapi.DeviceClass
@@ -109,18 +129,18 @@ func TestAllocatorFeatures_FollowServerVersion(t *testing.T) {
 	featuregates.SetDynamicResourcesEnabledForTest(true)
 	t.Cleanup(func() {
 		featuregates.SetDynamicResourcesEnabledForTest(false)
-		featuregates.SetServerMinorVersionForTest(0)
+		setServerVersion("")
 	})
 
 	t.Run("1.35 server keeps partitionable devices off", func(t *testing.T) {
-		featuregates.SetServerMinorVersionForTest(35)
+		setServerVersion("35")
 		features := allocatorFeatures(k8s_utils.GetK8sFeatures())
 		assert.False(t, features.PartitionableDevices)
 		assert.Empty(t, allocateCounterBackedGPU(t, features))
 	})
 
 	t.Run("1.37 server allocates the counter-backed GPU", func(t *testing.T) {
-		featuregates.SetServerMinorVersionForTest(37)
+		setServerVersion("37")
 		features := allocatorFeatures(k8s_utils.GetK8sFeatures())
 		assert.True(t, features.PartitionableDevices)
 		assert.True(t, features.ConsumableCapacity)

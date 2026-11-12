@@ -12,25 +12,28 @@ import (
 	featuregates "github.com/kai-scheduler/KAI-scheduler/pkg/common/feature_gates"
 )
 
-// draDefaultOnSinceV136 lists DRA feature gates that are off by default in the
-// vendored Kubernetes libraries but on by default (Beta) from Kubernetes 1.36.
-// On a 1.36+ API server they are enabled unless set with --feature-gates, so
-// the allocator matches what kube-apiserver and kube-scheduler support.
-var draDefaultOnSinceV136 = []struct {
+// draDefaultOnByServerVersion lists DRA feature gates that are off by default in
+// the vendored Kubernetes libraries but on by default (Beta) from the listed
+// Kubernetes minor version. On an API server at that version or later they are
+// enabled unless set with --feature-gates, so the allocator matches what
+// kube-apiserver and kube-scheduler support. A gate that flips in a later
+// release is one more row.
+var draDefaultOnByServerVersion = []struct {
 	gate   featuregate.Feature
+	since  int
 	enable func(*k8splfeature.Features)
 }{
 	{
 		gate:   kubefeatures.DRAPartitionableDevices,
+		since:  36,
 		enable: func(f *k8splfeature.Features) { f.EnableDRAPartitionableDevices = true },
 	},
 	{
 		gate:   kubefeatures.DRAConsumableCapacity,
+		since:  36,
 		enable: func(f *k8splfeature.Features) { f.EnableDRAConsumableCapacity = true },
 	},
 }
-
-const draDefaultOnMinorVersion = 36
 
 // GetK8sFeatures returns the upstream scheduler feature flags, with
 // EnableDynamicResourceAllocation overridden by KAI's runtime DRA detection.
@@ -49,9 +52,9 @@ func GetK8sFeatures() k8splfeature.Features {
 func getK8sFeatures(gates featuregate.MutableVersionedFeatureGate) k8splfeature.Features {
 	f := k8splfeature.NewSchedulerFeaturesFromGates(gates)
 	f.EnableDynamicResourceAllocation = featuregates.DynamicResourcesEnabled()
-	if f.EnableDynamicResourceAllocation && featuregates.ServerVersionAtLeast(draDefaultOnMinorVersion) {
-		for _, d := range draDefaultOnSinceV136 {
-			if !gates.ExplicitlySet(d.gate) {
+	if f.EnableDynamicResourceAllocation {
+		for _, d := range draDefaultOnByServerVersion {
+			if featuregates.ServerVersionAtLeast(d.since) && !gates.ExplicitlySet(d.gate) {
 				d.enable(&f)
 			}
 		}

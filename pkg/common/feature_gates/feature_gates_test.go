@@ -50,6 +50,10 @@ func discoveryForVersion(major, minor string) discovery.DiscoveryInterface {
 	return fakeClient.Discovery()
 }
 
+func setServerMinorVersion(minor int) {
+	serverMinorVersion.Store(int32(minor))
+}
+
 func TestCache(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Test cache")
@@ -116,7 +120,7 @@ var _ = Describe("New", func() {
 		DescribeTable("should record the server minor version",
 			func(serverMajor, serverMinor string, atLeast int, expect bool) {
 				DeferCleanup(SetDynamicResourcesEnabledForTest, false)
-				DeferCleanup(SetServerMinorVersionForTest, 0)
+				DeferCleanup(setServerMinorVersion, 0)
 
 				Expect(SetDRAFeatureGate(discoveryForVersion(serverMajor, serverMinor))).To(Succeed())
 				Expect(ServerVersionAtLeast(atLeast)).To(Equal(expect))
@@ -129,8 +133,8 @@ var _ = Describe("New", func() {
 		)
 
 		It("should leave the server version untouched when discovery fails", func() {
-			SetServerMinorVersionForTest(36)
-			DeferCleanup(SetServerMinorVersionForTest, 0)
+			setServerMinorVersion(36)
+			DeferCleanup(setServerMinorVersion, 0)
 
 			discoveryClient := &erroringDiscovery{
 				DiscoveryInterface: discoveryForVersion("1", "37"),
