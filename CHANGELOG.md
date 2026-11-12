@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v0.18.8] - 2026-11-12
+
+### Changed
+- Bump bundled gpu-fractioning; exact version in the subcharts.yaml release asset
+
 ## [v0.18.7] - 2026-11-02
 
 ### Changed
