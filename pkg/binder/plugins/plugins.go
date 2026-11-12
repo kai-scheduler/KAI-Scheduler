@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/kai-scheduler/api/scheduling/v1alpha2"
@@ -48,6 +49,18 @@ func (bp *BinderPlugins) PostBind(ctx context.Context, pod *v1.Pod, host *v1.Nod
 	state *state.BindingState) {
 	for _, p := range bp.plugins {
 		p.PostBind(ctx, pod, host, bindRequest, state)
+	}
+}
+
+// ForgetBindingState releases retained bookkeeping without plugin callbacks.
+func (bp *BinderPlugins) ForgetBindingState(requestUID, podUID types.UID) {
+	if requestUID == "" {
+		return
+	}
+	for _, p := range bp.plugins {
+		if forgetter, ok := p.(state.Forgetter); ok {
+			forgetter.ForgetBindingState(requestUID, podUID)
+		}
 	}
 }
 
