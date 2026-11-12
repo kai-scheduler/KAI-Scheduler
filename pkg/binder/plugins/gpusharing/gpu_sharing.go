@@ -12,6 +12,7 @@ import (
 
 	"golang.org/x/exp/slices"
 	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -204,19 +205,39 @@ func (p *GPUSharing) Rollback(
 	}
 
 	for _, configMapName := range configMapNames {
-		if err = p.deleteConfigMap(ctx, pod.Namespace, configMapName); err != nil {
+		if err = p.deleteConfigMap(ctx, pod, configMapName); err != nil {
 			errs = append(errs, fmt.Errorf("failed to delete configmap %s/%s during rollback: %w",
 				pod.Namespace, configMapName, err))
 		}
-		logger.V(1).Info("deleted configmap", "namespace", pod.Namespace, "name", pod.Name, "configmap", configMapName)
 	}
 
 	return errors.Join(errs...)
 }
 
-func (p *GPUSharing) deleteConfigMap(ctx context.Context, namespace, name string) error {
+func (p *GPUSharing) deleteConfigMap(ctx context.Context, pod *v1.Pod, name string) error {
+	logger := log.FromContext(ctx)
 	cm := &v1.ConfigMap{}
-	cm.Name = name
-	cm.Namespace = namespace
-	return client.IgnoreNotFound(p.kubeClient.Delete(ctx, cm))
+	if err := p.kubeClient.Get(ctx, client.ObjectKey{Namespace: pod.Namespace, Name: name}, cm); err != nil {
+		return client.IgnoreNotFound(err)
+	}
+	if pod.UID == "" {
+		return fmt.Errorf("pod %s/%s has no UID", pod.Namespace, pod.Name)
+	}
+	if !gpusharingconfigmap.IsOwnedByPod(cm, pod) {
+		logger.Info("Preserving configmap during rollback because its owner does not exclusively match the pod",
+			"namespace", pod.Namespace, "name", pod.Name, "configMapName", name)
+		return nil
+	}
+	if cm.UID == "" || cm.ResourceVersion == "" {
+		return fmt.Errorf("configmap %s/%s has no UID or resource version", cm.Namespace, cm.Name)
+	}
+	// Ownership can change between the read and delete, even without recreating the ConfigMap.
+	if err := p.kubeClient.Delete(ctx, cm, &client.DeleteOptions{
+		Preconditions: &metav1.Preconditions{UID: &cm.UID, ResourceVersion: &cm.ResourceVersion},
+	}); err != nil {
+		return client.IgnoreNotFound(err)
+	}
+	logger.V(1).Info("Deleted configmap during rollback",
+		"namespace", pod.Namespace, "name", pod.Name, "configMapName", name)
+	return nil
 }
