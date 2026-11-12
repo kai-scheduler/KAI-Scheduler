@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Do not count DRA admin access GPU claims as GPU usage
+custom:
+  Issue: "2236"
+  Author: brokenlander
