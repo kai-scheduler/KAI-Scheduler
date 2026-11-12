@@ -346,6 +346,52 @@ func TestScenarioSearchDurationMetricObservesSeconds(t *testing.T) {
 	require.InEpsilon(t, sumBefore+2.5, sumAfter, 0.000001)
 }
 
+func TestUpdateActionDurationObservesHistogramAndSetsGauge(t *testing.T) {
+	labels := map[string]string{"action": "test-action-latency"}
+	countBefore, sumBefore := histogramSnapshot(t, "action_scheduling_latency_seconds", labels)
+
+	UpdateActionDuration("test-action-latency", 1500*time.Millisecond)
+	UpdateActionDuration("test-action-latency", 250*time.Millisecond)
+
+	countAfter, sumAfter := histogramSnapshot(t, "action_scheduling_latency_seconds", labels)
+	require.Equal(t, countBefore+2, countAfter)
+	require.InEpsilon(t, sumBefore+1.75, sumAfter, 0.000001)
+	require.Equal(t, 250.0, gaugeValue(t, "action_scheduling_latency_milliseconds", labels))
+}
+
+func TestUpdatePluginDurationObservesHistogramAndSetsGauge(t *testing.T) {
+	labels := map[string]string{"plugin": "test-plugin-latency", "OnSession": OnSessionOpen}
+	countBefore, sumBefore := histogramSnapshot(t, "plugin_scheduling_latency_seconds", labels)
+
+	UpdatePluginDuration("test-plugin-latency", OnSessionOpen, 40*time.Millisecond)
+
+	countAfter, sumAfter := histogramSnapshot(t, "plugin_scheduling_latency_seconds", labels)
+	require.Equal(t, countBefore+1, countAfter)
+	require.InEpsilon(t, sumBefore+0.04, sumAfter, 0.000001)
+	require.Equal(t, 40.0, gaugeValue(t, "plugin_scheduling_latency_milliseconds", labels))
+}
+
+func TestSessionAndE2eDurationsObserveHistograms(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		update func(time.Time)
+	}{
+		{"e2e_scheduling_latency_seconds", UpdateE2eDuration},
+		{"open_session_latency_seconds", UpdateOpenSessionDuration},
+		{"close_session_latency_seconds", UpdateCloseSessionDuration},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			countBefore, sumBefore := histogramSnapshot(t, tc.name, nil)
+
+			tc.update(time.Now().Add(-2 * time.Second))
+
+			countAfter, sumAfter := histogramSnapshot(t, tc.name, nil)
+			require.Equal(t, countBefore+1, countAfter)
+			require.GreaterOrEqual(t, sumAfter-sumBefore, 2.0)
+		})
+	}
+}
+
 func TestScenarioSearchConfiguredBudgetMetricsAcceptUnlimitedZero(t *testing.T) {
 	SetScenarioSearchActionBudget("test-action-zero-budget", 0)
 	SetScenarioSearchJobBudget(0)

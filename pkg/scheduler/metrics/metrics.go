@@ -34,6 +34,10 @@ import (
 	enginev2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
 )
 
+// cycleDurationBuckets are the histogram buckets, in seconds, shared by the scheduling cycle,
+// session, plugin and action duration histograms: 0.1ms, 0.2ms, 0.4ms, ..., ~105s.
+var cycleDurationBuckets = prometheus.ExponentialBuckets(0.0001, 2, 21)
+
 const (
 	// OnSessionOpen label
 	OnSessionOpen = "OnSessionOpen"
@@ -49,6 +53,11 @@ var (
 	closeSessionLatency                            prometheus.Gauge
 	pluginSchedulingLatency                        *prometheus.GaugeVec
 	actionSchedulingLatency                        *prometheus.GaugeVec
+	e2eSchedulingDurationSeconds                   prometheus.Histogram
+	openSessionDurationSeconds                     prometheus.Histogram
+	closeSessionDurationSeconds                    prometheus.Histogram
+	pluginSchedulingDurationSeconds                *prometheus.HistogramVec
+	actionSchedulingDurationSeconds                *prometheus.HistogramVec
 	taskSchedulingLatency                          prometheus.Histogram
 	taskBindLatency                                prometheus.Histogram
 	podgroupsScheduledByAction                     *prometheus.CounterVec
@@ -115,6 +124,49 @@ func InitMetrics(namespace string) {
 			Namespace: namespace,
 			Name:      "action_scheduling_latency_milliseconds",
 			Help:      "Action scheduling latency in milliseconds, as a gauge",
+		}, []string{"action"})
+
+	e2eSchedulingDurationSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Namespace: namespace,
+			Name:      "e2e_scheduling_latency_seconds",
+			Help:      "E2e scheduling latency in seconds (scheduling algorithm + binding), as a histogram",
+			Buckets:   cycleDurationBuckets,
+		},
+	)
+
+	openSessionDurationSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Namespace: namespace,
+			Name:      "open_session_latency_seconds",
+			Help:      "Open session latency in seconds, including all plugins, as a histogram",
+			Buckets:   cycleDurationBuckets,
+		},
+	)
+
+	closeSessionDurationSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Namespace: namespace,
+			Name:      "close_session_latency_seconds",
+			Help:      "Close session latency in seconds, including all plugins, as a histogram",
+			Buckets:   cycleDurationBuckets,
+		},
+	)
+
+	pluginSchedulingDurationSeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: namespace,
+			Name:      "plugin_scheduling_latency_seconds",
+			Help:      "Plugin scheduling latency in seconds, as a histogram",
+			Buckets:   cycleDurationBuckets,
+		}, []string{"plugin", "OnSession"})
+
+	actionSchedulingDurationSeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: namespace,
+			Name:      "action_scheduling_latency_seconds",
+			Help:      "Action scheduling latency in seconds, as a histogram",
+			Buckets:   cycleDurationBuckets,
 		}, []string{"action"})
 
 	taskSchedulingLatency = promauto.NewHistogram(
@@ -290,30 +342,35 @@ func InitMetrics(namespace string) {
 
 // UpdateOpenSessionDuration updates latency for open session, including all plugins
 func UpdateOpenSessionDuration(startTime time.Time) {
-	duration := Duration(startTime).Milliseconds()
-	openSessionLatency.Set(float64(duration))
+	elapsed := Duration(startTime)
+	openSessionLatency.Set(float64(elapsed.Milliseconds()))
+	openSessionDurationSeconds.Observe(elapsed.Seconds())
 }
 
 // UpdateCloseSessionDuration updates latency for close session, including all plugins
 func UpdateCloseSessionDuration(startTime time.Time) {
-	duration := Duration(startTime).Milliseconds()
-	closeSessionLatency.Set(float64(duration))
+	elapsed := Duration(startTime)
+	closeSessionLatency.Set(float64(elapsed.Milliseconds()))
+	closeSessionDurationSeconds.Observe(elapsed.Seconds())
 }
 
 // UpdatePluginDuration updates latency for every plugin
 func UpdatePluginDuration(pluginName, OnSessionStatus string, duration time.Duration) {
 	pluginSchedulingLatency.WithLabelValues(pluginName, OnSessionStatus).Set(float64(duration.Milliseconds()))
+	pluginSchedulingDurationSeconds.WithLabelValues(pluginName, OnSessionStatus).Observe(duration.Seconds())
 }
 
 // UpdateActionDuration updates latency for every action
 func UpdateActionDuration(actionName string, duration time.Duration) {
 	actionSchedulingLatency.WithLabelValues(actionName).Set(float64(duration.Milliseconds()))
+	actionSchedulingDurationSeconds.WithLabelValues(actionName).Observe(duration.Seconds())
 }
 
 // UpdateE2eDuration updates entire end to end scheduling latency
 func UpdateE2eDuration(startTime time.Time) {
-	duration := Duration(startTime).Milliseconds()
-	e2eSchedulingLatency.Set(float64(duration))
+	elapsed := Duration(startTime)
+	e2eSchedulingLatency.Set(float64(elapsed.Milliseconds()))
+	e2eSchedulingDurationSeconds.Observe(elapsed.Seconds())
 }
 
 // UpdateTaskScheduleDuration updates single task scheduling latency
