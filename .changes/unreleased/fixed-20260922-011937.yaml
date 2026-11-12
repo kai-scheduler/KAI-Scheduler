@@ -1,3 +1,0 @@
-kind: Fixed
-body: |-
-  Disable fractional GPU RuntimeClass injection when GPU Operator NRI is enabled

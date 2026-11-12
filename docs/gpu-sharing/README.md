@@ -51,7 +51,7 @@ This mode keeps the legacy GPU-sharing behavior. It creates reservation pods in 
 
 ### Install with HAMi-core enforcement
 
-Use `HamiCore` when workloads should continue to use the `gpu-fraction` and `gpu-memory` annotations, but GPU memory limits are be enforced by HAMi-core 
+Use `HamiCore` when workloads should continue to use the `gpu-fraction` and `gpu-memory` annotations, but GPU memory limits are enforced by HAMi-core 
 
 ```bash
 helm upgrade -i kai-scheduler oci://ghcr.io/kai-scheduler/kai-scheduler/kai-scheduler \
@@ -76,9 +76,9 @@ helm upgrade -i kai-scheduler oci://ghcr.io/kai-scheduler/kai-scheduler/kai-sche
 Setting `global.nvFractions.set=true` installs the `gpu-fractioning` Helm dependency from `oci://ghcr.io/kai-scheduler/gpu-fractioning` and renders KAI with `global.gpuSharingMode=NvFractions`.
 
 When managing the `gpu-fractioning` operator separately, install it before KAI.
-The KAI operator registers its `GpuSharingConfig` watch only when the CRD exists
+The KAI operator registers its `GpuFractioningConfig` watch only when the CRD exists
 at startup. If `gpu-fractioning` is installed after KAI, restart the KAI operator so
-it discovers the CRD; otherwise, `GpuSharingConfig` changes do not trigger KAI
+it discovers the CRD; otherwise, `GpuFractioningConfig` changes do not trigger KAI
 reconciliation.
 
 If the `gpu-fractioning` operator is already installed and managed separately, do not install the subchart from KAI. Set `global.gpuSharingMode=NvFractions` and keep `global.nvFractions.set=false`:
@@ -364,7 +364,7 @@ The events usually show whether the pod is blocked by scheduling, admission, or 
 Then check the gpu-fractioning status:
 
 ```bash
-kubectl get gpusharingconfig default -o yaml
+kubectl get gpufractioningconfig default -o yaml
 ```
 
 Then check the target GPU node conditions:

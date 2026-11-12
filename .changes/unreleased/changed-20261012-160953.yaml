@@ -1,6 +1,0 @@
-kind: Changed
-body: |-
-  gpu-fractioning chart dependency declared as a ~0.1.0 range, resolved at build time
-custom:
-  Author: "natasharomm"
-  Issue: "2364"
