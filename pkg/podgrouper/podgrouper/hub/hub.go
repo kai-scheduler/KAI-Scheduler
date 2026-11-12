@@ -31,6 +31,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/skiptopowner"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/spark"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/spotrequest"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/statefulset"
 )
 
 const (
@@ -193,7 +194,7 @@ func NewDefaultPluginsHub(kubeClient client.Client, searchForLegacyPodGroups,
 			Group:   "apps",
 			Version: "v1",
 			Kind:    "StatefulSet",
-		}: defaultGrouper,
+		}: statefulset.NewStatefulSetGrouper(defaultGrouper),
 		{
 			Group:   "apps",
 			Version: "v1",
