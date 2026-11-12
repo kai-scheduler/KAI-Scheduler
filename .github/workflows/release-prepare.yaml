@@ -38,7 +38,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.26.8'
+          go-version: '1.26.10'
 
       # The chart declares gpu-fractioning as a version range, so a release can bundle a
       # newer one than its predecessor with no commit of ours to show for it. The entry
