@@ -11,8 +11,11 @@ import (
 // identityFields are JSON keys whose string values are object names.
 var identityFields = map[string]struct{}{
 	"name":                   {},
+	"Name":                   {},
 	"namespace":              {},
+	"Namespace":              {},
 	"uid":                    {},
+	"UID":                    {},
 	"nodeName":               {},
 	"node":                   {},
 	"queue":                  {},
@@ -113,6 +116,12 @@ func walkMap(in map[string]any, path string, h Hasher) map[string]any {
 		}
 		if _, ident := identityFields[key]; ident {
 			if text, ok := child.(string); ok {
+				// Plugin names are scheduler code identifiers. Hashing them makes a
+				// redacted config unable to load predicates, so replay ignores node selectors.
+				if key == "name" && strings.Contains(path, "plugins") {
+					out[key] = text
+					continue
+				}
 				out[key] = h.Hash(text)
 				continue
 			}

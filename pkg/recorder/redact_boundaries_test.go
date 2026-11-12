@@ -112,6 +112,30 @@ func TestNestedSelectorIsNotFlattened(t *testing.T) {
 	require.Contains(t, body, hasher.Hash("team-a"))
 }
 
+func TestEvictionPreemptorAndPluginNames(t *testing.T) {
+	hasher := NewHasher([]byte("key"))
+	const namespace = "kai-kai-rec-leaf"
+	body := redactJSON(t, hasher, map[string]any{
+		"decisions": []any{map[string]any{"ops": []any{map[string]any{
+			"namespace": namespace,
+			"name":      "preemptor",
+			"eviction": map[string]any{"Preemptor": map[string]any{
+				"Namespace": namespace,
+				"Name":      "preemptor",
+			}},
+		}}}},
+		"config": map[string]any{"tiers": []any{map[string]any{"plugins": []any{
+			map[string]any{"name": "predicates"},
+			map[string]any{"name": "proportion"},
+		}}}},
+	})
+	require.NotContains(t, body, namespace)
+	require.NotContains(t, body, "preemptor")
+	require.Contains(t, body, `"name":"predicates"`)
+	require.Contains(t, body, `"name":"proportion"`)
+	require.Contains(t, body, hasher.Hash(namespace))
+}
+
 func TestHasherEdges(t *testing.T) {
 	hasher := NewHasher([]byte("key"))
 	require.Empty(t, hasher.Hash(""))
