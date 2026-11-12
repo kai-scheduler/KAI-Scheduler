@@ -14,6 +14,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
@@ -21,9 +22,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
 	"github.com/kai-scheduler/api/constants"
+	schedulingv2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
 )
 
 type testLogSink struct {
@@ -166,6 +169,11 @@ type fakePodGrouper struct {
 	getPodOwnersFn     func(ctx context.Context, pod *v1.Pod) (*unstructured.Unstructured, []*metav1.PartialObjectMetadata, error)
 	getPGMetadataCalls int
 	getPodOwnersCalls  int
+	pluginName         string
+}
+
+func (f *fakePodGrouper) GetPluginName(_ *unstructured.Unstructured) string {
+	return f.pluginName
 }
 
 func (f *fakePodGrouper) GetPGMetadata(ctx context.Context, pod *v1.Pod, topOwner *unstructured.Unstructured, allOwners []*metav1.PartialObjectMetadata) (*podgroup.Metadata, error) {
@@ -803,4 +811,95 @@ func TestAssignPodToGroupAndSubGroup(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestReconcileCountsCreatedPodGroupsOnce(t *testing.T) {
+	testScheme := runtime.NewScheme()
+	assert.NoError(t, scheme.AddToScheme(testScheme))
+	assert.NoError(t, schedulingv2alpha2.AddToScheme(testScheme))
+
+	pod := v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-pod",
+			Namespace: "my-namespace",
+		},
+		Spec: v1.PodSpec{
+			SchedulerName: "kai-scheduler",
+		},
+	}
+	topOwner := &unstructured.Unstructured{Object: map[string]interface{}{
+		"apiVersion": "test.kai.scheduler/v1",
+		"kind":       "TestMetricsWorkload",
+	}}
+	fakeGrouper := &fakePodGrouper{
+		pluginName: "test-metrics-plugin",
+		getPodOwnersFn: func(ctx context.Context, pod *v1.Pod) (*unstructured.Unstructured, []*metav1.PartialObjectMetadata, error) {
+			return topOwner, nil, nil
+		},
+		getPGMetadataFn: func(ctx context.Context, pod *v1.Pod, topOwner *unstructured.Unstructured, allOwners []*metav1.PartialObjectMetadata) (*podgroup.Metadata, error) {
+			return &podgroup.Metadata{
+				Name:         "pg-test-metrics",
+				Namespace:    pod.Namespace,
+				MinAvailable: 1,
+				Queue:        "test-queue",
+			}, nil
+		},
+	}
+	fakeClient := fake.NewClientBuilder().WithScheme(testScheme).WithObjects(&pod).Build()
+	podReconciler := PodReconciler{
+		Client:          fakeClient,
+		Scheme:          testScheme,
+		podGrouper:      fakeGrouper,
+		PodGroupHandler: podgroup.NewHandler(fakeClient, nodePoolKey, "kai.scheduler/queue"),
+		configs: Configs{
+			SchedulerName: "kai-scheduler",
+		},
+		eventRecorder: record.NewFakeRecorder(10),
+	}
+	request := ctrl.Request{NamespacedName: types.NamespacedName{Namespace: pod.Namespace, Name: pod.Name}}
+
+	counter := func() float64 {
+		return counterValue(t, "kai_podgrouper_podgroups_created_total", map[string]string{
+			"plugin":    "test-metrics-plugin",
+			"owner_gvk": "test.kai.scheduler/v1/TestMetricsWorkload",
+		})
+	}
+	assert.Equal(t, float64(0), counter())
+
+	_, err := podReconciler.Reconcile(context.TODO(), request)
+	assert.NoError(t, err)
+	assert.Equal(t, float64(1), counter())
+
+	// The PodGroup already exists, so reconciling again must not count another creation.
+	_, err = podReconciler.Reconcile(context.TODO(), request)
+	assert.NoError(t, err)
+	assert.Equal(t, float64(1), counter())
+}
+
+// counterValue returns the value of the counter series with exactly the given labels, or 0 if it was never recorded.
+func counterValue(t *testing.T, name string, labels map[string]string) float64 {
+	t.Helper()
+
+	families, err := ctrlmetrics.Registry.Gather()
+	assert.NoError(t, err)
+	for _, family := range families {
+		if family.GetName() != name {
+			continue
+		}
+		for _, metric := range family.GetMetric() {
+			if len(metric.GetLabel()) != len(labels) {
+				continue
+			}
+			matches := true
+			for _, label := range metric.GetLabel() {
+				if labels[label.GetName()] != label.GetValue() {
+					matches = false
+				}
+			}
+			if matches {
+				return metric.GetCounter().GetValue()
+			}
+		}
+	}
+	return 0
 }
