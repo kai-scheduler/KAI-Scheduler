@@ -1,6 +1,6 @@
 kind: Fixed
 body: |-
-  Binder CDI auto-detection treats a ClusterPolicy without spec.cdi.enabled as CDI on from GPU Operator 25.10
+  Binder CDI auto-detection takes a missing spec.cdi.enabled from the ClusterPolicy CRD default, true from GPU Operator 25.10
 custom:
   Author: "blacksoxx"
   Issue: "2641"
