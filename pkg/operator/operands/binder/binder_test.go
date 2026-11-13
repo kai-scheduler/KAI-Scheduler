@@ -27,6 +27,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -48,6 +49,7 @@ var _ = Describe("Binder", func() {
 		BeforeEach(func(ctx context.Context) {
 			testScheme := scheme.Scheme
 			utilruntime.Must(nvidiav1.AddToScheme(testScheme))
+			utilruntime.Must(apiextensionsv1.AddToScheme(testScheme))
 			fakeClientBuilder := fake.NewClientBuilder()
 			fakeClientBuilder.WithScheme(testScheme)
 
@@ -212,10 +214,9 @@ var _ = Describe("Binder", func() {
 					expectGPUSharingCDI((*deploymentT).Spec.Template.Spec.Containers[0].Args, false)
 				})
 
-				It("detects CDI state with GPU Operator >= v25.10.0", func(ctx context.Context) {
-					clusterPolicy.Labels = map[string]string{
-						versionLabelName: "v25.10.1",
-					}
+				It("detects CDI on a GPU Operator whose CRD defaults spec.cdi.enabled to true", func(ctx context.Context) {
+					// GPU Operator 25.10 and newer: spec.cdi.default no longer matters.
+					Expect(fakeKubeClient.Create(ctx, clusterPolicyCRDWithEnabledDefault(true))).To(Succeed())
 					clusterPolicy.Spec.CDI.Default = ptr.To(false)
 					Expect(fakeKubeClient.Create(ctx, clusterPolicy)).To(Succeed())
 
@@ -227,10 +228,21 @@ var _ = Describe("Binder", func() {
 					expectGPUSharingCDI((*deploymentT).Spec.Template.Spec.Containers[0].Args, true)
 				})
 
-				It("detects CDI state with GPU Operator < v25.10.0", func(ctx context.Context) {
-					clusterPolicy.Labels = map[string]string{
-						versionLabelName: "v24.8.2",
-					}
+				It("detects CDI from the CRD default when the ClusterPolicy leaves spec.cdi out", func(ctx context.Context) {
+					Expect(fakeKubeClient.Create(ctx, clusterPolicyCRDWithEnabledDefault(true))).To(Succeed())
+					clusterPolicy.Spec.CDI = nvidiav1.CDIConfigSpec{}
+					Expect(fakeKubeClient.Create(ctx, clusterPolicy)).To(Succeed())
+
+					objects, err := b.DesiredState(ctx, fakeKubeClient, kaiConfig)
+					Expect(err).To(BeNil())
+
+					deploymentT := test_utils.FindTypeInObjects[*appsv1.Deployment](objects)
+					Expect(deploymentT).NotTo(BeNil())
+					expectGPUSharingCDI((*deploymentT).Spec.Template.Spec.Containers[0].Args, true)
+				})
+
+				It("keeps CDI off on a GPU Operator whose CRD defaults spec.cdi.enabled to false", func(ctx context.Context) {
+					Expect(fakeKubeClient.Create(ctx, clusterPolicyCRDWithEnabledDefault(false))).To(Succeed())
 					clusterPolicy.Spec.CDI.Default = ptr.To(false)
 					Expect(fakeKubeClient.Create(ctx, clusterPolicy)).To(Succeed())
 
@@ -564,4 +576,36 @@ func binderPluginsConfig(args []string) binderplugins.Config {
 	pluginConfig := binderplugins.Config{}
 	Expect(json.Unmarshal([]byte(pluginsArg), &pluginConfig)).To(Succeed())
 	return pluginConfig
+}
+
+// clusterPolicyCRDWithEnabledDefault is the part of the GPU Operator CRD the CDI
+// detection reads: the stored version's schema default for spec.cdi.enabled.
+func clusterPolicyCRDWithEnabledDefault(enabled bool) *apiextensionsv1.CustomResourceDefinition {
+	raw := "false"
+	if enabled {
+		raw = "true"
+	}
+	return &apiextensionsv1.CustomResourceDefinition{
+		ObjectMeta: metav1.ObjectMeta{Name: "clusterpolicies.nvidia.com"},
+		Spec: apiextensionsv1.CustomResourceDefinitionSpec{
+			Group: "nvidia.com",
+			Names: apiextensionsv1.CustomResourceDefinitionNames{Plural: "clusterpolicies", Kind: "ClusterPolicy"},
+			Scope: apiextensionsv1.ClusterScoped,
+			Versions: []apiextensionsv1.CustomResourceDefinitionVersion{{
+				Name: "v1", Served: true, Storage: true,
+				Schema: &apiextensionsv1.CustomResourceValidation{OpenAPIV3Schema: &apiextensionsv1.JSONSchemaProps{
+					Type: "object",
+					Properties: map[string]apiextensionsv1.JSONSchemaProps{"spec": {
+						Type: "object",
+						Properties: map[string]apiextensionsv1.JSONSchemaProps{"cdi": {
+							Type: "object",
+							Properties: map[string]apiextensionsv1.JSONSchemaProps{"enabled": {
+								Type: "boolean", Default: &apiextensionsv1.JSON{Raw: []byte(raw)},
+							}},
+						}},
+					}},
+				}},
+			}},
+		},
+	}
 }
