@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Scheduler Service keeps prometheus.io/scrape=true unless ServiceMonitors or the KAI-managed Prometheus are enabled
+custom:
+  Author: "Goguzgungor"
+  Issue: "2667"
