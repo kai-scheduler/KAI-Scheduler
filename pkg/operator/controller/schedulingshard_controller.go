@@ -280,7 +280,8 @@ func (r *SchedulingShardReconciler) getKaiConfig(ctx context.Context) *kaiv1.Con
 // defaultServiceMonitorEnabled defaults an unset prometheus.serviceMonitor.enabled to
 // prometheus.enabled. The API default is true, and the scheduler Service turns off its
 // prometheus.io/scrape annotation when ServiceMonitors are enabled, so without this every
-// install opts the scheduler out of annotation-based scraping.
+// install opts the scheduler out of annotation-based scraping. Both reconcilers call it
+// before the API defaults so the ServiceMonitors and the annotation agree.
 func defaultServiceMonitorEnabled(spec *kaiv1.ConfigSpec) {
 	if spec.Prometheus == nil {
 		spec.Prometheus = &kaiprometheus.Prometheus{}

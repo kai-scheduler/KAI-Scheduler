@@ -123,6 +123,7 @@ func (r *ConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res
 			}
 		}
 	}()
+	defaultServiceMonitorEnabled(&kaiConfig.Spec)
 	kaiConfig.Spec.SetDefaultsWhereNeeded()
 
 	if err = r.UpdateStartReconcileStatus(
