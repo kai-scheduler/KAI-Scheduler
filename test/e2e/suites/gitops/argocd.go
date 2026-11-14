@@ -48,6 +48,15 @@ func kaiApplication(chartVersion string) *unstructured.Unstructured {
 	if registry := os.Getenv("GITOPS_KAI_REGISTRY"); registry != "" {
 		global["registry"] = registry
 	}
+	values := map[string]interface{}{
+		"kaiConfigDeployer": map[string]interface{}{"enabled": false},
+		"kaiConfig":         map[string]interface{}{"render": true},
+		"global":            global,
+		"prometheus":        map[string]interface{}{"enabled": true},
+	}
+	if os.Getenv("GPU_STACK") != "fake" {
+		values["binder"] = map[string]interface{}{"runtimeClassName": "nvidia"}
+	}
 	app := &unstructured.Unstructured{
 		Object: map[string]interface{}{
 			"metadata": map[string]interface{}{
@@ -62,12 +71,7 @@ func kaiApplication(chartVersion string) *unstructured.Unstructured {
 					"chart":          "kai-scheduler",
 					"targetRevision": chartVersion,
 					"helm": map[string]interface{}{
-						"valuesObject": map[string]interface{}{
-							"kaiConfigDeployer": map[string]interface{}{"enabled": false},
-							"kaiConfig":         map[string]interface{}{"render": true},
-							"global":            global,
-							"prometheus":        map[string]interface{}{"enabled": true},
-						},
+						"valuesObject": values,
 					},
 				},
 				"destination": map[string]interface{}{
