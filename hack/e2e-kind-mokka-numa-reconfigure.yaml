@@ -1,0 +1,15 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+containerdConfigPatches:
+  - |-
+    [plugins."io.containerd.nri.v1.nri"]
+      disable = false
+nodes:
+  - role: control-plane
+  - role: worker
+    labels:
+      mokka.nvidia.com/e2e-gpu: "true"
+      mokka.nvidia.com/numa-policy: single-numa-node

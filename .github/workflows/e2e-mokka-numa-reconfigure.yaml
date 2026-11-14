@@ -1,0 +1,85 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+name: E2E - Mokka NUMA live reconfiguration
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/e2e-mokka-numa-reconfigure.yaml'
+      - 'hack/install-mokka-gpu-operator.sh'
+      - 'hack/e2e-*mokka*.yaml'
+      - 'hack/e2e-gpu-operator*.yaml'
+      - 'hack/test_mokka_numa_reconfigure_test.py'
+      - 'hack/test-mokka-numa-reconfigure.py'
+      - 'test/e2e/tools/podresources/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mokka-numa-reconfigure-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  reconfigure:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      CLUSTER_NAME: mokka-numa-reconfigure-ci
+      FEATURE_CONFIG: numa-reconfigure
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.19.0
+      - uses: helm/kind-action@v1.14.0
+        with:
+          install_only: true
+          version: v0.32.0
+      - name: Check the test helpers
+        run: |
+          python3 -m unittest discover -s hack -p 'test_mokka_numa_reconfigure_test.py' -v
+          go test ./test/e2e/tools/podresources
+          go build -o /tmp/mokka-numa-podresources ./test/e2e/tools/podresources
+      - name: Create the disposable Kind cluster
+        run: |
+          sudo sysctl -w fs.inotify.max_user_instances=1280 fs.inotify.max_user_watches=655360
+          kind create cluster --name "$CLUSTER_NAME" --image kindest/node:v1.35.0             --config hack/e2e-kind-mokka-numa-reconfigure.yaml
+          kubectl -n kube-system set resources daemonset/kindnet --containers=kindnet-cni --limits=cpu=200m
+          kubectl -n kube-system rollout status daemonset/kindnet --timeout=3m
+      - name: Install Mokka, GPU Operator, and the NRT reporter
+        run: hack/install-mokka-gpu-operator.sh
+      - name: Change the live layout from two zones to one and back
+        run: |
+          python3 hack/test-mokka-numa-reconfigure.py --cluster "$CLUSTER_NAME"             --probe /tmp/mokka-numa-podresources --output numa-reconfigure-results
+      - name: Collect state and logs
+        if: always()
+        run: |
+          mkdir -p numa-reconfigure-results
+          kubectl --context "kind-$CLUSTER_NAME" get nodes -o yaml > numa-reconfigure-results/nodes.yaml 2>&1 || true
+          kubectl --context "kind-$CLUSTER_NAME" get noderesourcetopologies -o yaml > numa-reconfigure-results/nrt-final.yaml 2>&1 || true
+          kubectl --context "kind-$CLUSTER_NAME" get pods -A -o yaml > numa-reconfigure-results/pods.yaml 2>&1 || true
+          kubectl --context "kind-$CLUSTER_NAME" get events -A --sort-by=.lastTimestamp > numa-reconfigure-results/events.txt 2>&1 || true
+          kubectl --context "kind-$CLUSTER_NAME" logs -n mokka -l app.kubernetes.io/name=nvml-mock --all-containers --prefix > numa-reconfigure-results/mokka.log 2>&1 || true
+          docker exec "$CLUSTER_NAME-worker" journalctl -u kubelet -n 1000 --no-pager > numa-reconfigure-results/kubelet.log 2>&1 || true
+          kind export logs numa-reconfigure-results/kind --name "$CLUSTER_NAME" || true
+          {
+            echo '### Mokka NUMA live reconfiguration'
+            echo 'Profile updates: 2 zones -> 1 zone -> 2 zones, with no Mokka pod or agent restart.'
+            echo 'Five-GPU Guaranteed pods: TopologyAffinityError -> Ready -> TopologyAffinityError.'
+            echo 'The test checks real NRT reports and the real kubelet PodResources API, including CPU, memory, and GPU allocation.'
+            echo 'The NVIDIA device plugin and NRT reporter are refreshed after each update. KAI is tested separately in the NUMA experiment workflow.'
+            echo 'See result.json and the uploaded logs for the actual result.'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mokka-numa-reconfigure-results
+          path: numa-reconfigure-results
+      - name: Delete the disposable cluster
+        if: always()
+        run: kind delete cluster --name "$CLUSTER_NAME"

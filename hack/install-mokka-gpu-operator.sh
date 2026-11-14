@@ -8,15 +8,15 @@ REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 : "${CLUSTER_NAME:?Set CLUSTER_NAME to the disposable kind cluster}"
 : "${MOKKA_GPU_COUNT:=8}"
 : "${FEATURE_CONFIG:=default}"
-if [[ "$FEATURE_CONFIG" = numa-full && "$MOKKA_GPU_COUNT" != 8 ]]; then
-  echo "The NUMA layout requires eight A100 GPUs (four per zone)." >&2
+if [[ "$FEATURE_CONFIG" = numa-* && "$MOKKA_GPU_COUNT" != 8 ]]; then
+  echo "The NUMA layout requires eight A100 GPUs." >&2
   exit 1
 fi
 : "${GPU_OPERATOR_VERSION:=v26.7.2}"
 # PR 1109, the memory-limit fix, and opt-in NUMA sysfs/kubelet simulation.
 # Keep this commit pinned until the integration is available in an upstream release.
 : "${MOKKA_REPOSITORY:=https://github.com/JRosenboimNVIDIA/mokka.git}"
-: "${MOKKA_REF:=7085b09b5c80ffc984e6e8f5ca1bce1f19b24506}"
+: "${MOKKA_REF:=8d5a0004f5dccf4f671b6d4f122c2523e9f814fb}"
 : "${MOKKA_IMAGE_REPOSITORY:=mokka-e2e}"
 : "${MOKKA_IMAGE_TAG:=${MOKKA_REF:0:12}}"
 
@@ -34,9 +34,11 @@ MOKKA_VALUES=(--values "$REPO_ROOT/hack/e2e-mokka-values.yaml"
   --set "image.repository=$MOKKA_IMAGE_REPOSITORY"
   --set "image.tag=$MOKKA_IMAGE_TAG" --set "gpu.count=$MOKKA_GPU_COUNT")
 GPU_OPERATOR_VALUES=(--values "$REPO_ROOT/hack/e2e-gpu-operator-values.yaml")
-if [[ "$FEATURE_CONFIG" = numa-full ]]; then
+if [[ "$FEATURE_CONFIG" = numa-full || "$FEATURE_CONFIG" = numa-reconfigure ]]; then
   # Separate releases keep the policy settings local to each selected node.
-  for policy in single-numa-node restricted best-effort; do
+  policies=(single-numa-node restricted best-effort)
+  if [[ "$FEATURE_CONFIG" = numa-reconfigure ]]; then policies=(single-numa-node); fi
+  for policy in "${policies[@]}"; do
     helm upgrade --install "nvml-mock-$policy" "$SOURCE_DIR/deployments/nvml-mock/helm/nvml-mock" \
       --namespace mokka --create-namespace "${MOKKA_VALUES[@]}" \
       --set 'nodeAgent.numa.enabled=true' \
@@ -63,7 +65,7 @@ kubectl wait \
   --for="jsonpath={.status.allocatable.nvidia\\.com/gpu}=$MOKKA_GPU_COUNT" \
   nodes --selector=mokka.nvidia.com/e2e-gpu=true --timeout=5m
 
-if [[ "$FEATURE_CONFIG" = numa-full ]]; then
+if [[ "$FEATURE_CONFIG" = numa-full || "$FEATURE_CONFIG" = numa-reconfigure ]]; then
   # NFD caches allocatable resources at startup, before GPU registration can finish.
   # Refresh that snapshot only after kubelet reports the expected GPU count.
   kubectl --namespace gpu-operator rollout restart \

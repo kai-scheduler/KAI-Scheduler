@@ -9,7 +9,7 @@ The `numa-full` kind layout has four GPU workers, with eight A100 GPUs each,
 split 4+4 between two zones. Two workers use `single-numa-node`; one uses
 `restricted`; one uses `best-effort`. A CPU worker runs the control services.
 
-Mokka is pinned to `7085b09b5c80ffc984e6e8f5ca1bce1f19b24506` in the public
+Mokka is pinned to `8d5a0004f5dccf4f671b6d4f122c2523e9f814fb` in the public
 `JRosenboimNVIDIA/mokka` fork. It includes Roman's GPU Operator support, the
 memory-limit fix, the current NUMA review changes, and the node-bus fix that lets
 NFD read memory capacity in every simulated zone. It also includes bidirectional
@@ -31,8 +31,8 @@ Mokka configures a fractional CPU reservation and whole shared-pool CPU IDs, con
 reservations, backs up manager checkpoints, and restarts kubelet. The privileged
 pod applies simulation and bind-mounts the modified kubelet configuration. The
 node agent registers boot cleanup with an empty persistent marker. The helper
-clears manager checkpoints before kubelet starts after a node reboot. Restore
-simulation before changing active policies; use fresh or drained test nodes.
+clears manager checkpoints before kubelet starts after a node reboot. An active layout or policy change restores the original node setup before
+staging the replacement. This can interrupt workloads; use disposable test nodes.
 
 CPU Manager assigns real CPU IDs. Memory Manager keeps simulated memory groups
 in its own state, exposed by the real kubelet pod-resources socket. Mokka's NRI
@@ -91,3 +91,40 @@ go tool ginkgo --keep-going --trace -vv --label-filter numa --timeout 45m \
   ./test/e2e/suites/numa
 kind delete cluster --name "$CLUSTER_NAME"
 ```
+
+## Live layout update test
+
+`E2E - Mokka NUMA live reconfiguration` uses a separate two-node Kind cluster.
+It installs Mokka, GPU Operator, and the NRT reporter. It does not install KAI;
+the existing NUMA workflow checks KAI scheduling separately.
+
+The test patches the running Mokka profile from two zones to one zone, then back
+to two zones. Eight GPUs stay present. The Mokka pod UID and node-agent restart
+count must stay unchanged. The test checks kubelet health, exact NRT GPU counts,
+and topology through the real kubelet PodResources API after each change.
+
+A Guaranteed pod requests one CPU, 128Mi memory, and five GPUs. With
+`single-numa-node`, kubelet must reject it with `TopologyAffinityError` in the
+two-zone layout and make it Ready in the one-zone layout. The one-zone pod's
+CPU, memory, and GPU allocations must align. Pods are assigned directly to the
+test worker to check kubelet admission independently of scheduler filtering.
+
+The NVIDIA device plugin and NRT reporter are refreshed after each change so
+cached discovery does not hide the new topology. Mokka stays running throughout.
+This test covers ordinary layout updates; it does not inject agent shutdown.
+The job uploads per-stage NRT, PodResources, and pod snapshots plus node logs.
+
+For an existing disposable cluster created with
+`hack/e2e-kind-mokka-numa-reconfigure.yaml`:
+
+```bash
+export CLUSTER_NAME=mokka-numa-reconfigure-local FEATURE_CONFIG=numa-reconfigure
+hack/install-mokka-gpu-operator.sh
+GOOS=linux CGO_ENABLED=0 go build -o /tmp/mokka-numa-podresources ./test/e2e/tools/podresources
+python3 hack/test-mokka-numa-reconfigure.py --cluster "$CLUSTER_NAME" \
+  --probe /tmp/mokka-numa-podresources
+```
+
+Build the probe for the Kind node's CPU architecture when it differs from the
+build host. The test requires Docker access and changes only its named Kind
+context. The profile is restored during cleanup, including after a failed check.
