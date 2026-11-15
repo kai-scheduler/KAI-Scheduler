@@ -48,3 +48,33 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: mutually exclusive
+
+  - it: should apply global.imagePullPolicy to all Config images
+    set:
+      kaiConfigDeployer.enabled: false
+      kaiConfig.render: true
+      global.imagePullPolicy: Always
+    asserts:
+      - equal:
+          path: spec..pullPolicy
+          value: Always
+
+  - it: should prefer component image policies in the Config
+    set:
+      kaiConfigDeployer.enabled: false
+      kaiConfig.render: true
+      global.imagePullPolicy: Always
+      binder.image.pullPolicy: Never
+      binder.resourceReservationImage.pullPolicy: Never
+      podgrouper.image.pullPolicy: Never
+      podgroupcontroller.image.pullPolicy: Never
+      queuecontroller.image.pullPolicy: Never
+      admission.image.pullPolicy: Never
+      nodescaleadjuster.image.pullPolicy: Never
+      nodescaleadjuster.scalingPodImage.pullPolicy: Never
+      scheduler.image.pullPolicy: Never
+      numaPlacementExporter.image.pullPolicy: Never
+    asserts:
+      - equal:
+          path: spec..pullPolicy
+          value: Never

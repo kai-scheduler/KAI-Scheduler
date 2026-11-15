@@ -10,34 +10,37 @@ templates:
   - hooks/pre/crd-upgrader.yaml
   - hooks/pre/topology-migration/job.yaml
 tests:
-  - it: should fall back to global.imagePullPolicy on the operator when unset
+  - it: should default to IfNotPresent with default values
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: IfNotPresent
+        template: services/operator.yaml
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: IfNotPresent
+        template: hooks/post/kai-config-deployer/job.yaml
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: IfNotPresent
+        template: hooks/post/post-delete-job.yaml
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: IfNotPresent
+        template: hooks/pre/crd-upgrader.yaml
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: IfNotPresent
+        template: hooks/pre/topology-migration/job.yaml
+
+  - it: should use global.imagePullPolicy with default component values
     set:
       global.imagePullPolicy: Always
-      operator.image.pullPolicy: null
     asserts:
       - equal:
           path: spec.template.spec.containers[0].imagePullPolicy
           value: Always
         template: services/operator.yaml
-
-  - it: should prefer operator.image.pullPolicy over global.imagePullPolicy
-    set:
-      global.imagePullPolicy: Always
-      operator.image.pullPolicy: Never
-    asserts:
-      - equal:
-          path: spec.template.spec.containers[0].imagePullPolicy
-          value: Never
-        template: services/operator.yaml
-
-  - it: should fall back to global.imagePullPolicy on hook images when unset
-    set:
-      global.imagePullPolicy: Always
-      kaiConfigDeployer.image.pullPolicy: null
-      postCleanup.image.pullPolicy: null
-      crdupgrader.image.pullPolicy: null
-      topologyMigration.image.pullPolicy: null
-    asserts:
       - equal:
           path: spec.template.spec.containers[0].imagePullPolicy
           value: Always
@@ -53,4 +56,59 @@ tests:
       - equal:
           path: spec.template.spec.containers[0].imagePullPolicy
           value: Always
+        template: hooks/pre/topology-migration/job.yaml
+
+  - it: should prefer component pullPolicy over global.imagePullPolicy
+    set:
+      global.imagePullPolicy: Always
+      operator.image.pullPolicy: Never
+      kaiConfigDeployer.image.pullPolicy: Never
+      postCleanup.image.pullPolicy: Never
+      crdupgrader.image.pullPolicy: Never
+      topologyMigration.image.pullPolicy: Never
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: Never
+        template: services/operator.yaml
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: Never
+        template: hooks/post/kai-config-deployer/job.yaml
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: Never
+        template: hooks/post/post-delete-job.yaml
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: Never
+        template: hooks/pre/crd-upgrader.yaml
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: Never
+        template: hooks/pre/topology-migration/job.yaml
+
+  - it: should fall back to IfNotPresent when global.imagePullPolicy is empty
+    set:
+      global.imagePullPolicy: ""
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: IfNotPresent
+        template: services/operator.yaml
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: IfNotPresent
+        template: hooks/post/kai-config-deployer/job.yaml
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: IfNotPresent
+        template: hooks/post/post-delete-job.yaml
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: IfNotPresent
+        template: hooks/pre/crd-upgrader.yaml
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: IfNotPresent
         template: hooks/pre/topology-migration/job.yaml
