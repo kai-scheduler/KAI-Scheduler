@@ -40,6 +40,7 @@ type Interface interface {
 		fractionalGpuGroup schedulingv1alpha2.FractionalGpuGroup,
 	) (string, error)
 	RemovePodGpuGroupsConnection(ctx context.Context, pod *v1.Pod) error
+	IsReservationPod(pod *v1.Pod) bool
 }
 
 const (
@@ -698,6 +699,13 @@ func (rsc *service) isScalingUp(ctx context.Context) bool {
 		}
 	}
 	return false
+}
+
+// IsReservationPod reports whether the pod is a GPU reservation pod: it lives in
+// the reservation namespace and carries a GPU group label.
+func (rsc *service) IsReservationPod(pod *v1.Pod) bool {
+	_, hasGpuGroup := pod.Labels[constants.GPUGroup]
+	return hasGpuGroup && pod.Namespace == rsc.namespace
 }
 
 func IsGPUReservationPod(pod *v1.Pod) bool {

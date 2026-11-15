@@ -20,7 +20,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding/resourcereservation"
-	"github.com/kai-scheduler/api/constants"
 	"github.com/kai-scheduler/api/utilities/resources"
 )
 
@@ -30,9 +29,6 @@ type PodReconciler struct {
 	Scheme              *runtime.Scheme
 	ResourceReservation resourcereservation.Interface
 	SchedulerName       string
-	// ReservationNamespace holds the GPU reservation pods, which are created
-	// without the KAI scheduler name.
-	ReservationNamespace string
 }
 
 type ReconcilerParams struct {
@@ -124,8 +120,8 @@ func (r *PodReconciler) isRelevantPod(object client.Object) bool {
 	if pod.Spec.SchedulerName == r.SchedulerName {
 		return true
 	}
-	_, hasGpuGroup := pod.Labels[constants.GPUGroup]
-	return hasGpuGroup && pod.Namespace == r.ReservationNamespace
+	// Reservation pods are created without the KAI scheduler name.
+	return r.ResourceReservation.IsReservationPod(pod)
 }
 
 func isCompletionEvent(oldObject client.Object, newObject client.Object) bool {

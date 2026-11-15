@@ -36,9 +36,8 @@ var _ = Describe("Pod Controller", func() {
 	BeforeEach(func() {
 		resourceReservation = mock_resourcereservation.NewMockInterface(gomock.NewController(GinkgoT()))
 		reconciler = &PodReconciler{
-			ResourceReservation:  resourceReservation,
-			SchedulerName:        schedulerName,
-			ReservationNamespace: reservationNamespace,
+			ResourceReservation: resourceReservation,
+			SchedulerName:       schedulerName,
 		}
 		queue = workqueue.NewTypedRateLimitingQueue(
 			workqueue.DefaultTypedControllerRateLimiter[reconcile.Request]())
@@ -83,6 +82,7 @@ var _ = Describe("Pod Controller", func() {
 	It("ignores Pods of another scheduler", func() {
 		otherSchedulerPod := completedPod.DeepCopy()
 		otherSchedulerPod.Spec.SchedulerName = "default-scheduler"
+		resourceReservation.EXPECT().IsReservationPod(otherSchedulerPod).Return(false).Times(2)
 
 		handlers := reconciler.eventHandlers()
 		handlers.UpdateFunc(context.TODO(), event.UpdateEvent{
@@ -106,6 +106,7 @@ var _ = Describe("Pod Controller", func() {
 			},
 			Spec: corev1.PodSpec{SchedulerName: "default-scheduler"},
 		}
+		resourceReservation.EXPECT().IsReservationPod(reservationPod).Return(true)
 		reconciler.eventHandlers().DeleteFunc(context.TODO(), event.DeleteEvent{Object: reservationPod}, queue)
 	})
 })
