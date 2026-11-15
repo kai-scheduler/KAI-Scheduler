@@ -23,7 +23,6 @@ import (
 
 const (
 	DefaultAddress           = "127.0.0.1:9095"
-	DefaultStorageSecretName = "kai-recorder-storage"
 	DefaultHashKeySecretName = "kai-recorder-hash-key"
 	HMACKeyDataKey           = "hmac-key"
 	DefaultRollInterval      = 5 * time.Minute
@@ -36,7 +35,6 @@ type RecorderSpec struct {
 	Enabled           *bool                        `json:"enabled,omitempty"`
 	Image             *common.Image                `json:"image,omitempty"`
 	Resources         *corev1.ResourceRequirements `json:"resources,omitempty"`
-	StorageSecretName string                       `json:"storageSecretName,omitempty"`
 	HashKeySecretName string                       `json:"hashKeySecretName,omitempty"`
 	Batch             *RecorderBatch               `json:"batch,omitempty"`
 	Address           string                       `json:"address,omitempty"`
@@ -105,9 +103,6 @@ func apply(dst, src *RecorderSpec) {
 	if src.Resources != nil {
 		dst.Resources = src.Resources.DeepCopy()
 	}
-	if src.StorageSecretName != "" {
-		dst.StorageSecretName = src.StorageSecretName
-	}
 	if src.HashKeySecretName != "" {
 		dst.HashKeySecretName = src.HashKeySecretName
 	}
@@ -134,9 +129,6 @@ func ApplyDefaults(spec *RecorderSpec, imageFallback *common.Image) {
 	}
 	if spec.Address == "" {
 		spec.Address = DefaultAddress
-	}
-	if spec.StorageSecretName == "" {
-		spec.StorageSecretName = DefaultStorageSecretName
 	}
 	if spec.HashKeySecretName == "" {
 		spec.HashKeySecretName = DefaultHashKeySecretName

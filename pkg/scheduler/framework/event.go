@@ -50,15 +50,14 @@ type EventHandler struct {
 	OnCommit func(event *CommitEvent)
 }
 
-// CommitOp is one operation inside a commit. Fields are the values read off the operation.
+// CommitOp is one operation inside a commit. Failed is set when that operation's commit returned an error.
 type CommitOp struct {
 	Kind         CommitOpKind                   `json:"kind"`
 	UID          string                         `json:"uid,omitempty"`
 	Namespace    string                         `json:"namespace,omitempty"`
 	Name         string                         `json:"name,omitempty"`
 	Node         string                         `json:"node,omitempty"`
-	Message      string                         `json:"message,omitempty"`
-	Error        string                         `json:"error,omitempty"`
+	Failed       bool                           `json:"failed,omitempty"`
 	NotAttempted bool                           `json:"notAttempted,omitempty"`
 	Eviction     eviction_info.EvictionMetadata `json:"eviction"`
 }

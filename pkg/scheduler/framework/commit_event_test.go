@@ -33,8 +33,9 @@ func TestCommitEventRecordsActionAndUnattemptedOps(t *testing.T) {
 	require.Len(t, got.Ops, 2)
 	require.Equal(t, "node-a", got.Ops[0].Node)
 	require.False(t, got.Ops[0].NotAttempted)
-	require.NotEmpty(t, got.Ops[0].Error)
+	require.True(t, got.Ops[0].Failed)
 	require.Equal(t, "node-b", got.Ops[1].Node)
+	require.False(t, got.Ops[1].Failed)
 	require.True(t, got.Ops[1].NotAttempted)
 }
 

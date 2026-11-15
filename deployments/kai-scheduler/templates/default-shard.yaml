@@ -39,9 +39,6 @@ spec:
   {{- if .Values.scheduler.recorder.enabled }}
   recorder:
     enabled: {{ .Values.scheduler.recorder.enabled }}
-    {{- if .Values.scheduler.recorder.storageSecretName }}
-    storageSecretName: {{ .Values.scheduler.recorder.storageSecretName }}
-    {{- end }}
     {{- if .Values.scheduler.recorder.hashKeySecretName }}
     hashKeySecretName: {{ .Values.scheduler.recorder.hashKeySecretName }}
     {{- end }}

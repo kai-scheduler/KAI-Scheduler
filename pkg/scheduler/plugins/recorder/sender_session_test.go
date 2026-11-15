@@ -17,6 +17,7 @@ import (
 
 	record "github.com/kai-scheduler/KAI-scheduler/pkg/recorder"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/version"
 )
 
 func TestManySessionsShareOneSender(t *testing.T) {
@@ -73,6 +74,9 @@ func TestManySessionsShareOneSender(t *testing.T) {
 	for i, line := range lines {
 		var env record.Envelope
 		require.NoError(t, json.Unmarshal([]byte(line), &env))
+		require.NoError(t, record.CheckSchema(env.SchemaVersion))
+		require.Equal(t, record.SchemaVersion, env.SchemaVersion)
+		require.Equal(t, version.GitVersion(), env.KaiVersion)
 		require.Equal(t, uint64(i+1), env.Seq)
 		if i == 0 {
 			epoch = env.Epoch

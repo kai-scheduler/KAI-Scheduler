@@ -10558,8 +10558,6 @@ spec:
                         x-kubernetes-preserve-unknown-fields: true
                       hashKeySecretName:
                         type: string
-                      storageSecretName:
-                        type: string
                     type: object
                   GOGC:
                     description: GOGC configures the GOGC environment variable for

@@ -218,7 +218,8 @@ func replayPlain(t *testing.T, config *conf.SchedulerConfiguration, state *cycle
 
 func replayRedacted(t *testing.T, config *conf.SchedulerConfiguration, state *cycleRecord, toRun []framework.Action) []string {
 	t.Helper()
-	env := &recorder.Envelope{Kind: recorder.KindCycle, Record: mustJSON(t, state)}
+	env := &recorder.Envelope{SchemaVersion: recorder.SchemaVersion, Kind: recorder.KindCycle, Record: mustJSON(t, state)}
+	require.NoError(t, recorder.CheckSchema(env.SchemaVersion))
 	require.NoError(t, recorder.RedactEnvelope(env, recorder.NewHasher([]byte("fidelity-key"))))
 	var redacted cycleRecord
 	require.NoError(t, json.Unmarshal(env.Record, &redacted))

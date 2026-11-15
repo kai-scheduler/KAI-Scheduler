@@ -40,6 +40,11 @@ func GitCommit() string {
 	return gitCommit
 }
 
+// GitVersion returns the scheduler build's version, injected at link time.
+func GitVersion() string {
+	return gitVersion
+}
+
 // Info returns an array of various service versions
 func Info() []string {
 	return []string{

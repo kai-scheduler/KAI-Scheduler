@@ -201,7 +201,6 @@ func (ssn *Session) Evict(pod *pod_info.PodInfo, message string, evictionMetadat
 			Namespace: pod.Namespace,
 			Name:      pod.Name,
 			Node:      pod.NodeName,
-			Message:   message,
 			Eviction:  evictionMetadata,
 		}})
 	}

@@ -121,7 +121,8 @@ func TestReplayRedactedPartitionedPreempt(t *testing.T) {
 
 	raw, err := json.Marshal(state)
 	require.NoError(t, err)
-	env := &recorder.Envelope{Kind: recorder.KindCycle, Record: raw}
+	env := &recorder.Envelope{SchemaVersion: recorder.SchemaVersion, Kind: recorder.KindCycle, Record: raw}
+	require.NoError(t, recorder.CheckSchema(env.SchemaVersion))
 	hasher := recorder.NewHasher([]byte("replay-key"))
 	require.NoError(t, recorder.RedactEnvelope(env, hasher))
 	var redacted cycleRecord

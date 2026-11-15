@@ -10,13 +10,16 @@ The recorder stays off until a SchedulingShard turns it on.
 
 ## What a record contains
 
-Each line in a record file is one JSON object:
+Each line in a record file is one JSON envelope:
 
-- `openedAt` is the time the cycle opened.
-- `config` and `schedulerParams` are the scheduler settings for that cycle.
-- `rawObjects` is the pods, nodes, queues, pod groups, and related objects the cycle saw.
-- `decisions` is the commits, in order. Each commit names the action (`allocate`, `preempt`, `reclaim`, `consolidation`, `stalegangeviction`, or `session-close` for work done while plugins close) and the operations inside it (`allocate`, `pipeline`, `evict`).
-- `usage` is the queue usage the fair-share calculation used, when the cluster has any.
+- `schemaVersion` is the shape of the record. This build writes `1`. Bump it whenever the record shape changes. A replay that sees a higher number stops with an error instead of reading a shape it does not understand.
+- `kaiVersion` is the KAI build that wrote the record.
+- `record` is the cycle itself:
+  - `openedAt` is the time the cycle opened.
+  - `config` and `schedulerParams` are the scheduler settings for that cycle.
+  - `rawObjects` is the pods, nodes, queues, pod groups, and related objects the cycle saw.
+  - `decisions` is the commits, in order. Each commit names the action (`allocate`, `preempt`, `reclaim`, `consolidation`, `stalegangeviction`, or `session-close` for work done while plugins close) and the operations inside it (`allocate`, `pipeline`, `evict`). An operation has `failed` set when its commit returned an error, and `notAttempted` when an earlier allocation failure stopped the commit before it ran.
+  - `usage` is the queue usage the fair-share calculation used, when the cluster has any.
 
 Undo operations are not stored. A statement that nets to nothing is not stored.
 
@@ -62,7 +65,7 @@ preempt pipeline <namespace-hash>/<preemptor-hash>@<node-hash>
 
 The operator creates one Secret, `kai-recorder-hash-key`, owned by the Config. Every shard that records uses that same key, so a name hashes to the same value on every shard. The operator does not rotate the key on later reconciles.
 
-`storageSecretName` is accepted on the spec and is not used yet. Record files stay on the node, in an emptyDir on the scheduler pod.
+Record files stay on the node, in an emptyDir on the scheduler pod.
 
 ## Sidecar
 

@@ -62,7 +62,6 @@ type liveScheduler struct {
 	shardName     string
 	containerName string
 	hashSecret    string
-	storageSecret string
 }
 
 var _ = Describe("Recorder", Ordered, ContinueOnFailure, Label("recorder"), func() {
@@ -99,7 +98,6 @@ var _ = Describe("Recorder", Ordered, ContinueOnFailure, Label("recorder"), func
 		if live.namespace != "" {
 			_ = testCtx.KubeClientset.CoreV1().Pods(live.namespace).Delete(ctx, "recorder-log-reader", metav1.DeleteOptions{})
 			patchRecorderEnabled(ctx, testCtx.ControllerClient, live.shardName, false)
-			_ = testCtx.KubeClientset.CoreV1().Secrets(live.namespace).Delete(ctx, live.storageSecret, metav1.DeleteOptions{})
 		}
 		testCtx.ClusterCleanup(ctx)
 	})
@@ -130,8 +128,6 @@ var _ = Describe("Recorder", Ordered, ContinueOnFailure, Label("recorder"), func
 		Expect(err).NotTo(HaveOccurred())
 		Expect(stored.Data[recorderv1.HMACKeyDataKey]).To(Equal(first))
 
-		_, err = testCtx.KubeClientset.CoreV1().Secrets(live.namespace).Get(ctx, live.storageSecret, metav1.GetOptions{})
-		Expect(errors.IsNotFound(err)).To(BeTrue())
 		pod := schedulerPod(ctx, testCtx, live)
 		Expect(rd.IsPodRunning(&pod)).To(BeTrue())
 		Expect(volumeNames(pod)).NotTo(ContainElement("recorder-storage"))
@@ -371,13 +367,11 @@ func discoverScheduler(ctx context.Context, testCtx *testcontext.TestContext) li
 		if len(pods.Items) == 0 {
 			continue
 		}
-		hashSecret, storageSecret := recorderSecretNames(ctx, testCtx, shards.Items[i].Name)
 		found = &liveScheduler{
 			namespace:     kaiConfig.Spec.Namespace,
 			shardName:     shards.Items[i].Name,
 			containerName: deployment,
-			hashSecret:    hashSecret,
-			storageSecret: storageSecret,
+			hashSecret:    recorderHashSecretName(ctx, testCtx, shards.Items[i].Name),
 		}
 		break
 	}
@@ -385,19 +379,15 @@ func discoverScheduler(ctx context.Context, testCtx *testcontext.TestContext) li
 	return *found
 }
 
-func recorderSecretNames(ctx context.Context, testCtx *testcontext.TestContext, shardName string) (hashSecret, storageSecret string) {
+func recorderHashSecretName(ctx context.Context, testCtx *testcontext.TestContext, shardName string) string {
 	shard := &unstructured.Unstructured{}
 	shard.SetGroupVersionKind(kaiv1.GroupVersion.WithKind("SchedulingShard"))
 	Expect(testCtx.ControllerClient.Get(ctx, client.ObjectKey{Name: shardName}, shard)).To(Succeed())
-	hashSecret, _, _ = unstructured.NestedString(shard.Object, "spec", "recorder", "hashKeySecretName")
-	storageSecret, _, _ = unstructured.NestedString(shard.Object, "spec", "recorder", "storageSecretName")
+	hashSecret, _, _ := unstructured.NestedString(shard.Object, "spec", "recorder", "hashKeySecretName")
 	if hashSecret == "" {
 		hashSecret = recorderv1.DefaultHashKeySecretName
 	}
-	if storageSecret == "" {
-		storageSecret = recorderv1.DefaultStorageSecretName
-	}
-	return hashSecret, storageSecret
+	return hashSecret
 }
 
 func ensureRecorder(ctx context.Context, testCtx *testcontext.TestContext, live liveScheduler) {
@@ -650,6 +640,7 @@ func labelValues(body, key string) []string {
 		if json.Unmarshal([]byte(line), &env) != nil || env.Kind != schedrec.KindCycle {
 			continue
 		}
+		Expect(schedrec.CheckSchema(env.SchemaVersion)).To(Succeed())
 		var decoded any
 		if json.Unmarshal(env.Record, &decoded) != nil {
 			continue
@@ -892,6 +883,7 @@ func cyclesIn(body string) []recordedCycle {
 		if json.Unmarshal([]byte(line), &env) != nil || env.Kind != schedrec.KindCycle {
 			continue
 		}
+		Expect(schedrec.CheckSchema(env.SchemaVersion)).To(Succeed())
 		var cycle recordedCycle
 		if json.Unmarshal(env.Record, &cycle) == nil && cycle.SessionID != "" {
 			cycles = append(cycles, cycle)

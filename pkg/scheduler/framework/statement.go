@@ -682,7 +682,7 @@ func (s *Statement) Commit() error {
 func recordCommit(recorded *[]CommitOp, op Operation, commitErr error) {
 	recordedOp := commitOpFrom(op)
 	if commitErr != nil {
-		recordedOp.Error = commitErr.Error()
+		recordedOp.Failed = true
 	}
 	*recorded = append(*recorded, recordedOp)
 }
@@ -700,11 +700,9 @@ func commitOpFrom(op Operation) CommitOp {
 		if typed.previousNode != nil {
 			recorded.Node = typed.previousNode.Name
 		}
-		recorded.Message = typed.message
 		recorded.Eviction = typed.evictionMetadata
 	case pipelineOperation:
 		recorded.Node = typed.nextNode
-		recorded.Message = typed.message
 	case allocateOperation:
 		recorded.Node = typed.nextNode
 	}

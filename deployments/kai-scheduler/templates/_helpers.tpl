@@ -387,9 +387,6 @@ spec:
       resources:
         {{- toYaml .Values.scheduler.recorder.resources | nindent 8 }}
       {{- end }}
-      {{- if .Values.scheduler.recorder.storageSecretName }}
-      storageSecretName: {{ .Values.scheduler.recorder.storageSecretName }}
-      {{- end }}
       {{- if .Values.scheduler.recorder.hashKeySecretName }}
       hashKeySecretName: {{ .Values.scheduler.recorder.hashKeySecretName }}
       {{- end }}

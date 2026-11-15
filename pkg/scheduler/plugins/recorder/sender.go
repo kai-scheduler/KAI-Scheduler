@@ -17,6 +17,7 @@ import (
 	record "github.com/kai-scheduler/KAI-scheduler/pkg/recorder"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/version"
 )
 
 const (
@@ -154,6 +155,8 @@ func (s *Sender) loop() {
 		}
 		reported := s.gaps.take()
 		env := record.Envelope{
+			SchemaVersion:    record.SchemaVersion,
+			KaiVersion:       version.GitVersion(),
 			Stream:           record.StreamCycle,
 			Seq:              item.seq,
 			Epoch:            s.epoch,

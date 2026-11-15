@@ -201,8 +201,6 @@ spec:
                     x-kubernetes-preserve-unknown-fields: true
                   hashKeySecretName:
                     type: string
-                  storageSecretName:
-                    type: string
                 type: object
               scenarioSearchBudgets:
                 description: ScenarioSearchBudgets configures alpha/experimental time

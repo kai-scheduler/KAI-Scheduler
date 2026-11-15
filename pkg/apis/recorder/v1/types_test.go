@@ -42,7 +42,6 @@ func TestApplyDefaultsFillsTheSidecarImageAndResources(t *testing.T) {
 	require.False(t, spec.EnabledValue())
 	require.Equal(t, DefaultAddress, spec.Address)
 	require.Equal(t, DefaultHashKeySecretName, spec.HashKeySecretName)
-	require.Equal(t, DefaultStorageSecretName, spec.StorageSecretName)
 	require.Equal(t, DefaultRollInterval, spec.Batch.RollInterval.Duration)
 	require.Equal(t, DefaultRollSizeMB, *spec.Batch.RollSizeMB)
 	require.Equal(t, "recorder", *spec.Image.Name)
