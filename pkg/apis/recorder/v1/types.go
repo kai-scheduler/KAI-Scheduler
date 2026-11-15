@@ -3,15 +3,11 @@
 
 // Package v1 holds a temporary copy of the recorder API.
 //
-// These types belong in github.com/kai-scheduler/api, not in this repository:
-//   - RecorderSpec, and a Recorder *RecorderSpec field on kai/v1.SchedulingShardSpec
-//   - the same Recorder field on kai/v1/scheduler.Scheduler, so Config.spec.scheduler can carry defaults
-//
-// Shipping that change means a new api module release, a go.mod bump in this repo, and regenerating
-// deployments/kai-scheduler/crds/kai.scheduler_schedulingshards.yaml and kai.scheduler_configs.yaml.
-// Until then the operator decodes spec.recorder from the live object JSON, because the generated
-// structs drop unknown fields. The CRD schemas in this repo already allow the field so an apiserver
-// will store it.
+// These types move to github.com/kai-scheduler/api and will be deleted from this
+// repository once that module is released. Until then the operator decodes
+// spec.recorder from the live object JSON, because the generated structs drop
+// unknown fields. The CRD schemas in this repo already allow the field so an
+// apiserver will store it.
 package v1
 
 import (

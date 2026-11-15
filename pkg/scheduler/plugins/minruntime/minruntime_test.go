@@ -12,6 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/clock"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
@@ -113,8 +114,9 @@ var _ = Describe("MinRuntime Plugin", func() {
 
 			It("uses the session clock recorded for the cycle", func() {
 				opened := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+				restore := clock.Set(func() time.Time { return opened })
+				defer restore()
 				session := &framework.Session{ClusterInfo: &api.ClusterInfo{Queues: queues}}
-				session.SchedulerParams.NowOverride = func() time.Time { return opened }
 				plugin.OnSessionOpen(session)
 
 				start := opened.Add(-10 * time.Second)
@@ -122,7 +124,7 @@ var _ = Describe("MinRuntime Plugin", func() {
 				victim := createPodGroup("victim-job", "prod-team2", &start, 1, 1)
 				Expect(plugin.preemptFilterFn(pendingJob, victim)).To(BeFalse())
 
-				plugin.now = func() time.Time { return opened.Add(time.Minute) }
+				clock.Set(func() time.Time { return opened.Add(time.Minute) })
 				Expect(plugin.preemptFilterFn(pendingJob, victim)).To(BeTrue())
 				plugin.OnSessionClose(session)
 				Expect(plugin.queues).To(BeNil())

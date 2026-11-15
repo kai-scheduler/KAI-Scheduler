@@ -32,6 +32,7 @@ import (
 	resourcehelpers "k8s.io/component-helpers/resource"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/clock"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
@@ -128,7 +129,6 @@ type TaskInfoOptions struct {
 	BindRequest               *bindrequest_info.BindRequestInfo
 	DraPodClaims              []*resourceapi.ResourceClaim
 	StuckInReleasingThreshold time.Duration
-	Now                       time.Time
 }
 
 func (pi *PodInfo) GetAllStorageClaims() map[storageclaim_info.Key]*storageclaim_info.StorageClaimInfo {
@@ -210,7 +210,7 @@ func NewTaskInfo(pod *v1.Pod, vectorMap *resource_info.ResourceVectorMap, opts .
 		Namespace:                      pod.Namespace,
 		SubGroupName:                   pod.Labels[commonconstants.SubGroupLabelKey],
 		NodeName:                       nodeName,
-		Status:                         getTaskStatus(pod, options.BindRequest, options.StuckInReleasingThreshold, options.Now),
+		Status:                         getTaskStatus(pod, options.BindRequest, options.StuckInReleasingThreshold),
 		IsVirtualStatus:                false,
 		IsLegacyMIGtask:                false,
 		Pod:                            pod,
@@ -464,14 +464,11 @@ func getPodResourceRequest(pod *v1.Pod) *resource_info.ResourceRequirements {
 	return result
 }
 
-func getTaskStatus(pod *v1.Pod, bindRequest *bindrequest_info.BindRequestInfo, stuckInReleasingThreshold time.Duration, now time.Time) pod_status.PodStatus {
-	if now.IsZero() {
-		now = time.Now()
-	}
+func getTaskStatus(pod *v1.Pod, bindRequest *bindrequest_info.BindRequestInfo, stuckInReleasingThreshold time.Duration) pod_status.PodStatus {
 	switch pod.Status.Phase {
 	case v1.PodRunning:
 		if pod.DeletionTimestamp != nil {
-			if now.Sub(pod.DeletionTimestamp.Time) > stuckInReleasingThreshold {
+			if clock.Since(pod.DeletionTimestamp.Time) > stuckInReleasingThreshold {
 				return pod_status.StuckInReleasing
 			}
 			return pod_status.Releasing
@@ -610,8 +607,5 @@ func (o *TaskInfoOptions) ApplyToList(inputOptions TaskInfoOptions) {
 	}
 	if inputOptions.StuckInReleasingThreshold > 0 {
 		o.StuckInReleasingThreshold = inputOptions.StuckInReleasingThreshold
-	}
-	if !inputOptions.Now.IsZero() {
-		o.Now = inputOptions.Now
 	}
 }

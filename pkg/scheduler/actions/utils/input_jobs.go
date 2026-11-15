@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/clock"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
@@ -29,7 +30,7 @@ type JobsOrderInitOptions struct {
 
 func (jobsOrder *JobsOrderByQueues) InitializeWithJobs(
 	jobsToOrder map[common_info.PodGroupID]*podgroup_info.PodGroupInfo) {
-	now := jobsOrder.ssn.Now()
+	now := clock.Now()
 	for _, job := range jobsToOrder {
 		if jobsOrder.options.FilterUnready && !job.IsReadyForScheduling() {
 			continue

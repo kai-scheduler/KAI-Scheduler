@@ -9,6 +9,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/clock"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
@@ -28,14 +29,28 @@ func (s staticUsage) GetResourceUsage() (*queue_info.ClusterUsage, error) {
 }
 
 // NewReplayCache loads a recorded snapshot into a scheduler cache.
-// now, when set, is the cycle clock. usage, when set, is the recorded fair-share usage.
+// opened, when set, is the recorded cycle open time. The decision clock then
+// runs forward from that instant. usage, when set, is the recorded fair-share usage.
 func NewReplayCache(
 	params *conf.SchedulerParams, objects *snapshot.RawKubernetesObjects,
-	usage *queue_info.ClusterUsage, now func() time.Time,
+	usage *queue_info.ClusterUsage, opened time.Time,
 ) (cache.Cache, context.CancelFunc, error) {
 	DisableWatchListClientForFakeReplay()
-	if params != nil && now != nil {
-		params.NowOverride = now
+	var restore func()
+	if opened.IsZero() {
+		restore = clock.Set(time.Now)
+	} else {
+		recorded := opened
+		start := time.Now()
+		restore = clock.Set(func() time.Time {
+			return recorded.Add(time.Since(start))
+		})
+	}
+	fail := func(err error) (cache.Cache, context.CancelFunc, error) {
+		if restore != nil {
+			restore()
+		}
+		return nil, nil, err
 	}
 	kubeClient, kaiClient, nrtClient := LoadClientsWithSnapshot(objects, nil)
 	cacheParams := &cache.SchedulerCacheParams{
@@ -45,7 +60,6 @@ func NewReplayCache(
 		SchedulerName:               "kai-scheduler",
 		NumOfStatusRecordingWorkers: 1,
 		DiscoveryClient:             kubeClient.Discovery(),
-		Now:                         now,
 	}
 	if params != nil {
 		cacheParams.SchedulerName = params.SchedulerName
@@ -74,10 +88,15 @@ func NewReplayCache(
 	}
 	schedCache, err := cache.New(cacheParams)
 	if err != nil {
-		return nil, nil, err
+		return fail(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	schedCache.Run(ctx.Done())
 	schedCache.WaitForCacheSync(ctx.Done())
-	return schedCache, cancel, nil
+	return schedCache, func() {
+		cancel()
+		if restore != nil {
+			restore()
+		}
+	}, nil
 }

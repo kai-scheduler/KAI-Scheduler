@@ -123,7 +123,7 @@ func (p *scenarioPortfolio) Next() *scenario.ByNodeScenario {
 		}
 
 		generatorName := generator.Name()
-		attemptStartedAt := p.ctx.Session.Now()
+		attemptStartedAt := time.Now()
 		sn := generator.Next()
 		byNodeScenario, ok := sn.(*scenario.ByNodeScenario)
 		if sn != nil && !ok {

@@ -54,12 +54,7 @@ func replayCycle(state recordedCycle) ([]string, string) {
 	config := *state.Config
 	config.Tiers = dropRecorderPlugin(config.Tiers)
 
-	var now func() time.Time
-	if !state.OpenedAt.IsZero() {
-		opened := state.OpenedAt
-		now = func() time.Time { return opened }
-	}
-	schedCache, stop, err := schedreplay.NewReplayCache(params, state.RawObjects, state.Usage, now)
+	schedCache, stop, err := schedreplay.NewReplayCache(params, state.RawObjects, state.Usage, state.OpenedAt)
 	Expect(err).NotTo(HaveOccurred())
 	defer stop()
 	session, err := framework.OpenSession(schedCache, &config, params, "e2e-replay", http.NewServeMux())
@@ -72,13 +67,13 @@ func replayCycle(state recordedCycle) ([]string, string) {
 			if op.NotAttempted {
 				continue
 			}
-			decisions = append(decisions, event.Action+" "+op.Kind+" "+op.Namespace+"/"+op.Name+"@"+op.Node)
+			decisions = append(decisions, string(event.Action)+" "+string(op.Kind)+" "+op.Namespace+"/"+op.Name+"@"+op.Node)
 		}
 	}})
 	actionList, err := conf_util.GetActionsFromConfig(&config)
 	Expect(err).NotTo(HaveOccurred())
 	for _, action := range actionList {
-		session.SetCurrentAction(string(action.Name()))
+		session.SetCurrentAction(action.Name())
 		action.Execute(session)
 	}
 	return decisions, replaySummary(state, session, decisions)

@@ -33,6 +33,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/clock"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
@@ -978,27 +979,18 @@ func TestGetTaskStatusStuckInReleasing(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := getTaskStatus(tt.pod, nil, tt.threshold, time.Time{})
+			got := getTaskStatus(tt.pod, nil, tt.threshold)
 			assert.Equal(t, tt.expected, got)
 		})
 	}
 
-	// A deletion in 2024 is years old on the wall clock. The recorded cycle time
+	// A deletion in 2024 is years old on the wall clock. The decision clock
 	// still classifies it as releasing when it is inside the threshold.
 	recorded := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
 	deleted := metav1.NewTime(recorded.Add(-30 * time.Second))
-	assert.Equal(t, pod_status.Releasing, getTaskStatus(runningPod(&deleted), nil, 2*time.Minute, recorded))
-	assert.Equal(t, pod_status.StuckInReleasing, getTaskStatus(runningPod(&deleted), nil, 2*time.Minute, recorded.Add(time.Hour)))
-}
-
-func TestApplyToListCopiesTheRecordedTime(t *testing.T) {
-	opened := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
-	var opts TaskInfoOptions
-	opts.ApplyToList(TaskInfoOptions{Now: opened, StuckInReleasingThreshold: time.Minute})
-	assert.Assert(t, opts.Now.Equal(opened))
-	assert.Equal(t, time.Minute, opts.StuckInReleasingThreshold)
-
-	var untouched TaskInfoOptions
-	untouched.ApplyToList(TaskInfoOptions{})
-	assert.Assert(t, untouched.Now.IsZero())
+	restore := clock.Set(func() time.Time { return recorded })
+	t.Cleanup(restore)
+	assert.Equal(t, pod_status.Releasing, getTaskStatus(runningPod(&deleted), nil, 2*time.Minute))
+	clock.Set(func() time.Time { return recorded.Add(time.Hour) })
+	assert.Equal(t, pod_status.StuckInReleasing, getTaskStatus(runningPod(&deleted), nil, 2*time.Minute))
 }

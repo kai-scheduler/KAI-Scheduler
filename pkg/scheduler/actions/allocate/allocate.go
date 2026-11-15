@@ -20,12 +20,11 @@ limitations under the License.
 package allocate
 
 import (
-	"time"
-
 	"golang.org/x/exp/maps"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/clock"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
@@ -64,7 +63,7 @@ func (alloc *allocateAction) Execute(ssn *framework.Session) {
 			metrics.IncPodgroupScheduledByAction()
 			err := stmt.Commit()
 			if err == nil && !pipelined && !alreadyAllocated {
-				setLastStartTimestamp(job, ssn.Now())
+				setLastStartTimestamp(job)
 			}
 			if err == nil && podgroup_info.HasTasksToAllocate(job, podgroup_info.RealTaskAllocation) {
 				jobsOrderByQueues.PushJob(job)
@@ -112,6 +111,7 @@ func attemptToAllocateJob(ssn *framework.Session, stmt *framework.Statement, job
 	return true, pipelined
 }
 
-func setLastStartTimestamp(job *podgroup_info.PodGroupInfo, now time.Time) {
-	job.LastStartTimestamp = &now
+func setLastStartTimestamp(job *podgroup_info.PodGroupInfo) {
+	timeNow := clock.Now()
+	job.LastStartTimestamp = &timeNow
 }

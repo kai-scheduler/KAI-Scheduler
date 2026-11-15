@@ -54,7 +54,7 @@ func TestManySessionsShareOneSender(t *testing.T) {
 		plugin.onCommit(&framework.CommitEvent{
 			SessionID: session.ID,
 			Action:    "allocate",
-			Ops:       []framework.CommitOp{{Kind: "allocate", Name: "pod"}},
+			Ops:       []framework.CommitOp{{Kind: framework.CommitOpAllocate, Name: "pod"}},
 		})
 		plugin.OnSessionClose(session)
 	}

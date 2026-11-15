@@ -15,7 +15,7 @@ import (
 
 func TestCommitEventRecordsActionAndUnattemptedOps(t *testing.T) {
 	stmt, task, _ := buildEvictMarkerSession()
-	stmt.ssn.SetCurrentAction(string(Allocate))
+	stmt.ssn.SetCurrentAction(Allocate)
 	var got *CommitEvent
 	stmt.ssn.AddEventHandler(&EventHandler{OnCommit: func(event *CommitEvent) {
 		got = event
@@ -29,7 +29,7 @@ func TestCommitEventRecordsActionAndUnattemptedOps(t *testing.T) {
 	err := stmt.Commit()
 	require.Error(t, err)
 	require.NotNil(t, got)
-	require.Equal(t, string(Allocate), got.Action)
+	require.Equal(t, Allocate, got.Action)
 	require.Len(t, got.Ops, 2)
 	require.Equal(t, "node-a", got.Ops[0].Node)
 	require.False(t, got.Ops[0].NotAttempted)
@@ -40,7 +40,7 @@ func TestCommitEventRecordsActionAndUnattemptedOps(t *testing.T) {
 
 func TestDiscardDoesNotPublish(t *testing.T) {
 	stmt, task, _ := buildEvictMarkerSession()
-	stmt.ssn.SetCurrentAction(string(Reclaim))
+	stmt.ssn.SetCurrentAction(Reclaim)
 	var got *CommitEvent
 	stmt.ssn.AddEventHandler(&EventHandler{OnCommit: func(event *CommitEvent) {
 		got = event
@@ -58,7 +58,7 @@ func TestUndoOpsAreNotPublished(t *testing.T) {
 	cacheMock := cache.NewMockCache(controller)
 	cacheMock.EXPECT().Bind(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 	stmt.ssn.Cache = cacheMock
-	stmt.ssn.SetCurrentAction(string(Allocate))
+	stmt.ssn.SetCurrentAction(Allocate)
 	task.NodeName = node.Name
 	var got *CommitEvent
 	stmt.ssn.AddEventHandler(&EventHandler{OnCommit: func(event *CommitEvent) {
@@ -77,7 +77,7 @@ func TestUndoOpsAreNotPublished(t *testing.T) {
 func opKinds(event *CommitEvent) []string {
 	kinds := make([]string, 0, len(event.Ops))
 	for _, op := range event.Ops {
-		kinds = append(kinds, op.Kind)
+		kinds = append(kinds, string(op.Kind))
 	}
 	return kinds
 }
@@ -100,7 +100,7 @@ func TestSessionEvictEmitsOneOp(t *testing.T) {
 	cacheMock := cache.NewMockCache(controller)
 	cacheMock.EXPECT().Evict(gomock.Any(), gomock.Any(), gomock.Any(), "stale").Return(nil)
 	stmt.ssn.Cache = cacheMock
-	stmt.ssn.SetCurrentAction(string(StaleGangEviction))
+	stmt.ssn.SetCurrentAction(StaleGangEviction)
 	var got *CommitEvent
 	stmt.ssn.AddEventHandler(&EventHandler{OnCommit: func(event *CommitEvent) {
 		got = event
@@ -109,8 +109,8 @@ func TestSessionEvictEmitsOneOp(t *testing.T) {
 	require.NoError(t, stmt.ssn.Evict(task, "stale", eviction_info.EvictionMetadata{Action: string(StaleGangEviction)}))
 
 	require.NotNil(t, got)
-	require.Equal(t, string(StaleGangEviction), got.Action)
+	require.Equal(t, StaleGangEviction, got.Action)
 	require.Len(t, got.Ops, 1)
-	require.Equal(t, evict, got.Ops[0].Kind)
+	require.Equal(t, CommitOpEvict, got.Ops[0].Kind)
 	require.Equal(t, task.Name, got.Ops[0].Name)
 }

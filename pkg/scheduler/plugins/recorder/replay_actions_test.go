@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	v1 "k8s.io/api/core/v1"
@@ -145,7 +146,7 @@ func runRecordedAction(
 		recorded = payload
 		return true
 	})
-	schedCache := startReplayCache(t, params, objects, nil, nil)
+	schedCache := startReplayCache(t, params, objects, nil, time.Time{})
 	session, err := framework.OpenSession(schedCache, config, params, "replay-"+string(action.Name()), http.NewServeMux())
 	require.NoError(t, err)
 	plugin.OnSessionOpen(session)
@@ -154,10 +155,10 @@ func runRecordedAction(
 			if op.NotAttempted {
 				continue
 			}
-			decisions = append(decisions, event.Action+" "+op.Kind+" "+op.Namespace+"/"+op.Name+"@"+op.Node)
+			decisions = append(decisions, string(event.Action)+" "+string(op.Kind)+" "+op.Namespace+"/"+op.Name+"@"+op.Node)
 		}
 	}})
-	session.SetCurrentAction(string(action.Name()))
+	session.SetCurrentAction(action.Name())
 	action.Execute(session)
 	plugin.OnSessionClose(session)
 	framework.CloseSession(session)

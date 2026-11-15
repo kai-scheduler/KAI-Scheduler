@@ -847,14 +847,14 @@ func decisionLines(body, action string) []string {
 	var lines []string
 	for _, cycle := range cyclesIn(body) {
 		for _, decision := range cycle.Decisions {
-			if decision.Action != action {
+			if string(decision.Action) != action {
 				continue
 			}
 			for _, op := range decision.Ops {
 				if op.NotAttempted {
 					continue
 				}
-				lines = append(lines, decision.Action+" "+op.Kind+" "+op.Namespace+"/"+op.Name+"@"+op.Node)
+				lines = append(lines, string(decision.Action)+" "+string(op.Kind)+" "+op.Namespace+"/"+op.Name+"@"+op.Node)
 			}
 		}
 	}
@@ -869,7 +869,7 @@ func preemptCycle(body, victimHash, preemptorHash string) (recordedCycle, []stri
 				if op.NotAttempted {
 					continue
 				}
-				ops = append(ops, decision.Action+" "+op.Kind+" "+op.Namespace+"/"+op.Name+"@"+op.Node)
+				ops = append(ops, string(decision.Action)+" "+string(op.Kind)+" "+op.Namespace+"/"+op.Name+"@"+op.Node)
 			}
 		}
 		joined := strings.Join(ops, "\n")

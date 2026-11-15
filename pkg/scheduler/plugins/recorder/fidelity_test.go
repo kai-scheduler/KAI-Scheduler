@@ -183,18 +183,13 @@ func runActionsAt(
 	toRun []framework.Action,
 ) ([]string, *cycleRecord) {
 	t.Helper()
-	var now func() time.Time
-	if !at.IsZero() {
-		opened := at
-		now = func() time.Time { return opened }
-	}
 	var recorded *cycleRecord
 	var decisions []string
 	plugin := newPlugin(nil, func(payload *cycleRecord) bool {
 		recorded = payload
 		return true
 	})
-	schedCache := startReplayCache(t, params, objects, usage, now)
+	schedCache := startReplayCache(t, params, objects, usage, at)
 	session, err := framework.OpenSession(schedCache, config, params, "fidelity", http.NewServeMux())
 	require.NoError(t, err)
 	plugin.OnSessionOpen(session)
@@ -203,11 +198,11 @@ func runActionsAt(
 			if op.NotAttempted {
 				continue
 			}
-			decisions = append(decisions, event.Action+" "+op.Kind+" "+op.Namespace+"/"+op.Name+"@"+op.Node)
+			decisions = append(decisions, string(event.Action)+" "+string(op.Kind)+" "+op.Namespace+"/"+op.Name+"@"+op.Node)
 		}
 	}})
 	for _, action := range toRun {
-		session.SetCurrentAction(string(action.Name()))
+		session.SetCurrentAction(action.Name())
 		action.Execute(session)
 	}
 	plugin.OnSessionClose(session)
@@ -251,12 +246,7 @@ func mustJSON(t *testing.T, value any) []byte {
 
 func openAt(t *testing.T, params *conf.SchedulerParams, objects *snapshot.RawKubernetesObjects, usage *queue_info.ClusterUsage, at time.Time) *framework.Session {
 	t.Helper()
-	var now func() time.Time
-	if !at.IsZero() {
-		opened := at
-		now = func() time.Time { return opened }
-	}
-	schedCache := startReplayCache(t, params, objects, usage, now)
+	schedCache := startReplayCache(t, params, objects, usage, at)
 	session, err := framework.OpenSession(schedCache, actionConfig(string(framework.Allocate)), params, "fidelity-open", http.NewServeMux())
 	require.NoError(t, err)
 	return session

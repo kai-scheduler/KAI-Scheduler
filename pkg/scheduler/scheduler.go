@@ -161,7 +161,7 @@ func (s *Scheduler) runOnce() {
 		log.InfraLogger.SetAction(string(action.Name()))
 		metrics.SetCurrentAction(string(action.Name()))
 		// Name the action so a published commit or eviction can say which action made it.
-		ssn.SetCurrentAction(string(action.Name()))
+		ssn.SetCurrentAction(action.Name())
 		actionStartTime := time.Now()
 		action.Execute(ssn)
 		metrics.UpdateActionDuration(string(action.Name()), metrics.Duration(actionStartTime))

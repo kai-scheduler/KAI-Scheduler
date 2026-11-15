@@ -142,6 +142,7 @@ For detailed information about the binding process and BindRequest lifecycle, se
 - [Binder](binder.md) - Pod binding process
 - [Pod Grouper](pod-grouper.md) - Gang scheduling implementation
 - [Snapshot Plugin](../plugins/snapshot.md) - Snapshot capture and analysis tools
+- [Recorder](../plugins/recorder.md) - Recording and replaying a scheduling cycle
 - [Scheduling Queues](../queues/README.md) - Queue configuration and management
 - [Fairness](../fairness/README.md) - Resource fairness and distribution algorithms
 - [Scheduling Deep Dive](../scheduling-deep-dive/README.md) - Visual guide to how scheduling concepts interact

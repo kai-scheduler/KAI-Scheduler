@@ -25,6 +25,7 @@ import (
 	"golang.org/x/exp/slices"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/clock"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
@@ -158,7 +159,7 @@ func (s *Statement) commitEvict(reclaimee *pod_info.PodInfo, evictOp evictOperat
 	}
 	reclaimee.IsVirtualStatus = false
 
-	evictionTime := s.ssn.Now()
+	evictionTime := clock.Now()
 	reclaimeePodGroup.LastEvictionTimestamp = &evictionTime
 
 	return nil
@@ -686,7 +687,7 @@ func (s *Statement) publishCommitResult(opErrors []string, failedAt int) {
 
 func commitOpFrom(op Operation) CommitOp {
 	task := op.TaskInfo()
-	recorded := CommitOp{Kind: op.Name()}
+	recorded := CommitOp{Kind: CommitOpKind(op.Name())}
 	if task != nil {
 		recorded.UID = string(task.UID)
 		recorded.Namespace = task.Namespace

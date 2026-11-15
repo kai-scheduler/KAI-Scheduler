@@ -19,8 +19,8 @@ func main() {
 	listen := flag.String("listen", "127.0.0.1:9095", "address that accepts scheduler records")
 	dir := flag.String("dir", "/var/lib/kai-recorder", "directory for recorded batches")
 	keyFile := flag.String("hmac-key-file", "", "file containing the redaction key")
-	rollInterval := flag.Duration("roll-interval", 5*time.Minute, "roll a batch at least this often")
-	rollBytes := flag.Int64("roll-bytes", 64<<20, "roll a batch once it reaches this many bytes")
+	rollInterval := flag.Duration("roll-interval", 5*time.Minute, "how often to close the current record file and gzip it, even if it is not full")
+	rollBytes := flag.Int64("roll-bytes", 64<<20, "close and gzip the current record file once it reaches this size")
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)

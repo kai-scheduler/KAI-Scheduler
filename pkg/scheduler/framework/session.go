@@ -109,7 +109,7 @@ type Session struct {
 	// pluginsInOrder records the order plugins were opened in, so they can be closed in reverse.
 	pluginsInOrder  []Plugin
 	eventHandlers   []*EventHandler
-	currentAction   string
+	currentAction   ActionType
 	SchedulerParams conf.SchedulerParams
 	mux             *http.ServeMux
 
@@ -124,16 +124,8 @@ func (ssn *Session) Statement() *Statement {
 }
 
 // SetCurrentAction names the action whose commits are about to be published.
-func (ssn *Session) SetCurrentAction(action string) {
+func (ssn *Session) SetCurrentAction(action ActionType) {
 	ssn.currentAction = action
-}
-
-// Now is the cycle clock. Replay freezes it at the recorded open time.
-func (ssn *Session) Now() time.Time {
-	if ssn != nil && ssn.SchedulerParams.NowOverride != nil {
-		return ssn.SchedulerParams.NowOverride()
-	}
-	return time.Now()
 }
 
 // publishCommit invokes OnCommit inline. Handlers must not block.
@@ -216,7 +208,7 @@ func (ssn *Session) Evict(pod *pod_info.PodInfo, message string, evictionMetadat
 	// so the recorder would miss the eviction without this.
 	if ssn.hasOnCommit() {
 		ssn.publishCommit([]CommitOp{{
-			Kind:      evict,
+			Kind:      CommitOpEvict,
 			UID:       string(pod.UID),
 			Namespace: pod.Namespace,
 			Name:      pod.Name,

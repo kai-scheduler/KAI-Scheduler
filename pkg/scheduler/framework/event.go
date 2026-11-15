@@ -25,7 +25,16 @@ import (
 )
 
 // SessionCloseAction tags commits that run while plugins close, after the configured actions.
-const SessionCloseAction = "session-close"
+const SessionCloseAction ActionType = "session-close"
+
+// CommitOpKind is the operation name stored on a commit. The JSON value matches the operation name.
+type CommitOpKind string
+
+const (
+	CommitOpEvict    CommitOpKind = evict
+	CommitOpPipeline CommitOpKind = pipeline
+	CommitOpAllocate CommitOpKind = allocate
+)
 
 type Event struct {
 	Task *pod_info.PodInfo
@@ -36,12 +45,14 @@ type EventHandler struct {
 	DeallocateFunc func(event *Event)
 	// OnCommit runs inline on the scheduling goroutine for Statement.Commit
 	// and Session.Evict. Discard does not publish. It must not block.
+	// The recorder copies each CommitEvent into a bounded buffer. A separate
+	// goroutine saves it. When the buffer is full the event is dropped and counted.
 	OnCommit func(event *CommitEvent)
 }
 
 // CommitOp is one operation inside a commit. Fields are the values read off the operation.
 type CommitOp struct {
-	Kind         string                         `json:"kind"`
+	Kind         CommitOpKind                   `json:"kind"`
 	UID          string                         `json:"uid,omitempty"`
 	Namespace    string                         `json:"namespace,omitempty"`
 	Name         string                         `json:"name,omitempty"`
@@ -55,6 +66,6 @@ type CommitOp struct {
 // CommitEvent is one committed statement. Undo operations are not included.
 type CommitEvent struct {
 	SessionID string     `json:"sessionID"`
-	Action    string     `json:"action,omitempty"`
+	Action    ActionType `json:"action,omitempty"`
 	Ops       []CommitOp `json:"ops,omitempty"`
 }

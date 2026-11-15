@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/clock"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 )
@@ -56,7 +57,7 @@ func (p *recorderPlugin) Name() string {
 
 func (p *recorderPlugin) OnSessionOpen(ssn *framework.Session) {
 	p.mu.Lock()
-	p.openedAt = ssn.Now().UTC()
+	p.openedAt = clock.Now().UTC()
 	p.decisions = nil
 	p.mu.Unlock()
 	ssn.AddEventHandler(&framework.EventHandler{OnCommit: p.onCommit})

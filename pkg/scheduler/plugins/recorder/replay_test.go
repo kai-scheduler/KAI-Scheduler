@@ -67,7 +67,7 @@ func runAllocate(t *testing.T, config *conf.SchedulerConfiguration, params *conf
 		return true
 	})
 
-	schedCache := startReplayCache(t, params, objects, nil, nil)
+	schedCache := startReplayCache(t, params, objects, nil, time.Time{})
 	session, err := framework.OpenSession(schedCache, config, params, "replay", http.NewServeMux())
 	require.NoError(t, err)
 	plugin.OnSessionOpen(session)
@@ -82,7 +82,7 @@ func runAllocate(t *testing.T, config *conf.SchedulerConfiguration, params *conf
 			ops = append(ops, op)
 		}
 	}})
-	session.SetCurrentAction(string(framework.Allocate))
+	session.SetCurrentAction(framework.Allocate)
 	allocate.New().Execute(session)
 	plugin.OnSessionClose(session)
 	framework.CloseSession(session)
@@ -92,7 +92,7 @@ func runAllocate(t *testing.T, config *conf.SchedulerConfiguration, params *conf
 func decisionsByAction(ops []framework.CommitOp) map[string][]string {
 	out := map[string][]string{}
 	for _, op := range ops {
-		out[op.Kind] = append(out[op.Kind], op.Namespace+"/"+op.Name+"@"+op.Node)
+		out[string(op.Kind)] = append(out[string(op.Kind)], op.Namespace+"/"+op.Name+"@"+op.Node)
 	}
 	return out
 }
@@ -162,9 +162,9 @@ func replayObjects() *snapshot.RawKubernetesObjects {
 	}
 }
 
-func startReplayCache(t *testing.T, params *conf.SchedulerParams, objects *snapshot.RawKubernetesObjects, usage *queue_info.ClusterUsage, now func() time.Time) cache.Cache {
+func startReplayCache(t *testing.T, params *conf.SchedulerParams, objects *snapshot.RawKubernetesObjects, usage *queue_info.ClusterUsage, opened time.Time) cache.Cache {
 	t.Helper()
-	schedCache, cancel, err := schedreplay.NewReplayCache(params, objects, usage, now)
+	schedCache, cancel, err := schedreplay.NewReplayCache(params, objects, usage, opened)
 	require.NoError(t, err)
 	t.Cleanup(cancel)
 	return schedCache
