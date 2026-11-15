@@ -20,7 +20,7 @@ This design lets a fractional workload state how much *compute* it needs, on top
 
 **Goals**
 
-- A user-facing, hardware-agnostic compute share per fractional workload, in two mutually exclusive policies: `min-guaranteed` and `fixed`.
+- A user-facing, hardware-agnostic compute share per fractional workload, in two policies: `min-guaranteed` and `fixed`. If both are set, `fixed` wins.
 - Support for three combinations: `time-slicing` + `min-guaranteed`, `sm-sharing` + `min-guaranteed`, `sm-sharing` + `fixed`.
 - Fail-fast rejection at admission of every statically invalid submission, with an actionable error.
 - Scheduler placement that never over-commits the compute guarantees of a GPU.
@@ -83,7 +83,7 @@ There is no compute accounting anywhere in the path today.
 | # | Decision (#2192) | Outcome | Section |
 |---|---|---|---|
 | 1 | Unit of request | Dimensionless share of one device, `0 < v < 1`. Coherent in both modes: share of the SMs (`sm-sharing`) or share of each time period (`time-slicing`). Portable to DRA as a quantity. | [User API](#user-api) |
-| 2 | Naming | `min-guaranteed` (floor, may burst) and `fixed` (exact share, no burst). Not `request` / `limit`, and not `fixed`, which reads as a limit that can burst. | [Alternatives](#alternatives-considered) |
+| 2 | Naming | `min-guaranteed` (floor, may burst) and `fixed` (exact share, no burst). Not `request` / `limit`, and not `max-allowed`, which reads as a limit that can burst. | [Alternatives](#alternatives-considered) |
 | 3 | Rounding and granularity | Owned by gpu-fractioning, as MiB rounding is for GPU memory. KAI accounts the requested share exactly and never sees chunks. gpu-fractioning rounds up to whole chunks at container creation, for both policies, and writes the applied share on the pod. | [Rounding](#rounding) |
 | 4 | Who translates, and where | gpu-fractioning owns hardware translation: it maps a share to chunks of SMs or time, and reports the applied share back. KAI only accounts shares. Same split as the memory handshake. | [gpu-fractioning contract](#gpu-fractioning-contract) |
 | 5 | Who validates and rejects | Admission rejects every statically invalid submission. Co-location that exceeds the device or mixes modes is prevented by construction in the scheduler. | [Validation](#validation) |
@@ -105,8 +105,10 @@ Two new per-container pod annotations, next to the existing `.gpu-compute.mode`:
 
 | Annotation | Value |
 |---|---|
-| `nvidia.com/container.<c>.gpu-compute.min-guaranteed` | Decimal in `(0, 1)`, at most 5 decimal places |
-| `nvidia.com/container.<c>.gpu-compute.fixed` | Decimal in `(0, 1)`, at most 5 decimal places |
+| `nvidia.com/container.<c>.gpu-compute.min-guaranteed` | Decimal in `(0, 1)`, at most 3 decimal places |
+| `nvidia.com/container.<c>.gpu-compute.fixed` | Decimal in `(0, 1)`, at most 3 decimal places |
+
+Three decimal places are enough to express every chunk boundary of the 4, 8 and 16-chunk GPUs expected (1/8 = 0.125 exactly); anything finer is below what gpu-fractioning can enforce. If both keys are set on a container, `fixed` wins and `min-guaranteed` is ignored: a `fixed` share is already a guarantee, so the floor adds nothing. The pod is charged `fixed` only.
 
 The share is **per device** and always below one device: see [Multi-device requests](#multi-device-requests) for a workload that needs more.
 
@@ -184,22 +186,21 @@ metadata:
 
 **What the user sees once the container starts.** On a GPU that gpu-fractioning splits into 8 chunks for `sm-sharing` and 16 for `time-slicing` (illustrative values), gpu-fractioning writes `applied`:
 
-| Example | Requested | KAI accounts | gpu-fractioning applies | Annotation on the pod |
+| Example | Requested | KAI accounts | gpu-fractioning enforces | `applied` (3 decimals) |
 |---|---|---|---|---|
-| a | `fixed: 0.3` | `0.3` | 0.3 × 8 = 2.4 → **3** chunks (up) | `nvidia.com/container.server.gpu-compute.applied: "0.38"` |
+| a | `fixed: 0.3` | `0.3` | 0.3 × 8 = 2.4 → **3** chunks (up) = 3/8 = 0.375 | `nvidia.com/container.server.gpu-compute.applied: "0.375"` |
 | b | `min-guaranteed: 0.5` | `0.5` | 0.5 × 16 = **8** chunks | `nvidia.com/container.trainer.gpu-compute.applied: "0.5"` |
-| c | `min-guaranteed: 0.2` | `0.2` | 0.2 × 8 = 1.6 → **2** chunks (up) | `nvidia.com/container.worker.gpu-compute.applied: "0.25"` |
+| c | `min-guaranteed: 0.2` | `0.2` | 0.2 × 8 = 1.6 → **2** chunks (up) = 2/8 = 0.25 | `nvidia.com/container.worker.gpu-compute.applied: "0.25"` |
 
-Examples a and c are the "20% resolves to more than 20%" case raised in #2192. Rounding up also means a small request never becomes zero chunks (`fixed: 0.1` on 8 chunks applies as 1 chunk, `0.12`). KAI keeps the request as the user wrote it; the difference is visible only in `applied`. `applied` is rounded to 2 decimal places for the user.
+Examples a and c are the "20% resolves to more than 20%" case raised in #2192. Rounding up also means a small request never becomes zero chunks (`fixed: 0.1` on 8 chunks applies as 1 chunk, `0.125`). KAI keeps the request as the user wrote it; the difference is visible only in `applied`. `applied` is the enforced share (chunks ÷ chunk count) rounded to 3 decimals for display: on 8 chunks it is exact (example a enforces and shows `0.375`). On 16 chunks 1/16 = 0.0625 displays as `0.063`; enforcement is by chunks, not the displayed value.
 
 **Rejected at admission:**
 
 | Submission | Error |
 |---|---|
-| `min-guaranteed: "0.3"` and `fixed: "0.5"` | `gpu-compute.min-guaranteed and gpu-compute.fixed are mutually exclusive` |
 | `fixed: "0.3"` with no memory key | `gpu-compute.fixed requires a GPU memory fraction (gpu-fraction, gpu-memory or .gpu-memory.request)` |
 | `fixed: "0.3"` under `time-slicing` (explicit or default) | `gpu-compute.fixed is supported only with gpu-compute.mode=sm-sharing` |
-| `min-guaranteed: "1"`, `"1.0"`, `"1.5"`, `"0"` or `"abc"` (same for `fixed`) | `gpu-compute.min-guaranteed must be a decimal in (0, 1)` |
+| `min-guaranteed: "1"`, `"1.0"`, `"1.5"`, `"0"`, `"0.1234"` or `"abc"` (same for `fixed`) | `gpu-compute.min-guaranteed must be a decimal in (0, 1)` |
 
 A share of `1.0` is not a fraction: a workload that wants a whole GPU requests a whole GPU, which does not go through gpu-fractioning, so the compute keys are never a way to claim a whole device.
 
@@ -248,8 +249,7 @@ All static rules are enforced in one place, the admission webhook, so they fail 
 
 | Rule | Rejected when |
 |---|---|
-| Range | The value does not parse, has more than 5 decimals, or is outside `(0, 1)`. `1.0` and above are rejected: a share is per device (see [Multi-device requests](#multi-device-requests)). |
-| Exclusive | Both `min-guaranteed` and `fixed` are set. |
+| Range | The value does not parse, has more than 3 decimals, or is outside `(0, 1)`. `1.0` and above are rejected: a share is per device (see [Multi-device requests](#multi-device-requests)). |
 | Needs memory | A compute key is set and the pod has no memory fraction (`gpu-fraction`, `gpu-memory`, `.gpu-memory.request` or `.gpu-memory.limit`). This also rules out whole-GPU pods. A missing memory key is not defaulted to a whole GPU: that would silently hog the device, since a pod cannot run without memory. Widening the API later to default it would not invalidate any accepted workload. |
 | Mode | `fixed` is set and the mode is `time-slicing`, explicitly or by default. |
 | Container | The compute key names a container other than the fraction container. |
@@ -312,7 +312,7 @@ From `kubectl apply` to a running container, for `min-guaranteed: "0.2"` in `sm-
 
 ```mermaid
 flowchart TD
-  U["kubectl apply<br/>gpu-fraction: 0.5<br/>.gpu-compute.min-guaranteed: 0.2"] --> A{"Admission<br/>range, exclusive, needs memory,<br/>mode, container, sharing mode"}
+  U["kubectl apply<br/>gpu-fraction: 0.5<br/>.gpu-compute.min-guaranteed: 0.2"] --> A{"Admission<br/>range, needs memory,<br/>mode, container, sharing mode"}
   A -- invalid --> X["Rejected at apply time"]
   A -- valid --> P["Pod pending"]
   P --> F{"Node filter<br/>Ready=True and<br/>compute condition True?"}
@@ -330,7 +330,7 @@ W1 and W2 are retried every session; W2 clears when compute is released on a GPU
 
 ### Request parsing
 
-`NvFractionsContainerRequest` and `PodGPUFractionRequest` in the api module gain the policy and the share. `PodInfo.updatePodAdditionalFields` (`pkg/scheduler/api/pod_info/pod_info.go`) carries them into the task's GPU requirement. Shares are parsed as fixed-point integers (units of `1e-5`), never as floats, so `0.29 × 100` is exactly `29`.
+`NvFractionsContainerRequest` and `PodGPUFractionRequest` in the api module gain the policy and the share. `PodInfo.updatePodAdditionalFields` (`pkg/scheduler/api/pod_info/pod_info.go`) carries them into the task's GPU requirement. Shares are parsed as fixed-point integers (units of `1e-3`), never as floats, so `0.29 × 1000` is exactly `290`.
 
 Bound pods are accounted from the same request keys. They cannot drift from what the runtime enforces because admission makes them immutable from creation (see [Validation](#validation)).
 
@@ -351,7 +351,7 @@ The same request can therefore apply as different shares on different GPU models
 
 ### Compute ledger
 
-`GpuSharingNodeInfo` gains `UsedSharedGPUsCompute`, `AllocatedSharedGPUsCompute` and `ReleasingSharedGPUsCompute`, keyed by GPU group, in fixed-point share units (`1e-5`). They mirror the memory ledger through its whole lifecycle: `addSharedGPUTaskResourcesPerPodGroup` / `removeSharedTaskResourcesPerPodGroup`, pipelining onto releasing capacity (below), and statement rollback (`pkg/scheduler/framework/statement.go`).
+`GpuSharingNodeInfo` gains `UsedSharedGPUsCompute`, `AllocatedSharedGPUsCompute` and `ReleasingSharedGPUsCompute`, keyed by GPU group, in fixed-point share units (`1e-3`). They mirror the memory ledger through its whole lifecycle: `addSharedGPUTaskResourcesPerPodGroup` / `removeSharedTaskResourcesPerPodGroup`, pipelining onto releasing capacity (below), and statement rollback (`pkg/scheduler/framework/statement.go`).
 
 - **Capacity** of each GPU is `1`.
 - **Charge** is the task's requested share. Memory-only pods are charged zero and run on whatever the guarantees leave, plus idle capacity.
@@ -405,9 +405,9 @@ Every value travels on the pod or the node: no new types, and no runtime calls b
 | 2 | gpu-fractioning → user | Applied share | `nvidia.com/container.<c>.gpu-compute.applied` | fractiond |
 
 - **Request (1)** is read by KAI for accounting and by fractiond for enforcement. Admission makes it immutable from creation, so both sides see the same value for the pod's lifetime.
-- **Applied (2)** is written by fractiond once MPS has accepted the limit, at container creation, rounded to 2 decimal places. It is the value MPS reports. If the request cannot be honoured, fractiond fails the container's creation; it never runs the container with a weaker limit. KAI does not read `applied`: it shows the user what rounding did. Admission accepts the key (see [Validation](#validation)).
+- **Applied (2)** is written by fractiond once MPS has accepted the limit, at container creation, rounded to 3 decimal places. It is the value MPS reports. If the request cannot be honoured, fractiond fails the container's creation; it never runs the container with a weaker limit. KAI does not read `applied`: it shows the user what rounding did. Admission accepts the key (see [Validation](#validation)).
 
-**Inputs.** At container creation fractiond reads `.gpu-compute.mode` and at most one `.gpu-compute.min-guaranteed` / `.fixed` key per container. A container with neither key is best-effort.
+**Inputs.** At container creation fractiond reads `.gpu-compute.mode` and `.gpu-compute.min-guaranteed` / `.fixed` keys per container; if both are present, `.fixed` is used. A container with neither key is best-effort.
 
 **Guarantees, per advertised row:**
 
@@ -515,7 +515,7 @@ There is no KAI switch, as with fractions today. Alpha is marked in the docs onl
 | `dynamic` / `static` naming | Names the mechanism, not the promise. |
 | SM count as the unit | Meaningless under `time-slicing`; exposes hardware structure. |
 | Rounding to nearest | Can break either promise by half a chunk. |
-| `fixed` naming for the fixed policy | Reads as a limit that may burst, which `min-guaranteed` does and this does not. |
+| `max-allowed` naming for the fixed policy | Reads as a limit that may burst, which `min-guaranteed` does and this does not. |
 | Rounding `fixed` down | A small request can become zero chunks, which violates the user's intent. |
 | Chunk count on the pod instead of a share | Hardware-specific; a share reads the same on any GPU model. |
 | KAI rounds to chunks from a published `N` and writes a `.gpu-compute.granted` share (earlier draft) | Puts hardware granularity in the scheduler, unlike memory. It needed `N` on node labels, a binder-owned key, BindRequest fields, and broke on nodes with mixed GPU models. Reconsidered in review (the binder and scheduler could share the rounding logic): rounding stays in gpu-fractioning, which has direct access to the chunk count of each GPU. |
