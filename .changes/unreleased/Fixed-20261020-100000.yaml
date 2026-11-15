@@ -1,0 +1,4 @@
+kind: Fixed
+body: podgrouper strips managedFields from the objects it caches
+custom:
+  Author: tiffany-yu-ai
