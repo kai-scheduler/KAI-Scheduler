@@ -159,7 +159,7 @@ binder:
   plugins: {}
   # cdiEnabled overrides NVIDIA GPU Operator ClusterPolicy auto-detection for CDI.
   # Leave unset to auto-detect. Set true or false only when ClusterPolicy is unavailable
-  # (for example --set binder.cdiEnabled=true). Setting admission.cdi=true is rejected.
+  # (for example --set binder.cdiEnabled=true). The former admission.cdi key is ignored.
   # cdiEnabled: true
 scheduler:
   enabled: true

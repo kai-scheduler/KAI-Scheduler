@@ -37,20 +37,3 @@ tests:
       - equal:
           path: spec.binder.cdiEnabled
           value: false
-
-  - it: allows admission.cdi=false leftover from copied values without failing
-    templates:
-      - templates/validate.yaml
-    set:
-      admission.cdi: false
-    asserts:
-      - notFailedTemplate: {}
-
-  - it: rejects admission.cdi=true and points at binder.cdiEnabled
-    templates:
-      - templates/validate.yaml
-    set:
-      admission.cdi: true
-    asserts:
-      - failedTemplate:
-          errorMessage: "admission.cdi is not a valid Helm value; set binder.cdiEnabled instead. Leaving binder.cdiEnabled unset keeps ClusterPolicy auto-detection."
