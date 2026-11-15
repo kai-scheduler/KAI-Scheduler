@@ -9,6 +9,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	resourcehelpers "k8s.io/component-helpers/resource"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/fips"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/nodescaleadjuster/consts"
@@ -31,10 +32,12 @@ func createScalingPodSpec(
 			constants.NvidiaGpuResource: *resource.NewQuantity(numDevices, resource.DecimalSI),
 		},
 	}
-	for _, container := range unschedulablePod.Spec.Containers {
-		if container.Resources.Requests != nil {
-			addCpuResourceRequest(&resources, container.Resources.Requests.Cpu())
-			addMemoryResourceRequest(&resources, container.Resources.Requests.Memory())
+	// Mirror what kube-scheduler charges for the pod: init and sidecar containers (KEP-753),
+	// pod-level resources (KEP-2837) and pod overhead.
+	podRequests := resourcehelpers.PodRequests(unschedulablePod, resourcehelpers.PodResourcesOptions{})
+	for _, resourceName := range []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory} {
+		if quantity, found := podRequests[resourceName]; found {
+			resources.Requests[resourceName] = quantity
 		}
 	}
 
@@ -65,24 +68,4 @@ func createScalingPodSpec(
 			ServiceAccountName: scalingPodServiceAccount,
 		},
 	}
-}
-
-func addCpuResourceRequest(resources *corev1.ResourceRequirements, cpu *resource.Quantity) {
-	requestedCpu, found := resources.Requests[corev1.ResourceCPU]
-	if found {
-		requestedCpu.Add(*cpu)
-	} else {
-		requestedCpu = cpu.DeepCopy()
-	}
-	resources.Requests[corev1.ResourceCPU] = requestedCpu
-}
-
-func addMemoryResourceRequest(resources *corev1.ResourceRequirements, memory *resource.Quantity) {
-	requestedMemory, found := resources.Requests[corev1.ResourceMemory]
-	if found {
-		requestedMemory.Add(*memory)
-	} else {
-		requestedMemory = memory.DeepCopy()
-	}
-	resources.Requests[corev1.ResourceMemory] = requestedMemory
 }

@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Scaling pods from node-scale-adjuster request the pod's effective CPU and memory, including init containers, sidecars and pod-level resources
+custom:
+  Author: "0z5a"
+  Issue: "2694"

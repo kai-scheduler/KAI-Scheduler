@@ -139,6 +139,110 @@ func TestRequestedResources(t *testing.T) {
 
 }
 
+func TestRequestedResourcesFollowPodEffectiveRequests(t *testing.T) {
+	sidecarRestartPolicy := corev1.ContainerRestartPolicyAlways
+	requests := func(cpu, memory string) corev1.ResourceRequirements {
+		return corev1.ResourceRequirements{Requests: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse(cpu),
+			corev1.ResourceMemory: resource.MustParse(memory),
+		}}
+	}
+
+	tests := []struct {
+		name           string
+		spec           corev1.PodSpec
+		expectedCPU    string
+		expectedMemory string
+	}{
+		{
+			name: "app containers only",
+			spec: corev1.PodSpec{
+				Containers: []corev1.Container{
+					{Name: "a", Resources: requests("1", "1Gi")},
+					{Name: "b", Resources: requests("2", "2Gi")},
+				},
+			},
+			expectedCPU:    "3",
+			expectedMemory: "3Gi",
+		},
+		{
+			name: "init container larger than app containers",
+			spec: corev1.PodSpec{
+				InitContainers: []corev1.Container{
+					{Name: "model-download", Resources: requests("4", "16Gi")},
+				},
+				Containers: []corev1.Container{
+					{Name: "app", Resources: requests("1", "2Gi")},
+				},
+			},
+			expectedCPU:    "4",
+			expectedMemory: "16Gi",
+		},
+		{
+			name: "native sidecar adds to app containers",
+			spec: corev1.PodSpec{
+				InitContainers: []corev1.Container{
+					{Name: "proxy", RestartPolicy: &sidecarRestartPolicy, Resources: requests("500m", "512Mi")},
+				},
+				Containers: []corev1.Container{
+					{Name: "app", Resources: requests("1", "2Gi")},
+				},
+			},
+			expectedCPU:    "1500m",
+			expectedMemory: "2560Mi",
+		},
+		{
+			name: "pod-level requests",
+			spec: corev1.PodSpec{
+				Resources: &corev1.ResourceRequirements{Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("8"),
+					corev1.ResourceMemory: resource.MustParse("64Gi"),
+				}},
+				Containers: []corev1.Container{{Name: "app"}},
+			},
+			expectedCPU:    "8",
+			expectedMemory: "64Gi",
+		},
+		{
+			name: "pod overhead",
+			spec: corev1.PodSpec{
+				Overhead: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("250m"),
+					corev1.ResourceMemory: resource.MustParse("120Mi"),
+				},
+				Containers: []corev1.Container{
+					{Name: "app", Resources: requests("1", "2Gi")},
+				},
+			},
+			expectedCPU:    "1250m",
+			expectedMemory: "2168Mi",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: PodName, Namespace: PodNamespace},
+				Spec:       tt.spec,
+			}
+			scalingPod := createScalingPodSpec(testutils.ScalingPodAppLabel, testutils.ScalingPodServiceAccount,
+				pod, consts.DefaultScalingPodImage, testutils.ScalingPodNamespace, 1, false)
+			requestedResources := scalingPod.Spec.Containers[0].Resources.Requests
+
+			if expected := resource.MustParse(tt.expectedCPU); !requestedResources.Cpu().Equal(expected) {
+				t.Errorf("expected CPU request %s, got %s", expected.String(), requestedResources.Cpu().String())
+			}
+			if expected := resource.MustParse(tt.expectedMemory); !requestedResources.Memory().Equal(expected) {
+				t.Errorf("expected memory request %s, got %s", expected.String(), requestedResources.Memory().String())
+			}
+			gpu := requestedResources.Name(constants.NvidiaGpuResource, resource.DecimalSI)
+			if expected := resource.MustParse("1"); !gpu.Equal(expected) {
+				t.Errorf("expected GPU request %s, got %s", expected.String(), gpu.String())
+			}
+		})
+	}
+}
+
 func loadTestPodFromYaml(filename string) *corev1.Pod {
 	stream, err := ioutil.ReadFile(filename)
 	if err != nil {
