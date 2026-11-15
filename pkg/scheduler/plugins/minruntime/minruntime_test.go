@@ -114,7 +114,7 @@ var _ = Describe("MinRuntime Plugin", func() {
 
 			It("uses the session clock recorded for the cycle", func() {
 				opened := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-				restore := clock.Set(func() time.Time { return opened })
+				restore := clock.Set(opened)
 				defer restore()
 				session := &framework.Session{ClusterInfo: &api.ClusterInfo{Queues: queues}}
 				plugin.OnSessionOpen(session)
@@ -124,7 +124,7 @@ var _ = Describe("MinRuntime Plugin", func() {
 				victim := createPodGroup("victim-job", "prod-team2", &start, 1, 1)
 				Expect(plugin.preemptFilterFn(pendingJob, victim)).To(BeFalse())
 
-				clock.Set(func() time.Time { return opened.Add(time.Minute) })
+				clock.Set(opened.Add(time.Minute))
 				Expect(plugin.preemptFilterFn(pendingJob, victim)).To(BeTrue())
 				plugin.OnSessionClose(session)
 				Expect(plugin.queues).To(BeNil())

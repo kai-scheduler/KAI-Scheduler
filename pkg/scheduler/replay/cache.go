@@ -36,16 +36,7 @@ func NewReplayCache(
 	usage *queue_info.ClusterUsage, opened time.Time,
 ) (cache.Cache, context.CancelFunc, error) {
 	DisableWatchListClientForFakeReplay()
-	var restore func()
-	if opened.IsZero() {
-		restore = clock.Set(time.Now)
-	} else {
-		recorded := opened
-		start := time.Now()
-		restore = clock.Set(func() time.Time {
-			return recorded.Add(time.Since(start))
-		})
-	}
+	restore := clock.Set(opened)
 	fail := func(err error) (cache.Cache, context.CancelFunc, error) {
 		if restore != nil {
 			restore()

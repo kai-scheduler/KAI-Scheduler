@@ -988,9 +988,9 @@ func TestGetTaskStatusStuckInReleasing(t *testing.T) {
 	// still classifies it as releasing when it is inside the threshold.
 	recorded := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
 	deleted := metav1.NewTime(recorded.Add(-30 * time.Second))
-	restore := clock.Set(func() time.Time { return recorded })
+	restore := clock.Set(recorded)
 	t.Cleanup(restore)
 	assert.Equal(t, pod_status.Releasing, getTaskStatus(runningPod(&deleted), nil, 2*time.Minute))
-	clock.Set(func() time.Time { return recorded.Add(time.Hour) })
+	clock.Set(recorded.Add(time.Hour))
 	assert.Equal(t, pod_status.StuckInReleasing, getTaskStatus(runningPod(&deleted), nil, 2*time.Minute))
 }

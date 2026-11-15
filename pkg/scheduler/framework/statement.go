@@ -602,22 +602,18 @@ func (s *Statement) Commit() error {
 	}
 
 	var err error
-	var opErrors []string
+	var recorded []CommitOp
 	recording := s.ssn != nil && s.ssn.hasOnCommit()
-	if recording {
-		opErrors = make([]string, len(s.operations))
-	}
-	failedAt := -1
 	type evictionEventKey struct {
 		podGroup common_info.PodGroupID
 		action   string
 	}
 	committedEvictions := map[evictionEventKey]*podgroup_info.PodGroupInfo{}
 	defer func() {
-		// Clear last: publishCommitResult reads s.operations. The eviction metrics below only use the saved pod groups.
+		// Clear after the records are taken. The eviction metrics below only use the saved pod groups.
 		defer s.clearOperations()
 		if recording {
-			s.publishCommitResult(opErrors, failedAt)
+			s.ssn.publishCommit(recorded)
 		}
 		for key, podGroup := range committedEvictions {
 			s.ssn.Cache.RecordPodGroupEvictionEvent(podGroup, key.action)
@@ -638,51 +634,51 @@ func (s *Statement) Commit() error {
 			if err = s.commitEvict(taskInfo, evictOp); err != nil {
 				log.InfraLogger.Errorf("Failed to evict task <%v/%v>, error: <%v>",
 					taskInfo.Namespace, taskInfo.Name, err)
-				noteError(opErrors, i, err)
+				recordCommit(&recorded, recording, op, err)
 			} else {
+				recordCommit(&recorded, recording, op, nil)
 				key := evictionEventKey{podGroup: taskInfo.Job, action: evictOp.evictionMetadata.Action}
 				committedEvictions[key] = s.ssn.ClusterInfo.PodGroupInfos[taskInfo.Job]
 			}
 		case pipeline:
 			log.InfraLogger.V(4).Infof("Pipelining task: %v/%v", taskInfo.Namespace, taskInfo.Name)
 			s.commitPipeline(taskInfo, op.(pipelineOperation).message)
+			recordCommit(&recorded, recording, op, nil)
 		case allocate:
 			log.InfraLogger.V(4).Infof("Allocating task: %v/%v", taskInfo.Namespace, taskInfo.Name)
 			err = s.commitAllocate(taskInfo)
 			if err != nil {
 				log.InfraLogger.Errorf("Failed to allocate task. error: %s", err.Error())
-				noteError(opErrors, i, err)
-				failedAt = i
+				recordCommit(&recorded, recording, op, err)
+				if recording {
+					for j := i + 1; j < len(s.operations); j++ {
+						later := s.operations[j]
+						if later.Name() == undo || !s.operationValid(j) {
+							continue
+						}
+						skipped := commitOpFrom(later)
+						skipped.NotAttempted = true
+						recorded = append(recorded, skipped)
+					}
+				}
 				return err
 			}
+			recordCommit(&recorded, recording, op, nil)
 		}
 	}
 
 	return err
 }
 
-func noteError(opErrors []string, i int, err error) {
-	if opErrors == nil {
+func recordCommit(recorded *[]CommitOp, recording bool, op Operation, commitErr error) {
+	if !recording {
 		return
 	}
-	opErrors[i] = err.Error()
-}
-
-func (s *Statement) publishCommitResult(opErrors []string, failedAt int) {
-	recorded := make([]CommitOp, 0, len(s.operations))
-	for i, op := range s.operations {
-		if op.Name() == undo || !s.operationValid(i) {
-			continue
-		}
-		recordedOp := commitOpFrom(op)
-		if failedAt >= 0 && i > failedAt {
-			recordedOp.NotAttempted = true
-		} else if i < len(opErrors) {
-			recordedOp.Error = opErrors[i]
-		}
-		recorded = append(recorded, recordedOp)
+	recordedOp := commitOpFrom(op)
+	if commitErr != nil {
+		recordedOp.Error = commitErr.Error()
 	}
-	s.ssn.publishCommit(recorded)
+	*recorded = append(*recorded, recordedOp)
 }
 
 func commitOpFrom(op Operation) CommitOp {
