@@ -603,7 +603,7 @@ func (s *Statement) Commit() error {
 
 	var err error
 	var recorded []CommitOp
-	recording := s.ssn != nil && s.ssn.hasOnCommit()
+	recording := s.ssn != nil && s.ssn.onCommit
 	type evictionEventKey struct {
 		podGroup common_info.PodGroupID
 		action   string
@@ -627,53 +627,59 @@ func (s *Statement) Commit() error {
 		}
 
 		taskInfo := op.TaskInfo()
+		var opErr error
 		switch op.Name() {
 		case evict:
 			log.InfraLogger.V(4).Infof("Evicting task: %v/%v", taskInfo.Namespace, taskInfo.Name)
 			evictOp := op.(evictOperation)
-			if err = s.commitEvict(taskInfo, evictOp); err != nil {
+			err = s.commitEvict(taskInfo, evictOp)
+			opErr = err
+			if err != nil {
 				log.InfraLogger.Errorf("Failed to evict task <%v/%v>, error: <%v>",
 					taskInfo.Namespace, taskInfo.Name, err)
-				recordCommit(&recorded, recording, op, err)
 			} else {
-				recordCommit(&recorded, recording, op, nil)
 				key := evictionEventKey{podGroup: taskInfo.Job, action: evictOp.evictionMetadata.Action}
 				committedEvictions[key] = s.ssn.ClusterInfo.PodGroupInfos[taskInfo.Job]
 			}
 		case pipeline:
 			log.InfraLogger.V(4).Infof("Pipelining task: %v/%v", taskInfo.Namespace, taskInfo.Name)
 			s.commitPipeline(taskInfo, op.(pipelineOperation).message)
-			recordCommit(&recorded, recording, op, nil)
 		case allocate:
 			log.InfraLogger.V(4).Infof("Allocating task: %v/%v", taskInfo.Namespace, taskInfo.Name)
 			err = s.commitAllocate(taskInfo)
+			opErr = err
 			if err != nil {
 				log.InfraLogger.Errorf("Failed to allocate task. error: %s", err.Error())
-				recordCommit(&recorded, recording, op, err)
-				if recording {
-					for j := i + 1; j < len(s.operations); j++ {
-						later := s.operations[j]
-						if later.Name() == undo || !s.operationValid(j) {
-							continue
-						}
-						skipped := commitOpFrom(later)
-						skipped.NotAttempted = true
-						recorded = append(recorded, skipped)
-					}
-				}
-				return err
 			}
-			recordCommit(&recorded, recording, op, nil)
+		default:
+			continue
+		}
+		if recording {
+			recordCommit(&recorded, op, opErr)
+		}
+		// An allocation failure stops the commit, so the operations after it never run.
+		// Mark those as not attempted. Do this only while recording: the walk allocates,
+		// and nothing reads the result when the recorder is off.
+		if op.Name() == allocate && opErr != nil {
+			if recording {
+				for j := i + 1; j < len(s.operations); j++ {
+					later := s.operations[j]
+					if later.Name() == undo || !s.operationValid(j) {
+						continue
+					}
+					skipped := commitOpFrom(later)
+					skipped.NotAttempted = true
+					recorded = append(recorded, skipped)
+				}
+			}
+			return err
 		}
 	}
 
 	return err
 }
 
-func recordCommit(recorded *[]CommitOp, recording bool, op Operation, commitErr error) {
-	if !recording {
-		return
-	}
+func recordCommit(recorded *[]CommitOp, op Operation, commitErr error) {
 	recordedOp := commitOpFrom(op)
 	if commitErr != nil {
 		recordedOp.Error = commitErr.Error()

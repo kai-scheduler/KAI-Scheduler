@@ -107,8 +107,10 @@ type Session struct {
 	Config  *conf.SchedulerConfiguration
 	plugins map[string]Plugin
 	// pluginsInOrder records the order plugins were opened in, so they can be closed in reverse.
-	pluginsInOrder  []Plugin
-	eventHandlers   []*EventHandler
+	pluginsInOrder []Plugin
+	eventHandlers  []*EventHandler
+	// onCommit is set when a handler has OnCommit. Callers check it before building records.
+	onCommit        bool
 	currentAction   ActionType
 	SchedulerParams conf.SchedulerParams
 	mux             *http.ServeMux
@@ -131,32 +133,19 @@ func (ssn *Session) SetCurrentAction(action ActionType) {
 // publishCommit invokes OnCommit inline. Handlers must not block.
 // The event is built only when a plugin registered OnCommit.
 func (ssn *Session) publishCommit(ops []CommitOp) {
-	if ssn == nil || len(ops) == 0 {
+	if ssn == nil || !ssn.onCommit || len(ops) == 0 {
 		return
 	}
-	var event *CommitEvent
-	for _, handler := range ssn.eventHandlers {
-		if handler == nil || handler.OnCommit == nil {
-			continue
-		}
-		if event == nil {
-			event = &CommitEvent{
-				SessionID: ssn.ID,
-				Action:    ssn.currentAction,
-				Ops:       ops,
-			}
-		}
-		handler.OnCommit(event)
+	event := &CommitEvent{
+		SessionID: ssn.ID,
+		Action:    ssn.currentAction,
+		Ops:       ops,
 	}
-}
-
-func (ssn *Session) hasOnCommit() bool {
 	for _, handler := range ssn.eventHandlers {
 		if handler != nil && handler.OnCommit != nil {
-			return true
+			handler.OnCommit(event)
 		}
 	}
-	return false
 }
 
 func (ssn *Session) GetSessionStateForResource(uid types.UID) k8s_internal.SessionState {
@@ -203,10 +192,9 @@ func (ssn *Session) Evict(pod *pod_info.PodInfo, message string, evictionMetadat
 	if err := ssn.Cache.Evict(pod.Pod, podGroup, evictionMetadata, message); err != nil {
 		return err
 	}
-	// Publish only when a plugin registered OnCommit, which is the recorder.
-	// Stale-gang eviction calls Session.Evict and never reaches Statement.Commit,
-	// so the recorder would miss the eviction without this.
-	if ssn.hasOnCommit() {
+	// Stale-gang eviction calls Session.Evict and never reaches Statement.Commit.
+	// Build the record only when a plugin registered OnCommit.
+	if ssn.onCommit {
 		ssn.publishCommit([]CommitOp{{
 			Kind:      CommitOpEvict,
 			UID:       string(pod.UID),
@@ -235,6 +223,9 @@ func (ssn *Session) Evict(pod *pod_info.PodInfo, message string, evictionMetadat
 
 func (ssn *Session) AddEventHandler(eh *EventHandler) {
 	ssn.eventHandlers = append(ssn.eventHandlers, eh)
+	if eh != nil && eh.OnCommit != nil {
+		ssn.onCommit = true
+	}
 }
 
 // FittingGPUs returns a list of GPUs that fit the pod, sorted by fit score (descending)
