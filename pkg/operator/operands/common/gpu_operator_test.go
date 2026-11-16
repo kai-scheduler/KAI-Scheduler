@@ -14,42 +14,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common/test_utils"
 	nvidiav1 "github.com/kai-scheduler/KAI-scheduler/third_party/nvidia/gpu-operator/api/nvidia/v1"
 )
-
-// clusterPolicyCRD mirrors the part of the GPU Operator CRD the detection reads:
-// the stored version's schema default for spec.cdi.enabled. nil means no default.
-func clusterPolicyCRD(enabledDefault *bool) *apiextensionsv1.CustomResourceDefinition {
-	enabled := apiextensionsv1.JSONSchemaProps{Type: "boolean"}
-	if enabledDefault != nil {
-		raw := []byte("false")
-		if *enabledDefault {
-			raw = []byte("true")
-		}
-		enabled.Default = &apiextensionsv1.JSON{Raw: raw}
-	}
-	return &apiextensionsv1.CustomResourceDefinition{
-		ObjectMeta: metav1.ObjectMeta{Name: clusterPolicyCRDName},
-		Spec: apiextensionsv1.CustomResourceDefinitionSpec{
-			Group: "nvidia.com",
-			Names: apiextensionsv1.CustomResourceDefinitionNames{Plural: "clusterpolicies", Kind: "ClusterPolicy"},
-			Scope: apiextensionsv1.ClusterScoped,
-			Versions: []apiextensionsv1.CustomResourceDefinitionVersion{{
-				Name: "v1", Served: true, Storage: true,
-				Schema: &apiextensionsv1.CustomResourceValidation{OpenAPIV3Schema: &apiextensionsv1.JSONSchemaProps{
-					Type: "object",
-					Properties: map[string]apiextensionsv1.JSONSchemaProps{"spec": {
-						Type: "object",
-						Properties: map[string]apiextensionsv1.JSONSchemaProps{"cdi": {
-							Type:       "object",
-							Properties: map[string]apiextensionsv1.JSONSchemaProps{"enabled": enabled},
-						}},
-					}},
-				}},
-			}},
-		},
-	}
-}
 
 func TestIsGPUOperatorCDIEnabled(t *testing.T) {
 	tests := []struct {
@@ -88,7 +55,7 @@ func TestIsGPUOperatorCDIEnabled(t *testing.T) {
 				},
 			}}
 			if !tt.noCRD {
-				objects = append(objects, clusterPolicyCRD(tt.crdDefault))
+				objects = append(objects, test_utils.ClusterPolicyCRD(tt.crdDefault))
 			}
 			reader := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
 
@@ -111,7 +78,7 @@ func TestIsGPUOperatorCDIEnabledWithoutClusterPolicy(t *testing.T) {
 	if err := apiextensionsv1.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
-	reader := fake.NewClientBuilder().WithScheme(scheme).WithObjects(clusterPolicyCRD(ptr.To(true))).Build()
+	reader := fake.NewClientBuilder().WithScheme(scheme).WithObjects(test_utils.ClusterPolicyCRD(ptr.To(true))).Build()
 	got, err := IsGPUOperatorCDIEnabled(context.Background(), reader)
 	if err != nil {
 		t.Fatalf("IsGPUOperatorCDIEnabled() error = %v", err)

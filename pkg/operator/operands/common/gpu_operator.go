@@ -12,24 +12,20 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	nvidiav1 "github.com/kai-scheduler/KAI-scheduler/third_party/nvidia/gpu-operator/api/nvidia/v1"
 )
 
-const (
-	// clusterPolicyCRDName is the GPU Operator CRD whose schema default for
-	// spec.cdi.enabled says whether CDI is on when a ClusterPolicy leaves it out.
-	clusterPolicyCRDName = "clusterpolicies.nvidia.com"
-)
+// clusterPolicyCRDName is the GPU Operator CRD whose schema default for
+// spec.cdi.enabled applies when a ClusterPolicy leaves it unset.
+const clusterPolicyCRDName = "clusterpolicies.nvidia.com"
 
 // IsGPUOperatorCDIEnabled returns whether the GPU Operator ClusterPolicy enables CDI.
-// A ClusterPolicy that leaves spec.cdi.enabled unset takes the default its CRD
-// declares, which is true from GPU Operator 25.10 and false before. Where that
-// default is true, spec.cdi.default no longer matters; where it is false or
-// unknown, CDI is used only when both spec.cdi.enabled and spec.cdi.default are
-// true, as before.
+// An unset spec.cdi.enabled takes the CRD default (true from GPU Operator 25.10).
+// When that default is false, spec.cdi.default must also be true.
 func IsGPUOperatorCDIEnabled(ctx context.Context, readerClient client.Reader) (bool, error) {
 	nvidiaClusterPolicy, found, err := gpuOperatorClusterPolicy(ctx, readerClient)
 	if err != nil || !found {
@@ -37,28 +33,17 @@ func IsGPUOperatorCDIEnabled(ctx context.Context, readerClient client.Reader) (b
 	}
 
 	cdiOnByDefault := clusterPolicyCDIEnabledByDefault(ctx, readerClient)
-	enabled := cdiOnByDefault
-	if nvidiaClusterPolicy.Spec.CDI.Enabled != nil {
-		enabled = *nvidiaClusterPolicy.Spec.CDI.Enabled
-	}
-	if !enabled {
+	if !ptr.Deref(nvidiaClusterPolicy.Spec.CDI.Enabled, cdiOnByDefault) {
 		return false, nil
 	}
-	if cdiOnByDefault {
-		return true, nil
-	}
-	return nvidiaClusterPolicy.Spec.CDI.Default != nil && *nvidiaClusterPolicy.Spec.CDI.Default, nil
+	return cdiOnByDefault || ptr.Deref(nvidiaClusterPolicy.Spec.CDI.Default, false), nil
 }
 
-// clusterPolicyCDIEnabledByDefault reads the default of spec.cdi.enabled from the
-// stored version of the ClusterPolicy CRD. An unreadable CRD or a schema with no
-// default reads as false. The operator already watches CRDs for the queues CRD,
-// so the read is served from that cache and starts no informer of its own.
 func clusterPolicyCDIEnabledByDefault(ctx context.Context, readerClient client.Reader) bool {
 	crd := &apiextensionsv1.CustomResourceDefinition{}
 	if err := readerClient.Get(ctx, types.NamespacedName{Name: clusterPolicyCRDName}, crd); err != nil {
 		if !apierrors.IsNotFound(err) {
-			log.FromContext(ctx).Info("cannot read the ClusterPolicy CRD, assuming CDI is off unless the ClusterPolicy enables it", "error", err)
+			log.FromContext(ctx).Info("cannot read the ClusterPolicy CRD, assuming CDI is off by default", "error", err)
 		}
 		return false
 	}
@@ -66,20 +51,9 @@ func clusterPolicyCDIEnabledByDefault(ctx context.Context, readerClient client.R
 		if !version.Storage || version.Schema == nil || version.Schema.OpenAPIV3Schema == nil {
 			continue
 		}
-		spec, ok := version.Schema.OpenAPIV3Schema.Properties["spec"]
-		if !ok {
-			return false
-		}
-		cdi, ok := spec.Properties["cdi"]
-		if !ok {
-			return false
-		}
-		enabled, ok := cdi.Properties["enabled"]
-		if !ok || enabled.Default == nil {
-			return false
-		}
+		enabled := version.Schema.OpenAPIV3Schema.Properties["spec"].Properties["cdi"].Properties["enabled"]
 		var value bool
-		if err := json.Unmarshal(enabled.Default.Raw, &value); err != nil {
+		if enabled.Default == nil || json.Unmarshal(enabled.Default.Raw, &value) != nil {
 			return false
 		}
 		return value
