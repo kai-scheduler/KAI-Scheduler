@@ -31,7 +31,7 @@ type FakeUsageDBClient struct {
 var _ api.Interface = &FakeUsageDBClient{}
 var ClientWithHistory *FakeUsageDBClient
 
-func NewFakeWithHistoryClient(_ string, usageParams *api.UsageParams) (api.Interface, error) {
+func NewFakeWithHistoryClient(_ string, usageParams *api.UsageParams, _ *api.Auth) (api.Interface, error) {
 	if ClientWithHistory == nil {
 		ClientWithHistory = &FakeUsageDBClient{
 			resourceUsage: queue_info.NewClusterUsage(),

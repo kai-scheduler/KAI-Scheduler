@@ -130,6 +130,47 @@ kubectl edit schedulingshard default
       memoryCapacityMetric: sum(kube_node_status_capacity{resource=\"memory\"})
 ```
 
+#### Authentication
+
+If the usage database requires authentication, for example a shared Prometheus-compatible store behind basic auth or a token, reference the credentials from a Secret in the namespace KAI runs in:
+
+```sh
+kubectl -n kai-scheduler create secret generic kai-usage-db \
+  --from-literal=username=<username> --from-literal=password=<password>
+kubectl edit schedulingshard default
+```
+
+```yaml
+  usageDBConfig:
+    clientType: prometheus
+    connectionString: https://metrics.example.com/prometheus
+    auth:
+      basicAuth:
+        username:
+          name: kai-usage-db
+          key: username
+        password:
+          name: kai-usage-db
+          key: password
+```
+
+For a bearer token, or another `Authorization` header, use `authorization` instead of `basicAuth`. `type` defaults to `Bearer`:
+
+```yaml
+    auth:
+      authorization:
+        type: Bearer
+        credentials:
+          name: kai-usage-db
+          key: token
+```
+
+`basicAuth` and `authorization` are mutually exclusive.
+
+The operator mounts the referenced Secret keys into the scheduler pod and writes the mounted file paths into the scheduler configuration, so the scheduler ConfigMap holds no credential. The scheduler reads the files on every request: after a Secret is rotated, the new value is used as soon as the kubelet updates the mounted file, without a restart.
+
+If a referenced Secret or key does not exist, the operator fails the reconcile of the SchedulingShard, logs the error and leaves the running scheduler as it is, instead of rolling out a pod that cannot start. Mark a reference `optional: true` to skip this check.
+
 ###  Prometheus configurations
 
 > Using a kai-operated prometheus assumes that the [prometheus operator](https://prometheus-operator.dev/docs/getting-started/installation/) is installed in the cluster

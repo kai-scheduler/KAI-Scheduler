@@ -1,0 +1,6 @@
+kind: Added
+body: 'Time-based fair share: `usageDBConfig.auth` lets the scheduler authenticate to the usage database with basic auth or an `Authorization` header. The credentials are Secret keys that the operator mounts into the scheduler pod, and the scheduler no longer logs the password of a connection string'
+time: 2026-11-10T19:45:00.000000+08:00
+custom:
+    Author: liuxu623
+    Issue: "2639"

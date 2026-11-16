@@ -163,7 +163,7 @@ func setupControllers(backgroundCtx context.Context, cfg *rest.Config,
 		return nil, cancel, nil, fmt.Errorf("failed to run binder: %w", err)
 	}
 
-	fakeClient, err := fake.NewFakeWithHistoryClient("fake-connection", nil)
+	fakeClient, err := fake.NewFakeWithHistoryClient("fake-connection", nil, nil)
 	if err != nil {
 		return nil, cancel, nil, fmt.Errorf("failed to create fake usage client: %w", err)
 	}

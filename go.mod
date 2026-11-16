@@ -84,6 +84,12 @@ require (
 )
 
 require (
+	github.com/golang-jwt/jwt/v5 v5.3.0 // indirect
+	github.com/jpillora/backoff v1.0.0 // indirect
+	github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f // indirect
+)
+
+require (
 	cel.dev/expr v0.25.3 // indirect
 	cyphar.com/go-pathrs v0.2.1 // indirect
 	github.com/Masterminds/semver/v3 v3.4.0 // indirect
@@ -231,3 +237,5 @@ tool (
 	github.com/onsi/ginkgo/v2/ginkgo
 	golang.org/x/perf/cmd/benchstat
 )
+
+replace github.com/kai-scheduler/api => github.com/liuxu623/kai-api v0.2.2-0.20261110111412-62dde189a19c

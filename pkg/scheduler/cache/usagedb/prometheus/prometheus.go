@@ -45,9 +45,15 @@ type PrometheusClient struct {
 	tumblingWindowStartTime metav1.Time
 }
 
-func NewPrometheusClient(address string, params *api.UsageParams) (api.Interface, error) {
+func NewPrometheusClient(address string, params *api.UsageParams, auth *api.Auth) (api.Interface, error) {
+	roundTripper, err := newAuthRoundTripper(auth, promapi.DefaultRoundTripper)
+	if err != nil {
+		return nil, fmt.Errorf("error configuring prometheus client authentication: %v", err)
+	}
+
 	cfg := promapi.Config{
-		Address: address,
+		Address:      address,
+		RoundTripper: roundTripper,
 	}
 
 	client, err := promapi.NewClient(cfg)
