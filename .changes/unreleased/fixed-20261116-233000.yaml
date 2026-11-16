@@ -1,0 +1,5 @@
+kind: Fixed
+body: |-
+  Reclaim and consolidation pre-filters free a whole GPU once every fractional pod sharing it is a victim, so nodes full of fractional pods can host whole-GPU tasks
+custom:
+  Author: "universome"
