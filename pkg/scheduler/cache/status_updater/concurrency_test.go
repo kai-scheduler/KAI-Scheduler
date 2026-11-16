@@ -23,6 +23,7 @@ import (
 	fakecorev1 "k8s.io/client-go/kubernetes/typed/core/v1/fake"
 	faketesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/util/retry"
 
 	kubeaischedfake "github.com/kai-scheduler/api/client/clientset/versioned/fake"
 	fakeschedulingv2alpha2 "github.com/kai-scheduler/api/client/clientset/versioned/typed/scheduling/v2alpha2/fake"
@@ -61,6 +62,7 @@ var _ = Describe("Status Updater Concurrency - large scale: increase queue size"
 			return true, nil, nil
 		})
 		stopCh := make(chan struct{})
+		statusUpdater.statusSchemaVerified.Store(true)
 		statusUpdater.Run(stopCh)
 		defer close(stopCh)
 
@@ -84,14 +86,14 @@ var _ = Describe("Status Updater Concurrency - large scale: increase queue size"
 		wg.Wait()
 	})
 
-	It("updatePodGroup - No retry after conflict error", func() {
+	It("updatePodGroup - Drops conflict after bounded retries", func() {
 		updateStatusCalls := 0
 		patchCalls := 0
 
-		// Set up reactor to return conflict error on UpdateStatus calls
+		// Set up reactor to return conflict error on status apply calls
 		kubeAiSchedClient.SchedulingV2alpha2().(*fakeschedulingv2alpha2.FakeSchedulingV2alpha2).PrependReactor(
-			"update", "podgroups", func(action faketesting.Action) (handled bool, ret runtime.Object, err error) {
-				if updateAction, ok := action.(faketesting.UpdateAction); ok {
+			"patch", "podgroups", func(action faketesting.Action) (handled bool, ret runtime.Object, err error) {
+				if updateAction, ok := action.(faketesting.PatchAction); ok {
 					if updateAction.GetSubresource() == "status" {
 						updateStatusCalls++
 						// Return a conflict error to simulate resource version mismatch
@@ -142,20 +144,23 @@ var _ = Describe("Status Updater Concurrency - large scale: increase queue size"
 			subResources: nil,
 		}
 
+		Expect(kubeAiSchedClient.Tracker().Add(job)).To(Succeed())
+
 		// Store the inflight update
 		statusUpdater.inFlightPodGroups.Store(key, updateData)
 
+		statusUpdater.statusSchemaVerified.Store(true)
 		statusUpdater.Run(make(chan struct{}))
 
 		// Call updatePodGroup directly
 		ctx := context.Background()
 		statusUpdater.updatePodGroup(ctx, key, updateData)
 
-		// Verify UpdateStatus was called once
-		Expect(updateStatusCalls).To(Equal(1), "UpdateStatus should be called once")
+		// Verify status apply was called once
+		Expect(updateStatusCalls).To(Equal(retry.DefaultBackoff.Steps), "Conflicts should receive bounded retries")
 
 		// Verify Patch was not called (no patchData provided)
-		Expect(patchCalls).To(Equal(0), "Patch should not be called when no patchData is provided")
+		Expect(patchCalls).To(Equal(retry.DefaultBackoff.Steps), "Only status applies should be attempted")
 
 		// Verify it's not in the applied cache (since the update failed with conflict)
 		_, appliedExists := statusUpdater.appliedPodGroupUpdates.Load(key)
@@ -179,7 +184,7 @@ var _ = Describe("Status Updater Concurrency - large scale: increase queue size"
 				schema.GroupResource{Group: "scheduling.run.ai", Resource: "podgroups"}, "test-pg")
 		}
 		kubeAiSchedClient.SchedulingV2alpha2().(*fakeschedulingv2alpha2.FakeSchedulingV2alpha2).PrependReactor(
-			"update", "podgroups", notFound)
+			"patch", "podgroups", notFound)
 		kubeAiSchedClient.SchedulingV2alpha2().(*fakeschedulingv2alpha2.FakeSchedulingV2alpha2).PrependReactor(
 			"patch", "podgroups", func(action faketesting.Action) (handled bool, ret runtime.Object, err error) {
 				patchCalls++
@@ -204,6 +209,7 @@ var _ = Describe("Status Updater Concurrency - large scale: increase queue size"
 		}
 
 		statusUpdater.inFlightPodGroups.Store(key, updateData)
+		statusUpdater.statusSchemaVerified.Store(true)
 		statusUpdater.Run(make(chan struct{}))
 
 		ctx := context.Background()

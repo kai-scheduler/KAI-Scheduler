@@ -7,9 +7,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"slices"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"gomodules.xyz/jsonpatch/v2"
@@ -71,6 +73,9 @@ type defaultStatusUpdater struct {
 	updateQueueIn     chan *updatePayload
 	updateQueueOut    chan *updatePayload
 	updateQueueBuffer []*updatePayload
+
+	statusSchemaVerified atomic.Bool
+	podGroupUpdateLocks  [64]sync.Mutex
 
 	inFlightPodGroups sync.Map
 	inFlightPods      sync.Map
@@ -242,9 +247,7 @@ func (su *defaultStatusUpdater) RecordJobStatusEvent(
 	return nil
 }
 
-// updateCorePods writes the scheduler-owned core pod set onto the pod group status for
-// semi-preemptible jobs, and reports whether it changed. The status write is a full UpdateStatus of
-// the snapshot object, so it must only fire when core membership actually changed.
+// updateCorePods publishes core membership for semi-preemptible jobs.
 func updateCorePods(job *podgroup_info.PodGroupInfo) bool {
 	if !job.IsSemiPreemptibleJob() {
 		return false
@@ -269,7 +272,7 @@ func (su *defaultStatusUpdater) pushPodGroupUpdate(
 			objectType: podGroupType,
 		},
 		&inflightUpdate{
-			object:       job.PodGroup,
+			object:       job.PodGroup.DeepCopy(),
 			patchData:    patchData,
 			updateStatus: updateStatus,
 		},
@@ -556,7 +559,7 @@ func (su *defaultStatusUpdater) clearPodGroupSchedulingCondition(job *podgroup_i
 	if hasTasksAwaitingBind(job) {
 		return false
 	}
-	return removePodGroupSchedulingCondition(job.PodGroup)
+	return removePodGroupSchedulingCondition(job.PodGroup, utils.GetNodePoolNameFromLabels(job.PodGroup.Labels, su.nodePoolLabelKey))
 }
 
 func (su *defaultStatusUpdater) addNodePoolPrefixIfNeeded(job *podgroup_info.PodGroupInfo, msg string) string {
@@ -654,17 +657,16 @@ func setPodGroupLastEvictionTimeStamp(podGroup *enginev2alpha2.PodGroup, evictio
 }
 
 func setPodGroupSchedulingCondition(podGroup *enginev2alpha2.PodGroup, schedulingCondition *enginev2alpha2.SchedulingCondition) bool {
-	currentSchedulingConditionIndex := utils.GetSchedulingConditionIndex(podGroup, schedulingCondition.NodePool)
 	lastSchedulingCondition := utils.GetLastSchedulingCondition(podGroup)
 
 	setTransitionID(podGroup, schedulingCondition, lastSchedulingCondition)
 
-	if !shouldUpdateCondition(podGroup, schedulingCondition, lastSchedulingCondition, currentSchedulingConditionIndex) {
+	if !shouldUpdateCondition(podGroup, schedulingCondition, lastSchedulingCondition) {
 		return false
 	}
 
-	// BC: older versions of pod group assigner rely on the most recent condition to be the last in the list.
-	// We want to squash all conditions of the same node pool and append ours to the end.
+	// Deduplicate locally; SSA does not guarantee append order on the server.
+	// Consumers must select the latest condition by TransitionID, not list position.
 	squashAndAppendConditionsForNodepool(podGroup, schedulingCondition)
 	return true
 }
@@ -684,17 +686,17 @@ func setTransitionID(podGroup *enginev2alpha2.PodGroup, schedulingCondition, las
 	schedulingCondition.TransitionID = fmt.Sprintf("%d", lastTransitionID+1)
 }
 
-func shouldUpdateCondition(
-	podGroup *enginev2alpha2.PodGroup,
-	schedulingCondition, lastSchedulingCondition *enginev2alpha2.SchedulingCondition,
-	currentSchedulingConditionIndex int) bool {
-	// If the last scheduling condition is the same as the current one, we don't need to update the status.
+func shouldUpdateCondition(podGroup *enginev2alpha2.PodGroup, schedulingCondition, lastSchedulingCondition *enginev2alpha2.SchedulingCondition) bool {
 	if !equalSchedulingConditions(lastSchedulingCondition, schedulingCondition) {
 		return true
 	}
-	// BC: older versions of pod group assigner rely on the most recent condition to be the last in the list.
-	// Only if ours is the last we can return false and not update the podgroup.
-	return currentSchedulingConditionIndex != len(podGroup.Status.SchedulingConditions)-1
+	count := 0
+	for _, condition := range podGroup.Status.SchedulingConditions {
+		if condition.NodePool == schedulingCondition.NodePool {
+			count++
+		}
+	}
+	return count > 1
 }
 
 func equalSchedulingConditions(a, b *enginev2alpha2.SchedulingCondition) bool {
@@ -705,7 +707,7 @@ func equalSchedulingConditions(a, b *enginev2alpha2.SchedulingCondition) bool {
 		a.NodePool == b.NodePool &&
 		a.Reason == b.Reason &&
 		a.Message == b.Message &&
-		a.Status == b.Status
+		a.Status == b.Status && reflect.DeepEqual(a.Reasons, b.Reasons)
 }
 
 // bindInFlightStatuses are the states a task is in after the scheduler assigns it
@@ -725,11 +727,12 @@ func hasTasksAwaitingBind(job *podgroup_info.PodGroupInfo) bool {
 	return false
 }
 
-func removePodGroupSchedulingCondition(podGroup *enginev2alpha2.PodGroup) bool {
-	if len(podGroup.Status.SchedulingConditions) == 0 {
+func removePodGroupSchedulingCondition(podGroup *enginev2alpha2.PodGroup, nodePool string) bool {
+	index := utils.GetSchedulingConditionIndex(podGroup, nodePool)
+	if index < 0 {
 		return false
 	}
-	podGroup.Status.SchedulingConditions = nil
+	podGroup.Status.SchedulingConditions = slices.Delete(podGroup.Status.SchedulingConditions, index, index+1)
 	return true
 }
 
