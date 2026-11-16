@@ -6,11 +6,13 @@ package dynamicresources
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	"google.golang.org/grpc/status"
 
 	corev1 "k8s.io/api/core/v1"
+	resourceapi "k8s.io/api/resource/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/retry"
@@ -109,6 +111,16 @@ func (drp *dynamicResourcesPlugin) bindResourceClaim(ctx context.Context, desire
 			return err
 		}
 		claim := originalClaim.DeepCopy()
+
+		// The controller needs this finalizer to release unused allocations.
+		// Persist it before UpdateStatus, which cannot update finalizers.
+		if !slices.Contains(claim.Finalizers, resourceapi.Finalizer) {
+			claim.Finalizers = append(claim.Finalizers, resourceapi.Finalizer)
+			claim, err = drp.client.ResourceV1().ResourceClaims(pod.Namespace).Update(ctx, claim, v1.UpdateOptions{})
+			if err != nil {
+				return err
+			}
+		}
 
 		resources.UpsertReservedFor(claim, pod)
 		if claim.Status.Allocation == nil {
