@@ -8,6 +8,7 @@ import (
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
@@ -193,6 +194,31 @@ func TestJobOrderFn(t *testing.T) {
 				Tasks:           []*tasks_fake.TestTaskBasic{running},
 			},
 			want: 1,
+		},
+		{
+			name: "nested pod set below min pods against pod group with min pods",
+			l: &jobs_fake.TestJobBasic{
+				Name: "job-l",
+				RootSubGroupSet: func() *subgroup_info.SubGroupSet {
+					root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+					replica := subgroup_info.NewSubGroupSet("replica", nil)
+					replica.AddPodSet(subgroup_info.NewPodSet("leader", 1, nil))
+					replica.AddPodSet(subgroup_info.NewPodSet("workers", 2, nil))
+					root.AddSubGroup(replica)
+					return root
+				}(),
+				Tasks: []*tasks_fake.TestTaskBasic{
+					{State: pod_status.Running, SubGroupName: "leader"},
+					{State: pod_status.Running, SubGroupName: "leader"},
+					{State: pod_status.Running, SubGroupName: "workers"},
+				},
+			},
+			r: &jobs_fake.TestJobBasic{
+				Name:            "job-r",
+				RootSubGroupSet: jobs_fake.DefaultSubGroup(1),
+				Tasks:           []*tasks_fake.TestTaskBasic{running},
+			},
+			want: -1,
 		},
 	}
 	for _, tt := range tests {

@@ -327,18 +327,25 @@ func measureUnschedulableDelayInSeconds(
 
 // reclaimForOneLargeJob creates a distributed job with the specified number of pods, each requesting gpusPerNode GPUs
 func reclaimForOneLargeJob(ctx context.Context, testCtx *testcontext.TestContext, reclaimSingleGPUJobsQueue *v2.Queue, numberOfPods int) {
-	result, err := createDistributedJobForKwok(
+	batchLabels := map[string]string{distributedJobBatchLabel: utils.GenerateRandomK8sName(10)}
+	job, err := submitDistributedJobForKwok(
 		ctx, testCtx, reclaimSingleGPUJobsQueue,
 		v1.ResourceRequirements{
 			Limits: map[v1.ResourceName]resource.Quantity{
 				constants.NvidiaGpuResource: *resource.NewQuantity(int64(gpusPerNode), resource.DecimalSI),
 			},
 		},
-		numberOfPods, map[string]string{},
+		numberOfPods, batchLabels, batchLabels,
 		nil,
 	)
 	Expect(err).NotTo(HaveOccurred())
-	podGroup := result.PodGroup
+	waitForDistributedJobsForKwok(ctx, testCtx, []*batchv1.Job{job})
+
+	podGroup := &v2alpha2.PodGroup{}
+	Expect(testCtx.ControllerClient.Get(ctx, runtimeClient.ObjectKey{
+		Namespace: job.Namespace,
+		Name:      rd.PodGroupNameForJob(job),
+	}, podGroup)).To(Succeed())
 
 	podsList := &v1.PodList{}
 	Eventually(func(g Gomega) bool {

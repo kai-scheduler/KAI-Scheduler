@@ -694,7 +694,7 @@ func TestAccumulatedIdleGpus_updateStateWithScenario(t *testing.T) {
 				return args{
 					scenario: scenario.NewByNodeScenario(&framework.Session{
 						ClusterInfo: &api.ClusterInfo{PodGroupInfos: map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{
-							"pv1pg": podgroup_info.NewPodGroupInfo("pv1pg"),
+							"n2/pv1pg": podgroup_info.NewPodGroupInfo("n2/pv1pg"),
 						}}},
 						nil,
 						[]*pod_info.PodInfo{pod_info.NewTaskInfo(&v1.Pod{
@@ -783,7 +783,7 @@ func TestAccumulatedIdleGpus_updateStateWithScenario(t *testing.T) {
 				return args{
 					scenario: scenario.NewByNodeScenario(&framework.Session{
 						ClusterInfo: &api.ClusterInfo{PodGroupInfos: map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{
-							"pv1pg": podgroup_info.NewPodGroupInfo("pv1pg"),
+							"n2/pv1pg": podgroup_info.NewPodGroupInfo("n2/pv1pg"),
 						}}},
 						nil,
 						[]*pod_info.PodInfo{pod_info.NewTaskInfo(&v1.Pod{
@@ -869,7 +869,7 @@ func TestAccumulatedIdleGpus_updateStateWithScenario(t *testing.T) {
 				return args{
 					scenario: scenario.NewByNodeScenario(&framework.Session{
 						ClusterInfo: &api.ClusterInfo{PodGroupInfos: map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{
-							"rv1pg": podgroup_info.NewPodGroupInfo("rv1pg"),
+							"n2/rv1pg": podgroup_info.NewPodGroupInfo("n2/rv1pg"),
 						}}},
 						nil,
 						[]*pod_info.PodInfo{pod_info.NewTaskInfo(&v1.Pod{
@@ -891,7 +891,7 @@ func TestAccumulatedIdleGpus_updateStateWithScenario(t *testing.T) {
 							},
 						}, resource_info.NewResourceVectorMap())},
 						[]*pod_info.PodInfo{},
-						[]*podgroup_info.PodGroupInfo{podgroup_info.NewPodGroupInfo("rv1pg", recordedVictim)},
+						[]*podgroup_info.PodGroupInfo{podgroup_info.NewPodGroupInfo("n2/rv1pg", recordedVictim)},
 					),
 					isFirstScenario: true,
 				}
@@ -916,7 +916,7 @@ func TestAccumulatedIdleGpus_updateStateWithScenario(t *testing.T) {
 			args: args{
 				scenario: scenario.NewByNodeScenario(&framework.Session{
 					ClusterInfo: &api.ClusterInfo{PodGroupInfos: map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{
-						"rv1pg": podgroup_info.NewPodGroupInfo("rv1pg"),
+						"n2/rv1pg": podgroup_info.NewPodGroupInfo("n2/rv1pg"),
 					}}},
 					nil,
 					[]*pod_info.PodInfo{pod_info.NewTaskInfo(&v1.Pod{
@@ -938,7 +938,7 @@ func TestAccumulatedIdleGpus_updateStateWithScenario(t *testing.T) {
 						},
 					}, resource_info.NewResourceVectorMap())},
 					[]*pod_info.PodInfo{},
-					[]*podgroup_info.PodGroupInfo{podgroup_info.NewPodGroupInfo("rv1pg", pod_info.NewTaskInfo(&v1.Pod{
+					[]*podgroup_info.PodGroupInfo{podgroup_info.NewPodGroupInfo("n2/rv1pg", pod_info.NewTaskInfo(&v1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
 							UID:       "uid2",
 							Name:      "pv1",
@@ -983,7 +983,7 @@ func TestAccumulatedIdleGpus_updateStateWithScenario(t *testing.T) {
 			args: args{
 				scenario: scenario.NewByNodeScenario(&framework.Session{
 					ClusterInfo: &api.ClusterInfo{PodGroupInfos: map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{
-						"rv1pg": podgroup_info.NewPodGroupInfo("rv1pg"),
+						"n2/rv1pg": podgroup_info.NewPodGroupInfo("n2/rv1pg"),
 					}}},
 					nil,
 					[]*pod_info.PodInfo{pod_info.NewTaskInfo(&v1.Pod{
@@ -1005,7 +1005,7 @@ func TestAccumulatedIdleGpus_updateStateWithScenario(t *testing.T) {
 						},
 					}, resource_info.NewResourceVectorMap())},
 					[]*pod_info.PodInfo{},
-					[]*podgroup_info.PodGroupInfo{podgroup_info.NewPodGroupInfo("rv1pg", pod_info.NewTaskInfo(&v1.Pod{
+					[]*podgroup_info.PodGroupInfo{podgroup_info.NewPodGroupInfo("n2/rv1pg", pod_info.NewTaskInfo(&v1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
 							UID:       "uid2",
 							Name:      "pv1",
@@ -1194,8 +1194,8 @@ func TestAccumulatedIdleGpus_Filter(t *testing.T) {
 				return args{
 					scenario: scenario.NewByNodeScenario(&framework.Session{
 						ClusterInfo: &api.ClusterInfo{PodGroupInfos: map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{
-							"rv1pg": podgroup_info.NewPodGroupInfo("rv1pg"),
-							"pv1pg": podgroup_info.NewPodGroupInfo("pv1pg"),
+							"n2/rv1pg": podgroup_info.NewPodGroupInfo("n2/rv1pg"),
+							"n2/pv1pg": podgroup_info.NewPodGroupInfo("n2/pv1pg"),
 						}}},
 						nil,
 						[]*pod_info.PodInfo{
@@ -1257,7 +1257,7 @@ func TestAccumulatedIdleGpus_Filter(t *testing.T) {
 						[]*pod_info.PodInfo{
 							potentialVictim1,
 						},
-						[]*podgroup_info.PodGroupInfo{podgroup_info.NewPodGroupInfo("rv1pg", recordedVictim1)},
+						[]*podgroup_info.PodGroupInfo{podgroup_info.NewPodGroupInfo("n2/rv1pg", recordedVictim1)},
 					),
 				}
 			}(),
@@ -1348,8 +1348,8 @@ func TestAccumulatedIdleGpus_Filter(t *testing.T) {
 				return args{
 					scenario: scenario.NewByNodeScenario(&framework.Session{
 						ClusterInfo: &api.ClusterInfo{PodGroupInfos: map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{
-							"rv1pg": podgroup_info.NewPodGroupInfo("rv1pg"),
-							"pv1pg": podgroup_info.NewPodGroupInfo("pv1pg"),
+							"n2/rv1pg": podgroup_info.NewPodGroupInfo("n2/rv1pg"),
+							"n2/pv1pg": podgroup_info.NewPodGroupInfo("n2/pv1pg"),
 						}}},
 						nil,
 						[]*pod_info.PodInfo{
@@ -1411,7 +1411,7 @@ func TestAccumulatedIdleGpus_Filter(t *testing.T) {
 						[]*pod_info.PodInfo{
 							potentialVictim1,
 						},
-						[]*podgroup_info.PodGroupInfo{podgroup_info.NewPodGroupInfo("rv1pg", recordedVictim1)},
+						[]*podgroup_info.PodGroupInfo{podgroup_info.NewPodGroupInfo("n2/rv1pg", recordedVictim1)},
 					),
 				}
 			}(),
@@ -1473,7 +1473,7 @@ func TestAccumulatedIdleGpus_Filter(t *testing.T) {
 				return args{
 					scenario: scenario.NewByNodeScenario(&framework.Session{
 						ClusterInfo: &api.ClusterInfo{PodGroupInfos: map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{
-							"potential_victims": podgroup_info.NewPodGroupInfo("potential_victims"),
+							"n2/potential_victims": podgroup_info.NewPodGroupInfo("n2/potential_victims"),
 						}}},
 						nil,
 						[]*pod_info.PodInfo{

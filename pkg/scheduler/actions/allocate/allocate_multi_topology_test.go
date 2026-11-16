@@ -16,6 +16,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/topology_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
@@ -120,6 +121,37 @@ func TestHandleTopologyAllocation_HierarchicalMultiTopologiesAcrossSubgroups(t *
 		t.Fatalf("child-a and child-b were allocated to the same rack domain: %s", childARack)
 	}
 	assertDomainSet(t, []string{childARack, childBRack}, []string{"rack-a", "rack-b"}, "child rack domains")
+}
+
+func TestHandleTopologyAllocation_LostSubgroupStaysInRootRequiredTopologyDomain(t *testing.T) {
+	test_utils.InitTestingInfrastructure()
+	controller := NewController(t)
+	defer controller.Finish()
+
+	ssn := test_utils.BuildSession(buildLostSubgroupRootRequiredTopologyTest(), controller)
+	allocate.New().Execute(ssn)
+
+	job, found := ssn.ClusterInfo.PodGroupInfos[common_info.PodGroupID("pending_job_lost_subgroup")]
+	if !found {
+		t.Fatalf("pending_job_lost_subgroup was not found in session")
+	}
+
+	for _, task := range job.GetAllPodsMap() {
+		t.Logf("task %s subgroup %s status %s node %q", task.Name, task.SubGroupName, task.Status, task.NodeName)
+		switch task.SubGroupName {
+		case "surviving-leaf":
+			if task.Status != pod_status.Running {
+				t.Fatalf("surviving task %s has status %s, expected %s", task.Name, task.Status, pod_status.Running)
+			}
+			assertTaskDomain(t, ssn, task.Name, task.NodeName, "rdma-0")
+		case "lost-leaf":
+			if task.Status != pod_status.Pending {
+				t.Fatalf("replacement task %s has status %s on node %s, expected %s", task.Name, task.Status, task.NodeName, pod_status.Pending)
+			}
+		default:
+			t.Fatalf("task %s belongs to unexpected subgroup %s", task.Name, task.SubGroupName)
+		}
+	}
 }
 
 func buildMultiTopologySubgroupsTest() test_utils.TestTopologyBasic {
@@ -343,6 +375,82 @@ func buildHierarchicalMultiTopologySubgroupsTest() test_utils.TestTopologyBasic 
 	}
 }
 
+func buildLostSubgroupRootRequiredTopologyTest() test_utils.TestTopologyBasic {
+	root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, &topology_info.TopologyConstraintInfo{
+		Topology:      "rdma-topology",
+		RequiredLevel: "topology.test/rdma-domain",
+	})
+	minSubGroup := int32(2)
+	root.SetMinSubGroup(&minSubGroup)
+	root.AddPodSet(subgroup_info.NewPodSet("surviving-leaf", 1, nil))
+	root.AddPodSet(subgroup_info.NewPodSet("lost-leaf", 1, nil))
+
+	return test_utils.TestTopologyBasic{
+		Name: "Replacement pod for fully lost subgroup keeps root required topology domain",
+		Topologies: []*kaiv1alpha1.Topology{
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: "rdma-topology"},
+				Spec: kaiv1alpha1.TopologySpec{
+					Levels: []kaiv1alpha1.TopologyLevel{
+						{NodeLabel: "topology.test/rdma-domain"},
+					},
+				},
+			},
+		},
+		Jobs: []*jobs_fake.TestJobBasic{
+			{
+				Name:                "seed_rack_a_full",
+				RequiredGPUsPerTask: 8,
+				Priority:            constants.PriorityTrainNumber,
+				QueueName:           "queue0",
+				Tasks: []*tasks_fake.TestTaskBasic{
+					{
+						State:    pod_status.Running,
+						NodeName: "node1",
+					},
+				},
+			},
+			{
+				Name:                "pending_job_lost_subgroup",
+				RequiredGPUsPerTask: 8,
+				Priority:            constants.PriorityTrainNumber,
+				QueueName:           "queue0",
+				RootSubGroupSet:     root,
+				Tasks: []*tasks_fake.TestTaskBasic{
+					{State: pod_status.Running, NodeName: "node0", SubGroupName: "surviving-leaf"},
+					{State: pod_status.Pending, SubGroupName: "lost-leaf"},
+				},
+			},
+		},
+		Nodes: map[string]nodes_fake.TestNodeBasic{
+			"node0": {GPUs: 8, Labels: map[string]string{"topology.test/rdma-domain": "rdma-0"}},
+			"node1": {GPUs: 8, Labels: map[string]string{"topology.test/rdma-domain": "rdma-0"}},
+			"node2": {GPUs: 8, Labels: map[string]string{"topology.test/rdma-domain": "rdma-1"}},
+			"node3": {GPUs: 8, Labels: map[string]string{"topology.test/rdma-domain": "rdma-1"}},
+		},
+		Queues: []test_utils.TestQueueBasic{
+			{
+				Name:               "queue0",
+				ParentQueue:        "department-a",
+				DeservedGPUs:       64,
+				GPUOverQuotaWeight: 1,
+				MaxAllowedGPUs:     64,
+			},
+		},
+		Departments: []test_utils.TestDepartmentBasic{
+			{
+				Name:         "department-a",
+				DeservedGPUs: 64,
+			},
+		},
+		Mocks: &test_utils.TestMock{
+			CacheRequirements: &test_utils.CacheMocking{
+				NumberOfCacheBinds: 1,
+			},
+		},
+	}
+}
+
 func assertDomainCount(t *testing.T, counts map[string]int, expectedDomain string, expectedTasks int, subgroup string) {
 	t.Helper()
 
@@ -394,5 +502,18 @@ func assertNodeSet(t *testing.T, actual map[string]bool, expected []string, subg
 		if !actual[nodeName] {
 			t.Fatalf("%s allocated to unexpected nodes: %#v, expected %v", subgroup, actual, expected)
 		}
+	}
+}
+
+func assertTaskDomain(t *testing.T, ssn *framework.Session, taskName string, nodeName string, expectedDomain string) {
+	t.Helper()
+
+	node, found := ssn.ClusterInfo.Nodes[nodeName]
+	if !found {
+		t.Fatalf("task %s was allocated to unknown node %s", taskName, nodeName)
+	}
+	actualDomain := node.Node.Labels["topology.test/rdma-domain"]
+	if actualDomain != expectedDomain {
+		t.Fatalf("task %s allocated to domain %s, expected %s", taskName, actualDomain, expectedDomain)
 	}
 }

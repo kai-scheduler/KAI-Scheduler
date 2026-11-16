@@ -24,6 +24,50 @@ const (
 	nodePoolLabelKey = "kai.scheduler/node-pool"
 )
 
+func TestRayAutoscalingWorkerMinimum(t *testing.T) {
+	tests := []struct {
+		name        string
+		autoscaling interface{}
+		minimum     interface{}
+		replicas    int64
+		hosts       int64
+		wantWorkers int32
+	}{
+		{"zero minimum", true, int64(0), 5, 1, 0},
+		{"omitted minimum", true, nil, 3, 1, 0},
+		{"zero minimum with multiple hosts", true, int64(0), 4, 2, 0},
+		{"positive minimum with multiple hosts", true, int64(2), 6, 2, 4},
+		{"minimum equals desired replicas", true, int64(2), 2, 1, 2},
+		{"disabled autoscaling", false, int64(0), 5, 1, 5},
+		{"omitted autoscaling", nil, int64(0), 3, 2, 6},
+		{"minimum without autoscaling", nil, int64(2), 4, 1, 2},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			elastic := map[string]interface{}{"groupName": "elastic", "replicas": tt.replicas, "numOfHosts": tt.hosts}
+			if tt.minimum != nil {
+				elastic["minReplicas"] = tt.minimum
+			}
+			spec := map[string]interface{}{"workerGroupSpecs": []interface{}{
+				elastic,
+				map[string]interface{}{"groupName": "fixed", "replicas": int64(3), "minReplicas": int64(2)},
+				map[string]interface{}{"groupName": "suspended", "replicas": int64(3), "suspended": true},
+			}}
+			if tt.autoscaling != nil {
+				spec["enableInTreeAutoscaling"] = tt.autoscaling
+			}
+			minimum, groups, err := calcJobNumOfPodsAndSubGroups(&unstructured.Unstructured{Object: map[string]interface{}{"spec": spec}})
+			if !assert.NoError(t, err) || !assert.Len(t, groups, 3) {
+				return
+			}
+			assert.Equal(t, tt.wantWorkers+3, minimum)
+			assert.Equal(t, "elastic", groups[1].Name)
+			assert.Equal(t, tt.wantWorkers, groups[1].MinAvailable)
+			assert.Equal(t, int32(2), groups[2].MinAvailable)
+		})
+	}
+}
+
 var (
 	autoScalingRayCluster = &unstructured.Unstructured{
 		Object: map[string]interface{}{

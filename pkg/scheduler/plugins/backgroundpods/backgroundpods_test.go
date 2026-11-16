@@ -18,6 +18,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
+	"github.com/kai-scheduler/api/constants"
 )
 
 const (
@@ -70,7 +71,7 @@ func buildSessionOnNodes(
 
 	for _, node := range ssn.ClusterInfo.Nodes {
 		for _, podInfo := range node.PodInfos {
-			if isBackgroundJob(string(podInfo.Job)) {
+			if isBackgroundJob(podInfo.Pod.Annotations[constants.PodGroupAnnotationForPod]) {
 				if podInfo.Pod.Labels == nil {
 					podInfo.Pod.Labels = map[string]string{}
 				}

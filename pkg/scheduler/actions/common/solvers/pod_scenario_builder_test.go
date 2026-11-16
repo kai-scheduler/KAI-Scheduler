@@ -380,7 +380,8 @@ func createJobWithTasks(
 	jobTasks := []*pod_info.PodInfo{}
 
 	namespace := "kai-" + queueName
-	jobUID := strconv.Itoa(jobID)
+	jobName := fmt.Sprintf("job%d", jobID)
+	jobUID := common_info.NewPodGroupID(namespace, jobName)
 
 	for taskID := 0; taskID < tasksPerJob; taskID++ {
 		taskNum := jobID*tasksPerJob + taskID
@@ -388,15 +389,15 @@ func createJobWithTasks(
 			buildPod(
 				strconv.Itoa(taskNum),
 				fmt.Sprintf("pod-%d", taskNum),
-				namespace, jobUID, tasksStatus,
+				namespace, jobName, tasksStatus,
 				podResources,
 			), resource_info.NewResourceVectorMap()))
 	}
 
-	newJob := podgroup_info.NewPodGroupInfo(common_info.PodGroupID(strconv.Itoa(jobID)), jobTasks...)
+	newJob := podgroup_info.NewPodGroupInfo(jobUID, jobTasks...)
 	newJob.SetPodGroup(&schedulingv2alpha2.PodGroup{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("job%d", jobID),
+			Name:      jobName,
 			Namespace: namespace,
 			UID:       types.UID(jobUID),
 		},

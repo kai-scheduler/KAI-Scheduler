@@ -59,6 +59,8 @@ type TestTopologyBasic struct {
 
 	dra_fake.TestDRAObjects
 	Topologies []*kaiv1alpha1.Topology
+
+	DeferredResizePreemption bool
 }
 
 type TestMock struct {
@@ -69,9 +71,10 @@ type TestMock struct {
 }
 
 type CacheMocking struct {
-	NumberOfCacheBinds      int
-	NumberOfCacheEvictions  int
-	NumberOfPipelineActions int
+	NumberOfCacheBinds             int
+	NumberOfCacheEvictions         int
+	NumberOfPodGroupEvictionEvents int
+	NumberOfPipelineActions        int
 }
 
 type GPUMetricMocks struct {
@@ -136,15 +139,29 @@ type TestExpectedNodesResources struct {
 
 func MatchExpectedAndRealTasks(t *testing.T, testNumber int, testMetadata TestTopologyBasic, ssn *framework.Session) {
 
-	tasksToGPUGroup := make(map[string]map[string]string)
+	groupMatcher := newGPUGroupMatcher()
+	jobIDsByName := map[string][]common_info.PodGroupID{}
+	for _, job := range testMetadata.Jobs {
+		jobIDsByName[job.Name] = append(jobIDsByName[job.Name], common_info.NewPodGroupID(job.Namespace, job.Name))
+	}
 
 	for jobName, jobExpectedResult := range testMetadata.JobExpectedResults {
 		var sumOfJobRequestedGPU, sumOfJobRequestedMillisCpu, sumOfJobRequestedMemory, sumOfAcceptedGpus float64
-		job, found := ssn.ClusterInfo.PodGroupInfos[common_info.PodGroupID(jobName)]
+		jobID := common_info.PodGroupID(jobName)
+		ids := jobIDsByName[jobName]
+		if len(ids) > 1 {
+			t.Errorf("Job name %q is ambiguous; expected results must use namespaced PodGroup IDs", jobName)
+			continue
+		}
+		if len(ids) == 1 {
+			jobID = ids[0]
+		}
+		job, found := ssn.ClusterInfo.PodGroupInfos[jobID]
 		if !found {
 			t.Errorf("Test number: %d, name: %s, has failed. Couldn't find job: %s for expected tasks.", testNumber, testMetadata.Name, jobName)
+			continue
 		}
-		for _, taskInfo := range ssn.ClusterInfo.PodGroupInfos[common_info.PodGroupID(jobName)].GetAllPodsMap() {
+		for _, taskInfo := range job.GetAllPodsMap() {
 
 			if taskInfo.Status != jobExpectedResult.Status {
 				t.Errorf("Test number: %d, name: %s, has failed. Task name: %s, actual uses status: %s, was expecting status: %s", testNumber, testMetadata.Name, taskInfo.Name, taskInfo.Status, jobExpectedResult.Status)
@@ -167,27 +184,12 @@ func MatchExpectedAndRealTasks(t *testing.T, testNumber int, testMetadata TestTo
 			sumOfJobRequestedMemory += taskInfo.ResReqVector.Get(resource_info.MemoryIndex)
 			sumOfAcceptedGpus += taskInfo.AcceptedGpuRequirement.GPUs()
 
-			// verify fractional GPUs index
-			taskGPUGroups := taskInfo.GPUGroupIDs()
 			if pod_status.IsActiveUsedStatus(taskInfo.Status) &&
 				!jobExpectedResult.DontValidateGPUGroup &&
-				taskInfo.IsSharedGPUAllocation() &&
-				slices.Equal(taskGPUGroups, jobExpectedResult.GPUGroups) {
-				nodeGPUs, found := tasksToGPUGroup[taskInfo.NodeName]
-				if !found {
-					tasksToGPUGroup[taskInfo.NodeName] = make(map[string]string)
-					nodeGPUs = tasksToGPUGroup[taskInfo.NodeName]
-				}
-				for gpuGroupIndex, expectedGpuGroup := range jobExpectedResult.GPUGroups {
-					if gpuGroup, found := nodeGPUs[expectedGpuGroup]; !found {
-						nodeGPUs[expectedGpuGroup] = taskGPUGroups[gpuGroupIndex]
-					} else if gpuGroup != taskGPUGroups[gpuGroupIndex] {
-						t.Errorf(
-							"Test number: %d, name: %v, has failed. Task name: %v, "+
-								"running on GPU: %s, was expecting GPU index: %s",
-							testNumber, testMetadata.Name, taskInfo.Name, taskGPUGroups, jobExpectedResult.GPUGroups,
-						)
-					}
+				taskInfo.IsSharedGPUAllocation() {
+				if err := groupMatcher.match(taskInfo.NodeName, taskInfo.GPUGroupIDs(), jobExpectedResult.GPUGroups); err != nil {
+					t.Errorf("Test number: %d, name: %v, has failed. Task name: %v, %v",
+						testNumber, testMetadata.Name, taskInfo.Name, err)
 				}
 			}
 		}
@@ -291,27 +293,12 @@ func MatchExpectedAndRealTasks(t *testing.T, testNumber int, testMetadata TestTo
 					}
 				}
 
-				// verify fractional GPUs index
-				taskGPUGroups := task.GPUGroupIDs()
 				if pod_status.IsActiveUsedStatus(task.Status) &&
 					!taskExpectedResult.DontValidateGPUGroup &&
-					task.IsSharedGPUAllocation() &&
-					slices.Equal(taskGPUGroups, taskExpectedResult.GPUGroups) {
-					nodeGPUs, found := tasksToGPUGroup[task.NodeName]
-					if !found {
-						tasksToGPUGroup[task.NodeName] = make(map[string]string)
-						nodeGPUs = tasksToGPUGroup[task.NodeName]
-					}
-					for gpuGroupIndex, expectedGpuGroup := range taskExpectedResult.GPUGroups {
-						if gpuGroup, found := nodeGPUs[expectedGpuGroup]; !found {
-							nodeGPUs[expectedGpuGroup] = taskGPUGroups[gpuGroupIndex]
-						} else if gpuGroup != taskGPUGroups[gpuGroupIndex] {
-							t.Errorf(
-								"Test number: %d, name: %v, has failed. Task name: %v, "+
-									"running on GPU: %s, was expecting GPU index: %s",
-								testNumber, testMetadata.Name, taskId, taskGPUGroups, taskExpectedResult.GPUGroups,
-							)
-						}
+					task.IsSharedGPUAllocation() {
+					if err := groupMatcher.match(task.NodeName, task.GPUGroupIDs(), taskExpectedResult.GPUGroups); err != nil {
+						t.Errorf("Test number: %d, name: %v, has failed. Task name: %v, %v",
+							testNumber, testMetadata.Name, taskId, err)
 					}
 				}
 
@@ -323,6 +310,7 @@ func MatchExpectedAndRealTasks(t *testing.T, testNumber int, testMetadata TestTo
 		ssnNode, found := ssn.ClusterInfo.Nodes[nodeName]
 		if !found {
 			t.Errorf("Test number: %d, name: %v, has failed. Couldn't find node: %v for expected nodes resources.", testNumber, testMetadata.Name, nodeName)
+			continue
 		}
 
 		gpuIdx := resource_info.GPUIndex
@@ -336,6 +324,47 @@ func MatchExpectedAndRealTasks(t *testing.T, testNumber int, testMetadata TestTo
 
 		matchNUMAZonesAvailable(t, testNumber, testMetadata.Name, nodeName, ssnNode, nodeExpectedResources.NUMAZonesAvailable)
 	}
+}
+
+// gpuGroupMatcher checks which tasks share a GPU on each node. Labels are placeholders, since new
+// groups get generated IDs; tasks without labels are skipped.
+type gpuGroupMatcher struct {
+	labelToGroup map[string]map[string]string
+	groupToLabel map[string]map[string]string
+}
+
+func newGPUGroupMatcher() *gpuGroupMatcher {
+	return &gpuGroupMatcher{
+		labelToGroup: map[string]map[string]string{},
+		groupToLabel: map[string]map[string]string{},
+	}
+}
+
+func (m *gpuGroupMatcher) match(nodeName string, actual, expected []string) error {
+	if len(expected) == 0 {
+		return nil
+	}
+	if len(actual) != len(expected) {
+		return fmt.Errorf("running on GPU groups: %v, was expecting GPU group labels: %v", actual, expected)
+	}
+	if m.labelToGroup[nodeName] == nil {
+		m.labelToGroup[nodeName] = map[string]string{}
+		m.groupToLabel[nodeName] = map[string]string{}
+	}
+	for i, label := range expected {
+		group := actual[i]
+		if knownGroup, found := m.labelToGroup[nodeName][label]; found && knownGroup != group {
+			return fmt.Errorf("on node %v GPU group label %s is GPU group %s for another task, "+
+				"but this task got GPU group %s", nodeName, label, knownGroup, group)
+		}
+		if knownLabel, found := m.groupToLabel[nodeName][group]; found && knownLabel != label {
+			return fmt.Errorf("on node %v GPU group %s has label %s for another task, "+
+				"but this task expected label %s", nodeName, group, knownLabel, label)
+		}
+		m.labelToGroup[nodeName][label] = group
+		m.groupToLabel[nodeName][group] = label
+	}
+	return nil
 }
 
 // sameZoneIndices reports whether two zone-index slices hold the same indices, ignoring order.
@@ -417,6 +446,13 @@ func GetTestCacheMock(
 	if cacheRequirements.NumberOfCacheEvictions != 0 {
 		cacheMock.EXPECT().Evict(Any(), Any(), Any(), Any()).
 			Return(nil).MaxTimes(cacheRequirements.NumberOfCacheEvictions)
+	}
+
+	if cacheRequirements.NumberOfPodGroupEvictionEvents != 0 {
+		cacheMock.EXPECT().RecordPodGroupEvictionEvent(Any(), Any()).
+			Times(cacheRequirements.NumberOfPodGroupEvictionEvents)
+	} else {
+		cacheMock.EXPECT().RecordPodGroupEvictionEvent(Any(), Any()).AnyTimes()
 	}
 
 	if cacheRequirements.NumberOfPipelineActions != 0 {

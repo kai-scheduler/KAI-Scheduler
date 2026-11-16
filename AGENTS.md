@@ -59,9 +59,7 @@ ginkgo -r --randomize-all --trace -vv ./test/e2e/suites/preempt
 
 ### Code Generation
 ```bash
-make generate                 # Generate DeepCopy methods
-make manifests                # Generate CRDs and RBAC
-make clients                  # Generate client code
+make manifests                # Generate RBAC
 make generate-mocks           # Generate mock implementations
 make validate                 # Verify generated code is up to date. Also format and vet codebase
 ```
@@ -80,8 +78,10 @@ make validate                 # Verify generated code is up to date. Also format
 - `nodescaleadjuster` - Node scaling integration for autoscalers
 
 ### Supporting Packages (`/pkg/`)
-- `apis` - Custom resource definitions (Queue, PodGroup, BindRequest)
-- `common` - Shared utilities and constants
+- `common` - Shared utilities (k8s utils, feature gates, flags)
+
+### API types
+CRD types (Queue, PodGroup, BindRequest, Config, SchedulingShard, ...), generated clients, shared constants and resource/podgroup helpers live in the separate module `github.com/kai-scheduler/api`, not in this repo. API/CRD changes start with a PR there; after a tag is cut, bump it in `go.mod`.
 
 ### Tools (`/cmd/`)
 - `fairshare-simulator` - Simulate fairshare scheduling decisions
@@ -179,6 +179,13 @@ make changelog-preview VERSION=v0.17.0
 **Humans:** `make changelog` with no args runs the interactive prompts.
 
 **Releasing (maintainers):** don't fold the changelog by hand. Dispatch the **Release — Prepare Changelog** workflow with a version (e.g. `v0.17.0`) from the target branch — `main` for a minor/major, a `v*.*` branch for a patch. It folds the pending fragments into `CHANGELOG.md`, clears them, and opens a PR. Merging that PR auto-tags the version and publishes the GitHub Release.
+
+**Sub-chart versions:** the chart declares `gpu-fractioning` as a version range (`~0.1.0`) rather than an exact pin, so a gpu-fractioning patch is picked up by the next chart build instead of needing a PR here. `deployments/kai-scheduler/Chart.lock` is therefore **not tracked** — it is local build output. `helm dependency build` resolves the range by itself when no lock is present, so every call site stays as it is.
+
+Two things follow:
+
+- **A leftover local `Chart.lock` freezes you.** Once a build writes one, later builds install that version and never re-check the registry. Run `rm -f deployments/kai-scheduler/Chart.lock` to pick up a newer gpu-fractioning. CI is unaffected — a fresh checkout never has one.
+- **Which version shipped is recorded on the release**, not in git: the `subcharts.yaml` asset on the GitHub Release. **Release — Prepare Changelog** also adds a changelog entry by itself when the version moves, but that entry names no version — the changelog is written before the chart is built, so any version in it could be stale by then. `subcharts.yaml` is the only authoritative record.
 
 ### CI Checks (on-pr.yaml)
 PRs trigger: `make validate` → `make test` → `make build` → E2E tests

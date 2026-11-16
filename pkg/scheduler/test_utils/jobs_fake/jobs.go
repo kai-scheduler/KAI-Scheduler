@@ -80,7 +80,7 @@ func BuildJobsAndTasksMaps(Jobs []*TestJobBasic, vectorMap *resource_info.Resour
 		taskInfos := generateTasks(job, jobAllocatedResource, usedSharedGPUs, allocatedGPUs,
 			tasksToNodeMap, draClaimsMap, vectorMap)
 
-		jobUID := common_info.PodGroupID(jobName)
+		jobUID := common_info.NewPodGroupID(job.Namespace, jobName)
 		queueUID := common_info.QueueID(job.QueueName)
 		numberOfJobs := len(Jobs)
 
@@ -96,7 +96,7 @@ func BuildJobsAndTasksMaps(Jobs []*TestJobBasic, vectorMap *resource_info.Resour
 			job.Priority, job.Preemptibility, queueUID, jobCreationTime, job.StaleDuration, job.PerJobStalenessGracePeriod, vectorMap,
 		)
 		jobInfo.PodGroup.Spec.PreemptionDelay = job.PreemptionDelay
-		jobsInfoMap[common_info.PodGroupID(job.Name)] = jobInfo
+		jobsInfoMap[jobUID] = jobInfo
 	}
 
 	return jobsInfoMap, tasksToNodeMap, usedSharedGPUs

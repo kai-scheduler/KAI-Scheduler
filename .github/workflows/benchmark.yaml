@@ -17,6 +17,11 @@ concurrency:
   group: benchmark-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
+env:
+  # A benchmark counts as a regression when its sec/op grows by more than this
+  # percent and benchstat reports p < 0.05.
+  REGRESSION_THRESHOLD_PCT: 50
+
 jobs:
   benchmark:
     name: Run Performance Benchmarks
@@ -33,7 +38,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.26.8'
+          go-version: '1.26.10'
           cache: true
 
       - name: Download envtest binaries
@@ -60,14 +65,50 @@ jobs:
         env:
           PR_BRANCH: ${{ github.head_ref }}
         run: |
+          benchstat_ok=true
+          go tool benchstat main-bench.txt pr-bench.txt > benchstat-output.txt 2>&1 || benchstat_ok=false
+
+          # Rows of sec/op tables that changed significantly beyond the threshold.
+          # Output: <pkg>\t<benchmark>\t<delta>\t<p>
+          awk -v thr="$REGRESSION_THRESHOLD_PCT" '
+            /^pkg: / { pkg = $2; sub(/^github.com\/kai-scheduler\/KAI-scheduler\//, "", pkg); next }
+            /│/ { if ($0 ~ /vs base/) in_sec = ($0 ~ /[ \t]sec\/op[ \t]/); next }
+            /^[ \t]*$/ { in_sec = 0; next }
+            in_sec && /\(p=/ {
+              delta = ""; p = ""
+              for (i = 2; i <= NF; i++) {
+                if ($i ~ /^[+-][0-9.]+%$/) delta = $i
+                if ($i ~ /^\(p=/) { p = $i; sub(/^\(p=/, "", p) }
+              }
+              d = delta; sub(/%$/, "", d)
+              if (delta != "" && p != "" && d + 0 > thr + 0 && p + 0 < 0.05)
+                printf "%s\t%s\t%s\t%s\n", pkg, $1, delta, p
+            }' benchstat-output.txt > regressions.tsv
+          regressions=$(wc -l < regressions.tsv | tr -d ' ')
+          echo "regressions=$regressions" >> "$GITHUB_OUTPUT"
+
           echo "## 📊 Performance Benchmark Results" > benchmark-report.md
           echo "" >> benchmark-report.md
+
+          if [ "$regressions" -gt 0 ]; then
+            echo "### ⚠️ Regressions" >> benchmark-report.md
+            echo "" >> benchmark-report.md
+            echo "These benchmarks are more than ${REGRESSION_THRESHOLD_PCT}% slower than main (sec/op, p < 0.05):" >> benchmark-report.md
+            echo "" >> benchmark-report.md
+            while IFS=$'\t' read -r pkg name delta p; do
+              echo "- \`$name\` in \`$pkg\`: **$delta** (p=$p)" >> benchmark-report.md
+              echo "::warning title=Benchmark regression::$name in $pkg is ${delta//%/%25} slower (sec/op, p=$p)"
+            done < regressions.tsv
+            echo "" >> benchmark-report.md
+            echo "If the slowdown is expected, explain why in the PR description." >> benchmark-report.md
+            echo "" >> benchmark-report.md
+          fi
+
           echo "<details>" >> benchmark-report.md
           echo "<summary>Comparing <b>PR</b> (<code>$PR_BRANCH</code>) vs <b>main</b> branch — click to expand</summary>" >> benchmark-report.md
           echo "" >> benchmark-report.md
 
-          # Run benchstat and capture output
-          if go tool benchstat main-bench.txt pr-bench.txt > benchstat-output.txt 2>&1; then
+          if $benchstat_ok; then
             echo '```' >> benchmark-report.md
             cat benchstat-output.txt >> benchmark-report.md
             echo '```' >> benchmark-report.md
@@ -101,6 +142,7 @@ jobs:
           echo "</details>" >> benchmark-report.md
 
           cat benchmark-report.md
+          cat benchmark-report.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload benchmark report
         uses: actions/upload-artifact@v7
@@ -117,9 +159,11 @@ jobs:
           name: pr-number-for-benchmark-comment
           path: pr_number.txt
 
-      - name: Check for significant regressions
+      # Runs last so the report and PR number are uploaded for the comment workflow.
+      - name: Fail on benchmark regressions
+        if: steps.benchstat.outputs.regressions != '0'
+        env:
+          REGRESSIONS: ${{ steps.benchstat.outputs.regressions }}
         run: |
-          # Check if any benchmark shows >15% regression with statistical significance
-          if grep -E '\+[1-9][5-9]\.[0-9]+%|\+[2-9][0-9]\.[0-9]+%|\+[0-9]{3,}\.[0-9]+%' benchstat-output.txt 2>/dev/null; then
-            echo "::warning::Significant performance regression detected (>15%). Please review the benchmark results."
-          fi
+          echo "::error::$REGRESSIONS benchmark(s) are more than ${REGRESSION_THRESHOLD_PCT}% slower than main. See the Regressions list in the job summary or PR comment."
+          exit 1

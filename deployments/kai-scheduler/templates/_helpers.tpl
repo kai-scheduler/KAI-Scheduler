@@ -376,11 +376,15 @@ spec:
       port: {{ .Values.scheduler.ports.metricsPort }}
     {{- end }}
 
-  {{- if .Values.prometheus.enabled }}
+  {{- if or .Values.prometheus.enabled .Values.prometheus.serviceMonitor.enabled }}
   prometheus:
-    enabled: true
+    enabled: {{ .Values.prometheus.enabled }}
     {{- if .Values.prometheus.externalPrometheusUrl }}
     externalPrometheusUrl: {{ .Values.prometheus.externalPrometheusUrl | quote }}
+    {{- end }}
+    {{- if .Values.prometheus.serviceMonitor.enabled }}
+    serviceMonitor:
+      enabled: {{ .Values.prometheus.serviceMonitor.enabled }}
     {{- end }}
   {{- end }}
 

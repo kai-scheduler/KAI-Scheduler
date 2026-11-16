@@ -55,7 +55,7 @@ func (r *PodReconciler) SetupWithManager(
 	mgr ctrl.Manager, params *ReconcilerParams,
 ) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&corev1.Pod{}).
+		Named("pod").
 		Watches(&corev1.Pod{}, r.eventHandlers()).
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: params.MaxConcurrentReconciles,
@@ -65,19 +65,11 @@ func (r *PodReconciler) SetupWithManager(
 			),
 			SkipNameValidation: &[]bool{true}[0],
 		}).
-		Owns(&corev1.ConfigMap{}).
 		Complete(r)
 }
 
 func (r *PodReconciler) eventHandlers() handler.Funcs {
 	return handler.Funcs{
-		CreateFunc: func(ctx context.Context, createEvent event.CreateEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
-			if !r.isRelevantPod(createEvent.Object) {
-				return
-			}
-			h := handler.EnqueueRequestForObject{}
-			h.Create(ctx, createEvent, q)
-		},
 		UpdateFunc: func(ctx context.Context, updateEvent event.UpdateEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 			if !r.isRelevantPod(updateEvent.ObjectNew) {
 				return
@@ -96,13 +88,6 @@ func (r *PodReconciler) eventHandlers() handler.Funcs {
 
 			h := handler.EnqueueRequestForObject{}
 			h.Delete(ctx, deleteEvent, q)
-		},
-		GenericFunc: func(ctx context.Context, genericEvent event.GenericEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
-			if !r.isRelevantPod(genericEvent.Object) {
-				return
-			}
-			h := handler.EnqueueRequestForObject{}
-			h.Generic(ctx, genericEvent, q)
 		},
 	}
 }

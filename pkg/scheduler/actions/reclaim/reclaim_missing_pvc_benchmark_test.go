@@ -55,7 +55,7 @@ func TestMissingPVCReclaimTopologyHasVolumeBindingFailure(t *testing.T) {
 		onJobSolutionStartCalls++
 	})
 
-	job := ssn.ClusterInfo.PodGroupInfos[common_info.PodGroupID("missing-pvc-job-0")]
+	job := ssn.ClusterInfo.PodGroupInfos[common_info.NewPodGroupID("runai-reclaim", "missing-pvc-job-0")]
 	require.NotNil(t, job)
 	task := job.GetAllPodsMap()[common_info.PodID("missing-pvc-job-0-0")]
 

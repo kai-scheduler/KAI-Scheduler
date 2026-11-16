@@ -87,19 +87,13 @@ func (su *defaultStatusUpdater) syncPodGroup(inFlightPodGroup, snapshotPodGroup 
 	if snapshotPodGroup.Annotations[commonconstants.StalePodgroupTimeStamp] == inFlightPodGroup.Annotations[commonconstants.StalePodgroupTimeStamp] {
 		staleTimeStampUpdated = true
 	} else {
-		if snapshotPodGroup.Annotations == nil {
-			snapshotPodGroup.Annotations = make(map[string]string)
-		}
-		snapshotPodGroup.Annotations[commonconstants.StalePodgroupTimeStamp] = inFlightPodGroup.Annotations[commonconstants.StalePodgroupTimeStamp]
+		syncAnnotation(snapshotPodGroup, inFlightPodGroup, commonconstants.StalePodgroupTimeStamp)
 	}
 	lastStartTimestampUpdated := false
 	if snapshotPodGroup.Annotations[commonconstants.LastStartTimeStamp] == inFlightPodGroup.Annotations[commonconstants.LastStartTimeStamp] {
 		lastStartTimestampUpdated = true
 	} else {
-		if snapshotPodGroup.Annotations == nil {
-			snapshotPodGroup.Annotations = make(map[string]string)
-		}
-		snapshotPodGroup.Annotations[commonconstants.LastStartTimeStamp] = inFlightPodGroup.Annotations[commonconstants.LastStartTimeStamp]
+		syncAnnotation(snapshotPodGroup, inFlightPodGroup, commonconstants.LastStartTimeStamp)
 	}
 
 	statusComparison := compareSchedulingConditions(inFlightPodGroup, snapshotPodGroup)
@@ -112,6 +106,20 @@ func (su *defaultStatusUpdater) syncPodGroup(inFlightPodGroup, snapshotPodGroup 
 	}
 
 	return statusComparison
+}
+
+// syncAnnotation removes the key when absent from the in-flight pod group, so no "" value is
+// written that a later JSON patch would try to remove from a server object that lacks the key.
+func syncAnnotation(snapshotPodGroup, inFlightPodGroup *enginev2alpha2.PodGroup, key string) {
+	value, found := inFlightPodGroup.Annotations[key]
+	if !found {
+		delete(snapshotPodGroup.Annotations, key)
+		return
+	}
+	if snapshotPodGroup.Annotations == nil {
+		snapshotPodGroup.Annotations = make(map[string]string)
+	}
+	snapshotPodGroup.Annotations[key] = value
 }
 
 func compareSchedulingConditions(inFlightPodGroup, snapshotPodGroup *enginev2alpha2.PodGroup) podGroupStatusSyncResult {

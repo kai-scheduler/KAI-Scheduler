@@ -1,7 +1,7 @@
 # Copyright 2025 NVIDIA CORPORATION
 # SPDX-License-Identifier: Apache-2.0
 
-FROM golang:1.26.8 AS debug
+FROM golang:1.26.10 AS debug
 ARG TARGETARCH
 ARG SERVICE_NAME
 ENV TARGETARCH=$TARGETARCH
@@ -17,7 +17,7 @@ USER 65532:65532
 
 ENTRYPOINT ["/go/bin/dlv", "exec", "--headless", "-l", ":10000", "--api-version=2", "/workspace/app", "--"]
 
-FROM golang:1.26.8-bookworm AS certs
+FROM golang:1.26.10-bookworm AS certs
 
 FROM scratch AS prod
 ARG TARGETARCH
@@ -29,7 +29,7 @@ COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certifica
 
 WORKDIR /workspace
 COPY --chmod=0755 --chown=65532:0 bin/$SERVICE_NAME-$TARGETARCH app
-COPY --chmod=0644 --chown=65532:0 NOTICE .
+COPY --chmod=0644 --chown=65532:0 NOTICE COPYRIGHT ./
 
 USER 65532:65532
 
@@ -43,7 +43,7 @@ ENV SERVICE_NAME=$SERVICE_NAME
 
 WORKDIR /workspace
 COPY --chmod=0755 --chown=65532:0 bin/$SERVICE_NAME-$TARGETARCH app
-COPY --chmod=0644 --chown=65532:0 NOTICE .
+COPY --chmod=0644 --chown=65532:0 NOTICE COPYRIGHT ./
 
 USER 65532:65532
 

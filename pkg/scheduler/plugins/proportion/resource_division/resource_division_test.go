@@ -11,10 +11,19 @@ import (
 
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/fairshare"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	rs "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
 	commonconstants "github.com/kai-scheduler/api/constants"
 )
+
+func divideOverQuotaResource(totalResourceAmount, kValue float64, queues map[common_info.QueueID]*rs.QueueAttributes,
+	resourceName rs.ResourceName) float64 {
+	fq, attributes := toFairshareQueues(queues, resourceName)
+	remaining := fairshare.DivideOverQuota(totalResourceAmount, kValue, fq)
+	storeFairShare(fq, attributes, resourceName)
+	return remaining
+}
 
 func TestProportion(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -467,6 +476,84 @@ var _ = Describe("Proportion", func() {
 			for uuid, expectedShare := range expectedShare {
 				Expect(queues[uuid].GPU.FairShare).To(Equal(expectedShare), "Expected share for queue %s to equal %.2f, but got %.2f", uuid, expectedShare, queues[uuid].GPU.FairShare)
 			}
+		})
+
+		It("does not give rounding remainder to lower-priority queues while higher-priority queues are unsatisfied", func() {
+			queues := map[common_info.QueueID]*rs.QueueAttributes{
+				"high-1": {
+					UID:               "high-1",
+					Name:              "high-queue-1",
+					CreationTimestamp: v1.Now(),
+					Priority:          2,
+					QueueResourceShare: rs.QueueResourceShare{
+						GPU: rs.ResourceShare{
+							Deserved:        1,
+							FairShare:       1,
+							OverQuotaWeight: 1,
+							MaxAllowed:      commonconstants.UnlimitedResourceQuantity,
+							Allocated:       0,
+							Request:         5,
+						},
+						CPU:    rs.EmptyResource(),
+						Memory: rs.EmptyResource(),
+					},
+				},
+				"high-2": {
+					UID:               "high-2",
+					Name:              "high-queue-2",
+					CreationTimestamp: v1.Now(),
+					Priority:          2,
+					QueueResourceShare: rs.QueueResourceShare{
+						GPU: rs.ResourceShare{
+							Deserved:        1,
+							FairShare:       1,
+							OverQuotaWeight: 1,
+							MaxAllowed:      commonconstants.UnlimitedResourceQuantity,
+							Allocated:       0,
+							Request:         5,
+						},
+						CPU:    rs.EmptyResource(),
+						Memory: rs.EmptyResource(),
+					},
+				},
+				"low-1": {
+					UID:               "low-1",
+					Name:              "low-queue-1",
+					CreationTimestamp: v1.Now(),
+					Priority:          1,
+					QueueResourceShare: rs.QueueResourceShare{
+						GPU: rs.ResourceShare{
+							Deserved:        1,
+							FairShare:       1,
+							OverQuotaWeight: 1,
+							MaxAllowed:      commonconstants.UnlimitedResourceQuantity,
+							Allocated:       0,
+							Request:         5,
+						},
+						CPU:    rs.EmptyResource(),
+						Memory: rs.EmptyResource(),
+					},
+				},
+			}
+
+			remaining := divideOverQuotaResource(3, 0, queues, rs.GpuResource)
+
+			Expect(remaining).To(Equal(0.0))
+
+			highShare1 := queues["high-1"].GPU.FairShare
+			highShare2 := queues["high-2"].GPU.FairShare
+			lowShare := queues["low-1"].GPU.FairShare
+
+			Expect(lowShare).To(Equal(1.0),
+				"low-priority queue should keep its deserved share of 1 GPU and receive no over-quota GPUs, got %.2f", lowShare)
+
+			Expect(highShare1+highShare2).To(Equal(5.0),
+				"high-priority queues must absorb all 3 over-quota GPUs combined, got %.2f+%.2f", highShare1, highShare2)
+
+			Expect(highShare1).To(BeNumerically(">=", 2.0),
+				"high-priority queue 1 must receive at least its floored fair-share, got %.2f", highShare1)
+			Expect(highShare2).To(BeNumerically(">=", 2.0),
+				"high-priority queue 2 must receive at least its floored fair-share, got %.2f", highShare2)
 		})
 	})
 
@@ -2019,54 +2106,22 @@ var _ = Describe("Proportion", func() {
 	})
 })
 
-var _ = Describe("getQueuesByPriority", func() {
-	It("should return queues by priority", func() {
-		queues := map[common_info.QueueID]*rs.QueueAttributes{
-			"1": {
-				Priority: 1,
-			},
-			"2": {
-				Priority: 6,
-			},
-			"3": {
-				Priority: 2,
-			},
-			"4": {
-				Priority: 3,
-			},
-			"6": {
-				Priority: 2,
-			},
-		}
-		expectedResult := map[int]map[common_info.QueueID]*rs.QueueAttributes{
-			6: {
-				"2": {
-					Priority: 6,
-				},
-			},
-			3: {
-				"4": {
-					Priority: 3,
-				},
-			},
-			2: {
-				"3": {
-					Priority: 2,
-				},
-				"6": {
-					Priority: 2,
-				},
-			},
-			1: {
-				"1": {
-					Priority: 1,
-				},
-			},
-		}
-		expectedPriorities := []int{6, 3, 2, 1}
-
-		result, priorities := getQueuesByPriority(queues)
-		Expect(result).To(Equal(expectedResult), "Expected queues to be sorted by priority")
-		Expect(priorities).To(Equal(expectedPriorities), "Expected priorities to be sorted in descending order")
+// pkg/fairshare can't import the scheduler, so it keeps its own copies of these; this catches a drift.
+var _ = Describe("pkg/fairshare matches the scheduler", func() {
+	It("uses the same unlimited quantity", func() {
+		Expect(fairshare.Unlimited).To(Equal(commonconstants.UnlimitedResourceQuantity))
 	})
+
+	DescribeTable("computes the same requestable share",
+		func(maxAllowed, request float64) {
+			share := rs.ResourceShare{MaxAllowed: maxAllowed, Request: request}
+			queue := fairshare.Queue{MaxAllowed: maxAllowed, Request: request}
+			Expect(queue.RequestableShare()).To(Equal(share.GetRequestableShare()))
+		},
+		Entry("unlimited max allowed", commonconstants.UnlimitedResourceQuantity, 5.0),
+		Entry("max allowed below the request", 2.0, 5.0),
+		Entry("max allowed above the request", 8.0, 5.0),
+		Entry("max allowed equal to the request", 5.0, 5.0),
+		Entry("no request", 3.0, 0.0),
+	)
 })

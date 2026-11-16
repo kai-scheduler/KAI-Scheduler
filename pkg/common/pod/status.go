@@ -5,7 +5,13 @@ package pod
 
 import (
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
 )
+
+// IsGuaranteed uses persisted QoS when available, or derives it before pod status is populated.
+func IsGuaranteed(pod *v1.Pod) bool {
+	return pod != nil && qos.GetPodQOS(pod) == v1.PodQOSGuaranteed
+}
 
 func IsAllocated(pod *v1.Pod) bool {
 	if pod.Status.Phase == v1.PodPending {

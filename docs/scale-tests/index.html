@@ -32,8 +32,9 @@
   <title>KAI Scheduler — Scale Tests</title>
   <link rel="icon" type="image/x-icon" href="favicon.ico">
   <link rel="stylesheet" href="styles.css?v=__ASSET_VERSION__">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
 </head>
 <body>
 
@@ -88,13 +89,15 @@
 
 <!-- ── Metrics view ────────────────────────────────────────────────────── -->
 <main id="metrics-main" class="tab-content" data-content="metrics">
-  <div class="metrics-grid" id="metrics-grid"></div>
+  <div class="metrics-grid" id="metrics-grid">
+    <div class="msg"><div class="spinner"></div><br>Loading scale test results… <span id="metrics-progress"></span></div>
+  </div>
 </main>
 
-<script src="results.js?v=__ASSET_VERSION__"></script>
-<script src="results-view.js?v=__ASSET_VERSION__"></script>
-<script src="metrics-data.js?v=__ASSET_VERSION__"></script>
-<script src="app.js?v=__ASSET_VERSION__"></script>
-<script src="metrics.js?v=__ASSET_VERSION__"></script>
+<script defer src="results.js?v=__ASSET_VERSION__"></script>
+<script defer src="results-view.js?v=__ASSET_VERSION__"></script>
+<script defer src="metrics-data.js?v=__ASSET_VERSION__"></script>
+<script defer src="app.js?v=__ASSET_VERSION__"></script>
+<script defer src="metrics.js?v=__ASSET_VERSION__"></script>
 </body>
 </html>

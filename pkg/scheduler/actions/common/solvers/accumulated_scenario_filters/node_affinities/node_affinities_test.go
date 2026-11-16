@@ -239,8 +239,8 @@ func TestNewNodeAffinitiesFilter_NilScenario(t *testing.T) {
 func TestNewNodeAffinitiesFilter_NoPendingTasksWithNodeAffinity(t *testing.T) {
 	// Pending tasks exist but none have node affinity — NewNodeAffinitiesFilter should return nil
 	task := podWithoutAffinity("uid-1", "plain-pod", "job-1")
-	pg := podgroup_info.NewPodGroupInfo("job-1", task)
-	ssn := newTestSession(t, map[string]*node_info.NodeInfo{}, map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{"job-1": pg})
+	pg := podgroup_info.NewPodGroupInfo("test/job-1", task)
+	ssn := newTestSession(t, map[string]*node_info.NodeInfo{}, map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{"test/job-1": pg})
 	tasks := []*pod_info.PodInfo{}
 	for _, task := range pg.GetAllPodsMap() {
 		tasks = append(tasks, task)
@@ -254,8 +254,8 @@ func TestNewNodeAffinitiesFilter_NoPendingTasksWithNodeAffinity(t *testing.T) {
 func TestNewNodeAffinitiesFilter_PreferredOnlyNodeAffinityReturnsNil(t *testing.T) {
 	// Preferred-only node affinity is not a hard constraint — filter should not be created
 	task := podWithPreferredNodeAffinityOnly("uid-1", "pod-1", "job-1", "gpu-type", "A100", 100)
-	pg := podgroup_info.NewPodGroupInfo("job-1", task)
-	ssn := newTestSession(t, map[string]*node_info.NodeInfo{}, map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{"job-1": pg})
+	pg := podgroup_info.NewPodGroupInfo("test/job-1", task)
+	ssn := newTestSession(t, map[string]*node_info.NodeInfo{}, map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{"test/job-1": pg})
 	tasks := []*pod_info.PodInfo{}
 	for _, task := range pg.GetAllPodsMap() {
 		tasks = append(tasks, task)
@@ -435,11 +435,11 @@ func TestNodeAffinitiesFilter_Filter(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			pendingPG := podgroup_info.NewPodGroupInfo("job-1", tt.pendingTasks...)
-			podGroups := map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{"job-1": pendingPG}
+			pendingPG := podgroup_info.NewPodGroupInfo("test/job-1", tt.pendingTasks...)
+			podGroups := map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{"test/job-1": pendingPG}
 
 			if len(tt.victimTasks) > 0 {
-				podGroups["job-victim"] = podgroup_info.NewPodGroupInfo("job-victim", tt.victimTasks...)
+				podGroups["test/job-victim"] = podgroup_info.NewPodGroupInfo("test/job-victim", tt.victimTasks...)
 			}
 
 			ssn := newTestSession(t, tt.allNodes, podGroups)
@@ -465,8 +465,8 @@ func TestNodeAffinitiesFilterCachesEquivalentConstraints(t *testing.T) {
 		podWithNodeSelector("uid-1", "pod-1", "job-1", map[string]string{"gpu-type": "A100"}),
 		podWithNodeSelector("uid-2", "pod-2", "job-1", map[string]string{"gpu-type": "A100"}),
 	}
-	pendingPG := podgroup_info.NewPodGroupInfo("job-1", pendingTasks...)
-	ssn := newTestSession(t, nodes, map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{"job-1": pendingPG})
+	pendingPG := podgroup_info.NewPodGroupInfo("test/job-1", pendingTasks...)
+	ssn := newTestSession(t, nodes, map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{"test/job-1": pendingPG})
 	sn := scenario.NewByNodeScenario(ssn, nil, pendingTasks, nil, nil)
 	filter := NewNodeAffinitiesFilter(sn, nodes, ssn)
 
