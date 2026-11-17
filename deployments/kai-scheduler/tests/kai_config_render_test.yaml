@@ -59,6 +59,16 @@ tests:
           path: spec..pullPolicy
           value: Always
 
+  - it: should fall back to IfNotPresent in the Config when global.imagePullPolicy is empty
+    set:
+      kaiConfigDeployer.enabled: false
+      kaiConfig.render: true
+      global.imagePullPolicy: ""
+    asserts:
+      - equal:
+          path: spec..pullPolicy
+          value: IfNotPresent
+
   - it: should prefer component image policies in the Config
     set:
       kaiConfigDeployer.enabled: false

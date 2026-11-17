@@ -3,4 +3,4 @@ body: |-
   Honor global.imagePullPolicy by default for KAI chart images while preserving component overrides
 custom:
   Author: "spicysharkco"
-  Issue: "2097"
+  Issue: "2440"

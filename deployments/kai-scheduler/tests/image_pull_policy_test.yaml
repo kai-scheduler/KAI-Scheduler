@@ -58,6 +58,31 @@ tests:
           value: Always
         template: hooks/pre/topology-migration/job.yaml
 
+  - it: should fall back to IfNotPresent when global.imagePullPolicy is empty
+    set:
+      global.imagePullPolicy: ""
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: IfNotPresent
+        template: services/operator.yaml
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: IfNotPresent
+        template: hooks/post/kai-config-deployer/job.yaml
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: IfNotPresent
+        template: hooks/post/post-delete-job.yaml
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: IfNotPresent
+        template: hooks/pre/crd-upgrader.yaml
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: IfNotPresent
+        template: hooks/pre/topology-migration/job.yaml
+
   - it: should prefer component pullPolicy over global.imagePullPolicy
     set:
       global.imagePullPolicy: Always
