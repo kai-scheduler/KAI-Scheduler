@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Fix topology filtering when configured levels are above the input nodes’ lowest common domain
+custom:
+  Author: "gaoyk19"
+  Issue: "2712"

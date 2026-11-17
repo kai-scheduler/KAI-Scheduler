@@ -952,7 +952,7 @@ func TestTopologyPlugin_calculateRelevantDomainLevels(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			plugin := &topologyPlugin{}
 
-			result, err := plugin.calculateRelevantDomainLevels(&tt.subGroupSet.SubGroupInfo, tt.topologyTree)
+			result, err := plugin.calculateRelevantDomainLevels(&tt.subGroupSet.SubGroupInfo, tt.topologyTree, rootLevel)
 
 			// Check error
 			if tt.expectedError != "" {
@@ -2191,8 +2191,10 @@ func TestTopologyPlugin_getJobAllocatableDomains(t *testing.T) {
 			}
 			tasksCount := len(tasks)
 
+			lowestCommonDomain := NewDomainInfo(rootDomainId, rootLevel)
+
 			result, err := plugin.getJobAllocatableDomains(job, &job.RootSubGroupSet.SubGroupInfo,
-				tasksResources.ToVector(testVectorMap), tasksCount, tt.topologyTree, nil)
+				tasksResources.ToVector(testVectorMap), tasksCount, tt.topologyTree, lowestCommonDomain, nil)
 
 			// Check error
 			if tt.expectedError != "" {
@@ -2257,6 +2259,111 @@ func TestTopologyPlugin_getJobAllocatableDomains(t *testing.T) {
 					t.Errorf("domain %d: expected AllocatablePods %d, got %d", i, expectedDomain.AllocatablePods, actualDomain.AllocatablePods)
 				}
 			}
+		})
+	}
+}
+
+func TestTopologyPlugin_subsetNodesFnSearchBoundary(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		required   string
+		preferred  string
+		singleNode bool
+		active     bool
+		wantFit    bool
+	}{
+		{name: "root constraints", required: "root", preferred: "root", wantFit: true},
+		{name: "root permits active pod outside search subtree", required: "root", preferred: "root", active: true, wantFit: true},
+		{name: "zone rejects active pod outside search subtree", required: "zone", preferred: "rack", active: true},
+		{name: "required ancestor without preference", required: "root", wantFit: true},
+		{name: "preferred ancestor", preferred: "root", wantFit: true},
+		{name: "required descendant", required: "rack", preferred: "rack", wantFit: true},
+		{name: "preferred descendant with required ancestor", required: "root", preferred: "rack", wantFit: true},
+		{name: "empty levels reject conflicting active pod", required: "zone", active: true, singleNode: true},
+		{name: "empty levels allow required ancestor", required: "zone", singleNode: true, wantFit: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			vectorMap := resource_info.NewResourceVectorMap()
+			tasks := []*tasks_fake.TestTaskBasic{{State: pod_status.Pending}}
+			if tc.active {
+				tasks = append(tasks, &tasks_fake.TestTaskBasic{State: pod_status.Running, NodeName: "node-west"})
+			}
+			jobSpec := &jobs_fake.TestJobBasic{
+				Name: "test-job", RequiredCPUsPerTask: 100, Tasks: tasks,
+				RootSubGroupSet: subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName,
+					&topology_info.TopologyConstraintInfo{Topology: "test-topology", RequiredLevel: tc.required, PreferredLevel: tc.preferred}),
+			}
+			jobs, tasksToNodes, _ := jobs_fake.BuildJobsAndTasksMaps([]*jobs_fake.TestJobBasic{jobSpec}, vectorMap)
+			nodes := nodes_fake.BuildNodesInfoMap(map[string]nodes_fake.TestNodeBasic{
+				"node-east-a": {CPUMillis: 1000, MaxTaskNum: ptr.To(100), Labels: map[string]string{"zone": "east", "rack": "a"}},
+				"node-east-b": {CPUMillis: 1000, MaxTaskNum: ptr.To(100), Labels: map[string]string{"zone": "east", "rack": "b"}},
+				"node-west":   {CPUMillis: 1000, MaxTaskNum: ptr.To(100), Labels: map[string]string{"zone": "west", "rack": "c"}},
+			}, tasksToNodes, nil, vectorMap)
+			plugin := &topologyPlugin{TopologyTrees: map[string]*Info{}, subGroupNodeScores: map[subgroupName]map[string]float64{}}
+			plugin.initializeTopologyTree([]*kaiv1alpha1.Topology{{ObjectMeta: metav1.ObjectMeta{Name: "test-topology"},
+				Spec: kaiv1alpha1.TopologySpec{Levels: []kaiv1alpha1.TopologyLevel{{NodeLabel: "zone"}, {NodeLabel: "rack"}}}}}, nodes)
+			job := jobs[common_info.NewPodGroupID(jobSpec.Namespace, jobSpec.Name)]
+			nodeSet := node_info.NodeSet{nodes["node-east-a"], nodes["node-east-b"]}
+			if tc.singleNode {
+				nodeSet = nodeSet[:1]
+			}
+			subsets, err := plugin.subSetNodesFn(job, &job.RootSubGroupSet.SubGroupInfo, nil,
+				podgroup_info.GetTasksToAllocate(job, nil, nil, podgroup_info.RealTaskAllocation),
+				nodeSet)
+			assert.NoError(t, err)
+			if !tc.wantFit {
+				assert.Empty(t, subsets)
+				return
+			}
+			if !assert.NotEmpty(t, subsets) {
+				return
+			}
+			for _, subset := range subsets {
+				assert.NotEmpty(t, subset)
+				for _, node := range subset {
+					assert.NotEqual(t, "node-west", node.Name)
+				}
+			}
+			if tc.preferred == "root" || (tc.required == "root" && tc.preferred == "") {
+				assert.Len(t, subsets, 1)
+				assert.Len(t, subsets[0], 2)
+			}
+			root := plugin.TopologyTrees["test-topology"].DomainsByLevel[rootLevel][rootDomainId]
+			assert.Zero(t, root.IdleOrReleasingVector.Get(resource_info.CPUIndex))
+		})
+	}
+}
+
+func TestCalculateRelevantDomainLevelsSearchBoundary(t *testing.T) {
+	tree := &Info{Name: "test-topology", TopologyResource: &kaiv1alpha1.Topology{
+		Spec: kaiv1alpha1.TopologySpec{Levels: []kaiv1alpha1.TopologyLevel{{NodeLabel: "zone"}, {NodeLabel: "rack"}}},
+	}}
+	for _, tc := range []struct {
+		name      string
+		required  string
+		preferred string
+		want      []DomainLevel
+		wantError bool
+	}{
+		{name: "ancestors only", required: "root", preferred: "root"},
+		{name: "truncate ancestors", required: "root", preferred: "rack", want: []DomainLevel{"rack", "zone"}},
+		{name: "descendants only", required: "rack", preferred: "rack", want: []DomainLevel{"rack"}},
+		{name: "include boundary", required: "zone", preferred: "zone", want: []DomainLevel{"zone"}},
+		{name: "validate required above boundary", required: "invalid", preferred: "rack", wantError: true},
+		{name: "validate preferred above boundary", required: "root", preferred: "invalid", wantError: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			subgroup := subgroup_info.NewSubGroupSet("test-subgroup", &topology_info.TopologyConstraintInfo{
+				Topology: tree.Name, RequiredLevel: tc.required, PreferredLevel: tc.preferred,
+			})
+			plugin := &topologyPlugin{}
+			levels, err := plugin.calculateRelevantDomainLevels(&subgroup.SubGroupInfo, tree, "zone")
+			if tc.wantError {
+				assert.Error(t, err)
+				return
+			}
+			assert.NoError(t, err)
+			assert.Equal(t, tc.want, levels)
 		})
 	}
 }
