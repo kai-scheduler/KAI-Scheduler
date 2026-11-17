@@ -7,11 +7,6 @@ gpu:
   profile: a100
 nodeSelector:
   mokka.nvidia.com/e2e-gpu: "true"
-driver:
-  mode: kernel
 nri:
   enabled: true
   pluginIndex: "05"
-  gpuOperator:
-    driver: true
-    toolkit: true

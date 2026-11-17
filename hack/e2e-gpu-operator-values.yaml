@@ -1,18 +1,11 @@
 # Copyright 2026 NVIDIA CORPORATION
 # SPDX-License-Identifier: Apache-2.0
 
-# The original NVIDIA driver and toolkit operands run. The digest selects the
-# multi-arch Ubuntu 24.04 driver image despite kind reporting a Debian node OS.
+# Mokka supplies the userspace driver files and installs the container runtime.
 driver:
-  enabled: true
-  repository: nvcr.io/nvidia
-  image: driver
-  version: sha256:2b6e81c01ffa5634d2e3e798ad19e287877ef7551086eb36782348e653e34b74
-  upgradePolicy:
-    gpuPodDeletion:
-      force: true
+  enabled: false
 toolkit:
-  enabled: true
+  enabled: false
 devicePlugin:
   enabled: true
   config:

@@ -9,10 +9,9 @@ The `numa-full` kind layout has four GPU workers, with eight A100 GPUs each,
 split 4+4 between two zones. Two workers use `single-numa-node`; one uses
 `restricted`; one uses `best-effort`. A CPU worker runs the control services.
 
-Mokka is pinned to `f33b720be4ce0fa7f4f37776156a68af8d470ebd` in the public
-`JRosenboimNVIDIA/mokka` fork. It includes Roman's GPU Operator support, the
-memory-limit fix, the current NUMA review changes, and the node-bus fix that lets
-NFD read memory capacity in every simulated zone. It also includes bidirectional
+Mokka is pinned to `4c5978a05a57c15fd00aa6511517afcf04354fab` in the public
+`JRosenboimNVIDIA/mokka` fork. This is main-based NUMA PR #1148, without
+Roman's kernel-driver or GPUCluster branches. It includes bidirectional
 host mounts, the PodResources socket health check, and a shared NUMA layout
 resolved by the agent enricher before all staging. The layout key also includes
 each active GPU's PCI address and NUMA zone, so GPU-only placement changes trigger
@@ -42,7 +41,16 @@ plugin maps simulated memory-node masks to kernel-allowed nodes when creating
 or updating containers. CPU IDs and memory limits are preserved. This tests
 scheduler decisions and observations; it does not prove physical memory locality.
 
-GPU Operator v26.7.2 runs its real driver, toolkit, and device plugin. Its NFD
+GPU Operator uses the v26.7.2 release binaries with the operand manifests from
+upstream commit `158ec57fa19eb71ad484d5e337f05a2b612ca170`, the release-26.7
+backport of #2959. Those six manifest changes make operands check
+`/sys/module/nvidia/initstate` instead of `/proc/modules`. Mokka provides the
+simulated module files. Setup verifies that the deployed device-plugin gate uses
+the new path before waiting for the stack to become ready.
+
+GPU Operator's driver and toolkit operands are disabled. Mokka supplies the
+driver files and container runtime setup through its existing userspace mode.
+The real device plugin, GFD, DCGM exporter, and validator remain enabled. Its NFD
 Topology Updater publishes GPU, CPU, and memory resources. NFD snapshots capacity
 at startup, so setup restarts it after all eight GPUs register on every GPU worker.
 There is no FGO, fake kubelet socket, or manually created NRT object.

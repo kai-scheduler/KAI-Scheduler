@@ -13,22 +13,39 @@ if [[ "$FEATURE_CONFIG" = numa-full && "$MOKKA_GPU_COUNT" != 8 ]]; then
   exit 1
 fi
 : "${GPU_OPERATOR_VERSION:=v26.7.2}"
-# PR 1109, the memory-limit fix, and opt-in NUMA sysfs/kubelet simulation.
-# Keep this commit pinned until the integration is available in an upstream release.
+# Release-26.7 backport of GPU Operator #2959, immediately after v26.7.2.
+: "${GPU_OPERATOR_REF:=158ec57fa19eb71ad484d5e337f05a2b612ca170}"
+: "${GPU_OPERATOR_IMAGE_REPOSITORY:=local/gpu-operator}"
+: "${GPU_OPERATOR_IMAGE_TAG:=${GPU_OPERATOR_REF:0:12}}"
+GPU_OPERATOR_IMAGE="$GPU_OPERATOR_IMAGE_REPOSITORY:$GPU_OPERATOR_IMAGE_TAG"
+# Main-based NUMA PR 1148; no simulated kernel-driver or GPUCluster changes.
 : "${MOKKA_REPOSITORY:=https://github.com/JRosenboimNVIDIA/mokka.git}"
-: "${MOKKA_REF:=f33b720be4ce0fa7f4f37776156a68af8d470ebd}"
+: "${MOKKA_REF:=4c5978a05a57c15fd00aa6511517afcf04354fab}"
 : "${MOKKA_IMAGE_REPOSITORY:=mokka-e2e}"
 : "${MOKKA_IMAGE_TAG:=${MOKKA_REF:0:12}}"
 
 SOURCE_DIR=$(mktemp -d)
 trap 'rm -rf "$SOURCE_DIR"' EXIT
-git -C "$SOURCE_DIR" init --quiet
-git -C "$SOURCE_DIR" fetch --depth=1 "$MOKKA_REPOSITORY" "$MOKKA_REF"
-git -C "$SOURCE_DIR" checkout --quiet --detach FETCH_HEAD
+MOKKA_SOURCE="$SOURCE_DIR/mokka"
+OPERATOR_SOURCE="$SOURCE_DIR/gpu-operator"
+git init --quiet "$MOKKA_SOURCE"
+git -C "$MOKKA_SOURCE" fetch --depth=1 "$MOKKA_REPOSITORY" "$MOKKA_REF"
+git -C "$MOKKA_SOURCE" checkout --quiet --detach FETCH_HEAD
 
-docker build --file "$SOURCE_DIR/deployments/nvml-mock/Dockerfile" \
-  --tag "$MOKKA_IMAGE_REPOSITORY:$MOKKA_IMAGE_TAG" "$SOURCE_DIR"
+docker build --file "$MOKKA_SOURCE/deployments/nvml-mock/Dockerfile" \
+  --tag "$MOKKA_IMAGE_REPOSITORY:$MOKKA_IMAGE_TAG" "$MOKKA_SOURCE"
 kind load docker-image --name "$CLUSTER_NAME" "$MOKKA_IMAGE_REPOSITORY:$MOKKA_IMAGE_TAG"
+
+# The backport changes only six operand manifests and their unit test. Keep
+# NVIDIA's release binaries and copy the exact upstream assets into the image.
+git init --quiet "$OPERATOR_SOURCE"
+git -C "$OPERATOR_SOURCE" fetch --depth=1 https://github.com/NVIDIA/gpu-operator.git "$GPU_OPERATOR_REF"
+git -C "$OPERATOR_SOURCE" checkout --quiet --detach FETCH_HEAD
+docker build --file "$REPO_ROOT/hack/gpu-operator-sysfs.Dockerfile" \
+  --build-arg "GPU_OPERATOR_VERSION=$GPU_OPERATOR_VERSION" \
+  --build-arg "GPU_OPERATOR_REF=$GPU_OPERATOR_REF" \
+  --tag "$GPU_OPERATOR_IMAGE" "$OPERATOR_SOURCE"
+kind load docker-image --name "$CLUSTER_NAME" "$GPU_OPERATOR_IMAGE"
 
 MOKKA_VALUES=(--values "$REPO_ROOT/hack/e2e-mokka-values.yaml"
   --set "image.repository=$MOKKA_IMAGE_REPOSITORY"
@@ -37,7 +54,7 @@ GPU_OPERATOR_VALUES=(--values "$REPO_ROOT/hack/e2e-gpu-operator-values.yaml")
 if [[ "$FEATURE_CONFIG" = numa-full ]]; then
   # Separate releases keep the policy settings local to each selected node.
   for policy in single-numa-node restricted best-effort; do
-    helm upgrade --install "nvml-mock-$policy" "$SOURCE_DIR/deployments/nvml-mock/helm/nvml-mock" \
+    helm upgrade --install "nvml-mock-$policy" "$MOKKA_SOURCE/deployments/nvml-mock/helm/nvml-mock" \
       --namespace mokka --create-namespace "${MOKKA_VALUES[@]}" \
       --set 'nodeAgent.numa.enabled=true' \
       --set 'nodeAgent.numa.cpuManagerPolicy=static' --set 'nodeAgent.numa.memoryManagerPolicy=static' \
@@ -48,7 +65,7 @@ if [[ "$FEATURE_CONFIG" = numa-full ]]; then
   done
   GPU_OPERATOR_VALUES+=(--values "$REPO_ROOT/hack/e2e-gpu-operator-numa-values.yaml")
 else
-  helm upgrade --install nvml-mock "$SOURCE_DIR/deployments/nvml-mock/helm/nvml-mock" \
+  helm upgrade --install nvml-mock "$MOKKA_SOURCE/deployments/nvml-mock/helm/nvml-mock" \
     --namespace mokka --create-namespace "${MOKKA_VALUES[@]}" --wait --timeout 10m
 fi
 
@@ -56,8 +73,15 @@ helm repo add nvidia https://helm.ngc.nvidia.com/nvidia --force-update
 helm repo update nvidia
 helm upgrade --install gpu-operator nvidia/gpu-operator \
   --version "$GPU_OPERATOR_VERSION" --namespace gpu-operator --create-namespace \
+  --set-string "operator.repository=${GPU_OPERATOR_IMAGE_REPOSITORY%/*}" \
+  --set-string "operator.image=${GPU_OPERATOR_IMAGE_REPOSITORY##*/}" \
+  --set-string "operator.version=$GPU_OPERATOR_IMAGE_TAG" \
   "${GPU_OPERATOR_VALUES[@]}" --wait --timeout 15m
 
+kubectl --namespace gpu-operator wait --for=create daemonset/nvidia-device-plugin-daemonset --timeout=5m
+kubectl --namespace gpu-operator get daemonset nvidia-device-plugin-daemonset \
+  -o 'jsonpath={.spec.template.spec.initContainers[?(@.name=="toolkit-validation")].args}' |
+  grep -Fq '/sys/module/nvidia/initstate'
 kubectl wait --for=jsonpath='{.status.state}'=ready clusterpolicy/cluster-policy --timeout=15m
 kubectl wait \
   --for="jsonpath={.status.allocatable.nvidia\\.com/gpu}=$MOKKA_GPU_COUNT" \

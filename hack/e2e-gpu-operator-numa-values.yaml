@@ -1,11 +1,6 @@
 # Copyright 2026 NVIDIA CORPORATION
 # SPDX-License-Identifier: Apache-2.0
 
-toolkit:
-  env:
-    # Keep the existing kind containerd configuration in one file.
-    - name: RUNTIME_CONFIG_SOURCE
-      value: file
 node-feature-discovery:
   topologyUpdater:
     enable: true

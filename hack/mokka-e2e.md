@@ -1,10 +1,14 @@
 # Testing GPU Operator with Mokka
 
-The default local runner and the PR, upgrade and GitOps jobs install NVIDIA GPU Operator v26.7.2 with Mokka instead of FGO. Production charts are unchanged. GPU sharing remains `NonMemoryEnforced`; this PR does not switch the Scheduler tests to NvFractions.
+The default local runner and the PR, upgrade and GitOps jobs install NVIDIA GPU Operator v26.7.2 with the upstream #2959 operand manifests and Mokka instead of FGO. Production charts are unchanged. GPU sharing remains `NonMemoryEnforced`; this PR does not switch the Scheduler tests to NvFractions.
 
-`install-mokka-gpu-operator.sh` builds public Mokka commit `f33b720be4ce0fa7f4f37776156a68af8d470ebd` from the `JRosenboimNVIDIA/mokka` fork. It includes Roman's PR 1109 GPU Operator integration, the NVML memory-limit acknowledgement from PR 1130, and the current NUMA implementation from PR 1148, integrated in PR 1147. It includes the shared NUMA enricher, GPU placement in the layout key, direct apply/restore calls, and boot cleanup registration with an empty marker. It builds the unmodified Mokka Dockerfile and loads the image into kind. Set `MOKKA_REPOSITORY`, `MOKKA_REF` or `GPU_OPERATOR_VERSION` to test a different revision. The dedicated NUMA workflow uses the setup in `README-mokka-numa.md`; standard suites keep NUMA simulation disabled.
+`install-mokka-gpu-operator.sh` builds public Mokka commit `4c5978a05a57c15fd00aa6511517afcf04354fab` from the `JRosenboimNVIDIA/mokka` fork. This is main-based NUMA PR #1148; it does not include Roman's kernel-driver or GPUCluster branches. It builds the unmodified Mokka Dockerfile and loads the image into kind. The dedicated NUMA workflow uses the setup in `README-mokka-numa.md`; standard suites keep NUMA simulation disabled.
 
-The driver and toolkit operands stay enabled and use NVIDIA images. Mokka uses its kernel simulation mode and NRI integration. The driver image is the multi-architecture Ubuntu 24.04 digest, so the new CI jobs use Ubuntu 24.04. CUDA workload validation is disabled because simulated GPUs cannot execute CUDA. MIG is disabled, matching the existing test setup.
+The installer builds a small GPU Operator image from the official v26.7.2 image and upstream assets at `158ec57fa19eb71ad484d5e337f05a2b612ca170`, the release-26.7 backport of #2959. This commit changes six operand manifests and their unit test; the release binaries stay unchanged. The startup check reads `/sys/module/nvidia/initstate`, which Mokka supplies through its simulated module tree. Setup checks the deployed gate before waiting for readiness.
+
+The driver and toolkit operands are disabled. Mokka supplies the driver files and installs the NVIDIA container runtime in its userspace mode. The real GPU Operator controller, device plugin, GFD, DCGM exporter, and validator run. CUDA workload validation is disabled because simulated GPUs cannot execute CUDA. MIG is disabled, matching the existing test setup.
+
+Set `MOKKA_REPOSITORY`, `MOKKA_REF`, `GPU_OPERATOR_VERSION`, or `GPU_OPERATOR_REF` to test another revision. The Operator version selects the release image and Helm chart; its source ref selects the manifest assets.
 
 Four GPU workers each expose eight A100 GPUs; the CPU worker and control plane have no simulated GPUs. The real device plugin and GFD publish capacity and memory. Reservation pods use RuntimeClass `nvidia`; FGO's reservation annotation patcher and its RBAC are removed from this path.
 
@@ -14,11 +18,11 @@ Four GPU workers each expose eight A100 GPUs; the CPU worker and control plane h
 hack/run-e2e-kind.sh --preserve-cluster
 ```
 
-Only disposable kind clusters are supported. This script creates its own cluster; it does not update an existing RunAI installation. The build and driver setup can take several minutes on a cold runner.
+Only disposable kind clusters are supported. This script creates its own cluster; it does not update an existing RunAI installation. The image build and runtime setup can take several minutes on a cold runner.
 
 ## Excluded paths
 
-The Mokka run filters out `numa`, `kwok`, `scale` and `autoscale` tests. NUMA simulation and the KWOK scale harness are not changed. The release compatibility matrix keeps FGO, including its older Kubernetes, DRA and NUMA prerequisites. Existing dedicated DRA/NUMA local layouts remain available with `GPU_STACK=fake`; the Mokka experiment rejects those feature layouts rather than silently skipping their setup.
+The regular Mokka run filters out `numa`, `kwok`, `scale` and `autoscale` tests. NUMA runs in its dedicated workflow; the KWOK scale harness is unchanged. The release compatibility matrix keeps FGO, including its older Kubernetes, DRA and NUMA prerequisites. Existing dedicated DRA/NUMA local layouts remain available with `GPU_STACK=fake`; the Mokka experiment rejects unsupported feature layouts rather than silently skipping their setup.
 
 ```sh
 GPU_STACK=fake hack/setup-e2e-cluster.sh --feature-config numa-full

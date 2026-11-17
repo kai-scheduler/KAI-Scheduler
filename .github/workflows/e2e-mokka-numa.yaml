@@ -88,7 +88,9 @@ jobs:
           kind export logs numa-results/kind --name "$CLUSTER_NAME" || true
           {
             echo '### Mokka NUMA experiment'
-            echo 'Real driver, toolkit, device plugin, NFD topology updater, and kubelet pod-resources socket.'
+            echo 'Main-based Mokka NUMA PR #1148; GPU Operator v26.7.2 with upstream #2959 assets.'
+            echo 'Mokka supplies driver files and runtime setup; GPU Operator driver/toolkit operands are disabled.'
+            echo 'Real device plugin, NFD topology updater, and kubelet pod-resources socket.'
             echo 'Four GPU nodes: two single-numa-node, one restricted, one best-effort; eight GPUs per node, split 4+4.'
             echo 'Static CPU and Memory Managers are enabled. Mokka NRI maps simulated memory affinity onto host-allowed nodes.'
             echo 'The unchanged Burstable cross-zone case expects admission; real kubelet enforcement can reject it.'
