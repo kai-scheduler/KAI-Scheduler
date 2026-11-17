@@ -28,19 +28,26 @@ func (m *StringMapFlag) String() string {
 
 func (m *StringMapFlag) Set(value string) error {
 	// Convert string to map: key1=val1,key2=val2
-	if *m == nil {
-		*m = make(map[string]string)
-	}
 	if value == "" {
+		if *m == nil {
+			*m = make(map[string]string)
+		}
 		return nil
 	}
+	updates := make(map[string]string)
 	pairs := strings.Split(value, ",")
 	for _, pair := range pairs {
 		kv := strings.SplitN(pair, "=", 2)
 		if len(kv) != 2 {
 			return fmt.Errorf("invalid map item: %q", pair)
 		}
-		(*m)[kv[0]] = kv[1]
+		updates[kv[0]] = kv[1]
+	}
+	if *m == nil {
+		*m = make(map[string]string)
+	}
+	for key, val := range updates {
+		(*m)[key] = val
 	}
 	return nil
 }

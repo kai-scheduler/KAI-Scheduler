@@ -1,6 +1,0 @@
-kind: Fixed
-body: |-
-  Reduce scheduler cache memory by retaining only ConfigMap identity
-custom:
-  Author: "enoodle"
-  Issue: "2376"

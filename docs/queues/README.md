@@ -64,7 +64,9 @@ resources:
 | `quota` | `-1` | Unlimited quota |
 | `quota` | `0` or unset | No guaranteed resources (default) |
 | `limit` | `-1` | No limit |
-| `limit` | `0` or unset | No additional resources allowed (default) |
+| `limit` | `0` or unset | No resources of this type can be allocated to the queue, including its quota (default) |
+
+Each resource (`cpu`, `memory`, `gpu`) is checked on its own. If a queue omits a resource or its `limit`, the limit for that resource is `0`, and workloads that request it stay pending with an `OverLimit` condition such as `Limit is 0 GB`. Set `limit: -1` for every resource you do not want to cap.
 
 ### Resource Units
 - **CPU**: Millicores (1000 = 1 CPU core)
@@ -85,6 +87,9 @@ spec:
     cpu:
       quota: 1000
       limit: 2000
+    memory:
+      quota: 0
+      limit: -1
     gpu:
       quota: 1
       limit: 2
@@ -104,12 +109,18 @@ spec:
     cpu:
       quota: 500
       overQuotaWeight: 2
+      limit: -1
+    memory:
+      quota: 0
+      limit: -1
     gpu:
       quota: 1
       overQuotaWeight: 1
+      limit: -1
 ```
 
-### Unlimited Queue - default value is -1
+### Unlimited Queue
+`-1` is not filled in for you: set it on every resource.
 ```yaml
 apiVersion: scheduling.run.ai/v2
 kind: Queue
@@ -118,6 +129,9 @@ metadata:
 spec:
   resources:
     cpu:
+      quota: -1                          # Unlimited quota
+      limit: -1                          # No limit
+    memory:
       quota: -1                          # Unlimited quota
       limit: -1                          # No limit
     gpu:

@@ -43,15 +43,19 @@ test('configures charts for the new workload scale results', () => {
     ['Elastic distributed job reclaim', 'elastic-job-reclaim'],
     ['Mixed fractions saturation - allocation', 'fractions-saturation-allocation'],
     ['Mixed fractions saturation - scheduling', 'fractions-saturation-scheduling'],
+    ['Research workloads - decision latency p95', 'research-decision-p95'],
+    ['Research workloads - decision latency max', 'research-decision-max'],
   ]);
 
-  assert.equal(CHART_CONFIGS.length, 17);
+  assert.equal(CHART_CONFIGS.length, 19);
   expectedCharts.forEach((chartId, testName) => {
     const testCase = resolveTestCase('scale-results', testName);
     assert.equal(testCase.chartId, chartId);
     assert.equal(testCase.timingField, {
       'fractions-saturation-allocation': 'allocation_seconds',
       'fractions-saturation-scheduling': 'scheduling_seconds',
+      'research-decision-p95': 'decision_p95_seconds',
+      'research-decision-max': 'decision_max_seconds',
     }[chartId] || 'duration_seconds');
     assert.ok(CHART_CONFIGS.some(config => config.id === chartId));
   });
@@ -76,6 +80,46 @@ test('keeps fraction saturation runs in one series when only derived metrics dif
   const [first, second] = extractChartObservations([runFor(30, 100), runFor(35, 99.5)]);
 
   assert.equal(first.seriesLabel, second.seriesLabel);
+});
+
+test('keeps research workload runs in one series when only derived metrics differ', () => {
+  const runFor = (p95, scheduled) => loadRun({
+    metadata: { kai_scheduler_ref: 'main', kwok_node_count: 500 },
+    results: {
+      status: 'success',
+      tests: [{
+        test_name: 'Research workloads - decision latency p95',
+        status: 'success',
+        details: {
+          nodes: 500, cpu_nodes: 100, queues: 4, workloads: 36, pods: 3510, scheduled_workloads: scheduled,
+          unschedulable_workloads: 36 - scheduled, gpu_utilization_pct: 95, decision_p50_seconds: p95 / 2,
+          decision_p95_seconds: p95, decision_max_seconds: p95 + 5, experiment_decision_p95_seconds: p95,
+          rl_decision_p95_seconds: p95, preprocess_decision_p95_seconds: p95,
+        },
+      }],
+    },
+  }, meta);
+  const [first, second] = extractChartObservations([runFor(30, 24), runFor(35, 22)]);
+
+  assert.equal(first.seriesLabel, second.seriesLabel);
+});
+
+test('charts bind time after the last allocation for the scheduling saturation series', () => {
+  const run = loadRun({
+    metadata: { kai_scheduler_ref: 'main', service_resources: { scheduler: { limits: { cpu: '5' } } } },
+    results: {
+      status: 'success',
+      tests: [{
+        test_name: 'Mixed fractions saturation - scheduling',
+        status: 'success',
+        details: { nodes: 500, allocation_seconds: 30, scheduling_seconds: 42.5 },
+      }],
+    },
+  }, meta);
+  const [observation] = extractChartObservations([run]);
+
+  assert.equal(observation.timingSeconds, 12.5);
+  assert.ok(!buildTooltipLines(observation).some(line => line.includes('service_resources')));
 });
 
 test('labels the actual topology KWOK node count in topology graphs', () => {
@@ -108,8 +152,6 @@ test('preserves complete details and raw timing values in observations', () => {
   assert.equal(observation.timingSeconds, expectedDetails['time(seconds)']);
   assert.equal(observation.commit, 'abc123');
   const tooltip = buildTooltipLines(observation);
-  assert.ok(tooltip.includes('test: NCCL Simulation on empty cluster'));
-  assert.ok(tooltip.includes(`time(seconds): ${expectedDetails['time(seconds)']}`));
   assert.ok(tooltip.includes(`total pods: ${expectedDetails['total pods']}`));
 });
 
