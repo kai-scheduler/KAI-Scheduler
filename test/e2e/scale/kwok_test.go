@@ -158,7 +158,7 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 				"topologyNodeCount", totalNodes,
 			)
 
-			updateFakeGPUOperatorGPUsPerNode(ctx, testCtx)
+			configureGPUsPerNode(ctx, testCtx)
 
 			var nodePools kwok.NodePoolList
 			Expect(testCtx.ControllerClient.List(ctx, &nodePools)).To(Succeed())
@@ -175,6 +175,9 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 			Expect(testCtx.ControllerClient.Create(ctx, &clusterTopology)).To(Succeed())
 
 			topologyNodePools = topology.GenerateNodePools(topologyLevels, nodesPerDomain, map[string]string{"test": "topology-e2e"})
+			for i := range topologyNodePools {
+				selectScaleGPUProvider(&topologyNodePools[i])
+			}
 			Expect(topologyNodePools).To(HaveLen(topologyConfig.nodePoolCount()))
 			Expect(createTopologyNodePools(ctx, testCtx, topologyNodePools)).To(Succeed())
 
@@ -286,8 +289,8 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 
 	Context("Big cluster", Ordered, func() {
 		BeforeAll(func(ctx context.Context) {
-			GinkgoLogr.Info("Updating fake GPU operator GPUs per node")
-			updateFakeGPUOperatorGPUsPerNode(ctx, testCtx)
+			GinkgoLogr.Info("Configuring GPUs per node")
+			configureGPUsPerNode(ctx, testCtx)
 
 			GinkgoLogr.Info("Setting up managed node pool to 0 nodes")
 			managedNodePool := kwok.NodePool{
@@ -298,6 +301,7 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 			Expect(testCtx.ControllerClient.Get(ctx, runtimeClient.ObjectKeyFromObject(&managedNodePool), &managedNodePool)).To(Succeed())
 
 			originalManagedNodePool := managedNodePool.DeepCopy()
+			selectScaleGPUProvider(&managedNodePool)
 			managedNodePool.Spec.NodeCount = int32(0)
 
 			Expect(testCtx.ControllerClient.Patch(
@@ -766,7 +770,19 @@ func patchQueueGPU(ctx context.Context, testCtx *testcontext.TestContext, queue 
 	return testCtx.ControllerClient.Patch(ctx, queue, runtimeClient.RawPatch(types.MergePatchType, patch))
 }
 
-func updateFakeGPUOperatorGPUsPerNode(ctx context.Context, testCtx *testcontext.TestContext) {
+// The KWOK operator adds the fake-node annotation when it creates each Node.
+func selectScaleGPUProvider(pool *kwok.NodePool) {
+	if os.Getenv("KWOK_GPU_PROVIDER") == "mokka" {
+		pool.Spec.NodeTemplate.Labels["mokka.nvidia.com/sgpu-node"] = "true"
+		pool.Spec.NodeTemplate.Labels["mokka.nvidia.com/node-type"] = "KWOK"
+	}
+}
+
+func configureGPUsPerNode(ctx context.Context, testCtx *testcontext.TestContext) {
+	if os.Getenv("KWOK_GPU_PROVIDER") == "mokka" {
+		// The rack profile already defines the GPU count. The suite checks Node capacity.
+		return
+	}
 	topologyConfig := &v1.ConfigMap{}
 
 	Expect(testCtx.ControllerClient.Get(ctx, runtimeClient.ObjectKey{

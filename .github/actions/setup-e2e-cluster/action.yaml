@@ -17,7 +17,7 @@ inputs:
     required: false
     default: 'v1.34.0'
   feature_config:
-    description: Named feature configuration (default, dra-enabled, or numa-full)
+    description: Named feature configuration (default, dra-enabled, numa-full, or mokka-kwok)
     required: false
     default: 'default'
 
@@ -95,6 +95,7 @@ runs:
         done
 
     - name: Deploy fake gpu operator
+      if: inputs.feature_config != 'mokka-kwok'
       shell: bash
       env:
         FEATURE_CONFIG: ${{ inputs.feature_config }}

@@ -251,6 +251,65 @@ jobs:
         run: |
           echo "Skipping build and test since only documentation files (.md or docs/) were changed."
 
+  mokka-kwok-scale:
+    name: Full KWOK scale suite with Mokka
+    # Keep the scale run on the PoC branch while we measure runner requirements.
+    if: github.head_ref == 'codex/mokka-kwok-full-suite'
+    needs: build
+    runs-on: cncf-ubuntu-8-32-x86
+    timeout-minutes: 360
+    permissions:
+      contents: read
+    env:
+      KWOK_GPU_PROVIDER: mokka
+      NODE_COUNT: "500"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-e2e-cluster
+        with:
+          package_version: ${{ needs.build.outputs.package_version }}
+          k8s_version: v1.35.0
+          feature_config: mokka-kwok
+      - name: Install KAI from this pull request
+        env:
+          PACKAGE_VERSION: ${{ needs.build.outputs.package_version }}
+        run: |
+          helm upgrade -i kai-scheduler "/mnt/images/kai-scheduler-$PACKAGE_VERSION.tgz" \
+            -n kai-scheduler --create-namespace --set global.registry=localhost:30100 \
+            --set global.gpuSharingMode=NonMemoryEnforced --set prometheus.enabled=true --wait
+      - name: Check out the Mokka KWOK PoC
+        uses: actions/checkout@v7
+        with:
+          repository: JRosenboimNVIDIA/mokka
+          ref: 951a23001b64382a4f7152690d901e3ebaeaf690
+          path: .mokka
+          persist-credentials: false
+      - name: Install KWOK, its node pool operator and Mokka
+        run: hack/setup-mokka-kwok.sh .mokka
+      - name: Run every KWOK scale spec
+        run: |
+          kubectl get crd stages.kwok.x-k8s.io nodepools.kwok.sigs.run-ai.com topologies.kai.scheduler
+          go tool ginkgo --timeout=5h --trace --output-dir=. --json-report=kwok-report.json ./test/e2e/scale
+          jq -e '[.[].SpecReports[] | select(.LeafNodeType == "It")] |
+            length > 0 and all(.[]; .State == "passed")' kwok-report.json
+          jq -e '.status == "success" and (.tests | length > 0 and all(.[]; .status == "success"))' \
+            test/e2e/scale/kwok_scale_test.json
+      - name: Collect provider diagnostics
+        if: failure()
+        run: |
+          kubectl get nodepools.kwok.sigs.run-ai.com
+          kubectl get nodes -l type=kwok -o 'custom-columns=NAME:.metadata.name,GPUs:.status.allocatable.nvidia\.com/gpu'
+          kubectl -n mokka-kwok-poc get pods -o wide
+          kubectl -n mokka-kwok-poc logs -l app.kubernetes.io/component=control-plane --tail=100
+          kubectl -n mokka-kwok-poc logs deployment/kwok-gpu --tail=100
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: mokka-kwok-scale-results
+          path: |
+            kwok-report.json
+            test/e2e/scale/kwok_scale_test.json
+
   prepare-e2e-buckets:
     name: Prepare E2E Buckets
     needs: [ check-build-and-test-required ]

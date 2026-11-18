@@ -18,7 +18,7 @@ while [[ $# -gt 0 ]]; do
     --output)         OUTPUT="$2"; shift 2;;
     -h|--help)
       echo "Usage: $0 --feature-config <config> --k8s-version <version> --output <path>"
-      echo "  --feature-config: default | dra-enabled | numa-full"
+      echo "  --feature-config: default | dra-enabled | numa-full | mokka-kwok"
       echo "  --k8s-version:    kindest/node version tag, e.g. v1.34.0"
       echo "  --output:         path to write the generated kind config YAML"
       exit 0;;
@@ -101,6 +101,9 @@ esac
   # NRT-less to cover the no-NRT pass-through case.
   if [ "$FEATURE_CONFIG" = "numa-full" ]; then
     WORKER_POOLS=(numa-single numa-single default numa-besteffort)
+  elif [ "$FEATURE_CONFIG" = "mokka-kwok" ]; then
+    # The KWOK operator creates all GPU nodes. Keep one real CPU worker below.
+    WORKER_POOLS=()
   else
     WORKER_POOLS=(default default default default)
   fi
