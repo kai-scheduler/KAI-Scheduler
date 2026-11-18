@@ -411,16 +411,16 @@ func (pi *PodInfo) IsSharedGPUAllocation() bool {
 }
 
 func (pi *PodInfo) IsCPUOnlyRequest() bool {
-	return !pi.IsRequireAnyKindOfGPU()
+	return !pi.requiresGPUCapacity()
 }
 
 // RequiresGPUNode is true for GPU requests and for pods holding a GPU claim that requests no GPU,
 // such as an admin access claim, whose device can still only be on a GPU node.
 func (pi *PodInfo) RequiresGPUNode() bool {
-	return pi.IsRequireAnyKindOfGPU() || pi.HasDRAGPUClaim
+	return pi.requiresGPUCapacity() || pi.HasDRAGPUClaim
 }
 
-func (pi *PodInfo) IsRequireAnyKindOfGPU() bool {
+func (pi *PodInfo) requiresGPUCapacity() bool {
 	return pi.GpuRequirement.GPUs() > 0 || pi.GpuRequirement.GetDraGpusCount() > 0 ||
 		pi.IsGpuMemoryRequest() || pi.IsMigProfileRequest()
 }
