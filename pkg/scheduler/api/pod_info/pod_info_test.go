@@ -739,7 +739,7 @@ func TestGetPodStorageClaims(t *testing.T) {
 	assert.Equal(t, "owned-pvc-name", pod.GetOwnedStorageClaims()[ownedClaimKey].Name)
 }
 
-func TestIsRequireAnyKindOfGPU_DRA(t *testing.T) {
+func TestRequiresGPUCapacity_DRA(t *testing.T) {
 	gpuReq := resource_info.NewGpuResourceRequirement()
 	gpuReq.SetDraGpus(map[string]int64{"nvidia.com/gpu": 2})
 	pi := &PodInfo{
@@ -747,7 +747,7 @@ func TestIsRequireAnyKindOfGPU_DRA(t *testing.T) {
 		GpuRequirement: *gpuReq,
 		Pod:            &v1.Pod{},
 	}
-	assert.Assert(t, pi.IsRequireAnyKindOfGPU(), "pod with only DRA GPU requests should require GPU")
+	assert.Assert(t, pi.requiresGPUCapacity(), "pod with only DRA GPU requests should require GPU capacity")
 	assert.Assert(t, !pi.IsCPUOnlyRequest(), "pod with only DRA GPU requests should not be CPU-only")
 }
 
