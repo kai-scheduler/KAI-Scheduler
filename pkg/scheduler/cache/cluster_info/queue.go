@@ -88,8 +88,43 @@ func (c *ClusterInfo) snapshotQueueResourceUsage() (*queue_info.ClusterUsage, er
 // UpdateQueueHierarchy iterates over a map containing multiple levels of queue hierarchies, and updates queues with
 // child queues where relevant
 func UpdateQueueHierarchy(queues map[common_info.QueueID]*queue_info.QueueInfo) {
+	removeQueueParentCycles(queues)
 	updateQueueChildren(queues)
 	cleanQueueOrphans(queues)
+}
+
+// removeQueueParentCycles deletes queues whose chain of parent queues never reaches a root queue, because it loops
+// back on itself (for example a queue that is its own parent, or two queues that are each other's parent). Code that
+// walks from a queue up to its root would otherwise never finish. Queues below a removed queue lose their parent and
+// are then removed as orphans.
+func removeQueueParentCycles(queues map[common_info.QueueID]*queue_info.QueueInfo) {
+	var cyclic []common_info.QueueID
+	for queueId := range queues {
+		if parentChainHasCycle(queues, queueId) {
+			cyclic = append(cyclic, queueId)
+		}
+	}
+	for _, queueId := range cyclic {
+		log.InfraLogger.V(2).Warnf("Found queue %s in a parent queue cycle, deleting it", queueId)
+		delete(queues, queueId)
+	}
+}
+
+func parentChainHasCycle(queues map[common_info.QueueID]*queue_info.QueueInfo, queueId common_info.QueueID) bool {
+	visited := map[common_info.QueueID]struct{}{}
+	for current := queueId; current != ""; {
+		if _, seen := visited[current]; seen {
+			return true
+		}
+		visited[current] = struct{}{}
+
+		queue, found := queues[current]
+		if !found {
+			return false
+		}
+		current = queue.ParentQueue
+	}
+	return false
 }
 
 func updateQueueChildren(queues map[common_info.QueueID]*queue_info.QueueInfo) {
