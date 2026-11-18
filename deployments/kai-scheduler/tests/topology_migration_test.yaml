@@ -21,3 +21,26 @@ tests:
     asserts:
       - hasDocuments:
           count: 0
+
+  - it: should default image registry to global.registry
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.containers[0].image
+          pattern: '^registry/local/kai-scheduler/helm-hooks:'
+
+  - it: should follow global.registry when topologyMigration.image.registry is unset
+    set:
+      global.registry: global.example.com
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.containers[0].image
+          pattern: '^global\.example\.com/helm-hooks:'
+
+  - it: should override image registry when topologyMigration.image.registry is set
+    set:
+      global.registry: global.example.com
+      topologyMigration.image.registry: mirror.example.com
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.containers[0].image
+          pattern: '^mirror\.example\.com/helm-hooks:'

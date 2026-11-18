@@ -45,7 +45,7 @@ spec:
       {{- end }}
       containers:
         - name: deleter
-          image: "{{ .Values.global.registry }}/{{ .Values.postCleanup.image.name }}:{{ include "kai-scheduler.imageTag" (dict "root" $ "tag" .Values.postCleanup.image.tag) }}"
+          image: "{{ .Values.postCleanup.image.registry | default .Values.global.registry }}/{{ .Values.postCleanup.image.name }}:{{ include "kai-scheduler.imageTag" (dict "root" $ "tag" .Values.postCleanup.image.tag) }}"
           imagePullPolicy: {{ include "kai-scheduler.imagePullPolicy" (dict "root" $ "pullPolicy" .Values.postCleanup.image.pullPolicy) }}
           {{- with .Values.postCleanup.resources }}
           resources:

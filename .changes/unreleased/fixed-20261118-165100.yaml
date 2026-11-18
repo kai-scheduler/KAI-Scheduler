@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Honor per-hook image.registry for the topology-migration and post-delete cleanup hooks
+custom:
+  Author: "chethanuk"
+  Issue: ""
