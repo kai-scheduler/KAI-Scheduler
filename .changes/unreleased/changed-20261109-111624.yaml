@@ -1,6 +1,0 @@
-kind: Changed
-body: |-
-  Faster Unevict in preempt and reclaim simulation by skipping undo checks for other tasks' operations
-custom:
-  Author: "gshaibi"
-  Issue: "2603"
