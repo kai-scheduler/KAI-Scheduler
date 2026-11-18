@@ -209,6 +209,11 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 
 			originalNodeCount := 0
 			for _, nodePool := range originalNodePools {
+				// An originally empty pool already has its desired count. KWOK may
+				// never set Available on a pool that has never created a Node.
+				if nodePool.Spec.NodeCount == 0 {
+					continue
+				}
 				originalNodeCount += int(nodePool.Spec.NodeCount)
 				baseNodePool := nodePool.DeepCopy()
 				baseNodePool.Spec.NodeCount = 0
@@ -307,7 +312,6 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 			Expect(testCtx.ControllerClient.Patch(
 				ctx, &managedNodePool, runtimeClient.MergeFrom(originalManagedNodePool))).NotTo(HaveOccurred())
 
-			wait.ForKWOKOperatorNodePool(ctx, testCtx.ControllerClient, managedNodePool.Name)
 			wait.ForZeroKWOKNodes(ctx, testCtx.ControllerClient) // Wait until all kwok nodes are deleted
 
 			GinkgoLogr.Info("Filling all existing nodes with single GPU jobs to avoid fair share calculation issues")

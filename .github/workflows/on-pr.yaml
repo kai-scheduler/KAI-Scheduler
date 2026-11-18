@@ -289,6 +289,9 @@ jobs:
       - name: Run every KWOK scale spec
         run: |
           kubectl get crd stages.kwok.x-k8s.io nodepools.kwok.sigs.run-ai.com topologies.kai.scheduler
+          kubectl -n kai-scheduler get pods --watch -o wide > kwok-controller-status.log &
+          controller_watch=$!
+          trap 'kill "$controller_watch" 2>/dev/null || true' EXIT
           go tool ginkgo --timeout=5h --trace --output-dir=. --json-report=kwok-report.json ./test/e2e/scale
           jq -e '[.[].SpecReports[] | select(.LeafNodeType == "It")] |
             length > 0 and all(.[]; .State == "passed")' kwok-report.json
@@ -312,6 +315,7 @@ jobs:
           name: mokka-kwok-scale-results
           path: |
             kwok-report.json
+            kwok-controller-status.log
             test/e2e/scale/kwok_scale_test.json
 
   prepare-e2e-buckets:

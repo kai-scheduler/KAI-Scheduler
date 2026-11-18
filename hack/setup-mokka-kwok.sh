@@ -46,3 +46,6 @@ kubectl patch --local -f test/e2e/scale/base_kwok_managed_nodepool.yaml --type=m
 kubectl -n "$namespace" rollout status deployment --timeout=5m
 kubectl patch schedulingshard default --type=merge -p '{"spec":{"args":{"max-consolidation-preemptees":"0"}}}'
 kubectl patch config.kai.scheduler kai-config --type=merge --patch-file hack/mokka-kwok-scale-config.yaml
+# Wait for the operator to apply the scale config before starting the load.
+kubectl -n kai-scheduler wait deployment/admission --for=jsonpath='{.spec.replicas}'=4 --timeout=3m
+kubectl -n kai-scheduler rollout status deployment/admission --timeout=5m

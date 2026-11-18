@@ -4,6 +4,12 @@
 # Merge patch for the single Kind worker. Allow scale-sized watch caches while
 # leaving room for the API server, etcd and the simulation on the same host.
 spec:
+  admission:
+    replicas: 4
+    service:
+      resources:
+        requests: {cpu: 250m, memory: 256Mi}
+        limits: {cpu: "2", memory: 1Gi}
   scheduler:
     service:
       resources:
