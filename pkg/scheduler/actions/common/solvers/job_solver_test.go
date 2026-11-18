@@ -9,49 +9,61 @@ import (
 	"github.com/stretchr/testify/require"
 	v1 "k8s.io/api/core/v1"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/api/constants"
 )
 
-func TestGeneratorsForJobOrdersBuiltInsByJobType(t *testing.T) {
+func TestGeneratorsForJobUsesJobShapeForDefaultPortfolio(t *testing.T) {
 	tests := []struct {
-		name         string
-		pods         int
-		oneAllocated bool
-		registration []string
-		want         []string
+		name          string
+		pods          int
+		oneAllocated  bool
+		registrations []string
+		want          []string
 	}{
 		{
-			name:         "multi-pod job prefers multi-node",
-			pods:         2,
-			registration: []string{"custom-first", constants.GeneratorNodeLocalGreedy, "custom-middle", constants.GeneratorMultiNodeGang, "custom-last"},
-			want:         []string{"custom-first", constants.GeneratorMultiNodeGang, "custom-middle", constants.GeneratorNodeLocalGreedy, "custom-last"},
+			name:          "multi-pod job prefers multi-node",
+			pods:          2,
+			registrations: []string{constants.GeneratorNodeLocalGreedy, constants.GeneratorMultiNodeGang},
+			want:          []string{constants.GeneratorMultiNodeGang, constants.GeneratorNodeLocalGreedy},
 		},
 		{
-			name:         "multi-pod job with one pending pod",
-			pods:         2,
-			oneAllocated: true,
-			registration: []string{constants.GeneratorNodeLocalGreedy, constants.GeneratorMultiNodeGang},
-			want:         []string{constants.GeneratorMultiNodeGang, constants.GeneratorNodeLocalGreedy},
+			name:          "multi-pod job with one pending pod",
+			pods:          2,
+			oneAllocated:  true,
+			registrations: []string{constants.GeneratorNodeLocalGreedy, constants.GeneratorMultiNodeGang},
+			want:          []string{constants.GeneratorMultiNodeGang, constants.GeneratorNodeLocalGreedy},
 		},
 		{
-			name:         "single-pod job prefers node-local",
-			pods:         1,
-			registration: []string{constants.GeneratorMultiNodeGang, constants.GeneratorNodeLocalGreedy},
-			want:         []string{constants.GeneratorNodeLocalGreedy, constants.GeneratorMultiNodeGang},
+			name:          "single-pod job prefers node-local",
+			pods:          1,
+			registrations: []string{constants.GeneratorNodeLocalGreedy, constants.GeneratorMultiNodeGang},
+			want:          []string{constants.GeneratorNodeLocalGreedy, constants.GeneratorMultiNodeGang},
 		},
 		{
-			name:         "already preferred order",
-			pods:         2,
-			registration: []string{constants.GeneratorMultiNodeGang, constants.GeneratorNodeLocalGreedy},
-			want:         []string{constants.GeneratorMultiNodeGang, constants.GeneratorNodeLocalGreedy},
+			name:          "admin-reversed portfolio for multi-pod job",
+			pods:          2,
+			registrations: []string{constants.GeneratorMultiNodeGang, constants.GeneratorNodeLocalGreedy},
+			want:          []string{constants.GeneratorMultiNodeGang, constants.GeneratorNodeLocalGreedy},
 		},
 		{
-			name:         "missing built-in",
-			pods:         2,
-			registration: []string{"custom", constants.GeneratorNodeLocalGreedy},
-			want:         []string{"custom", constants.GeneratorNodeLocalGreedy},
+			name:          "admin-reversed portfolio for single-pod job",
+			pods:          1,
+			registrations: []string{constants.GeneratorMultiNodeGang, constants.GeneratorNodeLocalGreedy},
+			want:          []string{constants.GeneratorMultiNodeGang, constants.GeneratorNodeLocalGreedy},
+		},
+		{
+			name:          "custom portfolio",
+			pods:          2,
+			registrations: []string{"custom-first", constants.GeneratorNodeLocalGreedy, "custom-middle", constants.GeneratorMultiNodeGang},
+			want:          []string{"custom-first", constants.GeneratorNodeLocalGreedy, "custom-middle", constants.GeneratorMultiNodeGang},
+		},
+		{
+			name:          "missing built-in",
+			pods:          2,
+			registrations: []string{"custom", constants.GeneratorNodeLocalGreedy},
+			want:          []string{"custom", constants.GeneratorNodeLocalGreedy},
 		},
 	}
 
@@ -62,15 +74,26 @@ func TestGeneratorsForJobOrdersBuiltInsByJobType(t *testing.T) {
 				require.NoError(t, job.UpdateTaskStatus(tasks[0], pod_status.Running))
 				require.Equal(t, 1, job.GetNumPendingTasks())
 			}
-			registrations := make([]framework.ScenarioGeneratorRegistration, len(test.registration))
-			for index, name := range test.registration {
-				registrations[index].Name = name
+			registrations := make([]framework.ScenarioGeneratorRegistration, len(test.registrations))
+			factoryCalls := []string{}
+			for index, name := range test.registrations {
+				registrations[index] = framework.ScenarioGeneratorRegistration{
+					Name: name,
+					Factory: func(framework.ScenarioGeneratorContext) framework.ScenarioGenerator {
+						factoryCalls = append(factoryCalls, name)
+						return nil
+					},
+				}
 			}
 
 			ordered := generatorsForJob(registrations, job)
 
 			require.Equal(t, test.want, generatorNames(ordered))
-			require.Equal(t, test.registration, generatorNames(registrations))
+			require.Equal(t, test.registrations, generatorNames(registrations))
+			for _, registration := range ordered {
+				registration.Factory(nil)
+			}
+			require.Equal(t, test.want, factoryCalls)
 		})
 	}
 }

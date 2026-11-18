@@ -10,7 +10,6 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/sets"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
@@ -20,6 +19,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
+	"github.com/kai-scheduler/api/constants"
 )
 
 type GenerateVictimsQueue func() *utils.JobsOrderByQueues
@@ -160,30 +160,16 @@ func (s *JobSolver) SolveWithResult(
 }
 
 func generatorsForJob(
-	registrations []framework.ScenarioGeneratorRegistration, job *podgroup_info.PodGroupInfo,
+	registrations []framework.ScenarioGeneratorRegistration, pendingJob *podgroup_info.PodGroupInfo,
 ) []framework.ScenarioGeneratorRegistration {
-	preferred := constants.GeneratorNodeLocalGreedy
-	other := constants.GeneratorMultiNodeGang
-	if len(job.GetAllPodsMap()) > 1 {
-		preferred, other = other, preferred
-	}
-
-	preferredIndex, otherIndex := -1, -1
-	for index, registration := range registrations {
-		switch registration.Name {
-		case preferred:
-			preferredIndex = index
-		case other:
-			otherIndex = index
-		}
-	}
-	if preferredIndex < 0 || otherIndex < 0 || preferredIndex < otherIndex {
+	if len(registrations) != 2 ||
+		registrations[0].Name != constants.GeneratorNodeLocalGreedy ||
+		registrations[1].Name != constants.GeneratorMultiNodeGang ||
+		len(pendingJob.GetAllPodsMap()) <= 1 {
 		return registrations
 	}
 
-	ordered := append([]framework.ScenarioGeneratorRegistration(nil), registrations...)
-	ordered[preferredIndex], ordered[otherIndex] = ordered[otherIndex], ordered[preferredIndex]
-	return ordered
+	return []framework.ScenarioGeneratorRegistration{registrations[1], registrations[0]}
 }
 
 func (s *JobSolver) solvePendingJobWithGenerator(
