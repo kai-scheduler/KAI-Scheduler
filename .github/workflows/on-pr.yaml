@@ -297,6 +297,10 @@ jobs:
       - name: Collect provider diagnostics
         if: failure()
         run: |
+          kubectl -n kai-scheduler get pods -o wide
+          kubectl -n kai-scheduler get pods -o json | jq -c '.items[] | {pod:.metadata.name,
+            containers:[.status.containerStatuses[]? | {name,restartCount,lastState}]}'
+          kubectl -n kai-scheduler get events --field-selector type=Warning --sort-by=.lastTimestamp | tail -50
           kubectl get nodepools.kwok.sigs.run-ai.com
           kubectl get nodes -l type=kwok -o 'custom-columns=NAME:.metadata.name,GPUs:.status.allocatable.nvidia\.com/gpu'
           kubectl -n mokka-kwok-poc get pods -o wide

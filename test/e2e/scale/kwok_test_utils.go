@@ -163,12 +163,21 @@ func waitForAllJobsToSchedule(
 		g.Expect(err).NotTo(HaveOccurred())
 		g.Expect(len(podsList.Items)).To(Equal(expectedNumberOfPods))
 
-		for _, pod := range podsList.Items {
-			if !rd.IsPodScheduled(&pod) {
-				GinkgoLogr.Info("Pod is not scheduled", "pod", pod.Name)
+		scheduled := 0
+		var pending *v1.Pod
+		for i := range podsList.Items {
+			pod := &podsList.Items[i]
+			if rd.IsPodScheduled(pod) {
+				scheduled++
+			} else if pending == nil {
+				pending = pod
 			}
-			g.Expect(rd.IsPodScheduled(&pod)).To(BeTrue())
 		}
+		if pending != nil {
+			GinkgoLogr.Info("Waiting for Pods to schedule", "scheduled", scheduled, "expected", expectedNumberOfPods,
+				"sample", pending.Name, "node", pending.Spec.NodeName, "conditions", pending.Status.Conditions)
+		}
+		g.Expect(scheduled).To(Equal(expectedNumberOfPods))
 	}, maxFlowTimeoutMinutes*time.Minute, podsPollIntervalSeconds*time.Second).Should(Succeed())
 
 	lastScheduledTime, err := getPodScheduledTime(&podsList.Items[0])

@@ -1,0 +1,35 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# Merge patch for the single Kind worker. Allow scale-sized watch caches while
+# leaving room for the API server, etcd and the simulation on the same host.
+spec:
+  scheduler:
+    service:
+      resources:
+        requests: {cpu: "1", memory: 1Gi}
+        limits: {cpu: "5", memory: 7Gi}
+  binder:
+    maxConcurrentReconciles: 100
+    service:
+      k8sClientConfig: {qps: 500, burst: 2000}
+      resources:
+        requests: {cpu: 250m, memory: 512Mi}
+        limits: {cpu: "2", memory: 4Gi}
+  podGrouper:
+    maxConcurrentReconciles: 50
+    k8sClientConfig: {qps: 500, burst: 1000}
+    service:
+      resources:
+        requests: {cpu: 250m, memory: 512Mi}
+        limits: {cpu: "2", memory: 4Gi}
+  podGroupController:
+    service:
+      resources:
+        requests: {cpu: 100m, memory: 512Mi}
+        limits: {cpu: "2", memory: 4Gi}
+  queueController:
+    service:
+      resources:
+        requests: {cpu: 50m, memory: 256Mi}
+        limits: {cpu: "1", memory: 1Gi}
