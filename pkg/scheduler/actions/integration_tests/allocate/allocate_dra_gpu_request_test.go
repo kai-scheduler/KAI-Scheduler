@@ -64,6 +64,10 @@ func TestGpuRequestOnDRAOnlyNode(t *testing.T) {
 			JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
 				"pending_job0": {GPUsRequired: 1, Status: pod_status.Pending},
 			},
+			// A cache mock makes the session run the predicates plugin, which hosts the guard.
+			Mocks: &test_utils.TestMock{
+				CacheRequirements: &test_utils.CacheMocking{},
+			},
 		},
 		RoundsUntilMatch:   2,
 		RoundsAfterMatch:   1,
