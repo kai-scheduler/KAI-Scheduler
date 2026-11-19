@@ -6,11 +6,11 @@ package topology
 import (
 	"testing"
 
-	kaiv1alpha1 "github.com/kai-scheduler/api/kai/v1alpha1"
 	"golang.org/x/exp/maps"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
+	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
@@ -59,8 +59,8 @@ func TestTopologyPlugin_subsetNodesFn_requiredLevelAboveCommonDomain(t *testing.
 				Spec: kaiv1alpha1.TopologySpec{Levels: []kaiv1alpha1.TopologyLevel{
 					{NodeLabel: "zone"}, {NodeLabel: "domain"}, {NodeLabel: "kubernetes.io/hostname"}}},
 			}}, nodes)
-			subsets, err := plugin.subSetNodesFn(j, &j.RootSubGroupSet.SubGroupInfo, j.RootSubGroupSet.GetDescendantPodSets(),
-				podgroup_info.GetTasksToAllocate(j, nil, nil, podgroup_info.RealTaskAllocation), maps.Values(nodes))
+			subsets, err := plugin.subSetNodesFn(j, &j.RootSubGroupSet.SubGroupInfo, j.RootSubGroupSet.GetAllPodSets(),
+				podgroup_info.GetTasksToAllocate(j, nil, nil, true), maps.Values(nodes))
 			if err != nil {
 				t.Fatalf("subSetNodesFn: %v", err)
 			}
