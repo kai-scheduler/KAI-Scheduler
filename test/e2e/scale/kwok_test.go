@@ -17,7 +17,6 @@ import (
 	. "github.com/onsi/gomega"
 	kwok "github.com/run-ai/kwok-operator/api/v1beta1"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
@@ -36,7 +35,6 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait/watcher"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/scale/topology"
-	"github.com/kai-scheduler/api/constants"
 	"github.com/kai-scheduler/api/kai/v1/common"
 	kaiv1alpha1 "github.com/kai-scheduler/api/kai/v1alpha1"
 	v2 "github.com/kai-scheduler/api/scheduling/v2"
@@ -449,20 +447,7 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 						})
 
 						It("measure time for reclaim to fail on distributed job last pod", func(ctx context.Context) {
-							averageTimeToUnschedulable := measureUnschedulableDelayInSeconds(
-								ctx, testCtx, reclaimSingleGPUJobsQueue,
-								func(ctx context.Context, testCtx *testcontext.TestContext, queue *v2.Queue) (*rd.JobResult, error) {
-									return createDistributedJobForKwok(
-										ctx, testCtx, queue,
-										v1.ResourceRequirements{
-											Limits: map[v1.ResourceName]resource.Quantity{
-												constants.NvidiaGpuResource: *resource.NewQuantity(int64(gpusPerNode), resource.DecimalSI),
-											},
-										}, defaultPodsPerDistributedJob,
-										map[string]string{}, nil,
-									)
-								},
-							)
+							averageTimeToUnschedulable := measureUnschedulableDelayInSeconds(ctx, testCtx, reclaimSingleGPUJobsQueue)
 							Expect(writeTestResults(
 								"Average time to unschedulable for distributed job", true,
 								map[string]interface{}{

@@ -30,21 +30,6 @@ func createJobObjectForKwok(
 	return job, rd.CreateObjectWithRetries(ctx, testCtx.ControllerClient, job)
 }
 
-func createDistributedJobForKwok(
-	ctx context.Context, testCtx *testcontext.TestContext,
-	jobQueue *v2.Queue, resourcesPerPod v1.ResourceRequirements, numberOfTasks int,
-	extraLabels map[string]string, topologyConstraint *v2alpha2.TopologyConstraint,
-) (*rd.JobResult, error) {
-	return rd.CreateDistributedBatchJob(ctx, testCtx.ControllerClient, jobQueue,
-		rd.DistributedBatchJobOptions{
-			Parallelism:        ptr.To(int32(numberOfTasks)),
-			Resources:          resourcesPerPod,
-			ExtraLabels:        extraLabels,
-			TopologyConstraint: topologyConstraint,
-			PodSpecMutator:     addKWOKTaintsAndAffinity,
-		})
-}
-
 func submitDistributedJobForKwok(
 	ctx context.Context, testCtx *testcontext.TestContext,
 	jobQueue *v2.Queue, resourcesPerPod v1.ResourceRequirements, numberOfTasks int,
