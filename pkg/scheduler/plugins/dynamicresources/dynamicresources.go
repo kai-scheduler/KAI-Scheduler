@@ -37,6 +37,12 @@ const (
 	maxCelCacheEntriesKey     = "maxCelCacheEntries"
 )
 
+// releasedExtendedClaim is the allocation an evicted pod held through its extended-resource claim, and where it held it.
+type releasedExtendedClaim struct {
+	allocation *resourceapi.AllocationResult
+	nodeName   string
+}
+
 type draPlugin struct {
 	manager               ksf.SharedDRAManager
 	celCache              *cel.Cache
@@ -44,8 +50,8 @@ type draPlugin struct {
 	queueLabelKey         string
 	deviceClassByResource *extendedresourcecache.ExtendedResourceCache
 
-	// releasedExtendedClaims remembers each evicted pod's extended-resource claim allocation, to restore on unevict.
-	releasedExtendedClaims map[types.UID]*resourceapi.AllocationResult
+	// releasedExtendedClaims remembers each evicted pod's extended-resource claim allocation and node, to restore on unevict.
+	releasedExtendedClaims map[types.UID]*releasedExtendedClaim
 }
 
 // +kubebuilder:rbac:groups="resource.k8s.io",resources=deviceclasses;resourceslices;resourceclaims,verbs=get;list;watch
@@ -83,7 +89,7 @@ func (drap *draPlugin) Name() string {
 }
 
 func (drap *draPlugin) OnSessionOpen(ssn *framework.Session) {
-	drap.releasedExtendedClaims = map[types.UID]*resourceapi.AllocationResult{}
+	drap.releasedExtendedClaims = map[types.UID]*releasedExtendedClaim{}
 	drap.queueLabelKey = ssn.SchedulerParams.QueueLabelKey
 	drap.deviceClassByResource = ssn.ClusterInfo.DeviceClassByResource
 
@@ -356,7 +362,7 @@ func (drap *draPlugin) allocateHandlerFn(ssn *framework.Session) func(event *fra
 		node := ssn.ClusterInfo.Nodes[nodeName].Node
 		nodeInfo := ssn.ClusterInfo.Nodes[nodeName]
 
-		drap.restoreExtendedResourceClaim(event.Task)
+		restored := drap.restoreExtendedResourceClaim(event.Task)
 
 		for _, podClaim := range pod.Spec.ResourceClaims {
 			err := drap.allocateResourceClaim(event.Task, &podClaim, node)
@@ -366,7 +372,7 @@ func (drap *draPlugin) allocateHandlerFn(ssn *framework.Session) func(event *fra
 			}
 		}
 
-		if event.Task.ExtendedResourceClaim != nil {
+		if !restored && event.Task.ExtendedResourceClaim != nil {
 			if err := drap.allocateExtendedResourceClaim(event.Task, node, nodeInfo); err != nil {
 				log.InfraLogger.Errorf("Failed to allocate extended resource claim for pod %s/%s: %v", pod.Namespace, pod.Name, err)
 			}
@@ -477,7 +483,10 @@ func (drap *draPlugin) releaseExtendedResourceClaim(task *pod_info.PodInfo) {
 			task.Namespace, claimName, task.Name, err)
 		return
 	}
-	drap.releasedExtendedClaims[task.Pod.UID] = originalClaim.Status.Allocation.DeepCopy()
+	drap.releasedExtendedClaims[task.Pod.UID] = &releasedExtendedClaim{
+		allocation: originalClaim.Status.Allocation.DeepCopy(),
+		nodeName:   task.NodeName,
+	}
 
 	log.InfraLogger.V(6).Do(func() {
 		log.InfraLogger.Infof("Released extended resource claim <%s/%s>, devices <%s>.",
@@ -485,11 +494,14 @@ func (drap *draPlugin) releaseExtendedResourceClaim(task *pod_info.PodInfo) {
 	})
 }
 
-// restoreExtendedResourceClaim gives back the devices released on eviction, unless the pod is being placed anew.
-func (drap *draPlugin) restoreExtendedResourceClaim(task *pod_info.PodInfo) {
-	allocation, released := drap.releasedExtendedClaims[task.Pod.UID]
-	if !released || task.ExtendedResourceClaim != nil {
-		return
+// restoreExtendedResourceClaim gives back the devices released on eviction when the pod returns to the node it was
+// evicted from and those devices are still free, and reports whether it did. Otherwise the pod is placed anew and
+// gets a new allocation. The pre-filter marks every task it sees, victims included, so the marker cannot tell the
+// two cases apart.
+func (drap *draPlugin) restoreExtendedResourceClaim(task *pod_info.PodInfo) bool {
+	released, found := drap.releasedExtendedClaims[task.Pod.UID]
+	if !found || task.NodeName != released.nodeName {
+		return false
 	}
 
 	claimName := extendedResourceClaimName(task.Pod)
@@ -499,23 +511,49 @@ func (drap *draPlugin) restoreExtendedResourceClaim(task *pod_info.PodInfo) {
 			delete(drap.releasedExtendedClaims, task.Pod.UID)
 		}
 		logExtendedResourceClaimLookupFailure(task, claimName, err)
-		return
+		return false
+	}
+
+	if drap.releasedDevicesTaken(released.allocation) {
+		// The preemptor, or a pod placed after it, already took a device of the evicted pod. Giving it back
+		// would allocate that device twice, so the pod is placed anew.
+		log.InfraLogger.V(6).Infof("Not restoring extended resource claim <%s/%s> of pod %s: its devices were taken",
+			task.Namespace, claimName, task.Name)
+		return false
 	}
 
 	claim := originalClaim.DeepCopy()
-	claim.Status.Allocation = allocation.DeepCopy()
+	claim.Status.Allocation = released.allocation.DeepCopy()
 	resources.UpsertReservedFor(claim, task.Pod)
 	if err := drap.manager.ResourceClaims().AssumeClaimAfterAPICall(claim); err != nil {
 		log.InfraLogger.Errorf("Failed to restore extended resource claim %s/%s of pod %s: %v",
 			task.Namespace, claimName, task.Name, err)
-		return
+		return false
 	}
 	delete(drap.releasedExtendedClaims, task.Pod.UID)
+	// The pod keeps the allocation it already had, so it is not a pending extended-resource claim.
+	task.ExtendedResourceClaim = nil
 
 	log.InfraLogger.V(6).Do(func() {
 		log.InfraLogger.Infof("Restored extended resource claim <%s/%s>, devices <%s>.",
 			task.Namespace, claimName, getClaimDevicesString(claim))
 	})
+	return true
+}
+
+// releasedDevicesTaken reports whether any device of an evicted pod's allocation is allocated to another claim now.
+func (drap *draPlugin) releasedDevicesTaken(allocation *resourceapi.AllocationResult) bool {
+	allocatedState, err := drap.manager.ResourceClaims().GatherAllocatedState()
+	if err != nil {
+		log.InfraLogger.Errorf("Failed to gather allocated device state: %v", err)
+		return true
+	}
+	for _, result := range allocation.Devices.Results {
+		if allocatedState.AllocatedDevices.Has(structured.MakeDeviceID(result.Driver, result.Pool, result.Device)) {
+			return true
+		}
+	}
+	return false
 }
 
 func (drap *draPlugin) OnSessionClose(_ *framework.Session) {}

@@ -715,6 +715,99 @@ func TestStatementEvictPipelineRollback_WithExtendedResourceClaim(t *testing.T) 
 	assert.Len(t, probe.getClaim().Status.ReservedFor, 1)
 }
 
+// The solver re-places a victim through the pre-filter, which marks it as pending, before undoing its eviction on its own node.
+// The victim must still get the allocation it held, not a new one.
+func TestStatementEvictThenPipelineToSameNode_WithExtendedResourceClaim(t *testing.T) {
+	test_utils.InitTestingInfrastructure()
+	controller := NewController(t)
+	defer controller.Finish()
+	defer gock.Off()
+
+	probe := newExtendedClaimProbe(t, controller, true)
+	stmt := probe.ssn.Statement()
+
+	evictForReclaim(t, stmt, probe.task)
+	assert.False(t, probe.deviceAllocated(), "Evicting the pod frees the device")
+
+	probe.task.ExtendedResourceClaim = &pod_info.ExtendedResourceClaim{}
+	assert.NoError(t, stmt.Pipeline(probe.task, "node0", true))
+
+	assert.Equal(t, pod_status.Running, probe.task.Status)
+	assert.Equal(t, "node0", probe.task.NodeName)
+	assert.True(t, probe.deviceAllocated(), "The victim that returns to its node holds its device again")
+	assert.Equal(t, probe.initial, probe.getClaim().Status.Allocation)
+	assert.Len(t, probe.getClaim().Status.ReservedFor, 1)
+	assert.Nil(t, probe.task.ExtendedResourceClaim, "The victim keeps its allocation, so it has no pending claim")
+}
+
+// A victim kept in one scenario can be evicted and kept again in the next one.
+func TestStatementEvictThenPipelineToSameNode_Repeated(t *testing.T) {
+	test_utils.InitTestingInfrastructure()
+	controller := NewController(t)
+	defer controller.Finish()
+	defer gock.Off()
+
+	probe := newExtendedClaimProbe(t, controller, true)
+	stmt := probe.ssn.Statement()
+
+	for range 3 {
+		evictForReclaim(t, stmt, probe.task)
+		assert.False(t, probe.deviceAllocated(), "Evicting the pod frees the device")
+
+		probe.task.ExtendedResourceClaim = &pod_info.ExtendedResourceClaim{}
+		assert.NoError(t, stmt.Pipeline(probe.task, "node0", true))
+		assert.True(t, probe.deviceAllocated(), "The victim that returns to its node holds its device again")
+		assert.Equal(t, probe.initial, probe.getClaim().Status.Allocation)
+	}
+}
+
+// The preemptor is placed before the victims return, so it can take a victim's device. The victim must not get it back too.
+func TestStatementEvictThenPipelineToSameNode_DeviceTaken(t *testing.T) {
+	test_utils.InitTestingInfrastructure()
+	controller := NewController(t)
+	defer controller.Finish()
+	defer gock.Off()
+
+	probe := newExtendedClaimProbe(t, controller, true)
+	stmt := probe.ssn.Statement()
+	manager := probe.ssn.InternalK8sPlugins().SessionDRAManager.ResourceClaims()
+
+	evictForReclaim(t, stmt, probe.task)
+	assert.False(t, probe.deviceAllocated(), "Evicting the pod frees the device")
+
+	preemptorClaim := probe.getClaim().DeepCopy()
+	preemptorClaim.Name = "preemptor-claim"
+	preemptorClaim.UID = "preemptor-claim-uid"
+	preemptorClaim.Status.Allocation = probe.initial.DeepCopy()
+	assert.NoError(t, manager.SignalClaimPendingAllocation(preemptorClaim.UID, preemptorClaim))
+	assert.True(t, probe.deviceAllocated(), "The preemptor took the freed device")
+
+	probe.task.ExtendedResourceClaim = &pod_info.ExtendedResourceClaim{}
+	assert.NoError(t, stmt.Pipeline(probe.task, "node0", true))
+
+	assert.Nil(t, probe.getClaim().Status.Allocation, "The victim does not get back a device that was given to another pod")
+	assert.Empty(t, probe.getClaim().Status.ReservedFor)
+}
+
+// A victim placed on another node is placed anew, even when the solver allows undoing its eviction.
+func TestStatementEvictThenPipelineToOtherNode_DoesNotRestore(t *testing.T) {
+	test_utils.InitTestingInfrastructure()
+	controller := NewController(t)
+	defer controller.Finish()
+	defer gock.Off()
+
+	probe := newExtendedClaimProbe(t, controller, true)
+	stmt := probe.ssn.Statement()
+
+	evictForReclaim(t, stmt, probe.task)
+	probe.task.ExtendedResourceClaim = &pod_info.ExtendedResourceClaim{}
+	assert.NoError(t, stmt.Pipeline(probe.task, "node1", true))
+
+	assert.Equal(t, "node1", probe.task.NodeName)
+	assert.False(t, probe.deviceAllocated(), "A pod placed on another node does not get its old device back")
+	assert.Nil(t, probe.getClaim().Status.Allocation)
+}
+
 // A pod whose extended-resource claim no longer exists is evicted and restored without errors.
 func TestStatementEvictUnevict_ExtendedResourceClaimMissing(t *testing.T) {
 	test_utils.InitTestingInfrastructure()
