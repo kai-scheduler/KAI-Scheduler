@@ -252,11 +252,7 @@ jobs:
           echo "Skipping build and test since only documentation files (.md or docs/) were changed."
 
   mokka-kwok-scale:
-    name: ${{ matrix.provider == 'mokka' && 'Full KWOK scale suite with Mokka' || 'KWOK topology control with FGO' }}
-    strategy:
-      fail-fast: false
-      matrix:
-        provider: [mokka, fgo]
+    name: Full KWOK scale suite with Mokka
     # Keep the scale run on the PoC branch while we measure runner requirements.
     if: github.head_ref == 'codex/mokka-kwok-full-suite'
     needs: build
@@ -265,7 +261,7 @@ jobs:
     permissions:
       contents: read
     env:
-      KWOK_GPU_PROVIDER: ${{ matrix.provider }}
+      KWOK_GPU_PROVIDER: mokka
       NODE_COUNT: "500"
     steps:
       - uses: actions/checkout@v7
@@ -282,16 +278,15 @@ jobs:
             -n kai-scheduler --create-namespace --set global.registry=localhost:30100 \
             --set global.gpuSharingMode=NonMemoryEnforced --set prometheus.enabled=true --wait
       - name: Check out the Mokka KWOK PoC
-        if: matrix.provider == 'mokka'
         uses: actions/checkout@v7
         with:
           repository: JRosenboimNVIDIA/mokka
           ref: 951a23001b64382a4f7152690d901e3ebaeaf690
           path: .mokka
           persist-credentials: false
-      - name: Install KWOK, its node pool operator and the GPU provider
+      - name: Install KWOK, its node pool operator and Mokka
         run: hack/setup-mokka-kwok.sh .mokka
-      - name: Run KWOK scale tests
+      - name: Run every KWOK scale spec
         run: |
           kubectl get crd stages.kwok.x-k8s.io nodepools.kwok.sigs.run-ai.com topologies.kai.scheduler
           kubectl -n kai-scheduler get pods --watch -o wide > kwok-controller-status.log &
@@ -299,13 +294,8 @@ jobs:
           hack/kwok-reclaim-diagnostics.sh > kwok-reclaim-state.log 2>&1 &
           reclaim_watch=$!
           trap 'kill "$controller_watch" "$reclaim_watch" 2>/dev/null || true' EXIT
-          focus=()
-          if [[ "$KWOK_GPU_PROVIDER" == fgo ]]; then
-            focus+=(--focus='Kwok scale test Topology')
-          fi
-          go tool ginkgo "${focus[@]}" --timeout=5h --trace --output-dir=. --json-report=kwok-report.json ./test/e2e/scale
-          jq -e --arg provider "$KWOK_GPU_PROVIDER" '[.[].SpecReports[] | select(.LeafNodeType == "It")
-            | select($provider == "mokka" or (.ContainerHierarchyTexts | index("Topology")))] |
+          go tool ginkgo --timeout=5h --trace --output-dir=. --json-report=kwok-report.json ./test/e2e/scale
+          jq -e '[.[].SpecReports[] | select(.LeafNodeType == "It")] |
             length > 0 and all(.[]; .State == "passed")' kwok-report.json
           jq -e '.status == "success" and (.tests | length > 0 and all(.[]; .status == "success"))' \
             test/e2e/scale/kwok_scale_test.json
@@ -318,17 +308,13 @@ jobs:
           kubectl -n kai-scheduler get events --field-selector type=Warning --sort-by=.lastTimestamp | tail -50
           kubectl get nodepools.kwok.sigs.run-ai.com
           kubectl get nodes -l type=kwok -o 'custom-columns=NAME:.metadata.name,GPUs:.status.allocatable.nvidia\.com/gpu'
-          if [[ "$KWOK_GPU_PROVIDER" == fgo ]]; then
-            kubectl -n gpu-operator get pods -o wide
-            exit 0
-          fi
           kubectl -n mokka-kwok-poc get pods -o wide
           kubectl -n mokka-kwok-poc logs -l app.kubernetes.io/component=control-plane --tail=100
           kubectl -n mokka-kwok-poc logs deployment/kwok-gpu --tail=100
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: ${{ matrix.provider }}-kwok-scale-results
+          name: mokka-kwok-scale-results
           path: |
             kwok-report.json
             kwok-controller-status.log

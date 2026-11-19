@@ -4,11 +4,16 @@
 
 # Install the simulated GPU provider on the disposable Kind cluster used by the scale suite.
 set -euo pipefail
+mokka=$(cd "${1:?pass the path to the Mokka PoC checkout}" && pwd)
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 namespace="mokka-kwok-poc"
 
-kubectl apply --server-side -f https://github.com/kubernetes-sigs/kwok/releases/download/v0.8.0/kwok.yaml
+# Process simulated Pod deletions in parallel with Job replacement at scale.
+curl --fail --silent --show-error --location --retry 3 \
+  https://github.com/kubernetes-sigs/kwok/releases/download/v0.8.0/kwok.yaml |
+  sed 's/podPlayStageParallelism: 4$/podPlayStageParallelism: 64/' |
+  kubectl apply --server-side -f -
 kubectl wait --for=condition=Established crd/stages.kwok.x-k8s.io --timeout=90s
 kubectl apply -f https://github.com/kubernetes-sigs/kwok/releases/download/v0.8.0/stage-fast.yaml
 kubectl delete stage pod-complete --ignore-not-found
@@ -17,14 +22,8 @@ kubectl wait --for=condition=Established crd/nodepools.kwok.sigs.run-ai.com --ti
 kubectl patch --local -f test/e2e/scale/base_kwok_managed_nodepool.yaml --type=merge \
   -p '{"spec":{"nodeCount":0}}' -o yaml | kubectl apply -f -
 
-if [[ ${KWOK_GPU_PROVIDER:-mokka} == fgo ]]; then
-  helm upgrade --install fake-gpu-operator oci://ghcr.io/run-ai/fake-gpu-operator/fake-gpu-operator \
-    --version 0.0.73 --namespace gpu-operator --create-namespace --set topology.nodePools.default.gpuCount=8
-  kubectl -n gpu-operator delete deployment nvidia-dcgm-exporter device-plugin --ignore-not-found
-  kubectl -n gpu-operator rollout status deployment/kwok-gpu-device-plugin --timeout=5m
-else
 (
-  cd "${1:?pass the path to the Mokka PoC checkout}"
+  cd "$mokka"
   arch=$(kubectl get nodes -l node-role.kubernetes.io/control-plane -o jsonpath='{.items[0].status.nodeInfo.architecture}')
   CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -o "$work/" ./cmd/control-plane ./cmd/kwok-gpu
   docker build --platform "linux/$arch" -t mokka-kwok-poc:dev -f examples/kwok-gpu/Dockerfile "$work"
@@ -49,8 +48,7 @@ else
       tests/kwok/inventory.yaml | kubectl apply -f -
 )
 kubectl -n "$namespace" rollout status deployment --timeout=5m
-fi
-kubectl patch schedulingshard default --type=merge -p '{"spec":{"args":{"max-consolidation-preemptees":"0"}}}'
+kubectl patch schedulingshard default --type=merge -p '{"spec":{"args":{"max-consolidation-preemptees":"0","qps":"250","burst":"500"}}}'
 kubectl patch config.kai.scheduler kai-config --type=merge --patch-file hack/mokka-kwok-scale-config.yaml
 # Wait for the operator to apply the scale config before starting the load.
 kubectl -n kai-scheduler wait deployment/admission --for=jsonpath='{.spec.replicas}'=4 --timeout=3m

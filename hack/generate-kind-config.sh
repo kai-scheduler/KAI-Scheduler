@@ -82,10 +82,28 @@ esac
     fi
   fi
 
+  if [ "$FEATURE_CONFIG" = "mokka-kwok" ]; then
+    # One /24 per node, including the 512 virtual topology nodes and Kind itself.
+    echo "networking:"
+    echo "  podSubnet: 10.240.0.0/13"
+  fi
   echo "nodes:"
   echo "- role: control-plane"
 
-  if [ -n "$RUNTIME_CONFIG" ]; then
+  if [ "$FEATURE_CONFIG" = "mokka-kwok" ]; then
+    # The reclaim workload deletes thousands of Job Pods in a single burst.
+    cat <<'YAML'
+  kubeadmConfigPatches:
+  - |
+    apiVersion: kubeadm.k8s.io/v1beta4
+    kind: ClusterConfiguration
+    controllerManager:
+      extraArgs:
+      - {name: concurrent-job-syncs, value: "100"}
+      - {name: kube-api-qps, value: "250"}
+      - {name: kube-api-burst, value: "500"}
+YAML
+  elif [ -n "$RUNTIME_CONFIG" ]; then
     echo "  kubeadmConfigPatches:"
     echo "  - |"
     echo "    kind: ClusterConfiguration"

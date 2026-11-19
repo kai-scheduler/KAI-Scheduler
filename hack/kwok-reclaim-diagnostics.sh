@@ -19,7 +19,9 @@ while sleep 120; do
     ready:(.status.conditions[] | select(.type=="Ready").status), cidr:(.spec.podCIDR != null),
     taints:[.spec.taints[]? | .key]}] | group_by(.) | map({shape:.[0],nodes:length})'
   kubectl get pods -l app=engine-e2e -A -o json | jq -c '[.items[] | {
-    ns:.metadata.namespace, phase:.status.phase,bound:(.spec.nodeName != null),deleting:(.metadata.deletionTimestamp != null)}]
+    ns:.metadata.namespace, phase:.status.phase,bound:(.spec.nodeName != null),deleting:(.metadata.deletionTimestamp != null),
+    deletingOverTwoMinutes:(.metadata.deletionTimestamp | if . then (fromdateiso8601 < now - 120) else false end),
+    finalizers:(.metadata.finalizers // [])}]
     | group_by(.) | map({state:.[0],pods:length})'
   svc=$(kubectl -n kai-scheduler get service -l app=kai-scheduler-default -o jsonpath='{.items[0].metadata.name}')
   kubectl get --raw "/api/v1/namespaces/kai-scheduler/services/http:$svc:http-metrics/proxy/metrics" |
