@@ -51,6 +51,8 @@ type EventHandler struct {
 }
 
 // CommitOp is one operation inside a commit. Failed is set when that operation's commit returned an error.
+// Reason is a stable code for that failure, or for an eviction. It is empty when the operation succeeded
+// and was not an eviction.
 type CommitOp struct {
 	Kind         CommitOpKind                   `json:"kind"`
 	UID          string                         `json:"uid,omitempty"`
@@ -59,6 +61,7 @@ type CommitOp struct {
 	Node         string                         `json:"node,omitempty"`
 	Failed       bool                           `json:"failed,omitempty"`
 	NotAttempted bool                           `json:"notAttempted,omitempty"`
+	Reason       string                         `json:"reason,omitempty"`
 	Eviction     eviction_info.EvictionMetadata `json:"eviction"`
 }
 
@@ -67,4 +70,33 @@ type CommitEvent struct {
 	SessionID string     `json:"sessionID"`
 	Action    ActionType `json:"action,omitempty"`
 	Ops       []CommitOp `json:"ops,omitempty"`
+}
+
+// withEvictionReason fills a stable eviction code when the caller did not set one.
+// The free-text eviction message is not copied onto the record.
+func withEvictionReason(meta eviction_info.EvictionMetadata) eviction_info.EvictionMetadata {
+	if meta.Reason == "" {
+		meta.Reason = evictionReasonCode(meta.Action)
+	}
+	return meta
+}
+
+func evictionReasonCode(action string) string {
+	switch ActionType(action) {
+	case Preempt:
+		return "Preempted"
+	case Reclaim:
+		return "Reclaimed"
+	case Consolidation:
+		return "Consolidated"
+	case StaleGangEviction:
+		return "StaleGang"
+	case "":
+		return "Evicted"
+	default:
+		if action == "backgroundpods" {
+			return "BackgroundPod"
+		}
+		return "Evicted"
+	}
 }

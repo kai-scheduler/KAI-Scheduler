@@ -14,7 +14,8 @@ const (
 	StreamCycle = "cycle"
 	KindCycle   = "cycle"
 	// SchemaVersion is the record shape this binary writes. Bump it whenever the record shape changes.
-	SchemaVersion = 1
+	// 2: cycles may point at a shared state copy, and they carry pending groups and reason codes.
+	SchemaVersion = 2
 )
 
 // Envelope is one line on the localhost stream. Sequence numbers are assigned when

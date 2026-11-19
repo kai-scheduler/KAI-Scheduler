@@ -46,16 +46,22 @@ func TestReplayAllocateMatchesRecordedDecision(t *testing.T) {
 	require.Equal(t, decisionsByAction(first), decisionsByAction(second))
 }
 
-func TestIdleCycleIsNotRecorded(t *testing.T) {
+func TestIdleCycleIsRecorded(t *testing.T) {
 	var events int
-	plugin := newPlugin(nil, func(*cycleRecord) bool {
+	var recorded *cycleRecord
+	plugin := newPlugin(nil, func(cycle *cycleRecord) bool {
 		events++
+		recorded = cycle
 		return true
 	})
 	session := &framework.Session{ID: "idle", ClusterInfo: &api.ClusterInfo{}}
 	plugin.OnSessionOpen(session)
 	plugin.OnSessionClose(session)
-	require.Zero(t, events)
+	require.Equal(t, 1, events)
+	require.NotNil(t, recorded)
+	require.Equal(t, "idle", recorded.SessionID)
+	require.NotEmpty(t, recorded.StateID)
+	require.False(t, recorded.StateMissing)
 }
 
 func runAllocate(t *testing.T, config *conf.SchedulerConfiguration, params *conf.SchedulerParams, objects *snapshot.RawKubernetesObjects) ([]framework.CommitOp, *cycleRecord) {

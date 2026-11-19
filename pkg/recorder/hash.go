@@ -126,6 +126,20 @@ func (h Hasher) LabelValue(key, value string) string {
 	return out
 }
 
+// KeepReasonCode reports whether a string can be stored as a reason code.
+// Spaces are allowed. A slash or a quote means the string can carry an object name, so it is dropped.
+func KeepReasonCode(value string) bool {
+	if value == "" || len(value) > 128 {
+		return false
+	}
+	for _, r := range value {
+		if r == '/' || r == '"' || r == '`' {
+			return false
+		}
+	}
+	return true
+}
+
 // FreeTextIsName reports whether a string is unsafe to keep as a reason code.
 // Strings that look like sentences with object paths are dropped rather than parsed.
 func FreeTextIsName(value string) bool {

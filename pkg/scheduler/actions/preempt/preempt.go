@@ -150,6 +150,7 @@ func solveDeferredResize(ssn *framework.Session, actionBudget *solvers.ActionSea
 func attemptToPreemptForPreemptor(
 	ssn *framework.Session, preemptor *podgroup_info.PodGroupInfo, actionBudget *solvers.ActionSearchBudget,
 ) (bool, *framework.Statement, []string, *solvers.SearchResult) {
+	ssn.NoteSchedulingAttempt(preemptor.UID)
 	resReq := podgroup_info.GetTasksToAllocateInitResourceVector(preemptor, ssn.SubGroupOrderFn, ssn.TaskOrderFn,
 		podgroup_info.SimulatedTaskAllocation, ssn.ClusterInfo.MinNodeGPUMemoryMiB)
 	log.InfraLogger.V(3).Infof(

@@ -30,16 +30,18 @@ const (
 
 // Sender marshals cycle records on its own goroutine and drops instead of blocking.
 type Sender struct {
-	address  string
-	epoch    string
-	maxBytes int64
-	ch       chan *queuedCycle
-	seq      atomic.Uint64
-	gaps     gapCount
-	held     atomic.Int64
-	dropped  *prometheus.CounterVec
-	queue    prometheus.Gauge
-	sent     prometheus.Counter
+	address      string
+	epoch        string
+	maxBytes     int64
+	ch           chan *queuedCycle
+	seq          atomic.Uint64
+	gaps         gapCount
+	held         atomic.Int64
+	dropped      *prometheus.CounterVec
+	queue        prometheus.Gauge
+	sent         prometheus.Counter
+	stateMu      sync.Mutex
+	writtenState map[string]struct{}
 }
 
 type queuedCycle struct {
@@ -148,6 +150,7 @@ func (s *Sender) loop() {
 	for item := range s.ch {
 		s.held.Add(-item.weight)
 		s.queue.Set(float64(s.held.Load()))
+		s.noteState(item.payload)
 		raw, err := json.Marshal(item.payload)
 		if err != nil {
 			s.drop(1)
@@ -178,9 +181,33 @@ func (s *Sender) loop() {
 			}
 			continue
 		}
+		s.rememberState(item.payload)
 		started = true
 		s.sent.Inc()
 	}
+}
+
+// noteState marks a cycle whose state copy is not known to have been stored.
+func (s *Sender) noteState(cycle *cycleRecord) {
+	if s == nil || cycle == nil {
+		return
+	}
+	s.stateMu.Lock()
+	written := s.writtenState
+	s.stateMu.Unlock()
+	markMissingState(cycle, written)
+}
+
+func (s *Sender) rememberState(cycle *cycleRecord) {
+	if cycle == nil || cycle.RawObjects == nil || cycle.StateID == "" || cycle.StateMissing {
+		return
+	}
+	s.stateMu.Lock()
+	if s.writtenState == nil {
+		s.writtenState = map[string]struct{}{}
+	}
+	s.writtenState[cycle.StateID] = struct{}{}
+	s.stateMu.Unlock()
 }
 
 func writeEnvelope(conn net.Conn, address string, env *record.Envelope) (net.Conn, error) {

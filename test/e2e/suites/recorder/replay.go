@@ -30,14 +30,19 @@ func init() {
 // recordedCycle is one line the sidecar stored for a scheduling cycle.
 type recordedCycle struct {
 	snapshot.Snapshot
-	SessionID string                   `json:"sessionID"`
-	OpenedAt  time.Time                `json:"openedAt"`
-	Decisions []framework.CommitEvent  `json:"decisions,omitempty"`
-	Usage     *queue_info.ClusterUsage `json:"usage,omitempty"`
+	SessionID    string                   `json:"sessionID"`
+	OpenedAt     time.Time                `json:"openedAt"`
+	Decisions    []framework.CommitEvent  `json:"decisions,omitempty"`
+	Usage        *queue_info.ClusterUsage `json:"usage,omitempty"`
+	StateID      string                   `json:"stateId,omitempty"`
+	StateMissing bool                     `json:"stateMissing,omitempty"`
 }
 
-// replayCycle runs the recorded action sequence against the saved state copy.
-func replayCycle(state recordedCycle) ([]string, string) {
+// replayCycle runs the recorded action sequence against the state copy the cycle points at.
+func replayCycle(state recordedCycle, cycles []recordedCycle) ([]string, string) {
+	resolved, err := resolveRecordedState(state, cycles)
+	Expect(err).NotTo(HaveOccurred())
+	state = resolved
 	Expect(state.RawObjects).NotTo(BeNil())
 	Expect(state.Config).NotTo(BeNil())
 	params := state.SchedulerParams
@@ -115,6 +120,26 @@ func replaySummary(state recordedCycle, session *framework.Session, decisions []
 		b.WriteByte('\n')
 	}
 	return b.String()
+}
+
+func resolveRecordedState(state recordedCycle, cycles []recordedCycle) (recordedCycle, error) {
+	if state.StateMissing {
+		return state, fmt.Errorf("recorder state %s is missing", state.StateID)
+	}
+	if state.RawObjects != nil || state.StateID == "" {
+		return state, nil
+	}
+	for _, cycle := range cycles {
+		if cycle.StateID != state.StateID || cycle.RawObjects == nil || cycle.StateMissing {
+			continue
+		}
+		state.Config = cycle.Config
+		state.SchedulerParams = cycle.SchedulerParams
+		state.RawObjects = cycle.RawObjects
+		state.Usage = cycle.Usage
+		return state, nil
+	}
+	return state, fmt.Errorf("recorder state %s is missing", state.StateID)
 }
 
 func dropRecorderPlugin(tiers []conf.Tier) []conf.Tier {

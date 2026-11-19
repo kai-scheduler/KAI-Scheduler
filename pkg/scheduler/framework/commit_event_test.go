@@ -34,9 +34,11 @@ func TestCommitEventRecordsActionAndUnattemptedOps(t *testing.T) {
 	require.Equal(t, "node-a", got.Ops[0].Node)
 	require.False(t, got.Ops[0].NotAttempted)
 	require.True(t, got.Ops[0].Failed)
+	require.Equal(t, "NodeNotFound", got.Ops[0].Reason)
 	require.Equal(t, "node-b", got.Ops[1].Node)
 	require.False(t, got.Ops[1].Failed)
 	require.True(t, got.Ops[1].NotAttempted)
+	require.Empty(t, got.Ops[1].Reason)
 }
 
 func TestDiscardDoesNotPublish(t *testing.T) {
@@ -114,4 +116,6 @@ func TestSessionEvictEmitsOneOp(t *testing.T) {
 	require.Len(t, got.Ops, 1)
 	require.Equal(t, CommitOpEvict, got.Ops[0].Kind)
 	require.Equal(t, task.Name, got.Ops[0].Name)
+	require.Equal(t, "StaleGang", got.Ops[0].Eviction.Reason)
+	require.Equal(t, "StaleGang", got.Ops[0].Reason)
 }

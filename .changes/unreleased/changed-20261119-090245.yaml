@@ -1,0 +1,6 @@
+kind: Changed
+body: |-
+  Recorder stores every cycle, pending reason codes, and cluster state only when it changes
+custom:
+  Author: "eladb"
+  Issue: "2642"

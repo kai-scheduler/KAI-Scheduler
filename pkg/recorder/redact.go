@@ -10,29 +10,27 @@ import (
 
 // identityFields are JSON keys whose string values are object names.
 var identityFields = map[string]struct{}{
-	"name":                   {},
-	"Name":                   {},
-	"namespace":              {},
-	"Namespace":              {},
-	"uid":                    {},
-	"UID":                    {},
-	"nodeName":               {},
-	"node":                   {},
-	"queue":                  {},
-	"parentQueue":            {},
-	"priorityClassName":      {},
-	"selectedNode":           {},
-	"topology":               {},
-	"deviceClassName":        {},
-	"pool":                   {},
-	"clusterName":            {},
-	"shardName":              {},
-	"claimName":              {},
-	"resourceClaimName":      {},
-	"podName":                {},
-	"nodePool":               {},
-	"requiredTopologyLevel":  {},
-	"preferredTopologyLevel": {},
+	"name":              {},
+	"Name":              {},
+	"namespace":         {},
+	"Namespace":         {},
+	"uid":               {},
+	"UID":               {},
+	"nodeName":          {},
+	"node":              {},
+	"queue":             {},
+	"parentQueue":       {},
+	"priorityClassName": {},
+	"selectedNode":      {},
+	"topology":          {},
+	"deviceClassName":   {},
+	"pool":              {},
+	"clusterName":       {},
+	"shardName":         {},
+	"claimName":         {},
+	"resourceClaimName": {},
+	"podName":           {},
+	"nodePool":          {},
 }
 
 // labelMaps are objects whose keys and values are labels or selectors.
@@ -40,6 +38,13 @@ var labelMaps = map[string]struct{}{
 	"labels":       {},
 	"nodeSelector": {},
 	"matchLabels":  {},
+}
+
+// redactCtx carries the hasher and the label keys whose values must stay numeric.
+// Gt and Lt compare those values as integers, so hashing them would change the match.
+type redactCtx struct {
+	h           Hasher
+	numericKeys map[string]struct{}
 }
 
 // RedactEnvelope hashes or drops identifying strings in a record.
@@ -53,7 +58,9 @@ func RedactEnvelope(env *Envelope, h Hasher) error {
 	if err := json.Unmarshal(env.Record, &decoded); err != nil {
 		return err
 	}
-	raw, err := json.Marshal(walk(decoded, "", h))
+	ctx := &redactCtx{h: h, numericKeys: map[string]struct{}{}}
+	collectNumericKeys(decoded, ctx.numericKeys)
+	raw, err := json.Marshal(walk(decoded, "", ctx))
 	if err != nil {
 		return err
 	}
@@ -61,13 +68,31 @@ func RedactEnvelope(env *Envelope, h Hasher) error {
 	return nil
 }
 
-func walk(value any, path string, h Hasher) any {
+func collectNumericKeys(value any, keys map[string]struct{}) {
 	switch typed := value.(type) {
 	case map[string]any:
-		return walkMap(typed, path, h)
+		if op, _ := typed["operator"].(string); op == "Gt" || op == "Lt" {
+			if key, _ := typed["key"].(string); key != "" {
+				keys[key] = struct{}{}
+			}
+		}
+		for _, child := range typed {
+			collectNumericKeys(child, keys)
+		}
+	case []any:
+		for _, child := range typed {
+			collectNumericKeys(child, keys)
+		}
+	}
+}
+
+func walk(value any, path string, ctx *redactCtx) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		return walkMap(typed, path, ctx)
 	case []any:
 		for i := range typed {
-			typed[i] = walk(typed[i], path, h)
+			typed[i] = walk(typed[i], path, ctx)
 		}
 		return typed
 	default:
@@ -75,7 +100,7 @@ func walk(value any, path string, h Hasher) any {
 	}
 }
 
-func walkMap(in map[string]any, path string, h Hasher) map[string]any {
+func walkMap(in map[string]any, path string, ctx *redactCtx) map[string]any {
 	if in == nil {
 		return nil
 	}
@@ -85,32 +110,47 @@ func walkMap(in map[string]any, path string, h Hasher) map[string]any {
 			continue
 		}
 		if key == "annotations" {
-			out[key] = hashAnnotations(child, h)
+			out[key] = hashAnnotations(child, ctx.h)
 			continue
 		}
 		if key == "queues" {
 			if usageQueues, ok := child.(map[string]any); ok {
-				out[key] = hashNamedMap(usageQueues, h)
+				out[key] = hashNamedMap(usageQueues, ctx)
 				continue
 			}
 		}
 		if _, labelMap := labelMaps[key]; labelMap {
 			if flatStringMap(child) {
-				out[key] = hashLabelObject(child, h)
+				out[key] = hashLabelObject(child, ctx)
 				continue
 			}
 		}
 		if key == "arguments" && strings.HasSuffix(path, "plugins") || (key == "arguments" && strings.Contains(path, "plugin")) {
-			out[key] = hashPluginArgs(child, h)
+			out[key] = hashPluginArgs(child, ctx.h)
+			continue
+		}
+		if key == "namespaces" {
+			if hashed, ok := hashNameList(child, ctx.h); ok {
+				out[key] = hashed
+				continue
+			}
+		}
+		if key == "reasonCodes" {
+			out[key] = keepReasonCodes(child)
+			continue
+		}
+		if text, ok := child.(string); ok && topologyLabelField(key, in) {
+			out[key] = ctx.h.LabelKey(text)
 			continue
 		}
 		if requirementKey, values, ok := requirement(key, child, in); ok && key == "values" {
-			out[key] = hashRequirementValues(requirementKey, values, h)
+			operator, _ := in["operator"].(string)
+			out[key] = hashRequirementValues(requirementKey, operator, values, ctx.h)
 			continue
 		}
 		if key == "key" {
 			if text, ok := child.(string); ok {
-				out[key] = requirementKeyName(text, h)
+				out[key] = requirementKeyName(text, ctx.h)
 				continue
 			}
 		}
@@ -122,7 +162,7 @@ func walkMap(in map[string]any, path string, h Hasher) map[string]any {
 					out[key] = text
 					continue
 				}
-				out[key] = h.Hash(text)
+				out[key] = ctx.h.Hash(text)
 				continue
 			}
 		}
@@ -138,18 +178,21 @@ func walkMap(in map[string]any, path string, h Hasher) map[string]any {
 		if key == "nodePoolLabelValue" || key == "NodePoolLabelValue" {
 			if text, ok := child.(string); ok {
 				labelKey := stringField(in, "nodePoolLabelKey", "NodePoolLabelKey")
-				out[key] = h.LabelValue(labelKey, text)
+				out[key] = ctx.h.LabelValue(labelKey, text)
 				continue
 			}
 		}
 		if key == "nodePoolLabelKey" || key == "NodePoolLabelKey" || key == "queueLabelKey" || key == "QueueLabelKey" {
 			if text, ok := child.(string); ok {
-				out[key] = h.LabelKey(text)
+				out[key] = ctx.h.LabelKey(text)
 				continue
 			}
 		}
 		if key == "value" {
-			if _, isString := child.(string); isString {
+			if text, ok := child.(string); ok {
+				if kept, include := taintTolerationValue(in, text, ctx); include {
+					out[key] = kept
+				}
 				continue
 			}
 		}
@@ -160,7 +203,7 @@ func walkMap(in map[string]any, path string, h Hasher) map[string]any {
 			out[key] = child
 			continue
 		}
-		out[key] = walk(child, path+"."+key, h)
+		out[key] = walk(child, path+"."+key, ctx)
 	}
 	return out
 }
@@ -183,10 +226,77 @@ func dropKey(key string) bool {
 	}
 }
 
-func hashNamedMap(in map[string]any, h Hasher) map[string]any {
+func hashNamedMap(in map[string]any, ctx *redactCtx) map[string]any {
 	out := make(map[string]any, len(in))
 	for key, child := range in {
-		out[h.Hash(key)] = walk(child, "usage", h)
+		out[ctx.h.Hash(key)] = walk(child, "usage", ctx)
+	}
+	return out
+}
+
+// topologyLabelField is a label key stored outside a label map. The topology plugin looks
+// levels up by nodeLabel, and a pod affinity topologyKey must match the node label key.
+func topologyLabelField(key string, object map[string]any) bool {
+	switch key {
+	case "nodeLabel", "topologyKey", "requiredTopologyLevel", "preferredTopologyLevel":
+		return true
+	case "alias":
+		_, hasNodeLabel := object["nodeLabel"]
+		return hasNodeLabel
+	default:
+		return false
+	}
+}
+
+// taintTolerationValue hashes an Equal taint or toleration value with the same label scope as the key.
+// Gt and Lt values stay numeric. Other string values are dropped.
+func taintTolerationValue(object map[string]any, text string, ctx *redactCtx) (string, bool) {
+	op, _ := object["operator"].(string)
+	if op == "Gt" || op == "Lt" {
+		return text, true
+	}
+	taintKey, hasKey := object["key"].(string)
+	if !hasKey {
+		return "", false
+	}
+	_, hasEffect := object["effect"]
+	_, hasOp := object["operator"]
+	if !hasEffect && !hasOp {
+		return "", false
+	}
+	if _, numeric := ctx.numericKeys[taintKey]; numeric {
+		return text, true
+	}
+	return ctx.h.LabelValue(taintKey, text), true
+}
+
+func hashNameList(value any, h Hasher) ([]any, bool) {
+	list, ok := value.([]any)
+	if !ok {
+		return nil, false
+	}
+	out := make([]any, len(list))
+	for i, item := range list {
+		text, isText := item.(string)
+		if !isText {
+			return nil, false
+		}
+		out[i] = h.Hash(text)
+	}
+	return out, true
+}
+
+func keepReasonCodes(value any) []any {
+	list, ok := value.([]any)
+	if !ok {
+		return nil
+	}
+	var out []any
+	for _, item := range list {
+		text, isText := item.(string)
+		if isText && KeepReasonCode(text) {
+			out = append(out, text)
+		}
 	}
 	return out
 }
@@ -236,7 +346,7 @@ func flatStringMap(value any) bool {
 	return true
 }
 
-func hashLabelObject(value any, h Hasher) map[string]any {
+func hashLabelObject(value any, ctx *redactCtx) map[string]any {
 	in, ok := value.(map[string]any)
 	if !ok || len(in) == 0 {
 		return map[string]any{}
@@ -244,7 +354,10 @@ func hashLabelObject(value any, h Hasher) map[string]any {
 	out := make(map[string]any, len(in))
 	for key, raw := range in {
 		text, _ := raw.(string)
-		outKey, outValue := h.Label(key, text)
+		outKey, outValue := ctx.h.Label(key, text)
+		if _, numeric := ctx.numericKeys[key]; numeric {
+			outValue = text
+		}
 		if outKey == "" {
 			continue
 		}
@@ -296,12 +409,16 @@ func requirementKeyName(key string, h Hasher) string {
 	return h.LabelKey(key)
 }
 
-func hashRequirementValues(key string, values []any, h Hasher) []any {
+func hashRequirementValues(key, operator string, values []any, h Hasher) []any {
 	out := make([]any, len(values))
 	for i, value := range values {
 		text, ok := value.(string)
 		if !ok {
 			out[i] = value
+			continue
+		}
+		if operator == "Gt" || operator == "Lt" {
+			out[i] = text
 			continue
 		}
 		if key == "metadata.name" {

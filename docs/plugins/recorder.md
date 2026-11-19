@@ -2,7 +2,7 @@
 
 ## Overview
 
-The recorder stores one record for each scheduling cycle that commits work. A cycle that only considers pods and then discards every statement writes nothing. The record is the cluster state the scheduler already listed for that cycle, the commits it made, and the time the cycle opened.
+The recorder stores one record for every scheduling cycle, including a cycle that places nothing. The record is the cluster state that cycle used, the commits it made, the groups still pending afterwards, and the time the cycle opened.
 
 Use it when you need to see why a pod was placed, preempted, or left waiting, and when you want to run that same cycle again.
 
@@ -12,16 +12,16 @@ The recorder stays off until a SchedulingShard turns it on.
 
 Each line in a record file is one JSON envelope:
 
-- `schemaVersion` is the shape of the record. This build writes `1`. Bump it whenever the record shape changes. A replay that sees a higher number stops with an error instead of reading a shape it does not understand.
+- `schemaVersion` is the shape of the record. This build writes `2`. Bump it whenever the record shape changes. A replay that sees a higher number stops with an error instead of reading a shape it does not understand.
 - `kaiVersion` is the KAI build that wrote the record.
 - `record` is the cycle itself:
   - `openedAt` is the time the cycle opened.
-  - `config` and `schedulerParams` are the scheduler settings for that cycle.
-  - `rawObjects` is the pods, nodes, queues, pod groups, and related objects the cycle saw.
-  - `decisions` is the commits, in order. Each commit names the action (`allocate`, `preempt`, `reclaim`, `consolidation`, `stalegangeviction`, or `session-close` for work done while plugins close) and the operations inside it (`allocate`, `pipeline`, `evict`). An operation has `failed` set when its commit returned an error, and `notAttempted` when an earlier allocation failure stopped the commit before it ran.
-  - `usage` is the queue usage the fair-share calculation used, when the cluster has any.
+  - `stateId` names the cluster-state copy this cycle used. `config`, `schedulerParams`, `rawObjects`, and `usage` are that copy: the scheduler settings, the pods, nodes, queues, pod groups, and related objects, and the queue usage the fair-share calculation used. The copy is written when it differs from the last saved copy, and again when the saved copy is older than 5 minutes. A later cycle that used the same copy keeps `stateId` and leaves the body out. The id ignores the creation time of the parent queue named `default`, because that queue is stamped with the current time on every snapshot.
+  - `stateMissing` is set when that copy was dropped before it was stored, or when replay cannot find it in the loaded records. Replay stops with an error instead of running against an empty cluster.
+  - `decisions` is the commits, in order. Each commit names the action (`allocate`, `preempt`, `reclaim`, `consolidation`, `stalegangeviction`, or `session-close` for work done while plugins close) and the operations inside it (`allocate`, `pipeline`, `evict`). An operation has `failed` set when its commit returned an error, and then `reason` is a code for that failure (`NodeNotFound`, `JobNotFound`, `PodGroupNotFound`, `TaskUpdateFailed`, `BindFailed`, or `CommitFailed`). `notAttempted` is set when an earlier allocation failure stopped the commit before the operation ran. An eviction carries `reason` (`Preempted`, `Reclaimed`, `Consolidated`, `StaleGang`, or `BackgroundPod`) together with the action, the gang size, and the preemptor.
+  - `pending` is the pod groups that still had a pending pod when the cycle closed. `attempted` is true when an action entered its placement function for that group in the cycle. `reasonCodes` are the codes KAI recorded for the group during the cycle. A group that was filtered out before a placement attempt has `attempted` false. Codes are left out when KAI did not record one. The pod group's stored status is not copied here.
 
-Undo operations are not stored. A statement that nets to nothing is not stored.
+Undo operations are not stored. A statement that nets to nothing is not stored. The plugin argument `stateInterval` changes how long an unchanged state copy is reused. When the argument is absent the interval is 5 minutes. An interval of `0s` stores a copy on every cycle.
 
 ## Turning it on
 
@@ -30,7 +30,6 @@ Set the defaults on the KAI Config, under `spec.scheduler.recorder`. A Schedulin
 With Helm, the same settings live under `scheduler.recorder`. The chart renders them only when `scheduler.recorder.enabled` is true, so a default install does not add the field.
 
 ```yaml
-apiVersion: kai.scheduler/v1
 kind: Config
 metadata:
   name: kai-config
@@ -39,7 +38,6 @@ spec:
     recorder:
       enabled: true
 ---
-apiVersion: kai.scheduler/v1
 kind: SchedulingShard
 metadata:
   name: default
@@ -85,11 +83,11 @@ The directory is kept at or under 256 MiB. After a file is rolled, the sidecar d
 
 Before a record is written, names are replaced with the first 63 hex characters of HMAC-SHA256 under the hash key. The same input always produces the same hash, so a pod in a decision still matches that pod in the snapshot.
 
-Label keys the scheduler matches on are hashed the same way on the object and in the selector. Priority class names are hashed and the numeric priority is kept. DRA attribute strings stay readable. Plugin names stay readable so a replay can load the same plugins. Free-text reasons that can hold a name are dropped. Reason codes stay.
+Label keys the scheduler matches on are hashed the same way on the object and in the selector. A topology level `nodeLabel` and its `alias` are hashed the same way as those label keys, and so are a pod group's required and preferred topology level and a pod affinity `topologyKey`. The namespace list on an affinity term is hashed the same way as a pod namespace. Taint values and toleration values are hashed with the same label-value rule, scoped by the taint key, so an Equal toleration still matches only the taint value it named. `Gt` and `Lt` values stay decimal integers, on tolerations and on node affinity. Priority class names are hashed and the numeric priority is kept. DRA attribute strings stay readable. Plugin names stay readable so a replay can load the same plugins. Free-text reasons that can hold a name are dropped. Reason codes stay.
 
 ## Replay
 
-A recorded cycle can be loaded back into the scheduler. Replay builds a cluster from `rawObjects`, installs `usage` when it is present, and runs the actions named in `config`. The decision clock starts at `openedAt` and then moves forward with real elapsed time, so a minimum runtime, a preemption delay, or a search budget sees the same starting instant and still elapses while the replay runs.
+A recorded cycle can be loaded back into the scheduler. Replay finds the state copy named by `stateId` when the cycle itself does not carry one, installs `usage` when it is present, and runs the actions named in `config`. The decision clock starts at `openedAt` and then moves forward with real elapsed time, so a minimum runtime, a preemption delay, or a search budget sees the same starting instant and still elapses while the replay runs. A cycle whose state copy is missing stops the replay with an error.
 
 The recorded decisions are the expected result. A replay that places the same pods on the same nodes produced the same commits.
 

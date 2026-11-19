@@ -21,6 +21,7 @@ package framework
 
 import (
 	"fmt"
+	"strings"
 
 	"golang.org/x/exp/slices"
 
@@ -683,8 +684,30 @@ func recordCommit(recorded *[]CommitOp, op Operation, commitErr error) {
 	recordedOp := commitOpFrom(op)
 	if commitErr != nil {
 		recordedOp.Failed = true
+		recordedOp.Reason = commitFailureReason(op, commitErr)
 	}
 	*recorded = append(*recorded, recordedOp)
+}
+
+func commitFailureReason(op Operation, err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "node doesn") || strings.Contains(msg, "failed to find node"):
+		return "NodeNotFound"
+	case strings.Contains(msg, "podGroup"):
+		return "PodGroupNotFound"
+	case strings.Contains(msg, "find job") || strings.Contains(msg, "find Job"):
+		return "JobNotFound"
+	case strings.Contains(msg, "update task"):
+		return "TaskUpdateFailed"
+	}
+	if op != nil && op.Name() == allocate {
+		return "BindFailed"
+	}
+	return "CommitFailed"
 }
 
 func commitOpFrom(op Operation) CommitOp {
@@ -700,7 +723,8 @@ func commitOpFrom(op Operation) CommitOp {
 		if typed.previousNode != nil {
 			recorded.Node = typed.previousNode.Name
 		}
-		recorded.Eviction = typed.evictionMetadata
+		recorded.Eviction = withEvictionReason(typed.evictionMetadata)
+		recorded.Reason = recorded.Eviction.Reason
 	case pipelineOperation:
 		recorded.Node = typed.nextNode
 	case allocateOperation:

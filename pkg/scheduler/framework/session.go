@@ -110,7 +110,10 @@ type Session struct {
 	pluginsInOrder []Plugin
 	eventHandlers  []*EventHandler
 	// onCommit is set when a handler has OnCommit. Callers check it before building records.
-	onCommit        bool
+	onCommit bool
+	// attempted is the pod groups an action entered a placement function for. The map is created
+	// only after a handler registers OnCommit, so a recorder-off cycle does not create it.
+	attempted       map[common_info.PodGroupID]struct{}
 	currentAction   ActionType
 	SchedulerParams conf.SchedulerParams
 	mux             *http.ServeMux
@@ -195,13 +198,15 @@ func (ssn *Session) Evict(pod *pod_info.PodInfo, message string, evictionMetadat
 	// Stale-gang eviction calls Session.Evict and never reaches Statement.Commit.
 	// Build the record only when a plugin registered OnCommit.
 	if ssn.onCommit {
+		meta := withEvictionReason(evictionMetadata)
 		ssn.publishCommit([]CommitOp{{
 			Kind:      CommitOpEvict,
 			UID:       string(pod.UID),
 			Namespace: pod.Namespace,
 			Name:      pod.Name,
 			Node:      pod.NodeName,
-			Eviction:  evictionMetadata,
+			Reason:    meta.Reason,
+			Eviction:  meta,
 		}})
 	}
 	if err := ssn.updatePodOnSession(pod, pod_status.Releasing); err != nil {
@@ -218,6 +223,27 @@ func (ssn *Session) Evict(pod *pod_info.PodInfo, message string, evictionMetadat
 		}
 	}
 	return nil
+}
+
+// NoteSchedulingAttempt records that an action entered its placement function for this group.
+// The call returns before allocating when no commit handler is registered.
+func (ssn *Session) NoteSchedulingAttempt(id common_info.PodGroupID) {
+	if ssn == nil || !ssn.onCommit || id == "" {
+		return
+	}
+	if ssn.attempted == nil {
+		ssn.attempted = make(map[common_info.PodGroupID]struct{})
+	}
+	ssn.attempted[id] = struct{}{}
+}
+
+// JobWasAttempted reports whether NoteSchedulingAttempt saw this group during the session.
+func (ssn *Session) JobWasAttempted(id common_info.PodGroupID) bool {
+	if ssn == nil || ssn.attempted == nil {
+		return false
+	}
+	_, ok := ssn.attempted[id]
+	return ok
 }
 
 func (ssn *Session) AddEventHandler(eh *EventHandler) {
