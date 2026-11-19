@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Preserve inherited priority, reuse state across sessions, and hash default toleration values
+custom:
+  Author: "eladb"
+  Issue: "2642"

@@ -190,7 +190,7 @@ func walkMap(in map[string]any, path string, ctx *redactCtx) map[string]any {
 		}
 		if key == "value" {
 			if text, ok := child.(string); ok {
-				if kept, include := taintTolerationValue(in, text, ctx); include {
+				if kept, include := taintTolerationValue(path, in, text, ctx); include {
 					out[key] = kept
 				}
 				continue
@@ -249,8 +249,10 @@ func topologyLabelField(key string, object map[string]any) bool {
 }
 
 // taintTolerationValue hashes an Equal taint or toleration value with the same label scope as the key.
-// Gt and Lt values stay numeric. Other string values are dropped.
-func taintTolerationValue(object map[string]any, text string, ctx *redactCtx) (string, bool) {
+// An empty operator is Equal. Entries under spec.taints and spec.tolerations are recognized by path,
+// so a toleration that also omits effect still hashes. Gt and Lt values stay numeric.
+// Other string values are dropped.
+func taintTolerationValue(path string, object map[string]any, text string, ctx *redactCtx) (string, bool) {
 	op, _ := object["operator"].(string)
 	if op == "Gt" || op == "Lt" {
 		return text, true
@@ -261,13 +263,17 @@ func taintTolerationValue(object map[string]any, text string, ctx *redactCtx) (s
 	}
 	_, hasEffect := object["effect"]
 	_, hasOp := object["operator"]
-	if !hasEffect && !hasOp {
+	if !hasEffect && !hasOp && !taintOrTolerationPath(path) {
 		return "", false
 	}
 	if _, numeric := ctx.numericKeys[taintKey]; numeric {
 		return text, true
 	}
 	return ctx.h.LabelValue(taintKey, text), true
+}
+
+func taintOrTolerationPath(path string) bool {
+	return strings.Contains(path, "spec.taints") || strings.Contains(path, "spec.tolerations")
 }
 
 func hashNameList(value any, h Hasher) ([]any, bool) {

@@ -28,10 +28,17 @@ type recorderPlugin struct {
 	clusterName   string
 	shardName     string
 	stateInterval time.Duration
+	reuse         *reuseState
 
+	mu        sync.Mutex
+	openedAt  time.Time
+	decisions []framework.CommitEvent
+}
+
+// reuseState is the last cluster-state copy saved for one recording stream.
+// New sessions in the same process share it, keyed by cluster and shard.
+type reuseState struct {
 	mu              sync.Mutex
-	openedAt        time.Time
-	decisions       []framework.CommitEvent
 	lastStateHash   string
 	lastStateAt     time.Time
 	lastStateQueued bool
@@ -40,6 +47,7 @@ type recorderPlugin struct {
 var (
 	processSenderOnce sync.Once
 	processSender     *Sender
+	processReuse      sync.Map
 )
 
 func New(arguments framework.PluginArguments) framework.Plugin {
@@ -50,11 +58,34 @@ func New(arguments framework.PluginArguments) framework.Plugin {
 	processSenderOnce.Do(func() {
 		processSender = newSender(senderConfig{Address: address})
 	})
-	return newPlugin(arguments, processSender.tryEnqueue)
+	plugin := newPlugin(arguments, processSender.tryEnqueue)
+	plugin.reuse = streamReuse(arguments)
+	return plugin
+}
+
+func streamKey(arguments framework.PluginArguments) string {
+	if arguments == nil {
+		return ""
+	}
+	return arguments.GetString("clusterName", "") + "\x00" + arguments.GetString("shardName", "")
+}
+
+func streamReuse(arguments framework.PluginArguments) *reuseState {
+	key := streamKey(arguments)
+	if existing, ok := processReuse.Load(key); ok {
+		return existing.(*reuseState)
+	}
+	created := &reuseState{}
+	actual, _ := processReuse.LoadOrStore(key, created)
+	return actual.(*reuseState)
 }
 
 func newPlugin(arguments framework.PluginArguments, enqueue enqueueFunc) *recorderPlugin {
-	plugin := &recorderPlugin{enqueue: enqueue, stateInterval: defaultStateInterval}
+	plugin := &recorderPlugin{
+		enqueue:       enqueue,
+		stateInterval: defaultStateInterval,
+		reuse:         &reuseState{},
+	}
 	if arguments != nil {
 		plugin.clusterName = arguments.GetString("clusterName", "")
 		plugin.shardName = arguments.GetString("shardName", "")
@@ -89,18 +120,10 @@ func (p *recorderPlugin) OnSessionClose(ssn *framework.Session) {
 	cycle := buildCycle(ssn, decisions, openedAt)
 	cycle.ClusterName = p.clusterName
 	cycle.ShardName = p.shardName
-	p.mu.Lock()
 	embedded := p.retainState(cycle)
-	p.mu.Unlock()
 	queued := p.enqueue(cycle)
 	if embedded {
-		p.mu.Lock()
-		p.lastStateQueued = queued
-		if queued {
-			p.lastStateHash = cycle.StateID
-			p.lastStateAt = clock.Now()
-		}
-		p.mu.Unlock()
+		p.noteSavedState(cycle, queued)
 	}
 	if !queued {
 		log.InfraLogger.V(2).Infof("Recorder dropped cycle %s", ssn.ID)
@@ -109,9 +132,8 @@ func (p *recorderPlugin) OnSessionClose(ssn *framework.Session) {
 
 // retainState keeps the cluster-state body when it changed, when the previous copy was not queued,
 // or when the save interval has elapsed. Otherwise the cycle only keeps StateID.
-// The caller holds p.mu.
 func (p *recorderPlugin) retainState(cycle *cycleRecord) bool {
-	if cycle == nil || cycle.RawObjects == nil {
+	if cycle == nil || cycle.RawObjects == nil || p.reuse == nil {
 		return false
 	}
 	hash := stateHash(cycle)
@@ -119,8 +141,10 @@ func (p *recorderPlugin) retainState(cycle *cycleRecord) bool {
 		return true
 	}
 	cycle.StateID = hash
-	reuse := hash == p.lastStateHash && p.lastStateQueued && !p.lastStateAt.IsZero() &&
-		clock.Since(p.lastStateAt) < p.stateInterval
+	p.reuse.mu.Lock()
+	defer p.reuse.mu.Unlock()
+	reuse := hash == p.reuse.lastStateHash && p.reuse.lastStateQueued && !p.reuse.lastStateAt.IsZero() &&
+		clock.Since(p.reuse.lastStateAt) < p.stateInterval
 	if !reuse {
 		return true
 	}
@@ -129,6 +153,19 @@ func (p *recorderPlugin) retainState(cycle *cycleRecord) bool {
 	cycle.RawObjects = nil
 	cycle.Usage = nil
 	return false
+}
+
+func (p *recorderPlugin) noteSavedState(cycle *cycleRecord, queued bool) {
+	if p.reuse == nil || cycle == nil || cycle.StateID == "" {
+		return
+	}
+	p.reuse.mu.Lock()
+	p.reuse.lastStateQueued = queued
+	if queued {
+		p.reuse.lastStateHash = cycle.StateID
+		p.reuse.lastStateAt = clock.Now()
+	}
+	p.reuse.mu.Unlock()
 }
 
 func (p *recorderPlugin) onCommit(event *framework.CommitEvent) {

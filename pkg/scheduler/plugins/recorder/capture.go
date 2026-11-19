@@ -24,6 +24,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/snapshot"
 	enginev2 "github.com/kai-scheduler/api/scheduling/v2"
+	enginev2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
 )
 
 // cycleRecord is one scheduling cycle. The embedded snapshot is built from the
@@ -246,9 +247,10 @@ func objectsFromCluster(info *api.ClusterInfo, params *conf.SchedulerParams) *sn
 		if job == nil || job.PodGroup == nil {
 			continue
 		}
-		raw.PodGroups = append(raw.PodGroups, job.PodGroup)
-		if job.PodGroup.Spec.PriorityClassName != "" {
-			classes[job.PodGroup.Spec.PriorityClassName] = job.Priority
+		pg := recordedPodGroup(job)
+		raw.PodGroups = append(raw.PodGroups, pg)
+		if pg.Spec.PriorityClassName != "" {
+			classes[pg.Spec.PriorityClassName] = job.Priority
 		}
 	}
 	for _, request := range info.BindRequests {
@@ -279,6 +281,19 @@ func objectsFromCluster(info *api.ClusterInfo, params *conf.SchedulerParams) *sn
 	}
 	sortRawObjects(raw)
 	return raw
+}
+
+// recordedPodGroup keeps the priority the session resolved. A group that names no class
+// inherited the cluster default; the copy names a class with that value so replay does too.
+// The live object is left unchanged.
+func recordedPodGroup(job *podgroup_info.PodGroupInfo) *enginev2alpha2.PodGroup {
+	pg := job.PodGroup
+	if pg.Spec.PriorityClassName != "" {
+		return pg
+	}
+	copied := pg.DeepCopy()
+	copied.Spec.PriorityClassName = fmt.Sprintf("kai-effective-%d", job.Priority)
+	return copied
 }
 
 func sortRawObjects(raw *snapshot.RawKubernetesObjects) {
