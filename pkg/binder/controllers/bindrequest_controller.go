@@ -8,7 +8,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
@@ -16,6 +18,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
@@ -30,18 +33,22 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding/resourcereservation"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/state"
+	"github.com/kai-scheduler/api/constants"
 
 	schedulingv1alpha2 "github.com/kai-scheduler/api/scheduling/v1alpha2"
 )
 
 const (
-	podBoundCondition = "PodBound"
+	podBoundCondition         = "PodBound"
+	bindingObservationTimeout = 5 * time.Second
 )
 
 // BindRequestReconciler reconciles a BindRequest object
 type BindRequestReconciler struct {
 	Client              client.Client
 	Scheme              *runtime.Scheme
+	apiReader           client.Reader
 	binder              binding.Interface
 	resourceReservation resourcereservation.Interface
 	eventRecorder       record.EventRecorder
@@ -59,6 +66,7 @@ func NewBindRequestReconciler(
 	return &BindRequestReconciler{
 		Client:              client,
 		Scheme:              scheme,
+		apiReader:           client,
 		binder:              binder,
 		resourceReservation: resourceReservation,
 		eventRecorder:       eventRecorder,
@@ -93,6 +101,8 @@ func (r *BindRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	var bindRequest = &schedulingv1alpha2.BindRequest{}
 	var pod *v1.Pod
+	updateBindRequestStatus := true
+	reportPodCondition := true
 
 	// Fetch the BindRequest instance
 	if err = r.Client.Get(ctx, req.NamespacedName, bindRequest); err != nil {
@@ -111,10 +121,14 @@ func (r *BindRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		if r := recover(); r != nil {
 			finalError = fmt.Errorf("Internal Error: %v\n%s", r, string(debug.Stack()))
 			err = fmt.Errorf("Internal Error: %v", r)
+			updateBindRequestStatus = false
+			reportPodCondition = false
 		}
 
-		result, err = r.UpdateStatus(ctx, bindRequest, result, err)
-		if pod != nil {
+		if updateBindRequestStatus {
+			result, err = r.UpdateStatus(ctx, bindRequest, result, err)
+		}
+		if pod != nil && reportPodCondition {
 			r.updatePodCondition(ctx, bindRequest, pod)
 		}
 
@@ -129,10 +143,35 @@ func (r *BindRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			Namespace: bindRequest.Namespace,
 		},
 	}
-	if err = r.Client.Get(ctx, client.ObjectKeyFromObject(pod), pod); err != nil {
+	// A status retry must observe a completed binding before preparing another attempt.
+	if err = r.readBindingObject(ctx, client.ObjectKeyFromObject(pod), pod); err != nil {
+		// A previous process may still have a Binding request in flight. A failed
+		// observation does not establish an outcome that is safe to publish.
+		reportPodCondition = false
+		updateBindRequestStatus = kerrors.IsNotFound(err)
+		if updateBindRequestStatus {
+			// An absent Pod cannot accept the old request; its UID/resourceVersion
+			// preconditions also exclude any replacement created under this name.
+			r.forgetBindingState(bindRequest, "")
+		}
 		return result, err
 	}
+	if ownerUID := conflictingPodOwnerUID(bindRequest, pod); ownerUID != "" {
+		reportPodCondition = false
+		return result, fmt.Errorf("BindRequest refers to pod %s/%s with UID %s, but the current pod has UID %s",
+			pod.Namespace, pod.Name, ownerUID, pod.UID)
+	}
 	if pod.Spec.NodeName != "" {
+		if pod.Spec.NodeName != bindRequest.Spec.SelectedNode {
+			reportPodCondition = false
+			return result, fmt.Errorf("pod %s/%s is already bound to node %s, but BindRequest selected node %s",
+				pod.Namespace, pod.Name, pod.Spec.NodeName, bindRequest.Spec.SelectedNode)
+		}
+		if err = validateBoundPodGPUGroups(bindRequest, pod); err != nil {
+			reportPodCondition = false
+			return result, err
+		}
+		r.forgetBindingState(bindRequest, pod.UID)
 		logger.Info("Pod is already bound to node", "name", pod.Name, "namespace", pod.Namespace,
 			"node", pod.Spec.NodeName)
 		return result, nil
@@ -144,12 +183,33 @@ func (r *BindRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		},
 	}
 	if err = r.Client.Get(ctx, client.ObjectKeyFromObject(node), node); err != nil {
+		if kerrors.IsNotFound(err) {
+			freshNode := &v1.Node{}
+			if readErr := r.readBindingObject(ctx, client.ObjectKeyFromObject(node), freshNode); kerrors.IsNotFound(readErr) {
+				if preparer, ok := r.binder.(binding.AttemptPreparer); ok {
+					if prepareErr := preparer.PrepareBindingAttempt(ctx, pod); prepareErr == nil {
+						return result, err
+					} else {
+						err = errors.Join(err, prepareErr)
+					}
+				}
+			} else if readErr != nil {
+				err = errors.Join(err, readErr)
+			}
+		}
+		updateBindRequestStatus = false
+		reportPodCondition = false
 		return result, err
 	}
 
 	logger.Info("Binding pod to node", "pod", pod.Name, "namespace", pod.Namespace,
 		"node", node.Name)
 	err = r.binder.Bind(ctx, pod, node, bindRequest)
+	if errors.Is(err, binding.ErrBindingOutcomeUnknown) {
+		updateBindRequestStatus = false
+		reportPodCondition = false
+		return result, err
+	}
 
 	if errors.Is(err, binding.InvalidCrdWarning) {
 		logger.Info("This binding request seems to be created by failed conversion from the previous version."+
@@ -169,8 +229,21 @@ func (r *BindRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	return result, err
 }
 
+func (r *BindRequestReconciler) readBindingObject(ctx context.Context, key client.ObjectKey, obj client.Object) error {
+	ctx, cancel := context.WithTimeout(ctx, bindingObservationTimeout)
+	defer cancel()
+	return r.apiReader.Get(ctx, key, obj)
+}
+
+func (r *BindRequestReconciler) forgetBindingState(bindRequest *schedulingv1alpha2.BindRequest, podUID types.UID) {
+	if forgetter, ok := r.binder.(state.Forgetter); ok {
+		forgetter.ForgetBindingState(bindRequest.UID, podUID)
+	}
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *BindRequestReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	r.apiReader = mgr.GetAPIReader()
 	return ctrl.NewControllerManagedBy(mgr).
 		Named("bindrequest").
 		Watches(&schedulingv1alpha2.BindRequest{}, r.eventHandlers()).
@@ -183,6 +256,50 @@ func (r *BindRequestReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			SkipNameValidation: &[]bool{true}[0],
 		}).
 		Complete(r)
+}
+
+func conflictingPodOwnerUID(bindRequest *schedulingv1alpha2.BindRequest, pod *v1.Pod) types.UID {
+	for _, owner := range bindRequest.OwnerReferences {
+		if owner.APIVersion == "v1" && owner.Kind == "Pod" && owner.Name == pod.Name &&
+			owner.UID != "" && owner.UID != pod.UID {
+			return owner.UID
+		}
+	}
+	return ""
+}
+
+func validateBoundPodGPUGroups(bindRequest *schedulingv1alpha2.BindRequest, pod *v1.Pod) error {
+	if !common.IsSharedGPUAllocation(bindRequest) {
+		return nil
+	}
+
+	expected := sets.New(bindRequest.Spec.SelectedFractionalGpuGroupIDs()...)
+	if expected.Len() == 0 || expected.Has("") {
+		return fmt.Errorf("BindRequest for pod %s/%s has missing or empty fractional GPU group IDs",
+			pod.Namespace, pod.Name)
+	}
+
+	actual := sets.New[string]()
+	invalidLabels := sets.New[string]()
+	for key, value := range pod.Labels {
+		if key != constants.GPUGroup && !strings.HasPrefix(key, constants.MultiGpuGroupLabelPrefix) {
+			continue
+		}
+		if value == "" || (key != constants.GPUGroup && strings.TrimPrefix(key, constants.MultiGpuGroupLabelPrefix) != value) {
+			invalidLabels.Insert(fmt.Sprintf("%s=%q", key, value))
+			continue
+		}
+		actual.Insert(value)
+	}
+	if invalidLabels.Len() != 0 {
+		return fmt.Errorf("pod %s/%s has invalid GPU group labels %v",
+			pod.Namespace, pod.Name, sets.List(invalidLabels))
+	}
+	if !actual.Equal(expected) {
+		return fmt.Errorf("pod %s/%s is already bound with GPU groups %v, but BindRequest selected GPU groups %v",
+			pod.Namespace, pod.Name, sets.List(actual), sets.List(expected))
+	}
+	return nil
 }
 
 func (r *BindRequestReconciler) eventHandlers() handler.Funcs {
@@ -219,6 +336,7 @@ func (r *BindRequestReconciler) deleteHandler(ctx context.Context, event event.T
 	if !ok {
 		return
 	}
+	r.forgetBindingState(bindRequest, "")
 
 	if common.IsSharedGPUAllocation(bindRequest) {
 		for _, gpuGroup := range bindRequest.Spec.SelectedFractionalGpuGroupIDs() {
@@ -249,7 +367,7 @@ func (r *BindRequestReconciler) UpdateStatus(
 		bindRequest.Status.Phase = schedulingv1alpha2.BindRequestPhaseSucceeded
 	}
 
-	if originalBindRequest.Status.Phase == bindRequest.Status.Phase {
+	if reflect.DeepEqual(originalBindRequest.Status, bindRequest.Status) {
 		return result, nil
 	}
 
@@ -273,6 +391,7 @@ func (r *BindRequestReconciler) UpdateStatus(
 		}
 		logger.Error(patchErr, "Failed to patch status for BindRequest",
 			"Namespace", bindRequest.Namespace, "Name", bindRequest.Name)
+		return ctrl.Result{}, patchErr
 	}
 
 	if err != nil && result.RequeueAfter == 0 {

@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
@@ -32,8 +33,9 @@ type K8sPlugins struct {
 }
 
 type PodState struct {
-	states map[string]ksf.CycleState
-	skip   map[string]bool
+	requestUID types.UID
+	states     map[string]ksf.CycleState
+	skip       map[string]bool
 }
 
 func New(
@@ -115,9 +117,13 @@ func (p *K8sPlugins) Mutate(*v1.Pod) error {
 
 func (p *K8sPlugins) PreBind(ctx context.Context, pod *v1.Pod, node *v1.Node, request *v1alpha2.BindRequest,
 	_ *state.BindingState) error {
+	podUID := pod.UID
 	podState := &PodState{
 		states: map[string]ksf.CycleState{},
 		skip:   map[string]bool{},
+	}
+	if request != nil {
+		podState.requestUID = request.UID
 	}
 
 	pod.Spec.NodeName = node.Name
@@ -143,8 +149,29 @@ func (p *K8sPlugins) PreBind(ctx context.Context, pod *v1.Pod, node *v1.Node, re
 		}
 	}
 
-	p.states.Store(pod.UID, podState)
+	p.states.Store(podUID, podState)
 	return nil
+}
+
+// ForgetBindingState never unallocates resources from a bound or absent Pod.
+// Request identity prevents a delayed observation from discarding newer state.
+func (p *K8sPlugins) ForgetBindingState(requestUID, podUID types.UID) {
+	if requestUID == "" {
+		return
+	}
+	forget := func(key, value any) bool {
+		if value.(*PodState).requestUID == requestUID {
+			p.states.CompareAndDelete(key, value)
+		}
+		return true
+	}
+	if podUID != "" {
+		if value, found := p.states.Load(podUID); found {
+			forget(podUID, value)
+		}
+		return
+	}
+	p.states.Range(forget)
 }
 
 func (p *K8sPlugins) PostBind(ctx context.Context, pod *v1.Pod, node *v1.Node, request *v1alpha2.BindRequest,

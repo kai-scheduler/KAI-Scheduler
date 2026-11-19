@@ -14,6 +14,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/ptr"
@@ -40,9 +41,12 @@ func TestBinderReservationLifecycle(t *testing.T) {
 	for _, testCase := range []struct {
 		name         string
 		hideWorkload bool
+		protocol     bool
 	}{
 		{name: "visible", hideWorkload: false},
 		{name: "cache-lag", hideWorkload: true},
+		{name: "protocol-visible", protocol: true},
+		{name: "protocol-cache-lag", hideWorkload: true, protocol: true},
 	} {
 		t.Run("retry must retain reservation/"+testCase.name, func(t *testing.T) {
 			apiClient := fake.NewClientBuilder().WithScheme(scheme).
@@ -120,6 +124,11 @@ func TestBinderReservationLifecycle(t *testing.T) {
 					if err := c.Get(ctx, client.ObjectKeyFromObject(obj), boundPod); err != nil {
 						return err
 					}
+					require.Equal(t, pod.UID, bind.UID)
+					if testCase.protocol {
+						require.NotEmpty(t, bind.ResourceVersion)
+						require.Equal(t, boundPod.ResourceVersion, bind.ResourceVersion)
+					}
 					boundPod.Spec.NodeName = bind.Target.Name
 					return c.Update(ctx, boundPod)
 				},
@@ -140,7 +149,10 @@ func TestBinderReservationLifecycle(t *testing.T) {
 				hideWorkload = false
 				return err
 			}})
-			binder := binding.NewBinder(binderClient, rrs, binderPlugins)
+			binder := binding.NewBinder(binderClient, nil, rrs, binderPlugins)
+			if testCase.protocol {
+				binder = binding.NewBinder(binderClient, apiClient, rrs, binderPlugins)
+			}
 			reconciler := NewBindRequestReconciler(apiClient, scheme, record.NewFakeRecorder(20), &ReconcilerParams{}, binder, rrs)
 			req := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(request)}
 			result, err := reconciler.Reconcile(ctx, req)
@@ -181,7 +193,7 @@ func createLifecycleObjects(t *testing.T, c client.Client, name string, backoff 
 	ctx := context.Background()
 	ns := &v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "lifecycle-" + name}}
 	node := &v1.Node{ObjectMeta: metav1.ObjectMeta{Name: ns.Name}}
-	pod := &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "worker", Namespace: ns.Name},
+	pod := &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "worker", Namespace: ns.Name, UID: types.UID(ns.Name + "-worker")},
 		Spec: v1.PodSpec{Containers: []v1.Container{{Name: "worker", Image: "test-image"}}}, Status: v1.PodStatus{Phase: v1.PodPending}}
 	group := "group-" + name
 	request := &schedulingv1alpha2.BindRequest{ObjectMeta: metav1.ObjectMeta{Name: "bind", Namespace: ns.Name}, Spec: schedulingv1alpha2.BindRequestSpec{
