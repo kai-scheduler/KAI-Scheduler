@@ -457,15 +457,35 @@ func waitForBatchToSchedule(
 	batchLabels map[string]string, expectedPods int,
 ) time.Time {
 	var podsList v1.PodList
-	Eventually(func(g Gomega) {
+	var lastDiagnostic time.Time
+	Eventually(ctx, func(g Gomega) {
 		g.Expect(testCtx.ControllerClient.List(ctx, &podsList,
 			runtimeClient.InNamespace(queue.GetConnectedNamespaceToQueue(testQueue)),
 			runtimeClient.MatchingLabels(batchLabels),
 		)).To(Succeed())
-		g.Expect(podsList.Items).To(HaveLen(expectedPods))
-		for i := range podsList.Items {
-			g.Expect(rd.IsPodScheduled(&podsList.Items[i])).To(BeTrue(), "pod %s is not scheduled", podsList.Items[i].Name)
+		scheduled := countScheduledPods(podsList.Items)
+		if scheduled != expectedPods && time.Since(lastDiagnostic) >= time.Minute {
+			lastDiagnostic = time.Now()
+			GinkgoLogr.Info("Waiting for batch to schedule", "queue", testQueue.Name,
+				"created", len(podsList.Items), "scheduled", scheduled, "expected", expectedPods)
+			for i := range podsList.Items {
+				pod := &podsList.Items[i]
+				if rd.IsPodScheduled(pod) {
+					continue
+				}
+				GinkgoLogr.Info("Pending batch Pod", "pod", pod.Name, "conditions", pod.Status.Conditions)
+				if groupName := pod.Labels[rd.PodGroupLabelName]; groupName != "" {
+					var group v2alpha2.PodGroup
+					key := runtimeClient.ObjectKey{Namespace: pod.Namespace, Name: groupName}
+					if err := testCtx.ControllerClient.Get(ctx, key, &group); err == nil {
+						GinkgoLogr.Info("Pending PodGroup", "name", groupName, "conditions", group.Status.SchedulingConditions)
+					}
+				}
+				break
+			}
 		}
+		g.Expect(podsList.Items).To(HaveLen(expectedPods))
+		g.Expect(scheduled).To(Equal(expectedPods))
 	}, maxFlowTimeoutMinutes*time.Minute, podsPollIntervalSeconds*time.Second).Should(Succeed())
 
 	var lastScheduledTime time.Time
