@@ -113,7 +113,13 @@ func (sa *ScaleAdjuster) createNewScalingPods(existingScalingPods []*corev1.Pod)
 	}
 	numCreatedPods := 0
 	for _, pod := range podsToScale {
-		if sa.scaler.IsScalingPodExistsForUnschedulablePod(pod) {
+		exists, err := sa.scaler.IsScalingPodExistsForUnschedulablePod(pod)
+		if err != nil {
+			log.Printf("Could not check scaling pod for %v/%v. err: %v",
+				pod.Namespace, pod.Name, err)
+			continue
+		}
+		if exists {
 			continue
 		}
 
