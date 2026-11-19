@@ -474,7 +474,7 @@ func waitForBatchToSchedule(
 					continue
 				}
 				GinkgoLogr.Info("Pending batch Pod", "pod", pod.Name, "conditions", pod.Status.Conditions)
-				if groupName := pod.Labels[rd.PodGroupLabelName]; groupName != "" {
+				if groupName := pod.Annotations[rd.PodGroupLabelName]; groupName != "" {
 					var group v2alpha2.PodGroup
 					key := runtimeClient.ObjectKey{Namespace: pod.Namespace, Name: groupName}
 					if err := testCtx.ControllerClient.Get(ctx, key, &group); err == nil {
