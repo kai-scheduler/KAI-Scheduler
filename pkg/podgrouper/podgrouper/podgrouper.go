@@ -17,14 +17,18 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/metrics"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
 	pluginshub "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/hub"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/grouper"
 )
 
 type Interface interface {
 	// GetPodOwners returns all the owners of a pod, the top owner returned also as Unstructured
 	GetPodOwners(ctx context.Context, pod *v1.Pod) (*unstructured.Unstructured, []*metav1.PartialObjectMetadata, error)
 	GetPGMetadata(ctx context.Context, pod *v1.Pod, topOwner *unstructured.Unstructured, allOwners []*metav1.PartialObjectMetadata) (*podgroup.Metadata, error)
+	// GetPluginName returns the name of the grouper plugin that handles the given top owner
+	GetPluginName(topOwner *unstructured.Unstructured) string
 }
 
 type podGrouper struct {
@@ -77,11 +81,23 @@ func (pg *podGrouper) GetPodOwners(ctx context.Context, pod *v1.Pod) (
 
 func (pg *podGrouper) GetPGMetadata(ctx context.Context, pod *v1.Pod, topOwner *unstructured.Unstructured, allOwners []*metav1.PartialObjectMetadata) (*podgroup.Metadata, error) {
 	logger := log.FromContext(ctx)
-	ownerKind := metav1.GroupVersionKind(topOwner.GroupVersionKind())
-	plugin := pg.pluginsHub.GetPodGrouperPlugin(ownerKind)
+	plugin := pg.getPlugin(topOwner)
 	logger.V(1).Info(fmt.Sprintf("Using %v plugin for pod.", plugin.Name()),
 		"pod", fmt.Sprintf("%s/%s", pod.Namespace, pod.Name), "topOwner", topOwner)
-	return plugin.GetPodGroupMetadata(topOwner, pod, allOwners...)
+	metadata, err := plugin.GetPodGroupMetadata(topOwner, pod, allOwners...)
+	if err != nil {
+		metrics.IncErrors(plugin.Name())
+	}
+	return metadata, err
+}
+
+func (pg *podGrouper) GetPluginName(topOwner *unstructured.Unstructured) string {
+	return pg.getPlugin(topOwner).Name()
+}
+
+func (pg *podGrouper) getPlugin(topOwner *unstructured.Unstructured) grouper.Grouper {
+	ownerKind := metav1.GroupVersionKind(topOwner.GroupVersionKind())
+	return pg.pluginsHub.GetPodGrouperPlugin(ownerKind)
 }
 
 func (pg *podGrouper) getResourceOwners(ctx context.Context, pod *v1.Pod) (

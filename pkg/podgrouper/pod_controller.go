@@ -21,6 +21,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/metrics"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper"
 	pluginshub "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/hub"
@@ -134,7 +135,7 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		addNodePoolLabel(metadata, &pod, r.configs.NodePoolLabelKey)
 	}
 
-	err = r.PodGroupHandler.ApplyToCluster(ctx, *metadata)
+	created, err := r.PodGroupHandler.ApplyToCluster(ctx, *metadata)
 	if err != nil {
 		if errors.IsConflict(err) {
 			logger.V(1).Info("PodGroup update conflict, will retry", "namespace", metadata.Namespace, "name", metadata.Name)
@@ -143,6 +144,10 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		}
 		logger.V(1).Error(err, "Failed to apply metadata for pod group", metadata.Namespace, metadata.Name)
 		return ctrl.Result{}, err
+	}
+
+	if created {
+		metrics.IncPodGroupsCreated(r.podGrouper.GetPluginName(topOwner), topOwner.GetAPIVersion()+"/"+topOwner.GetKind())
 	}
 
 	err = r.assignPodToGroupAndSubGroup(ctx, &pod, metadata)

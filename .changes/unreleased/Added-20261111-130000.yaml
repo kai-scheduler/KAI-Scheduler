@@ -1,0 +1,6 @@
+kind: Added
+body: Add pod-grouper metrics for the PodGroups it creates and for the errors of its grouper plugins
+time: 2026-11-11T13:00:00.000000000+00:00
+custom:
+    Author: NopeCharon
+    Issue: "2620"
