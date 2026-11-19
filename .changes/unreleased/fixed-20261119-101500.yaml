@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  With `--full-hierarchy-fairness=false`, the scheduler no longer rewrites the parent queue of the queues it lists from its informer cache, so scheduler snapshots show each queue's real parent
+custom:
+  Author: "BahaaMattar"
+  Issue: "2727"
