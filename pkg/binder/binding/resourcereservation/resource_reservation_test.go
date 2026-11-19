@@ -1881,6 +1881,24 @@ var _ = Describe("Reservation pod duplicate gpu-group race", func() {
 	})
 })
 
+var _ = Describe("IsReservationPod", func() {
+	svc := &service{namespace: "reservation-ns"}
+	pod := func(namespace string, labels map[string]string) *v1.Pod {
+		return &v1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Labels: labels}}
+	}
+	gpuGroup := map[string]string{constants.GPUGroup: "group"}
+
+	It("matches a pod with a gpu-group label in the reservation namespace", func() {
+		Expect(svc.IsReservationPod(pod("reservation-ns", gpuGroup))).To(BeTrue())
+	})
+	It("rejects a pod in another namespace", func() {
+		Expect(svc.IsReservationPod(pod("default", gpuGroup))).To(BeFalse())
+	})
+	It("rejects a pod without a gpu-group label", func() {
+		Expect(svc.IsReservationPod(pod("reservation-ns", nil))).To(BeFalse())
+	})
+})
+
 func ptrBool(b bool) *bool { return &b }
 
 func ptrInt64(i int64) *int64 { return &i }
