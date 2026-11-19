@@ -1,0 +1,27 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+apiVersion: kwok.x-k8s.io/v1alpha1
+kind: Stage
+metadata:
+  name: terminating-job-pod
+spec:
+  resourceRef:
+    apiGroup: v1
+    kind: Pod
+  selector:
+    matchExpressions:
+      - key: .metadata.deletionTimestamp
+        operator: Exists
+      - key: .metadata.finalizers.[]
+        operator: In
+        values: [batch.kubernetes.io/job-tracking]
+      - key: .status.phase
+        operator: NotIn
+        values: [Failed, Succeeded]
+  next:
+    # A kubelet reports a terminal phase before deletion. The Job controller
+    # accounts for the Pod and removes its own tracking finalizer.
+    statusTemplate: |
+      phase: Failed
+      reason: Terminated
+      message: KWOK observed deletion of the Job Pod.

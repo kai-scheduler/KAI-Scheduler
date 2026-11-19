@@ -17,6 +17,12 @@ curl --fail --silent --show-error --location --retry 3 \
 kubectl wait --for=condition=Established crd/stages.kwok.x-k8s.io --timeout=90s
 kubectl apply -f https://github.com/kubernetes-sigs/kwok/releases/download/v0.8.0/stage-fast.yaml
 kubectl delete stage pod-complete --ignore-not-found
+kubectl apply -f test/e2e/scale/kwok-terminating-job-pod.yaml
+kubectl patch stage pod-delete --type=json -p '[
+  {"op":"add","path":"/spec/selector/matchExpressions/-","value":{
+    "key":".metadata.finalizers.[]","operator":"NotIn","values":["batch.kubernetes.io/job-tracking"]
+  }}
+]'
 kubectl apply --server-side -f https://github.com/run-ai/kwok-operator/releases/download/1.0.4/kwok-operator.yaml
 kubectl wait --for=condition=Established crd/nodepools.kwok.sigs.run-ai.com --timeout=90s
 kubectl patch --local -f test/e2e/scale/base_kwok_managed_nodepool.yaml --type=merge \
