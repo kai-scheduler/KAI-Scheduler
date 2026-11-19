@@ -6,19 +6,18 @@ package topology
 import (
 	"testing"
 
-	kaiv1alpha1 "github.com/kai-scheduler/api/kai/v1alpha1"
 	"golang.org/x/exp/maps"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/topology_info"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
+	kaiv1alpha1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1alpha1"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/topology_info"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
 )
 
 // A required level above the lowest common domain of the job's nodes (a one-node pool, or a pool inside one domain)
@@ -49,9 +48,8 @@ func TestTopologyPlugin_subsetNodesFn_requiredLevelAboveCommonDomain(t *testing.
 					&topology_info.TopologyConstraintInfo{Topology: "t", RequiredLevel: tc.required, PreferredLevel: tc.preferred}),
 				Tasks: []*tasks_fake.TestTaskBasic{{State: pod_status.Pending}},
 			}
-			vectorMap := resource_info.NewResourceVectorMap()
-			jobs, tasksToNodes, _ := jobs_fake.BuildJobsAndTasksMaps([]*jobs_fake.TestJobBasic{job}, vectorMap)
-			nodes := nodes_fake.BuildNodesInfoMap(tc.nodes, tasksToNodes, nil, vectorMap)
+			jobs, tasksToNodes, _ := jobs_fake.BuildJobsAndTasksMaps([]*jobs_fake.TestJobBasic{job})
+			nodes := nodes_fake.BuildNodesInfoMap(tc.nodes, tasksToNodes, nil)
 			j := jobs["job"]
 			plugin := &topologyPlugin{TopologyTrees: map[string]*Info{}, subGroupNodeScores: map[subgroupName]map[string]float64{}}
 			plugin.initializeTopologyTree([]*kaiv1alpha1.Topology{{
@@ -59,8 +57,8 @@ func TestTopologyPlugin_subsetNodesFn_requiredLevelAboveCommonDomain(t *testing.
 				Spec: kaiv1alpha1.TopologySpec{Levels: []kaiv1alpha1.TopologyLevel{
 					{NodeLabel: "zone"}, {NodeLabel: "domain"}, {NodeLabel: "kubernetes.io/hostname"}}},
 			}}, nodes)
-			subsets, err := plugin.subSetNodesFn(j, &j.RootSubGroupSet.SubGroupInfo, j.RootSubGroupSet.GetDescendantPodSets(),
-				podgroup_info.GetTasksToAllocate(j, nil, nil, podgroup_info.RealTaskAllocation), maps.Values(nodes))
+			subsets, err := plugin.subSetNodesFn(j, &j.RootSubGroupSet.SubGroupInfo, j.RootSubGroupSet.GetAllPodSets(),
+				podgroup_info.GetTasksToAllocate(j, nil, nil, true), maps.Values(nodes))
 			if err != nil {
 				t.Fatalf("subSetNodesFn: %v", err)
 			}
