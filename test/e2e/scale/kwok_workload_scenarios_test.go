@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/scale/topology"
@@ -160,5 +161,26 @@ func TestDomainPathsForPods(t *testing.T) {
 	}
 	if _, err := domainPathsForPods(pods, nodes, nil); err == nil {
 		t.Fatal("expected missing topology domains to fail")
+	}
+}
+
+// A terminating Job Pod may retain both its tracking finalizer and its original
+// PodScheduled condition even after KWOK has marked it Failed.
+func TestReclaimCountsOnlyActiveScheduledPods(t *testing.T) {
+	pods := []v1.Pod{}
+	for _, phase := range []v1.PodPhase{v1.PodPending, v1.PodRunning, v1.PodFailed, v1.PodSucceeded} {
+		pods = append(pods, v1.Pod{
+			Spec: v1.PodSpec{Containers: []v1.Container{{Resources: v1.ResourceRequirements{
+				Limits: v1.ResourceList{"nvidia.com/gpu": resource.MustParse("8")},
+			}}}},
+			Status: v1.PodStatus{Phase: phase, Conditions: []v1.PodCondition{
+				{Type: v1.PodScheduled, Status: v1.ConditionTrue},
+			}},
+		})
+	}
+	pods = append(pods, v1.Pod{Status: v1.PodStatus{Phase: v1.PodPending}})
+	count, gpus := scheduledResources(pods)
+	if count != 2 || gpus != 16 || countActiveScheduledPods(pods) != count {
+		t.Fatalf("expected two active scheduled Pods using 16 GPUs, got %d Pods and %d GPUs", count, gpus)
 	}
 }

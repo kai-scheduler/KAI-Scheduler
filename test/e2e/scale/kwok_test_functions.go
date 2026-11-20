@@ -298,28 +298,31 @@ func measureReclaimSingleGPUJob(
 
 func measureUnschedulableDelayInSeconds(
 	ctx context.Context, testCtx *testcontext.TestContext, testQueue *v2.Queue,
-	createJob func(context.Context, *testcontext.TestContext, *v2.Queue) (*rd.JobResult, error),
 ) float64 {
 	totalTime := time.Duration(0)
 	for i := 0; i < statusMeasuringSamples; i++ {
-		result, err := createJob(ctx, testCtx, testQueue)
+		batchLabels := map[string]string{distributedJobBatchLabel: utils.GenerateRandomK8sName(10)}
+		job, err := submitDistributedJobForKwok(ctx, testCtx, testQueue, FullNodeGPURequirement,
+			defaultPodsPerDistributedJob, batchLabels, batchLabels, nil)
 		Expect(err).NotTo(HaveOccurred())
-		pg := result.PodGroup
+		GinkgoLogr.Info("Waiting for reclaim sample", "sample", i+1, "namespace", job.Namespace, "job", job.Name)
+		waitForDistributedJobsForKwok(ctx, testCtx, []*batchv1.Job{job})
+		groupKey := runtimeClient.ObjectKey{Namespace: job.Namespace, Name: rd.PodGroupNameForJob(job)}
 		Eventually(func(g Gomega) bool {
 			updatedPodGroup := &v2alpha2.PodGroup{}
-			err := testCtx.ControllerClient.Get(ctx, runtimeClient.ObjectKeyFromObject(pg), updatedPodGroup)
+			err := testCtx.ControllerClient.Get(ctx, groupKey, updatedPodGroup)
 			g.Expect(err).NotTo(HaveOccurred())
 
 			for _, condition := range updatedPodGroup.Status.SchedulingConditions {
-				if condition.Type == v2alpha2.UnschedulableOnNodePool {
-					totalTime += condition.LastTransitionTime.Time.Sub(pg.CreationTimestamp.Time)
+				if condition.Type == v2alpha2.UnschedulableOnNodePool && condition.Status == v1.ConditionTrue {
+					totalTime += condition.LastTransitionTime.Time.Sub(updatedPodGroup.CreationTimestamp.Time)
 					return true
 				}
 			}
 			return false
 		}, maxFlowTimeoutMinutes*time.Minute, podsPollIntervalSeconds*time.Second).Should(BeTrue())
 
-		Expect(deleteObjectWithRetries(ctx, testCtx.ControllerClient, result.Job)).To(Succeed())
+		Expect(deleteObjectWithRetries(ctx, testCtx.ControllerClient, job)).To(Succeed())
 	}
 
 	return totalTime.Seconds() / float64(statusMeasuringSamples)

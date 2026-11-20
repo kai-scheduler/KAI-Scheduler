@@ -16,6 +16,7 @@ import (
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
 	"k8s.io/utils/ptr"
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -419,7 +420,7 @@ func heroJobReclaim(
 	ctx context.Context, testCtx *testcontext.TestContext, victimQueue, reclaimQueue *v2.Queue,
 	heroPods int, topologyName string,
 ) {
-	victimsBefore := countScheduledQueuePods(ctx, testCtx, victimQueue)
+	victimsBefore := countActiveScheduledQueuePods(ctx, testCtx, victimQueue)
 	batchLabels := map[string]string{distributedJobBatchLabel: utils.GenerateRandomK8sName(10)}
 	startTime := time.Now()
 	_, err := submitDistributedJobForKwok(
@@ -436,7 +437,7 @@ func heroJobReclaim(
 	zones, err := domainPathsForPods(heroPodList, listNodes(ctx, testCtx), []string{topologyZoneLabel})
 	Expect(err).NotTo(HaveOccurred())
 	Expect(zones).To(HaveLen(1), "hero pods must occupy one zone")
-	victimsAfter := countScheduledQueuePods(ctx, testCtx, victimQueue)
+	victimsAfter := countActiveScheduledQueuePods(ctx, testCtx, victimQueue)
 	Expect(victimsBefore-victimsAfter).To(BeNumerically(">=", heroPods*gpusPerNode),
 		"insufficient victim GPU capacity was reclaimed")
 
@@ -457,15 +458,35 @@ func waitForBatchToSchedule(
 	batchLabels map[string]string, expectedPods int,
 ) time.Time {
 	var podsList v1.PodList
-	Eventually(func(g Gomega) {
+	var lastDiagnostic time.Time
+	Eventually(ctx, func(g Gomega) {
 		g.Expect(testCtx.ControllerClient.List(ctx, &podsList,
 			runtimeClient.InNamespace(queue.GetConnectedNamespaceToQueue(testQueue)),
 			runtimeClient.MatchingLabels(batchLabels),
 		)).To(Succeed())
-		g.Expect(podsList.Items).To(HaveLen(expectedPods))
-		for i := range podsList.Items {
-			g.Expect(rd.IsPodScheduled(&podsList.Items[i])).To(BeTrue(), "pod %s is not scheduled", podsList.Items[i].Name)
+		scheduled := countActiveScheduledPods(podsList.Items)
+		if scheduled != expectedPods && time.Since(lastDiagnostic) >= time.Minute {
+			lastDiagnostic = time.Now()
+			GinkgoLogr.Info("Waiting for batch to schedule", "queue", testQueue.Name,
+				"created", len(podsList.Items), "scheduled", scheduled, "expected", expectedPods)
+			for i := range podsList.Items {
+				pod := &podsList.Items[i]
+				if isActiveScheduledPod(pod) {
+					continue
+				}
+				GinkgoLogr.Info("Pending batch Pod", "pod", pod.Name, "conditions", pod.Status.Conditions)
+				if groupName := pod.Annotations[rd.PodGroupLabelName]; groupName != "" {
+					var group v2alpha2.PodGroup
+					key := runtimeClient.ObjectKey{Namespace: pod.Namespace, Name: groupName}
+					if err := testCtx.ControllerClient.Get(ctx, key, &group); err == nil {
+						GinkgoLogr.Info("Pending PodGroup", "name", groupName, "conditions", group.Status.SchedulingConditions)
+					}
+				}
+				break
+			}
 		}
+		g.Expect(podsList.Items).To(HaveLen(expectedPods))
+		g.Expect(scheduled).To(Equal(expectedPods))
 	}, maxFlowTimeoutMinutes*time.Minute, podsPollIntervalSeconds*time.Second).Should(Succeed())
 
 	var lastScheduledTime time.Time
@@ -486,19 +507,24 @@ func scheduledBatchResources(
 	return scheduledResources(pods)
 }
 
-func countScheduledQueuePods(ctx context.Context, testCtx *testcontext.TestContext, testQueue *v2.Queue) int {
+func countActiveScheduledQueuePods(ctx context.Context, testCtx *testcontext.TestContext, testQueue *v2.Queue) int {
 	pods := &v1.PodList{}
 	Expect(testCtx.ControllerClient.List(ctx, pods,
 		runtimeClient.InNamespace(queue.GetConnectedNamespaceToQueue(testQueue)),
 		runtimeClient.MatchingLabels{testconfig.GetConfig().QueueLabelKey: testQueue.Name},
 	)).To(Succeed())
-	return countScheduledPods(pods.Items)
+	return countActiveScheduledPods(pods.Items)
 }
 
-func countScheduledPods(pods []v1.Pod) int {
+// PodScheduled records a binding and can remain true after the Pod releases its GPUs.
+func isActiveScheduledPod(pod *v1.Pod) bool {
+	return !podutil.IsPodPhaseTerminal(pod.Status.Phase) && rd.IsPodScheduled(pod)
+}
+
+func countActiveScheduledPods(pods []v1.Pod) int {
 	scheduled := 0
 	for i := range pods {
-		if rd.IsPodScheduled(&pods[i]) {
+		if isActiveScheduledPod(&pods[i]) {
 			scheduled++
 		}
 	}
@@ -509,7 +535,7 @@ func scheduledResources(pods []v1.Pod) (int, int64) {
 	scheduledPods := 0
 	var scheduledGPUs int64
 	for i := range pods {
-		if !rd.IsPodScheduled(&pods[i]) {
+		if !isActiveScheduledPod(&pods[i]) {
 			continue
 		}
 		scheduledPods++

@@ -18,7 +18,7 @@ while [[ $# -gt 0 ]]; do
     --output)         OUTPUT="$2"; shift 2;;
     -h|--help)
       echo "Usage: $0 --feature-config <config> --k8s-version <version> --output <path>"
-      echo "  --feature-config: default | dra-enabled | numa-full"
+      echo "  --feature-config: default | dra-enabled | numa-full | mokka-kwok"
       echo "  --k8s-version:    kindest/node version tag, e.g. v1.34.0"
       echo "  --output:         path to write the generated kind config YAML"
       exit 0;;
@@ -82,10 +82,28 @@ esac
     fi
   fi
 
+  if [ "$FEATURE_CONFIG" = "mokka-kwok" ]; then
+    # One /24 per node, including the 512 virtual topology nodes and Kind itself.
+    echo "networking:"
+    echo "  podSubnet: 10.240.0.0/13"
+  fi
   echo "nodes:"
   echo "- role: control-plane"
 
-  if [ -n "$RUNTIME_CONFIG" ]; then
+  if [ "$FEATURE_CONFIG" = "mokka-kwok" ]; then
+    # The reclaim workload deletes thousands of Job Pods in a single burst.
+    cat <<'YAML'
+  kubeadmConfigPatches:
+  - |
+    apiVersion: kubeadm.k8s.io/v1beta4
+    kind: ClusterConfiguration
+    controllerManager:
+      extraArgs:
+      - {name: concurrent-job-syncs, value: "100"}
+      - {name: kube-api-qps, value: "250"}
+      - {name: kube-api-burst, value: "500"}
+YAML
+  elif [ -n "$RUNTIME_CONFIG" ]; then
     echo "  kubeadmConfigPatches:"
     echo "  - |"
     echo "    kind: ClusterConfiguration"
@@ -101,6 +119,9 @@ esac
   # NRT-less to cover the no-NRT pass-through case.
   if [ "$FEATURE_CONFIG" = "numa-full" ]; then
     WORKER_POOLS=(numa-single numa-single default numa-besteffort)
+  elif [ "$FEATURE_CONFIG" = "mokka-kwok" ]; then
+    # The KWOK operator creates all GPU nodes. Keep one real CPU worker below.
+    WORKER_POOLS=()
   else
     WORKER_POOLS=(default default default default)
   fi

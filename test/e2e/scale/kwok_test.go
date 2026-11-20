@@ -17,7 +17,6 @@ import (
 	. "github.com/onsi/gomega"
 	kwok "github.com/run-ai/kwok-operator/api/v1beta1"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
@@ -36,7 +35,6 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait/watcher"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/scale/topology"
-	"github.com/kai-scheduler/api/constants"
 	"github.com/kai-scheduler/api/kai/v1/common"
 	kaiv1alpha1 "github.com/kai-scheduler/api/kai/v1alpha1"
 	v2 "github.com/kai-scheduler/api/scheduling/v2"
@@ -158,7 +156,7 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 				"topologyNodeCount", totalNodes,
 			)
 
-			updateFakeGPUOperatorGPUsPerNode(ctx, testCtx)
+			configureGPUsPerNode(ctx, testCtx)
 
 			var nodePools kwok.NodePoolList
 			Expect(testCtx.ControllerClient.List(ctx, &nodePools)).To(Succeed())
@@ -175,6 +173,9 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 			Expect(testCtx.ControllerClient.Create(ctx, &clusterTopology)).To(Succeed())
 
 			topologyNodePools = topology.GenerateNodePools(topologyLevels, nodesPerDomain, map[string]string{"test": "topology-e2e"})
+			for i := range topologyNodePools {
+				selectScaleGPUProvider(&topologyNodePools[i])
+			}
 			Expect(topologyNodePools).To(HaveLen(topologyConfig.nodePoolCount()))
 			Expect(createTopologyNodePools(ctx, testCtx, topologyNodePools)).To(Succeed())
 
@@ -206,6 +207,11 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 
 			originalNodeCount := 0
 			for _, nodePool := range originalNodePools {
+				// An originally empty pool already has its desired count. KWOK may
+				// never set Available on a pool that has never created a Node.
+				if nodePool.Spec.NodeCount == 0 {
+					continue
+				}
 				originalNodeCount += int(nodePool.Spec.NodeCount)
 				baseNodePool := nodePool.DeepCopy()
 				baseNodePool.Spec.NodeCount = 0
@@ -286,8 +292,8 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 
 	Context("Big cluster", Ordered, func() {
 		BeforeAll(func(ctx context.Context) {
-			GinkgoLogr.Info("Updating fake GPU operator GPUs per node")
-			updateFakeGPUOperatorGPUsPerNode(ctx, testCtx)
+			GinkgoLogr.Info("Configuring GPUs per node")
+			configureGPUsPerNode(ctx, testCtx)
 
 			GinkgoLogr.Info("Setting up managed node pool to 0 nodes")
 			managedNodePool := kwok.NodePool{
@@ -298,12 +304,12 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 			Expect(testCtx.ControllerClient.Get(ctx, runtimeClient.ObjectKeyFromObject(&managedNodePool), &managedNodePool)).To(Succeed())
 
 			originalManagedNodePool := managedNodePool.DeepCopy()
+			selectScaleGPUProvider(&managedNodePool)
 			managedNodePool.Spec.NodeCount = int32(0)
 
 			Expect(testCtx.ControllerClient.Patch(
 				ctx, &managedNodePool, runtimeClient.MergeFrom(originalManagedNodePool))).NotTo(HaveOccurred())
 
-			wait.ForKWOKOperatorNodePool(ctx, testCtx.ControllerClient, managedNodePool.Name)
 			wait.ForZeroKWOKNodes(ctx, testCtx.ControllerClient) // Wait until all kwok nodes are deleted
 
 			GinkgoLogr.Info("Filling all existing nodes with single GPU jobs to avoid fair share calculation issues")
@@ -441,20 +447,7 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 						})
 
 						It("measure time for reclaim to fail on distributed job last pod", func(ctx context.Context) {
-							averageTimeToUnschedulable := measureUnschedulableDelayInSeconds(
-								ctx, testCtx, reclaimSingleGPUJobsQueue,
-								func(ctx context.Context, testCtx *testcontext.TestContext, queue *v2.Queue) (*rd.JobResult, error) {
-									return createDistributedJobForKwok(
-										ctx, testCtx, queue,
-										v1.ResourceRequirements{
-											Limits: map[v1.ResourceName]resource.Quantity{
-												constants.NvidiaGpuResource: *resource.NewQuantity(int64(gpusPerNode), resource.DecimalSI),
-											},
-										}, defaultPodsPerDistributedJob,
-										map[string]string{}, nil,
-									)
-								},
-							)
+							averageTimeToUnschedulable := measureUnschedulableDelayInSeconds(ctx, testCtx, reclaimSingleGPUJobsQueue)
 							Expect(writeTestResults(
 								"Average time to unschedulable for distributed job", true,
 								map[string]interface{}{
@@ -766,7 +759,19 @@ func patchQueueGPU(ctx context.Context, testCtx *testcontext.TestContext, queue 
 	return testCtx.ControllerClient.Patch(ctx, queue, runtimeClient.RawPatch(types.MergePatchType, patch))
 }
 
-func updateFakeGPUOperatorGPUsPerNode(ctx context.Context, testCtx *testcontext.TestContext) {
+// The KWOK operator adds the fake-node annotation when it creates each Node.
+func selectScaleGPUProvider(pool *kwok.NodePool) {
+	if os.Getenv("KWOK_GPU_PROVIDER") == "mokka" {
+		pool.Spec.NodeTemplate.Labels["mokka.nvidia.com/sgpu-node"] = "true"
+		pool.Spec.NodeTemplate.Labels["mokka.nvidia.com/node-type"] = "KWOK"
+	}
+}
+
+func configureGPUsPerNode(ctx context.Context, testCtx *testcontext.TestContext) {
+	if os.Getenv("KWOK_GPU_PROVIDER") == "mokka" {
+		// The rack profile already defines the GPU count. The suite checks Node capacity.
+		return
+	}
 	topologyConfig := &v1.ConfigMap{}
 
 	Expect(testCtx.ControllerClient.Get(ctx, runtimeClient.ObjectKey{

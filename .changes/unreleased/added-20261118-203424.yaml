@@ -1,0 +1,4 @@
+kind: Added
+body: Run the KWOK scale suite with simulated GPUs from the Mokka proof of concept in draft PR CI.
+custom:
+  Issue: "2721"
