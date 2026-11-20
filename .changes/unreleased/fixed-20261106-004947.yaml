@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Topology required level is satisfied when all of a job's nodes share a domain below it
+custom:
+  Author: "manmohanbrahma"
+  Issue: "2593"
