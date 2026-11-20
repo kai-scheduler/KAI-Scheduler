@@ -121,3 +121,42 @@ func TestDivide(t *testing.T) {
 		})
 	}
 }
+
+// The leftover round hands out whole units; a queue whose remaining request or MaxAllowed is smaller than a unit
+// must not be given the whole unit.
+func TestDivideOverQuotaRemainderCapsAtTheRequest(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		total    float64
+		queues   []*Queue
+		expected map[string]float64
+	}{
+		{
+			name:     "fractional requests",
+			total:    10.2,
+			queues:   []*Queue{queue("a", 1, 0, 1, 3.5), queue("b", 1, 0, 1, 3.5), queue("c", 1, 0, 1, 3.5)},
+			expected: map[string]float64{"a": 3.5, "b": 3.5, "c": 3.2},
+		},
+		{
+			name:  "fractional max allowed",
+			total: 1.2,
+			queues: []*Queue{
+				{ID: "a", Priority: 1, MaxAllowed: 0.5, OverQuotaWeight: 1, Request: 5},
+				queue("b", 1, 0, 1, 0.5), queue("c", 1, 0, 1, 0.5),
+			},
+			expected: map[string]float64{"a": 0.5, "b": 0.5, "c": 0.2},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			remaining := DivideOverQuota(tc.total, 0, tc.queues)
+			if math.Abs(remaining) > 1e-9 {
+				t.Errorf("remaining = %v, expected 0", remaining)
+			}
+			for _, q := range tc.queues {
+				if math.Abs(q.FairShare-tc.expected[q.ID]) > 1e-9 {
+					t.Errorf("queue %s fair share = %v, expected %v", q.ID, q.FairShare, tc.expected[q.ID])
+				}
+			}
+		})
+	}
+}
