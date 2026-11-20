@@ -7,7 +7,7 @@ versionExt: md
 fragmentFileFormat: '{{.Kind}}-{{.Time.Format "20060102-150405"}}'
 versionFormat: '## [{{.Version}}] - {{.Time.Format "2006-01-02"}}'
 kindFormat: '### {{.Kind}}'
-changeFormat: '- {{.Body}}{{if .Custom.Issue}} [#{{.Custom.Issue}}](https://github.com/kai-scheduler/KAI-Scheduler/issues/{{.Custom.Issue}}){{end}}{{if .Custom.Author}} [{{.Custom.Author}}](https://github.com/{{.Custom.Author}}){{end}}'
+changeFormat: '- {{.Body}}{{if .Custom.Issue}} [#{{.Custom.Issue}}](https://github.com/kai-scheduler/KAI-Scheduler/issues/{{.Custom.Issue}}){{else if .Custom.PR}} [#{{.Custom.PR}}](https://github.com/kai-scheduler/KAI-Scheduler/pull/{{.Custom.PR}}){{end}}{{if .Custom.Author}} [{{.Custom.Author}}](https://github.com/{{.Custom.Author}}){{end}}'
 kinds:
   - label: Added
   - label: Changed
@@ -16,6 +16,10 @@ kinds:
 custom:
   - key: Issue
     label: Issue or PR number (optional, e.g. 1817)
+    type: string
+    optional: true
+  - key: PR
+    label: PR number, shown only when Issue is empty (optional, e.g. 2262)
     type: string
     optional: true
   - key: Author
