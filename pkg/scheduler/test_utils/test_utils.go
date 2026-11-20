@@ -91,6 +91,8 @@ type TestQueueBasic struct {
 	MaxAllowedCPUs              *float64
 	MaxAllowedMemory            *float64
 	GPUOverQuotaWeight          float64
+	CPUOverQuotaWeight          *float64
+	MemoryOverQuotaWeight       *float64
 	ParentQueue                 string
 	InteractiveTimeoutInMinutes int64
 	ReclaimMinRuntime           *metav1.Duration

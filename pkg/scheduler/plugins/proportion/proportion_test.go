@@ -286,6 +286,93 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 		}
 	})
 
+	Context("Set steady fair share", func() {
+		queue := func(name, parent string, children []common_info.QueueID, deserved, weight, request, limit float64) *rs.QueueAttributes {
+			return &rs.QueueAttributes{
+				UID: common_info.QueueID(name), Name: name, ParentQueue: common_info.QueueID(parent), ChildQueues: children,
+				QueueResourceShare: rs.QueueResourceShare{
+					GPU: rs.ResourceShare{Deserved: deserved, OverQuotaWeight: weight, Request: request, MaxAllowed: limit},
+				},
+			}
+		}
+		prioritized := func(q *rs.QueueAttributes, priority int) *rs.QueueAttributes {
+			q.Priority = priority
+			return q
+		}
+		unlimited := commonconstants.UnlimitedResourceQuantity
+		tests := map[string]struct {
+			queues                  []*rs.QueueAttributes
+			expectedFairShare       map[common_info.QueueID]float64
+			expectedSteadyFairShare map[common_info.QueueID]float64
+		}{
+			// The fair share is capped by demand; the steady fair share divides by weight whatever the demand.
+			"weighted queues get their weight's share, idle or not": {
+				queues: []*rs.QueueAttributes{
+					queue("a", "", nil, 0, 1, 180, unlimited),
+					queue("b", "", nil, 0, 1, 0, unlimited),
+					queue("c", "", nil, 0, 1, 106, unlimited),
+				},
+				expectedFairShare:       map[common_info.QueueID]float64{"a": 180, "b": 0, "c": 106},
+				expectedSteadyFairShare: map[common_info.QueueID]float64{"a": 100, "b": 100, "c": 100},
+			},
+			// A queue without weight keeps what it uses of its quota, and a queue with unlimited quota its
+			// demand; the weighted queues share the rest 2:3.
+			"queues without weight keep their demand": {
+				queues: []*rs.QueueAttributes{
+					queue("a", "", nil, 0, 2, 200, unlimited),
+					queue("b", "", nil, 0, 3, 0, unlimited),
+					queue("no-weight", "", nil, 50, 0, 30, unlimited),
+					queue("unlimited", "", nil, unlimited, 0, 20, unlimited),
+				},
+				expectedFairShare:       map[common_info.QueueID]float64{"a": 200, "b": 0, "no-weight": 30, "unlimited": 20},
+				expectedSteadyFairShare: map[common_info.QueueID]float64{"a": 100, "b": 150, "no-weight": 30, "unlimited": 20},
+			},
+			// As in the fair share, higher priority queues take what is above the quotas first.
+			"higher priority weighted queues take what is above the quotas first": {
+				queues: []*rs.QueueAttributes{
+					prioritized(queue("high", "", nil, 0, 1, 100, unlimited), 2),
+					prioritized(queue("low-with-quota", "", nil, 20, 1, 50, unlimited), 1),
+					prioritized(queue("low", "", nil, 0, 1, 50, unlimited), 1),
+				},
+				expectedFairShare:       map[common_info.QueueID]float64{"high": 100, "low-with-quota": 50, "low": 50},
+				expectedSteadyFairShare: map[common_info.QueueID]float64{"high": 280, "low-with-quota": 20, "low": 0},
+			},
+			// Children divide their parent's steady fair share by weight, up to their limits.
+			"divided level by level and capped at the limit": {
+				queues: []*rs.QueueAttributes{
+					queue("p", "", []common_info.QueueID{"p1", "p2"}, 0, 1, 5, unlimited),
+					queue("p1", "p", nil, 0, 1, 5, unlimited),
+					queue("p2", "p", nil, 0, 2, 0, 40),
+					queue("q", "", nil, 0, 1, 10, unlimited),
+				},
+				expectedFairShare:       map[common_info.QueueID]float64{"p": 5, "p1": 5, "p2": 0, "q": 10},
+				expectedSteadyFairShare: map[common_info.QueueID]float64{"p": 150, "p1": 110, "p2": 40, "q": 150},
+			},
+		}
+
+		for name, data := range tests {
+			testData := data
+			It(name, func() {
+				queues := map[common_info.QueueID]*rs.QueueAttributes{}
+				for _, q := range testData.queues {
+					queues[q.UID] = q
+				}
+				proportion := &proportionPlugin{
+					totalResource:   rs.ResourceQuantities{rs.GpuResource: 300},
+					queues:          queues,
+					pluginArguments: map[string]string{},
+				}
+
+				proportion.setFairShare()
+				proportion.setSteadyFairShare()
+				for id, q := range queues {
+					Expect(q.GPU.FairShare).To(Equal(testData.expectedFairShare[id]), "fair share of %s", id)
+					Expect(q.GPU.SteadyFairShare).To(Equal(testData.expectedSteadyFairShare[id]), "steady fair share of %s", id)
+				}
+			})
+		}
+	})
+
 	Context("Set fair share for 2 hierarchy queues - simplified", func() {
 		getBaseQueues := func() map[common_info.QueueID]*rs.QueueAttributes {
 			return map[common_info.QueueID]*rs.QueueAttributes{
@@ -1036,6 +1123,24 @@ var _ = Describe("New", func() {
 			plugin := New(args).(*proportionPlugin)
 			Expect(plugin.pluginArguments).To(Equal(args))
 			Expect(plugin.queuePriorityInQuotaReclaim).To(Equal(true))
+		})
+
+		It("should default steadyFairShareReclaim to false", func() {
+			plugin := New(args).(*proportionPlugin)
+			Expect(plugin.steadyFairShareReclaim).To(Equal(false))
+		})
+
+		It("should handle steadyFairShareReclaim arg", func() {
+			args := framework.PluginArguments{"steadyFairShareReclaim": "true"}
+			plugin := New(args).(*proportionPlugin)
+			Expect(plugin.pluginArguments).To(Equal(args))
+			Expect(plugin.steadyFairShareReclaim).To(Equal(true))
+		})
+
+		It("should handle malformed steadyFairShareReclaim arg", func() {
+			args := framework.PluginArguments{"steadyFairShareReclaim": "wrong"}
+			plugin := New(args).(*proportionPlugin)
+			Expect(plugin.steadyFairShareReclaim).To(Equal(false))
 		})
 	})
 })

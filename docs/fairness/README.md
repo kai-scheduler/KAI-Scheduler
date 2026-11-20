@@ -74,6 +74,8 @@ The scheduler will prioritize the first strategy.
 
 Both strategies only ever reclaim over-quota resources — a queue using only its guaranteed quota is normally never a reclaim victim. Enabling the `queuePriorityInQuotaReclaim` plugin argument (see [Configuration](#configuration)) adds a third, opt-in strategy: a queue can reclaim in-quota resources from another queue with strictly lower `Priority`, as long as the reclaimer itself stays within its own deserved quota. See [Scheduling Deep Dive](../scheduling-deep-dive/README.md#the-quota-protection-guarantee) for details.
 
+Both strategies compare a queue with its fair share, which is capped by demand: while the cluster has free GPUs, even ones a pending job cannot use, every queue's fair share equals its demand and no queue is reclaimable. Enabling the `steadyFairShareReclaim` plugin argument (see [Configuration](#steady-fair-share-reclaim)) lets a queue below its share by over-quota weight reclaim GPUs from queues above theirs.
+
 ## Configuration
 
 ### Reclaim Sensitivity
@@ -120,6 +122,42 @@ scheduler:
 
 This is alpha functionality, and the exact behavior of this feature might change in future releases. 
 Enable `queuePriorityInQuotaReclaim` per scheduling shard only when queue `Priority` should outrank quota protection for lower-priority queues.
+
+### Steady Fair-Share Reclaim
+
+Opt in to reclaiming toward each queue's share by over-quota weight, using `steadyFairShareReclaim`. The fair share is capped by demand, so while GPUs are free, for example scattered across nodes so that no node fits a pending pod, or outside a job's topology, every queue's fair share equals its demand and no queue is reclaimable. With this argument the scheduler also computes each queue's **steady fair share**: its share if every queue with an over-quota weight requested the whole cluster. A queue below its steady fair share may then reclaim GPUs from queues above theirs:
+
+- Victims are taken in the usual order, and a victim queue never goes below its steady fair share. A victim larger than its queue's surplus is skipped for smaller ones, even of higher priority; if none fits, the pending job waits.
+- The reclaiming queue may end above its steady fair share while it remains less saturated than the queues it reclaims from, as set by the [reclaim sensitivity](#reclaim-sensitivity) multiplier.
+- It applies to jobs that request GPUs and compares GPUs only; CPU-only jobs are reclaimed as before.
+- The weights of idle queues count: a queue running on an idle queue's share can lose jobs to a queue below its steady fair share whose job cannot be placed.
+
+```yaml
+# SchedulingShard
+spec:
+  plugins:
+    proportion:
+      arguments:
+        steadyFairShareReclaim: "true"
+```
+
+```yaml
+# Helm values — templated into the default SchedulingShard's spec.plugins
+scheduler:
+  plugins:
+    proportion:
+      arguments:
+        steadyFairShareReclaim: "true"
+```
+
+Plugin arguments replace the plugin's default arguments: if the shard sets `kValue`, set it in these arguments too.
+
+| Value | Behavior |
+|-------|----------|
+| `false` (default) | Reclaim compares queues with their fair share, capped by demand |
+| `true` | A queue below its steady fair share may also reclaim GPUs from queues above theirs, down to their steady fair share |
+
+This is alpha functionality, and the exact behavior of this feature might change in future releases. See the [design](../developer/designs/steady-fair-share-reclaim.md) for details.
 
 ## See Also
 

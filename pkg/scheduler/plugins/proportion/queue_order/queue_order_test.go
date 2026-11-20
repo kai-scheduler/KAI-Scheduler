@@ -523,3 +523,96 @@ func TestGetQueueOrderResultPriorityInQuotaReclaimDisabledKeepsCurrentOrder(t *t
 		session.SubGroupOrderFn, taskOrderFn, nil, nil, false)
 	assert.Equal(t, lQueuePrioritized, result)
 }
+
+func TestPrioritizeBelowSteadyFairShare(t *testing.T) {
+	queue := func(gpuAllocated, cpuAllocated float64) *resource_share.QueueAttributes {
+		return &resource_share.QueueAttributes{
+			QueueResourceShare: resource_share.QueueResourceShare{
+				CPU: resource_share.ResourceShare{SteadyFairShare: 1000, Allocated: cpuAllocated, MaxAllowed: -1},
+				GPU: resource_share.ResourceShare{SteadyFairShare: 100, Allocated: gpuAllocated, MaxAllowed: -1},
+			},
+		}
+	}
+	job := func(name string, milliCPU, gpus float64) *podgroup_info.PodGroupInfo {
+		pg := podgroup_info.NewPodGroupInfoWithVectorMap(common_info.PodGroupID(name), testVectorMap)
+		pg.GetAllPodSets()[podgroup_info.DefaultSubGroup].SetMinAvailable(1)
+		pg.AddTaskInfo(&pod_info.PodInfo{
+			Name:         "task-" + name,
+			Status:       pod_status.Pending,
+			SubGroupName: podgroup_info.DefaultSubGroup,
+			ResReqVector: resource_info.NewResourceVectorWithValues(milliCPU, 0, gpus, testVectorMap),
+			VectorMap:    testVectorMap,
+		})
+		return pg
+	}
+
+	tests := []testMetadata{
+		{
+			Name:           "the queue below its steady fair share goes first",
+			lqueue:         queue(90, 0),
+			rqueue:         queue(100, 0),
+			lJobInfo:       job("lJob", 0, 8),
+			rJobInfo:       job("rJob", 0, 8),
+			expectedResult: lQueuePrioritized,
+		},
+		{
+			Name:           "the queue below its steady fair share goes first, on the right",
+			lqueue:         queue(120, 0),
+			rqueue:         queue(50, 0),
+			lJobInfo:       job("lJob", 0, 8),
+			rJobInfo:       job("rJob", 0, 8),
+			expectedResult: rQueuePrioritized,
+		},
+		{
+			Name:           "both below: the existing order decides",
+			lqueue:         queue(90, 0),
+			rqueue:         queue(50, 0),
+			lJobInfo:       job("lJob", 0, 8),
+			rJobInfo:       job("rJob", 0, 8),
+			expectedResult: equalPrioritization,
+		},
+		{
+			Name:           "neither below: the existing order decides",
+			lqueue:         queue(100, 0),
+			rqueue:         queue(150, 0),
+			lJobInfo:       job("lJob", 0, 8),
+			rJobInfo:       job("rJob", 0, 8),
+			expectedResult: equalPrioritization,
+		},
+		{
+			Name:           "CPU does not count for a job that requests GPUs",
+			lqueue:         queue(90, 1200),
+			rqueue:         queue(100, 0),
+			lJobInfo:       job("lJob", 100, 8),
+			rJobInfo:       job("rJob", 100, 8),
+			expectedResult: lQueuePrioritized,
+		},
+		{
+			Name:           "queues are not reordered when a candidate job requests no GPUs",
+			lqueue:         queue(120, 0),
+			rqueue:         queue(90, 0),
+			lJobInfo:       job("lJob", 100, 0),
+			rJobInfo:       job("rJob", 100, 8),
+			expectedResult: equalPrioritization,
+		},
+		{
+			Name:           "queues are not reordered when a queue has no job to allocate",
+			lqueue:         queue(120, 0),
+			rqueue:         queue(90, 0),
+			lJobInfo:       emptyPodGroup("lJob"),
+			rJobInfo:       job("rJob", 0, 8),
+			expectedResult: equalPrioritization,
+		},
+	}
+
+	taskOrderFn := func(l, r interface{}) bool {
+		return taskorder.TaskOrderFn(l, r) < 0
+	}
+	for _, test := range tests {
+		t.Run(test.Name, func(t *testing.T) {
+			result := PrioritizeBelowSteadyFairShare(test.lqueue, test.rqueue, test.lJobInfo, test.rJobInfo,
+				nil, taskOrderFn, nil)
+			assert.Equal(t, test.expectedResult, result)
+		})
+	}
+}
