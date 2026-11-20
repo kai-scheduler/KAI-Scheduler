@@ -1,0 +1,79 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+name: Linked Issue Nudge
+
+on:
+  # pull_request_target: token can comment and label fork PRs. Safe because no PR code is checked out.
+  pull_request_target:
+    types: [opened, edited, reopened, synchronize, labeled, unlabeled]
+    branches:
+      - main
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: linked-issue-nudge-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  nudge:
+    name: Linked Issue Nudge
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    if: >-
+      !contains(github.event.pull_request.labels.*.name, 'skip-issue') &&
+      !contains(github.event.pull_request.labels.*.name, 'dependencies') &&
+      !contains(github.event.pull_request.labels.*.name, 'bot') &&
+      github.event.pull_request.user.login != 'dependabot[bot]' &&
+      github.event.pull_request.user.login != 'KaiPilotBot'
+    steps:
+      - name: Nudge author to link an issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          LABEL: needs-issue
+        run: |
+          marker='<!-- linked-issue-nudge -->'
+          comment_id=$(gh api "repos/$OWNER/$REPO/issues/$PR_NUMBER/comments" --paginate \
+            --jq "[.[] | select(.body | contains(\"$marker\")) | .id] | first // empty")
+
+          count=$(gh api graphql -f owner="$OWNER" -f repo="$REPO" -F pr="$PR_NUMBER" -f query='
+            query($owner: String!, $repo: String!, $pr: Int!) {
+              repository(owner: $owner, name: $repo) {
+                pullRequest(number: $pr) { closingIssuesReferences(first: 1) { totalCount } }
+              }
+            }' --jq '.data.repository.pullRequest.closingIssuesReferences.totalCount')
+
+          if [ "$count" -gt 0 ]; then
+            echo "Linked issue found."
+            gh pr edit "$PR_NUMBER" --repo "$OWNER/$REPO" --remove-label "$LABEL" || true
+            [ -n "$comment_id" ] && gh api -X DELETE "repos/$OWNER/$REPO/issues/comments/$comment_id"
+            exit 0
+          fi
+
+          gh label create "$LABEL" --repo "$OWNER/$REPO" --color d93f0b \
+            --description "PR is not linked to an issue" 2>/dev/null || true
+          gh pr edit "$PR_NUMBER" --repo "$OWNER/$REPO" --add-label "$LABEL"
+
+          echo "::warning::This PR is not linked to an issue. Open one and add 'Fixes #<number>' to the PR description."
+          [ -n "$comment_id" ] && exit 0
+
+          gh pr comment "$PR_NUMBER" --repo "$OWNER/$REPO" --body "$(cat <<EOF
+          $marker
+          ## :warning: This PR is not linked to an issue
+
+          @$PR_AUTHOR, every change to KAI Scheduler needs a tracking issue so the work is visible in our project board.
+
+          **To fix this:**
+          1. [Open an issue](https://github.com/$OWNER/$REPO/issues/new/choose) describing the problem or feature, or find the existing one.
+          2. Add \`Fixes #<issue-number>\` to the **Related Issues** section of this PR description, or link it from the **Development** sidebar.
+
+          This comment and the \`$LABEL\` label are removed automatically once an issue is linked.
+          EOF
+          )"
