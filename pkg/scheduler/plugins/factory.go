@@ -24,6 +24,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/backgroundpods"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/dynamicresources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/elastic"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/gangcascadeorder"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/gpujoborder"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/gpupack"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/gpusharingorder"
@@ -54,6 +55,7 @@ func InitDefaultPlugins() {
 	framework.RegisterPluginBuilder("predicates", predicates.New)
 	framework.RegisterPluginBuilder("priority", priority.New)
 	framework.RegisterPluginBuilder("gpujoborder", gpujoborder.New)
+	framework.RegisterPluginBuilder("gangcascadeorder", gangcascadeorder.New)
 	framework.RegisterPluginBuilder("nodeplacement", nodeplacement.New)
 	framework.RegisterPluginBuilder("nominatednode", nominatednode.New)
 	framework.RegisterPluginBuilder("numa", numa.New)
