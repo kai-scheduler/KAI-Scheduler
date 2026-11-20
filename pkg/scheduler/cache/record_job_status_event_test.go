@@ -5,6 +5,7 @@ package cache
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"testing"
@@ -19,6 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
+	faketesting "k8s.io/client-go/testing"
 	"k8s.io/utils/ptr"
 
 	kubeaischedulerfake "github.com/kai-scheduler/api/client/clientset/versioned/fake"
@@ -329,6 +331,7 @@ func TestRecordJobStatusEvent(t *testing.T) {
 
 			kubeClient = fake.NewSimpleClientset(podsAsObjects...)
 			kubeAiSchedulerClient := kubeaischedulerfake.NewSimpleClientset(podGroup)
+			fakeSchedulingStatusSchema(kubeAiSchedulerClient)
 
 			if tt.detailedErrors != nil {
 				detailedFitErrors = *tt.detailedErrors
@@ -499,6 +502,7 @@ func TestRecordJobStatusEventInvalidSubGroupPod(t *testing.T) {
 
 	kubeClient := fake.NewSimpleClientset(validPod, invalidPod)
 	kubeAiSchedulerClient := kubeaischedulerfake.NewSimpleClientset(podGroup)
+	fakeSchedulingStatusSchema(kubeAiSchedulerClient)
 	cache, err := New(&SchedulerCacheParams{
 		KubeClient:                  kubeClient,
 		KAISchedulerClient:          kubeAiSchedulerClient,
@@ -665,4 +669,28 @@ func newUnschedulabeReasons(reasons map[string]string) enginev2alpha2.Unschedula
 		})
 	}
 	return explanations
+}
+
+// The simple tracker does not implement managedFields or dry-run. Ownership behavior is covered by status_updater's envtest suite.
+func fakeSchedulingStatusSchema(client *kubeaischedulerfake.Clientset) {
+	client.PrependReactor("patch", "podgroups", func(action faketesting.Action) (bool, runtime.Object, error) {
+		patch := action.(faketesting.PatchActionImpl)
+		if len(patch.PatchOptions.DryRun) == 0 {
+			return false, nil, nil
+		}
+		podGroup := &enginev2alpha2.PodGroup{}
+		if err := json.Unmarshal(patch.Patch, podGroup); err != nil {
+			return true, nil, err
+		}
+		key, err := json.Marshal(map[string]string{"nodePool": podGroup.Status.SchedulingConditions[0].NodePool})
+		if err != nil {
+			return true, nil, err
+		}
+		fields, err := json.Marshal(map[string]any{"f:status": map[string]any{"f:schedulingConditions": map[string]any{"k:" + string(key): map[string]any{}}}})
+		if err != nil {
+			return true, nil, err
+		}
+		podGroup.ManagedFields = []metav1.ManagedFieldsEntry{{Manager: patch.PatchOptions.FieldManager, Operation: metav1.ManagedFieldsOperationApply, Subresource: "status", FieldsV1: &metav1.FieldsV1{Raw: fields}}}
+		return true, podGroup, nil
+	})
 }

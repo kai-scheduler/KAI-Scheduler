@@ -56,7 +56,10 @@ var _ = Describe("Status Updater - Pod Groups Syncing", func() {
 		finishUpdatesChan = make(chan struct{})
 		// wait with pod groups update until signal is given.
 		kubeAiSchedClient.SchedulingV2alpha2().(*fakeschedulingv2alpha2.FakeSchedulingV2alpha2).PrependReactor(
-			"update", "podgroups", func(action faketesting.Action) (handled bool, ret runtime.Object, err error) {
+			"patch", "podgroups", func(action faketesting.Action) (handled bool, ret runtime.Object, err error) {
+				if action.GetSubresource() != "status" {
+					return false, nil, nil
+				}
 				<-finishUpdatesChan
 				wg.Done()
 				return false, nil, nil
@@ -64,6 +67,7 @@ var _ = Describe("Status Updater - Pod Groups Syncing", func() {
 		)
 
 		stopCh = make(chan struct{})
+		statusUpdater.statusSchemaVerified.Store(true)
 		statusUpdater.Run(stopCh)
 
 		numberOfJobs := 10
@@ -351,12 +355,13 @@ var _ = Describe("Status Updater - annotation removal across cycles", func() {
 
 		finishUpdates := make(chan struct{})
 		kubeAiSchedClient.SchedulingV2alpha2().(*fakeschedulingv2alpha2.FakeSchedulingV2alpha2).PrependReactor(
-			"update", "podgroups", func(faketesting.Action) (bool, runtime.Object, error) {
+			"patch", "podgroups", func(faketesting.Action) (bool, runtime.Object, error) {
 				<-finishUpdates
 				return false, nil, nil
 			},
 		)
 		stopCh := make(chan struct{})
+		su.statusSchemaVerified.Store(true)
 		su.Run(stopCh)
 		defer close(stopCh)
 		defer close(finishUpdates)

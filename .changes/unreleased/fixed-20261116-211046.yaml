@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Isolate PodGroup scheduling status ownership across scheduling shards and controllers
+custom:
+  Author: "gaoyk19"
+  Issue: "2612"

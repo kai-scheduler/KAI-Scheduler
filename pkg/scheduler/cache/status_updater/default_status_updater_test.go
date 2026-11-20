@@ -242,7 +242,7 @@ func TestUpdatePodGroupSchedulingCondition(t *testing.T) {
 			expectedUpdated: false,
 		},
 		{
-			name: "Update even if just the order is wrong - latest condition by transition ID should be last in the list",
+			name: "Map list order does not trigger an update",
 			podGroup: &enginev2alpha2.PodGroup{
 				Status: enginev2alpha2.PodGroupStatus{
 					SchedulingConditions: []enginev2alpha2.SchedulingCondition{
@@ -277,27 +277,11 @@ func TestUpdatePodGroupSchedulingCondition(t *testing.T) {
 				Status:             v1.ConditionTrue,
 			},
 			expectedConditions: []enginev2alpha2.SchedulingCondition{
-				{
-					Type:               enginev2alpha2.UnschedulableOnNodePool,
-					NodePool:           "newerConditionNodepool",
-					Reason:             "reason",
-					Message:            "message",
-					TransitionID:       "2",
-					LastTransitionTime: metav1.Time{},
-					Status:             v1.ConditionTrue,
-				},
-				{
-					Type:               enginev2alpha2.UnschedulableOnNodePool,
-					NodePool:           "existingConditionNodepool",
-					Reason:             "reason",
-					Message:            "message",
-					TransitionID:       "4",
-					LastTransitionTime: metav1.Time{},
-					Status:             v1.ConditionTrue,
-				},
+				{Type: enginev2alpha2.UnschedulableOnNodePool, NodePool: "existingConditionNodepool", Reason: "reason", Message: "message", TransitionID: "3", Status: v1.ConditionTrue},
+				{Type: enginev2alpha2.UnschedulableOnNodePool, NodePool: "newerConditionNodepool", Reason: "reason", Message: "message", TransitionID: "2", Status: v1.ConditionTrue},
 			},
 
-			expectedUpdated: true,
+			expectedUpdated: false,
 		},
 		{
 			name: "Squash conditions",
@@ -429,19 +413,19 @@ func TestRemovePodGroupSchedulingCondition(t *testing.T) {
 			expectedUpdated:    true,
 		},
 		{
-			name: "All conditions across node pools are removed",
+			name: "Other node pools retain their conditions",
 			podGroup: &enginev2alpha2.PodGroup{
 				Status: enginev2alpha2.PodGroupStatus{
 					SchedulingConditions: []enginev2alpha2.SchedulingCondition{unschedulable("default"), unschedulable("pool-b")},
 				},
 			},
-			expectedConditions: []enginev2alpha2.SchedulingCondition{},
+			expectedConditions: []enginev2alpha2.SchedulingCondition{unschedulable("pool-b")},
 			expectedUpdated:    true,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Logf("Running test %d: %s", i, test.name)
-			updated := removePodGroupSchedulingCondition(test.podGroup)
+			updated := removePodGroupSchedulingCondition(test.podGroup, "default")
 			assert.Equal(t, test.expectedUpdated, updated)
 			assertPodGroupConditions(t, test.podGroup.Status.SchedulingConditions, test.expectedConditions)
 		})
@@ -738,7 +722,10 @@ func TestDefaultStatusUpdater_RecordJobStatusEvent(t *testing.T) {
 			finishUpdatesChan := make(chan struct{})
 			// wait with pod groups update until signal is given.
 			kubeAiSchedClient.SchedulingV2alpha2().(*fakeschedulingv2alpha2.FakeSchedulingV2alpha2).PrependReactor(
-				"update", "podgroups", func(action faketesting.Action) (handled bool, ret runtime.Object, err error) {
+				"patch", "podgroups", func(action faketesting.Action) (handled bool, ret runtime.Object, err error) {
+					if action.GetSubresource() != "status" {
+						return false, nil, nil
+					}
 					<-finishUpdatesChan
 					wg.Done()
 					return false, nil, nil
@@ -753,6 +740,7 @@ func TestDefaultStatusUpdater_RecordJobStatusEvent(t *testing.T) {
 			)
 
 			stopCh := make(chan struct{})
+			statusUpdater.statusSchemaVerified.Store(true)
 			statusUpdater.Run(stopCh)
 
 			statusUpdater.RecordJobStatusEvent(jobInfos[common_info.NewPodGroupID(test.job.Namespace, test.job.Name)], nil)
@@ -868,6 +856,7 @@ func TestDefaultStatusUpdater_RecordStaleJobEvent(t *testing.T) {
 			statusUpdater := New(kubeClient, kubeAiSchedClient, recorder, 1, false, nodePoolLabelKey)
 
 			stopCh := make(chan struct{})
+			statusUpdater.statusSchemaVerified.Store(true)
 			statusUpdater.Run(stopCh)
 
 			statusUpdater.recordStaleJobEvent(test.job)
@@ -896,13 +885,14 @@ func TestDefaultStatusUpdater_RetryAfterError(t *testing.T) {
 	updateCalls := 0
 	// Return a transient error so the update is retried.
 	kubeAiSchedClient.SchedulingV2alpha2().(*fakeschedulingv2alpha2.FakeSchedulingV2alpha2).PrependReactor(
-		"update", "podgroups", func(action faketesting.Action) (handled bool, ret runtime.Object, err error) {
+		"get", "podgroups", func(action faketesting.Action) (handled bool, ret runtime.Object, err error) {
 			updateCalls += 1
 			return true, nil, errors.New("test")
 		},
 	)
 
 	stopCh := make(chan struct{})
+	statusUpdater.statusSchemaVerified.Store(true)
 	statusUpdater.Run(stopCh)
 	defer close(stopCh)
 
