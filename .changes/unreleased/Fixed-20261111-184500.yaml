@@ -1,0 +1,6 @@
+kind: Fixed
+body: Enable the DRA allocator features that are on by default in Kubernetes 1.36 (partitionable devices, consumable capacity) when the API server is 1.36 or later, unless they are set with --feature-gates
+time: 2026-11-11T18:45:00.000000-05:00
+custom:
+  Author: dundysm
+  Issue: "2631"

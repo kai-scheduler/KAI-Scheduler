@@ -27,13 +27,29 @@ const (
 // off to reflect server-side DRA availability.
 var dynamicResourcesEnabled atomic.Bool
 
+// serverMinorVersion is the minor version of the Kubernetes API server, as
+// seen by SetDRAFeatureGate. Zero means unknown.
+var serverMinorVersion atomic.Int32
+
 func SetDRAFeatureGate(discoveryClient discovery.DiscoveryInterface) error {
-	enabled, err := IsDynamicResourcesEnabled(discoveryClient)
+	serverVersion, err := discoveryClient.ServerVersion()
+	if err != nil {
+		return fmt.Errorf("failed to get server version: %w", err)
+	}
+	enabled, err := isDynamicResourcesEnabled(serverVersion, discoveryClient)
 	if err != nil {
 		return err
 	}
 	dynamicResourcesEnabled.Store(enabled)
+	serverMinorVersion.Store(int32(kubeMinorVersion(serverVersion)))
 	return nil
+}
+
+// ServerVersionAtLeast reports whether the API server seen by
+// SetDRAFeatureGate is Kubernetes 1.<minor> or later. It returns false when the
+// server version is unknown.
+func ServerVersionAtLeast(minor int) bool {
+	return int(serverMinorVersion.Load()) >= minor
 }
 
 // DynamicResourcesEnabled reports whether DRA was determined to be usable
@@ -91,7 +107,10 @@ func IsDynamicResourcesEnabled(discoveryClient discovery.DiscoveryInterface) (bo
 	if err != nil {
 		return false, fmt.Errorf("failed to get server version: %w", err)
 	}
+	return isDynamicResourcesEnabled(serverVersion, discoveryClient)
+}
 
+func isDynamicResourcesEnabled(serverVersion *version.Info, discoveryClient discovery.DiscoveryInterface) (bool, error) {
 	// Check if the API server version is compatible with DRA
 	if !isCompatibleDRAVersion(serverVersion) {
 		return false, nil
@@ -127,8 +146,18 @@ func IsDynamicResourcesEnabled(discoveryClient discovery.DiscoveryInterface) (bo
 }
 
 func isCompatibleDRAVersion(serverVersion *version.Info) bool {
+	return kubeMinorVersion(serverVersion) >= 26
+}
+
+// kubeMinorVersion returns the minor version of a Kubernetes 1.x server, or 0
+// when the version cannot be parsed. Provider suffixes such as "33+" are
+// ignored.
+func kubeMinorVersion(serverVersion *version.Info) int {
+	if serverVersion == nil {
+		return 0
+	}
 	if majorVer, errMajor := strconv.Atoi(serverVersion.Major); errMajor != nil || majorVer < 1 {
-		return false
+		return 0
 	}
 
 	normalizedMinorVersion := serverVersion.Minor
@@ -136,9 +165,9 @@ func isCompatibleDRAVersion(serverVersion *version.Info) bool {
 	if len(minorVersionSuffix) > 0 {
 		normalizedMinorVersion = strings.TrimSuffix(normalizedMinorVersion, minorVersionSuffix)
 	}
-	if minorVer, errMinor := strconv.Atoi(normalizedMinorVersion); errMinor != nil || minorVer < 26 {
-		return false
+	minorVer, errMinor := strconv.Atoi(normalizedMinorVersion)
+	if errMinor != nil || minorVer < 0 {
+		return 0
 	}
-
-	return true
+	return minorVer
 }
