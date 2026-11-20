@@ -21,17 +21,18 @@ We recommend reviewing these documents to understand the system architecture bef
 
 ## How to Contribute
 ### Reporting Issues
-Open an issue with a clear description, steps to reproduce, and relevant environment details.
+Open an issue with a clear description, steps to reproduce, and relevant environment details. See [ISSUES.md](docs/contributing/ISSUES.md) for what to include in bug reports and feature requests.
 
 ### Improving Documentation
 Help us keep the docs clear and useful by fixing typos, updating outdated information, or adding examples.
 
 ### Contributing Changes
+- Open an Issue – For features, behavior or API changes and non-trivial fixes, find or open an [issue](https://github.com/kai-scheduler/KAI-scheduler/issues/new/choose) first so maintainers can confirm the direction. Trivial fixes and documentation changes do not need one.
 - Fork and Clone – Begin by forking the repository and cloning it to your local machine.
 - Create a Branch – Use a descriptive branch name, such as feature/add-cool-feature or bugfix/fix-issue123.
 - Make Changes – Keep your commits small, focused, and well-documented. For detailed build and test instructions, refer to [Building from Source](docs/developer/building-from-source.md).
 - Log Changes – For behavior-affecting changes (features, fixes, API changes), add a changelog entry by running `make changelog` (powered by [changie](https://changie.dev)). This creates a small fragment file under `.changes/unreleased/` instead of editing `CHANGELOG.md` directly, so entries never conflict between PRs or backports. `CHANGELOG.md` is the source of truth for released versions (following [keepachangelog.com](https://keepachangelog.com/en/1.1.0/)); your fragment stays in `.changes/unreleased/` until a maintainer cuts the next release, which folds the pending fragments into `CHANGELOG.md` and clears them. Skip logging internal changes like refactoring or tests. CI checks for a fragment; add the `skip-changelog` label to your PR to skip if your change doesn't require a changelog entry.
-- Submit a PR – Open a pull request and reference any relevant issues or discussions.
+- Submit a PR – Open a pull request and link the issue (`Fixes #N`) under "Related Issues" in the PR description.
 - Approval Policy – PRs from external contributors require approval from 2 trusted reviewers (organization members or collaborators) before merging.
 - Coverage - Please look at the coverage change details and create unit tests, integration tests or end-to-end tests to cover new functionality or changes.
 
@@ -42,6 +43,33 @@ API types, generated clients, and the `constants`, `utilities/resources` and `ut
 3. Release a new api version, then bump it here with `go get github.com/kai-scheduler/api@vX.Y.Z`.
 
 Do not edit the old in-tree copies under `pkg/apis/{scheduling,kai/v1alpha1,client}` and `pkg/common/{constants,resources,podgroup}`. Most code no longer imports them, so changes there usually have no effect, and they will be removed. See the api repo's [Contributing](https://github.com/kai-scheduler/api/blob/main/README.md#contributing) section.
+
+### Build, Test and Validate
+`make test` and `make build` run in Docker and are slow; prefer targeted commands while iterating. See [Building from Source](docs/developer/building-from-source.md) for the full flow.
+
+```bash
+make validate                                  # regenerates everything and checks git diff; run before finishing any non-trivial change
+go test ./pkg/scheduler/actions/allocate       # most packages use plain go test
+go test -run TestHandleAllocation ./pkg/scheduler/actions/allocate
+go tool ginkgo -v --focus "pattern" ./pkg/binder/controllers/integration_tests   # Ginkgo suites
+make envtest                                   # then run go test with KUBEBUILDER_ASSETS (see build/makefile/testenv.mk)
+./hack/run-e2e-kind.sh                         # e2e on kind; add --preserve-cluster to keep it
+go tool ginkgo -r --randomize-all --label-filter '!autoscale && !scale && !upgrade && !gitops' ./test/e2e/suites   # CI e2e filter
+```
+
+- Test files live next to the code and end in `_test.go`.
+- Not every package is Ginkgo. Check for a `suite_test.go` before using `ginkgo`.
+
+### Code Style
+Only what linters and `gofmt` do not enforce:
+
+- Imports in three groups: stdlib, external, internal.
+- `ctx context.Context` is the first parameter.
+- Comments explain why, not what. Keep them short, with no pronouns (`I`, `we`). Do not add obvious comments.
+- New files need the Apache-2.0 + NVIDIA header (`make gen-license`).
+- Add RBAC through kubebuilder markers, e.g. `// +kubebuilder:rbac:groups=core,resources=pods,verbs=get`, then run `make manifests`.
+- Never hand-edit generated files (`zz_generated*`, `pkg/apis/client/`, CRDs, RBAC templates, `*_mock.go`); change the source and run `make generate manifests clients generate-mocks`. New mocks go in the `generate-mocks` list in the `Makefile`.
+- Logging follows the practices below. V(5+) scheduler logs must be guarded with `.Do(...)`.
 
 ### Logging Practices
 
@@ -82,21 +110,7 @@ PR titles must follow the [Conventional Commits](https://www.conventionalcommits
 
 #### Scopes (Optional)
 
-Common scopes for KAI Scheduler:
-- 'scheduler'
-- 'binder'
-- 'podgrouper'
-- 'admission'
-- 'operator'
-- 'queue-controller'
-- 'pod-group-controller'
-- 'resource-reservation'
-- 'chart'
-- 'api'
-- 'node-scale-adjuster'
-- 'ci'
-- 'release'
-- 'docs'
+The allowed scopes are listed in [`.github/workflows/validate-pr-title.yaml`](.github/workflows/validate-pr-title.yaml).
 
 #### Breaking Changes
 
