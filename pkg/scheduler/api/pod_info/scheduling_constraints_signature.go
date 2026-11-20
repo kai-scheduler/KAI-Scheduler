@@ -87,6 +87,10 @@ func schedulingConstraintsSignature(pod *v1.Pod, storageClaims map[storageclaim_
 		}
 		constraints := fmt.Sprintf("%v", dereferencedTPCs)
 		hash.Write([]byte(constraints))
+		// Spread counts only pods in the pod's own namespace, and the pod's labels decide self-matching and
+		// matchLabelKeys, so pods differing in either must not share a failed-job representative.
+		hash.Write([]byte(pod.Namespace))
+		hash.Write([]byte(fmt.Sprintf("%v", pod.Labels)))
 	}
 
 	// Ports

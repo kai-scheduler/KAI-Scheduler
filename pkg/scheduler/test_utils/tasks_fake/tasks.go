@@ -51,7 +51,8 @@ type TestTaskBasic struct {
 	ResizeStatus *TestResizeStatus
 	HostPorts    []int32
 	// ConfigMapNames are required by the main container through envFrom.
-	ConfigMapNames []string
+	ConfigMapNames            []string
+	TopologySpreadConstraints []v1.TopologySpreadConstraint
 }
 
 // TestResizeStatus uses the same units as the job's RequiredCPUsPerTask/RequiredMemoryPerTask.
@@ -139,6 +140,7 @@ func BuildPod(
 
 		pod.Spec.Affinity = &v1.Affinity{NodeAffinity: affinity}
 	}
+	pod.Spec.TopologySpreadConstraints = task.TopologySpreadConstraints
 	pod.Spec.Affinity = applyPodAffinityLabels(
 		pod.Spec.Affinity, task.PodAffinityLabels, task.PodAntiAffinitySelector,
 		task.PodAffinityTopologyKey, task.PodAntiAffinityTopologyKey)
