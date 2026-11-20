@@ -18,6 +18,7 @@
   - [Driver Loop and Budget](#driver-loop-and-budget)
   - [Initial Shipped Plugin Policy](#initial-shipped-plugin-policy)
   - [Scenario Deduplication Cache](#scenario-deduplication-cache)
+  - [Failed-Search Backoff](#failed-search-backoff)
   - [Future Enhancements](#future-enhancements)
     - [Smart Generator Selection](#smart-generator-selection)
     - [Generator Checkpointing Across Scheduling Sessions](#generator-checkpointing-across-scheduling-sessions)
@@ -255,6 +256,23 @@ Generators can rediscover the same effective victim set — within one generator
 - The solver computes the fingerprint as soon as a candidate is emitted, since generators may mutate a returned scenario object during later accumulation. A duplicate candidate is skipped without simulation and recorded as the `duplicate` state in `scenario_search_scenarios_total` plus a `duplicate` result observation in `scenario_search_duration_seconds`; skipped candidates still count as `emitted`, so `emitted - simulated` equals the duplicate count.
 - The cache lives for one job solve and is shared across that job's probes and generators; it is never global scheduler state.
 - Only scenarios that were simulated and failed (unsolved or validator-rejected) are recorded. Solved scenarios must remain re-emittable because search probes discard their statements and the final probe re-runs the generator to rebuild the winning statement. Skipping repeated failures relies on in-session simulation determinism for identical fingerprint inputs; to keep that premise sound, the solver rolls back its per-scenario feasible-node additions on every failed simulation, including validator-rejected and error results, so the probe's feasible-node set stays derived from the recorded victims covered by the fingerprint.
+
+### Failed-Search Backoff
+
+The scheduler keeps no state between sessions, so a pending job that no scenario can place, such as a gang that needs more whole nodes than its zone can free, gets its full search repeated every session. The opt-in failed-search backoff bounds that cost. After a search for a job ends with `generators_exhausted`, the action skips the job for an interval. The interval doubles with each further such search, up to a maximum.
+
+- **Configuration.** Two scheduler flags, `--min-failed-search-backoff` and `--max-failed-search-backoff`, set per shard through the SchedulingShard's `args`. Each takes `action=duration` pairs keyed by action name, with `default` as the fallback, like `maxActionSearchDuration`; for example `default=10s` and `default=2m`. The scheduler rejects unknown actions, negative or unparsable durations, and a maximum below the minimum at startup.
+  - The backoff is disabled for an action unless its `--min-failed-search-backoff` resolves to a non-zero duration.
+  - `--max-failed-search-backoff` defaults to it.
+- **What counts as a failed search.** Only a search that `scenario_search_jobs_total` reports as `generators_exhausted` starts or extends a backoff, and `solved` ends it. Searches stopped by a budget (`deadline_exhausted`, `not_attempted`) or without a generator run again next session, as before.
+- **Where the state lives.** The scheduler cache keeps the records in memory, per action and job.
+  - Each snapshot marks the jobs still in a backoff in `PodGroupInfo.SearchBackoffUntil`.
+  - The actions skip those jobs with the same kind of job filter as preemption delay.
+  - Allocate is unaffected.
+- **Retry on change.** A job is searched again at once when its PodGroup spec or queue changes, or its pods waiting for a node, or their scheduling constraints or resource requests. A pod waits for a node when the API shows it pending, unbound, ungated and not being deleted. Each snapshot drops the records whose shape key no longer matches. The key reads the pods' API state, so the session's own placements do not change it.
+- **Observability.** Skipped jobs count as the `backoff` result of `scenario_search_jobs_total`.
+- **Trade-off.** A change elsewhere that would let the search succeed is noticed only when the backoff ends, at most `--max-failed-search-backoff` later. Examples: a victim's min-runtime ending, another job finishing, a queue weight changing. A scheduler restart forgets every backoff.
+- **Relation to checkpointing.** Unlike generator checkpointing (below), the backoff does not resume a search. It only avoids repeating one that found nothing, and it never extends a search beyond its budgets.
 
 ### Future Enhancements
 

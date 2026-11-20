@@ -10,9 +10,14 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
 	enginev2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
 )
+
+// searchResultBackoff is the scenario search metric result of a job skipped by its failed-search backoff.
+const searchResultBackoff = "backoff"
 
 type JobsOrderInitOptions struct {
 	FilterUnready            bool
@@ -25,6 +30,9 @@ type JobsOrderInitOptions struct {
 	VictimQueue                 bool
 	MaxJobsQueueDepth           int
 	NonPendingJobFilter         func(*podgroup_info.PodGroupInfo) bool
+	// FilterInSearchBackoffFor skips jobs in their failed-search backoff for this action: its
+	// scenario searches for them found no solution. Set only by eviction-triggering actions.
+	FilterInSearchBackoffFor framework.ActionType
 }
 
 func (jobsOrder *JobsOrderByQueues) InitializeWithJobs(
@@ -75,6 +83,15 @@ func (jobsOrder *JobsOrderByQueues) InitializeWithJobs(
 			log.InfraLogger.V(3).Infof("Job <%s> is within its preemption delay window, skipping as eviction trigger",
 				job.NamespacedName)
 			continue
+		}
+
+		if action := jobsOrder.options.FilterInSearchBackoffFor; action != "" {
+			if until, found := job.SearchBackoffUntil[string(action)]; found {
+				metrics.IncScenarioSearchJobs(action, searchResultBackoff, false)
+				log.InfraLogger.V(3).Infof("Job <%s> is in its failed search backoff for %s until %s, skipping as eviction trigger",
+					job.NamespacedName, action, until.UTC().Format(time.RFC3339))
+				continue
+			}
 		}
 
 		jobsOrder.PushJob(job)
