@@ -53,7 +53,7 @@ spec:
         kai.scheduler/preemptibility: "semi-preemptible"
 ```
 
-For multi-level trees, `minSubGroup` makes whole subgroups core vs. elastic — see [Subgroups and Multi-Level Trees](#subgroups-and-multi-level-trees).
+For multi-level trees, `minSubGroup` makes whole subgroups core vs. elastic — see [Subgroups and Multi-Level Trees](#subgroups-and-multi-level-trees). To choose *which* children are core, see the [core subgroups design](../core-subgroups/README.md).
 
 ## Quota Requirements
 
