@@ -30,6 +30,7 @@ type AccumulatedIdleGpus struct {
 	requiredGpusSorted []float64
 
 	nodesNameToIdleGpus map[string]float64
+	evictions           *node_info.SharedGpuEvictions
 	// maxFreeGpuNodesSorted is a slice of nodeNames with a requiredGPUs number of nodes with the most idle gpus
 	maxFreeGpuNodesSorted []string
 
@@ -60,6 +61,7 @@ func NewIdleGpusFilter(
 
 	filter := &AccumulatedIdleGpus{
 		nodesNameToIdleGpus:     idleGpusMap,
+		evictions:               node_info.NewSharedGpuEvictions(nodeInfosMap),
 		maxFreeGpuNodesSorted:   relevantNodesSorted,
 		pendingTasksInState:     make(map[common_info.PodID]bool),
 		recordedVictimsInCache:  make(map[common_info.PodID]bool),
@@ -177,7 +179,7 @@ func (ig *AccumulatedIdleGpus) updateWithVictim(task *pod_info.PodInfo, minIdleG
 	}
 
 	prevMinRelevantValue := ig.nodesNameToIdleGpus[minIdleGpusRelevant]
-	ig.nodesNameToIdleGpus[task.NodeName] += task.AcceptedGpuRequirement.GetGpusQuota()
+	ig.nodesNameToIdleGpus[task.NodeName] += ig.evictions.Credit(task)
 
 	if ig.nodesNameToIdleGpus[task.NodeName] > prevMinRelevantValue {
 		ig.maxFreeGpuNodesSorted = orderedInsert(ig.maxFreeGpuNodesSorted, task.NodeName,

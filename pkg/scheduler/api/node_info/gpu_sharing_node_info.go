@@ -5,7 +5,6 @@ package node_info
 
 import (
 	"fmt"
-	"math"
 	"strings"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -424,9 +423,56 @@ func (ni *NodeInfo) getSumOfReleasingSharedGPUs() (float64, int64) {
 	return sumOfSharedGPUs, sumOfSharedGPUsMemory
 }
 
+// getGpuMemoryFractionalOnNode returns the GPU portion that memory occupies, rounded up to whole hundredths of a GPU.
+// The rounding is done in integers: in float64, 14/100*100 is 14.000000000000002 and would round up to 15.
 func (ni *NodeInfo) getGpuMemoryFractionalOnNode(memory int64) float64 {
-	exactFraction := float64(memory) / float64(ni.MemoryOfEveryGpuOnNode)
-	return math.Ceil(exactFraction*100) / 100
+	hundredths := (memory*100 + ni.MemoryOfEveryGpuOnNode - 1) / ni.MemoryOfEveryGpuOnNode
+	return float64(hundredths) / 100
+}
+
+// SharedGpuEvictions credits the GPUs that evicting tasks frees on their nodes, in the units the nodes charge for them. A
+// shared GPU is charged as its allocated memory's portion rounded up to hundredths, so each eviction is credited the drop
+// in that rounded portion, not the task's requested fraction: once every task sharing a GPU is evicted, the credits add up
+// to exactly what the GPU was charged, and the GPU counts as whole again.
+type SharedGpuEvictions struct {
+	nodes   map[string]*NodeInfo
+	evicted map[string]map[string]int64 // node name -> GPU group -> evicted memory
+}
+
+func NewSharedGpuEvictions(nodes map[string]*NodeInfo) *SharedGpuEvictions {
+	return &SharedGpuEvictions{nodes: nodes, evicted: map[string]map[string]int64{}}
+}
+
+// Credit records the task's eviction and returns the GPUs it frees on its node. Callers credit each task once; a nil
+// SharedGpuEvictions has no node data and credits the task's requested GPUs.
+func (e *SharedGpuEvictions) Credit(task *pod_info.PodInfo) float64 {
+	if e == nil {
+		return task.AcceptedGpuRequirement.GetGpusQuota()
+	}
+	ni := e.nodes[task.NodeName]
+	if ni == nil || !task.IsSharedGPUAllocation() || len(task.GPUGroupIDs()) == 0 {
+		return task.AcceptedGpuRequirement.GetGpusQuota()
+	}
+	if e.evicted[task.NodeName] == nil {
+		e.evicted[task.NodeName] = map[string]int64{}
+	}
+	evicted := e.evicted[task.NodeName]
+	memory := ni.GetResourceGpuMemory(&task.GpuRequirement)
+	freed := 0.0
+	for _, gpuGroup := range task.GPUGroupIDs() {
+		allocated := ni.AllocatedSharedGPUsMemory[gpuGroup]
+		before := ni.allocatedSharedGpuPortion(allocated - evicted[gpuGroup])
+		evicted[gpuGroup] += memory
+		freed += before - ni.allocatedSharedGpuPortion(allocated-evicted[gpuGroup])
+	}
+	return freed
+}
+
+func (ni *NodeInfo) allocatedSharedGpuPortion(memory int64) float64 {
+	if memory <= 0 {
+		return 0
+	}
+	return ni.getGpuMemoryFractionalOnNode(memory)
 }
 
 func (ni *NodeInfo) fractionTaskGpusAllocatableDeviceCount(pod *pod_info.PodInfo) int64 {
