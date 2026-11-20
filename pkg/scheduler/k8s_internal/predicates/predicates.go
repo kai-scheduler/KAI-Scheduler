@@ -186,5 +186,15 @@ func NewSessionScorePredicates(ssn *framework.Session) *k8s_internal.SessionScor
 			ssn, plugin.(*interpodaffinity.InterPodAffinity))
 	}
 
+	if plugin := initiatedPlugins.TaintToleration; plugin == nil {
+		scoreFns.PreTaintToleration = emptyPreScoreFn("TaintToleration")
+		scoreFns.TaintToleration = emptyScoreFn("TaintToleration")
+	} else {
+		scoreFns.PreTaintToleration = k8s_internal.PreScorePluginConverter(
+			ssn, plugin.(*tainttoleration.TaintToleration))
+		scoreFns.TaintToleration = k8s_internal.ScorePluginConverter(
+			ssn, plugin.(*tainttoleration.TaintToleration))
+	}
+
 	return scoreFns
 }

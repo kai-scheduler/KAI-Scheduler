@@ -51,8 +51,10 @@ type PredicateName string
 type SessionPredicates map[PredicateName]SessionPredicate
 
 type SessionScoreFns struct {
-	PrePodAffinity PreScoreFn
-	PodAffinity    ScorePredicate
+	PrePodAffinity     PreScoreFn
+	PodAffinity        ScorePredicate
+	PreTaintToleration PreScoreFn
+	TaintToleration    ScorePredicate
 }
 
 type SessionStateProvider interface {
