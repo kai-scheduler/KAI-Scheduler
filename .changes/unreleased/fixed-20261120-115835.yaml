@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Time-based fairshare simulator creates every configured node and defaults an omitted HalfLifePeriod to 0
+custom:
+  Author: "jackiectl2"
+  Issue: "2744"
