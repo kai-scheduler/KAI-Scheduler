@@ -27,8 +27,8 @@ const (
 
 func TestGetScalingPodName(t *testing.T) {
 	name := scalingPodName("namespace", "name")
-	if name != "namespace-name" {
-		t.Errorf("Expected scaling pod name to be 'namespace-name', actual is %v", name)
+	if name != "scaling.namespace.name" {
+		t.Errorf("Expected scaling pod name to be 'scaling.namespace.name', actual is %v", name)
 	}
 }
 
