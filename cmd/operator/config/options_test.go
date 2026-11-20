@@ -7,6 +7,7 @@ import (
 	"flag"
 	"os"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -49,6 +50,13 @@ var _ = Describe("options", Ordered, func() {
 			Expect(err).To(BeNil())
 			Expect(opts.Namespace).To(Equal("test"))
 			Expect(opts.ImagePullSecretName).To(Equal("runai-reg-creds"))
+		})
+
+		It("Test default namespace", func() {
+			flagSet := flag.NewFlagSet("test-default-namespace", flag.ExitOnError)
+			opts, err := parse(flagSet, []string{})
+			Expect(err).To(BeNil())
+			Expect(opts.Namespace).To(Equal(constants.DefaultKAINamespace))
 		})
 	})
 })
