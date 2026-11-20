@@ -1,0 +1,13 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+global:
+  nodeSelector:
+    mokka.nvidia.com/e2e-cpu: "true"
+scheduler:
+  plugins:
+    numa:
+      enabled: true
+numaPlacementExporter:
+  nodeSelector:
+    mokka.nvidia.com/e2e-gpu: "true"
