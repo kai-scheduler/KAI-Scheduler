@@ -90,6 +90,48 @@ func BenchmarkReclaimUnschedulableDistributedJob_1000Node(b *testing.B) {
 	benchmarkReclaimUnschedulableDistributedJob(b, 1000)
 }
 
+// A gang of whole-node pods reclaims an elastic job with two pods on every node (the topology of
+// TestReclaimEvictsEachVictimOnce), so every probe after the first records elastic pods that
+// NodeLocalGreedy must not add again as potential victims.
+func BenchmarkReclaimRecordedVictimOverlap_16Node(b *testing.B) {
+	benchmarkReclaimRecordedVictimOverlap(b, 16, 8)
+}
+
+func BenchmarkReclaimRecordedVictimOverlap_64Node(b *testing.B) {
+	benchmarkReclaimRecordedVictimOverlap(b, 64, 32)
+}
+
+func BenchmarkReclaimRecordedVictimOverlap_128Node(b *testing.B) {
+	benchmarkReclaimRecordedVictimOverlap(b, 128, 64)
+}
+
+func benchmarkReclaimRecordedVictimOverlap(b *testing.B, nodes, gangSize int) {
+	defer gock.Off()
+
+	test_utils.InitTestingInfrastructure()
+	topology := elasticVictimsTopology(nodes, gangSize)
+	// Room for repeated evictions, so the benchmark also runs where recorded victims are evicted twice.
+	topology.Mocks = &test_utils.TestMock{CacheRequirements: &test_utils.CacheMocking{
+		NumberOfCacheEvictions:  8 * nodes,
+		NumberOfPipelineActions: 4 * nodes,
+	}}
+	action := reclaim.New()
+
+	before := reclaimScenarioStateTotals(b, "simulated", "validator_rejected")
+
+	for b.Loop() {
+		controller := NewController(b)
+		ssn := test_utils.BuildSession(topology, controller)
+		action.Execute(ssn)
+		controller.Finish()
+	}
+
+	after := reclaimScenarioStateTotals(b, "simulated", "validator_rejected")
+	iterations := float64(b.N)
+	b.ReportMetric((after["simulated"]-before["simulated"])/iterations, "simulated/op")
+	b.ReportMetric((after["validator_rejected"]-before["validator_rejected"])/iterations, "validator_rejected/op")
+}
+
 func benchmarkReclaimUnschedulableDistributedJob(b *testing.B, numNodes int) {
 	benchmarkReclaimUnschedulableDistributedJobWithParams(
 		b, defaultUnschedulableDistributedReclaimBenchmarkParams(numNodes),

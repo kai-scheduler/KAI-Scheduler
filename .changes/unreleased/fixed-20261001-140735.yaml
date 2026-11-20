@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Reclaim and preempt no longer evict pods twice when NodeLocalGreedy re-adds recorded victims as potential victims
+custom:
+  Author: "sam-huang1223"
+  Issue: "2299"
