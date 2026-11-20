@@ -119,7 +119,7 @@ KValue: 1.0
 # Node configuration
 Nodes:
   - GPUs: 16      # Number of GPUs per node
-    Count: 1      # Number of nodes with this configuration
+    Count: 1      # Number of nodes with this configuration (default: 1)
 
 # Queue definitions
 Queues:
