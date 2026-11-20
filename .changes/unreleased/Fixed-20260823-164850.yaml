@@ -1,0 +1,7 @@
+kind: Fixed
+body: |-
+  Honor global.imagePullPolicy by default for KAI chart images while preserving component overrides
+time: 2026-08-23T16:48:50.125518535+01:00
+custom:
+    Author: dttung2905
+    Issue: ""
