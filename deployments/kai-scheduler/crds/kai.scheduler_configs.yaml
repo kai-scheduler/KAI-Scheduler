@@ -48,6 +48,36 @@ spec:
               admission:
                 description: Admission holds KAI admission webhooks
                 properties:
+                  autoscaling:
+                    description: Autoscaling configures horizontal autoscaling for
+                      the admission service
+                    properties:
+                      enabled:
+                        description: Enabled enables horizontal autoscaling for the
+                          admission service.
+                        type: boolean
+                      maxReplicas:
+                        description: MaxReplicas specifies the maximum number of admission
+                          replicas.
+                        format: int32
+                        minimum: 1
+                        type: integer
+                      targetCPUUtilizationPercentage:
+                        description: |-
+                          TargetCPUUtilizationPercentage specifies the target average CPU utilization
+                          across admission pods.
+                        format: int32
+                        maximum: 100
+                        minimum: 1
+                        type: integer
+                      targetInFlightRequests:
+                        description: |-
+                          TargetInFlightRequests specifies the target average number of in-flight
+                          webhook requests per admission pod.
+                        format: int32
+                        minimum: 1
+                        type: integer
+                    type: object
                   blockNvidiaVisibleDevices:
                     description: |-
                       BlockNvidiaVisibleDevices prevents pods from overriding the NVIDIA_VISIBLE_DEVICES

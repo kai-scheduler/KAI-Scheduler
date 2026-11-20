@@ -10,7 +10,9 @@ import (
 
 	admissionv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -30,7 +32,13 @@ const (
 	kaiAdmissionWebhookSecretName = "kai-admission-webhook-tls-secret"
 	certKey                       = "tls.crt"
 	keyKey                        = "tls.key"
+	admissionInFlightMetricName   = "kai_admission_requests_in_flight"
 )
+
+func autoscalingEnabled(config *kaiv1admission.Admission) bool {
+	return config.Autoscaling != nil &&
+		ptr.Deref(config.Autoscaling.Enabled, false)
+}
 
 func (a *Admission) deploymentForKAIConfig(
 	ctx context.Context, runtimeClient client.Reader, kaiConfig *kaiv1.Config,
@@ -42,9 +50,12 @@ func (a *Admission) deploymentForKAIConfig(
 		return nil, err
 	}
 
-	deployment.Spec.Strategy.Type = appsv1.RecreateDeploymentStrategyType
+	deployment.Spec.Strategy.Type = appsv1.RollingUpdateDeploymentStrategyType
 	deployment.Spec.Strategy.RollingUpdate = nil
-	deployment.Spec.Replicas = config.Replicas
+	// Preserve replicas managed by the HPA after the Deployment has been created.
+	if !autoscalingEnabled(config) || deployment.Spec.Replicas == nil {
+		deployment.Spec.Replicas = config.Replicas
+	}
 	nriPluginEnabled, err := common.IsGPUOperatorNRIPluginEnabled(ctx, runtimeClient)
 	if err != nil {
 		return nil, err
@@ -143,6 +154,101 @@ func (a *Admission) serviceForKAIConfig(
 	service.Spec.Type = v1.ServiceTypeClusterIP
 
 	return []client.Object{service}, nil
+}
+
+func (a *Admission) horizontalPodAutoscalerForKAIConfig(
+	ctx context.Context,
+	runtimeClient client.Reader,
+	kaiConfig *kaiv1.Config,
+) ([]client.Object, error) {
+	config := kaiConfig.Spec.Admission
+
+	if !autoscalingEnabled(config) {
+		return nil, nil
+	}
+
+	if config.Autoscaling.MaxReplicas == nil {
+		return nil, fmt.Errorf("admission autoscaling maxReplicas must be specified when autoscaling is enabled")
+	}
+
+	if config.Replicas == nil {
+		return nil, fmt.Errorf("admission replicas must be specified when autoscaling is enabled")
+	}
+
+	if *config.Autoscaling.MaxReplicas < *config.Replicas {
+		return nil, fmt.Errorf(
+			"admission autoscaling maxReplicas (%d) must be greater than or equal to replicas (%d)",
+			*config.Autoscaling.MaxReplicas,
+			*config.Replicas,
+		)
+	}
+
+	if config.Autoscaling.TargetInFlightRequests == nil &&
+		config.Autoscaling.TargetCPUUtilizationPercentage == nil {
+		return nil, fmt.Errorf(
+			"at least one admission autoscaling metric must be specified",
+		)
+	}
+
+	hpaObj, err := common.ObjectForKAIConfig(
+		ctx,
+		runtimeClient,
+		&autoscalingv2.HorizontalPodAutoscaler{},
+		a.BaseResourceName,
+		kaiConfig.Spec.Namespace,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	hpa := hpaObj.(*autoscalingv2.HorizontalPodAutoscaler)
+	hpa.TypeMeta = metav1.TypeMeta{
+		Kind:       "HorizontalPodAutoscaler",
+		APIVersion: autoscalingv2.SchemeGroupVersion.String(),
+	}
+
+	hpa.Spec.ScaleTargetRef = autoscalingv2.CrossVersionObjectReference{
+		APIVersion: appsv1.SchemeGroupVersion.String(),
+		Kind:       "Deployment",
+		Name:       a.BaseResourceName,
+	}
+	hpa.Spec.MinReplicas = config.Replicas
+	hpa.Spec.MaxReplicas = *config.Autoscaling.MaxReplicas
+	hpa.Spec.Metrics = []autoscalingv2.MetricSpec{}
+
+	if config.Autoscaling.TargetInFlightRequests != nil {
+		target := resource.NewQuantity(
+			int64(*config.Autoscaling.TargetInFlightRequests),
+			resource.DecimalSI,
+		)
+
+		hpa.Spec.Metrics = append(hpa.Spec.Metrics, autoscalingv2.MetricSpec{
+			Type: autoscalingv2.PodsMetricSourceType,
+			Pods: &autoscalingv2.PodsMetricSource{
+				Metric: autoscalingv2.MetricIdentifier{
+					Name: admissionInFlightMetricName,
+				},
+				Target: autoscalingv2.MetricTarget{
+					Type:         autoscalingv2.AverageValueMetricType,
+					AverageValue: target,
+				},
+			},
+		})
+	}
+	if config.Autoscaling.TargetCPUUtilizationPercentage != nil {
+		hpa.Spec.Metrics = append(hpa.Spec.Metrics, autoscalingv2.MetricSpec{
+			Type: autoscalingv2.ResourceMetricSourceType,
+			Resource: &autoscalingv2.ResourceMetricSource{
+				Name: v1.ResourceCPU,
+				Target: autoscalingv2.MetricTarget{
+					Type:               autoscalingv2.UtilizationMetricType,
+					AverageUtilization: config.Autoscaling.TargetCPUUtilizationPercentage,
+				},
+			},
+		})
+	}
+
+	return []client.Object{hpa}, nil
 }
 
 func (a *Admission) podDisruptionBudgetForKAIConfig(
@@ -447,7 +553,15 @@ func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1admission.Admission, nr
 		args = append(args, "--block-nvidia-visible-devices=true")
 	}
 
-	if config.Replicas != nil && *config.Replicas > 1 {
+	multipleReplicasPossible := config.Replicas != nil && *config.Replicas > 1
+
+	if autoscalingEnabled(config) &&
+		config.Autoscaling.MaxReplicas != nil &&
+		*config.Autoscaling.MaxReplicas > 1 {
+		multipleReplicasPossible = true
+	}
+
+	if multipleReplicasPossible {
 		args = append(args, "--leader-elect")
 	}
 

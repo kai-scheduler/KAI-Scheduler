@@ -274,6 +274,15 @@ admission:
   podDisruptionBudget:
     enabled: true
     maxUnavailable: 1
+  autoscaling:
+    enabled: false
+    # Maximum number of Admission replicas when autoscaling is enabled.
+    # maxReplicas: 10
+    # Optional native CPU utilization target (1-100).
+    # targetCPUUtilizationPercentage: 80
+    # Optional average in-flight webhook requests per Admission pod.
+    # Requires the custom metrics API to expose kai_admission_requests_in_flight.
+    # targetInFlightRequests: 10
 
 nodescaleadjuster:
   image:

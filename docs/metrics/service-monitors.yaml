@@ -23,6 +23,25 @@ spec:
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
+  name: admission
+  namespace: kai-scheduler
+  labels:
+    accounting: kai-scheduler
+spec:
+  jobLabel: app
+  namespaceSelector:
+    matchNames:
+      - kai-scheduler
+  selector:
+    matchLabels:
+      app: admission
+  endpoints:
+    - port: http-metrics
+      bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
   name: scheduler-default
   namespace: kai-scheduler
   labels:

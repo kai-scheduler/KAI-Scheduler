@@ -311,6 +311,21 @@ spec:
     {{- end }}
     blockNvidiaVisibleDevices: {{ .Values.global.blockNvidiaVisibleDevices | default false }}
     queueLabelSelector: false
+    {{- if .Values.admission.autoscaling }}
+    autoscaling:
+      {{- if hasKey .Values.admission.autoscaling "enabled" }}
+      enabled: {{ .Values.admission.autoscaling.enabled }}
+      {{- end }}
+      {{- if hasKey .Values.admission.autoscaling "maxReplicas" }}
+      maxReplicas: {{ .Values.admission.autoscaling.maxReplicas }}
+      {{- end }}
+      {{- if hasKey .Values.admission.autoscaling "targetCPUUtilizationPercentage" }}
+      targetCPUUtilizationPercentage: {{ .Values.admission.autoscaling.targetCPUUtilizationPercentage }}
+      {{- end }}
+      {{- if hasKey .Values.admission.autoscaling "targetInFlightRequests" }}
+      targetInFlightRequests: {{ .Values.admission.autoscaling.targetInFlightRequests }}
+      {{- end }}
+    {{- end }}
     webhook:
       port: 443
       targetPort: {{ .Values.admission.ports.webhookPort | default 9443 }}
