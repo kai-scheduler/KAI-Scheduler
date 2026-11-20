@@ -4,12 +4,15 @@
 suite: test leader election auto-enable
 templates:
   - services/operator.yaml
+  - rbac/podgroupcontroller.yaml
+  - rbac/queuecontroller.yaml
 tests:
   - it: should disable leader election by default (single replica)
     asserts:
       - contains:
           path: spec.template.spec.containers[0].args
           content: "--leader-elect=false"
+        template: services/operator.yaml
 
   - it: should enable leader election when global.leaderElection is true
     set:
@@ -18,6 +21,7 @@ tests:
       - contains:
           path: spec.template.spec.containers[0].args
           content: "--leader-elect=true"
+        template: services/operator.yaml
 
   - it: should auto-enable leader election when replicaCount > 1
     set:
@@ -26,6 +30,7 @@ tests:
       - contains:
           path: spec.template.spec.containers[0].args
           content: "--leader-elect=true"
+        template: services/operator.yaml
 
   - it: should keep leader election enabled when both leaderElection and replicaCount > 1
     set:
@@ -35,3 +40,24 @@ tests:
       - contains:
           path: spec.template.spec.containers[0].args
           content: "--leader-elect=true"
+        template: services/operator.yaml
+
+  - it: should allow podgroup-controller to record leader election events
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups: [""]
+            resources: ["events"]
+            verbs: ["create", "patch"]
+        template: rbac/podgroupcontroller.yaml
+
+  - it: should allow queue-controller to record leader election events
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups: [""]
+            resources: ["events"]
+            verbs: ["create", "patch"]
+        template: rbac/queuecontroller.yaml
