@@ -12,6 +12,9 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	utilfeature "k8s.io/apiserver/pkg/util/feature"
+	featuregatetesting "k8s.io/component-base/featuregate/testing"
+	kubefeatures "k8s.io/kubernetes/pkg/features"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -152,6 +155,31 @@ var _ = Describe("MinimalJobComparison", func() {
 					Expect(easier).To(Equal(testCase.result))
 				})
 			}
+		})
+
+		Context("node declared feature requirements", func() {
+			BeforeEach(func() {
+				featuregatetesting.SetFeatureGateDuringTest(GinkgoT(), utilfeature.DefaultFeatureGate,
+					kubefeatures.NodeDeclaredFeatures, true)
+			})
+
+			It("does not skip a larger job without requirements after a job with requirements failed", func() {
+				smallestFailedJobs.UpdateRepresentative(
+					jobWithRestartAllContainersRule(v1.ResourceList{v1.ResourceCPU: resource.MustParse("100m")}, true))
+
+				otherJob := jobWithRestartAllContainersRule(v1.ResourceList{v1.ResourceCPU: resource.MustParse("200m")}, false)
+				easier, _ := smallestFailedJobs.IsEasierToSchedule(otherJob)
+				Expect(easier).To(BeTrue())
+			})
+
+			It("skips a larger job with the same requirements", func() {
+				smallestFailedJobs.UpdateRepresentative(
+					jobWithRestartAllContainersRule(v1.ResourceList{v1.ResourceCPU: resource.MustParse("100m")}, true))
+
+				otherJob := jobWithRestartAllContainersRule(v1.ResourceList{v1.ResourceCPU: resource.MustParse("200m")}, true)
+				easier, _ := smallestFailedJobs.IsEasierToSchedule(otherJob)
+				Expect(easier).To(BeFalse())
+			})
 		})
 
 		Context("multiple pods", func() {
@@ -370,6 +398,23 @@ func jobFromRequirements(requirements ...v1.ResourceList) *podgroup_info.PodGrou
 		jobTestInfo[index] = podTestsInfo{req, v1.PodPending}
 	}
 	return JobFromPodSignatureData(jobTestInfo)
+}
+
+func jobWithRestartAllContainersRule(resources v1.ResourceList, hasRule bool) *podgroup_info.PodGroupInfo {
+	pod := common_info.BuildPod(
+		"test-0", "test", "", v1.PodPending, resources.DeepCopy(),
+		[]metav1.OwnerReference{},
+		map[string]string{},
+		map[string]string{
+			commonconstants.PodGroupAnnotationForPod: "test",
+		},
+	)
+	if hasRule {
+		pod.Spec.Containers[0].RestartPolicyRules = []v1.ContainerRestartRule{
+			{Action: v1.ContainerRestartRuleActionRestartAllContainers},
+		}
+	}
+	return podgroup_info.NewPodGroupInfo("test", pod_info.NewTaskInfo(pod, resource_info.NewResourceVectorMap()))
 }
 
 func copyResources(resources ...v1.ResourceList) []v1.ResourceList {
