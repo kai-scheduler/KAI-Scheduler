@@ -27,6 +27,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -48,6 +49,7 @@ var _ = Describe("Binder", func() {
 		BeforeEach(func(ctx context.Context) {
 			testScheme := scheme.Scheme
 			utilruntime.Must(nvidiav1.AddToScheme(testScheme))
+			utilruntime.Must(apiextensionsv1.AddToScheme(testScheme))
 			fakeClientBuilder := fake.NewClientBuilder()
 			fakeClientBuilder.WithScheme(testScheme)
 
@@ -212,10 +214,9 @@ var _ = Describe("Binder", func() {
 					expectGPUSharingCDI((*deploymentT).Spec.Template.Spec.Containers[0].Args, false)
 				})
 
-				It("detects CDI state with GPU Operator >= v25.10.0", func(ctx context.Context) {
-					clusterPolicy.Labels = map[string]string{
-						versionLabelName: "v25.10.1",
-					}
+				It("detects CDI on a GPU Operator whose CRD defaults spec.cdi.enabled to true", func(ctx context.Context) {
+					// GPU Operator 25.10 and newer: spec.cdi.default no longer matters.
+					Expect(fakeKubeClient.Create(ctx, test_utils.ClusterPolicyCRD(ptr.To(true)))).To(Succeed())
 					clusterPolicy.Spec.CDI.Default = ptr.To(false)
 					Expect(fakeKubeClient.Create(ctx, clusterPolicy)).To(Succeed())
 
@@ -227,10 +228,21 @@ var _ = Describe("Binder", func() {
 					expectGPUSharingCDI((*deploymentT).Spec.Template.Spec.Containers[0].Args, true)
 				})
 
-				It("detects CDI state with GPU Operator < v25.10.0", func(ctx context.Context) {
-					clusterPolicy.Labels = map[string]string{
-						versionLabelName: "v24.8.2",
-					}
+				It("detects CDI from the CRD default when the ClusterPolicy leaves spec.cdi out", func(ctx context.Context) {
+					Expect(fakeKubeClient.Create(ctx, test_utils.ClusterPolicyCRD(ptr.To(true)))).To(Succeed())
+					clusterPolicy.Spec.CDI = nvidiav1.CDIConfigSpec{}
+					Expect(fakeKubeClient.Create(ctx, clusterPolicy)).To(Succeed())
+
+					objects, err := b.DesiredState(ctx, fakeKubeClient, kaiConfig)
+					Expect(err).To(BeNil())
+
+					deploymentT := test_utils.FindTypeInObjects[*appsv1.Deployment](objects)
+					Expect(deploymentT).NotTo(BeNil())
+					expectGPUSharingCDI((*deploymentT).Spec.Template.Spec.Containers[0].Args, true)
+				})
+
+				It("keeps CDI off on a GPU Operator whose CRD defaults spec.cdi.enabled to false", func(ctx context.Context) {
+					Expect(fakeKubeClient.Create(ctx, test_utils.ClusterPolicyCRD(ptr.To(false)))).To(Succeed())
 					clusterPolicy.Spec.CDI.Default = ptr.To(false)
 					Expect(fakeKubeClient.Create(ctx, clusterPolicy)).To(Succeed())
 
