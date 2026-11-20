@@ -24,10 +24,15 @@ const (
 	fractionDefaultCount                = 1
 )
 
+// GpuComputeScale is the fixed-point compute capacity of one GPU: a compute share of 1 equals
+// GpuComputeScale units, so 0.29 is stored as 290.
+const GpuComputeScale int64 = 1000
+
 type GpuResourceRequirement struct {
 	count        int64
 	portion      float64
 	gpuMemory    int64
+	gpuCompute   int64
 	draGpuCounts map[string]int64
 	migResources map[v1.ResourceName]int64
 }
@@ -109,6 +114,7 @@ func (g *GpuResourceRequirement) Clone() *GpuResourceRequirement {
 		count:        g.count,
 		portion:      g.portion,
 		gpuMemory:    g.gpuMemory,
+		gpuCompute:   g.gpuCompute,
 		draGpuCounts: maps.Clone(g.draGpuCounts),
 		migResources: maps.Clone(g.migResources),
 	}
@@ -219,6 +225,34 @@ func (g *GpuResourceRequirement) ClearMigResources() {
 
 func (g *GpuResourceRequirement) GpuMemory() int64 {
 	return g.gpuMemory
+}
+
+// GpuCompute returns the compute charged on each assigned GPU, in GpuComputeScale units.
+// Zero means a memory-only request.
+func (g *GpuResourceRequirement) GpuCompute() int64 {
+	return g.gpuCompute
+}
+
+// SetGpuCompute sets the already-validated per-device compute charge, in GpuComputeScale units.
+func (g *GpuResourceRequirement) SetGpuCompute(compute int64) {
+	g.gpuCompute = compute
+}
+
+// FormatGpuCompute renders a GpuComputeScale-unit compute value as a decimal share, e.g. 200 -> "0.2".
+func FormatGpuCompute(compute int64) string {
+	sign := ""
+	if compute < 0 {
+		sign = "-"
+		compute = -compute
+	}
+	whole := compute / GpuComputeScale
+	remainder := compute % GpuComputeScale
+	if remainder == 0 {
+		return fmt.Sprintf("%s%d", sign, whole)
+	}
+	digits := len(strconv.FormatInt(GpuComputeScale, 10)) - 1
+	fraction := strings.TrimRight(fmt.Sprintf("%0*d", digits, remainder), "0")
+	return fmt.Sprintf("%s%d.%s", sign, whole, fraction)
 }
 
 func (g *GpuResourceRequirement) GPUs() float64 {
