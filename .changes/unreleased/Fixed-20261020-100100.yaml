@@ -1,0 +1,4 @@
+kind: Fixed
+body: podgrouper fetches the top owner through the uncached client, so it no longer keeps a cluster-wide informer for the top owner's kind
+custom:
+  Author: tiffany-yu-ai
