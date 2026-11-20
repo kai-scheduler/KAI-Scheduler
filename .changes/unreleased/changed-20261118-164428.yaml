@@ -1,0 +1,6 @@
+kind: Changed
+body: |-
+  Reuse elastic victim remainders during reclaim scenario construction
+custom:
+  Author: "enoodle"
+  Issue: "1826"

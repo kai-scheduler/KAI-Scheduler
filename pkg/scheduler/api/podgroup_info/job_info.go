@@ -355,6 +355,27 @@ func (pgi *PodGroupInfo) AddTaskInfo(ti *pod_info.PodInfo) {
 	}
 }
 
+// RemoveTaskInfo removes a valid subgroup task without changing the task itself.
+func (pgi *PodGroupInfo) RemoveTaskInfo(ti *pod_info.PodInfo) {
+	allPods := pgi.GetAllPodsMap()
+	task, found := allPods[ti.UID]
+	if !found {
+		return
+	}
+	subGroupName := task.SubGroupName
+	if subGroupName == "" {
+		subGroupName = DefaultSubGroup
+	}
+	pgi.PodSets[subGroupName].RemoveTask(task)
+	if pod_status.AllocatedStatus(task.Status) {
+		pgi.AllocatedVector.Sub(task.ResReqVector)
+	}
+	pgi.deleteTaskIndex(task)
+	pgi.schedulingConstraintsSignature = ""
+	// deleteTaskIndex updates this map before invalidating the other task caches.
+	pgi.allPodsMap = &allPods
+}
+
 func (pgi *PodGroupInfo) UpdateTaskStatus(task *pod_info.PodInfo, status pod_status.PodStatus) error {
 	// Reset the task state
 	if err := pgi.resetTaskState(task); err != nil {
