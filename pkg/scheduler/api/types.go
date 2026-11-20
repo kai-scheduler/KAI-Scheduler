@@ -90,11 +90,18 @@ type NumaPlacementFn func(task *pod_info.PodInfo, node *node_info.NodeInfo) (pod
 // PreJobAllocationFn is used for notifying on job allocation start
 type PreJobAllocationFn func(job *podgroup_info.PodGroupInfo)
 
-// CompareQueueFn is used to compare two queues for ordering based on their jobs and victims.
+// QueueVictimResources is a read-only allocation snapshot used in queue comparisons.
+// It must not retain a mutable scenario remainder.
+type QueueVictimResources struct {
+	AllocatedVector resource_info.ResourceVector
+	VectorMap       *resource_info.ResourceVectorMap
+}
+
+// CompareQueueFn compares queues using their next jobs and victim resource snapshots.
 type CompareQueueFn func(
 	lQ, rQ *queue_info.QueueInfo,
 	lJob, rJob *podgroup_info.PodGroupInfo,
-	lVictims, rVictims []*podgroup_info.PodGroupInfo,
+	lVictims, rVictims []QueueVictimResources,
 	minNodeGPUMemory *int64,
 ) int
 

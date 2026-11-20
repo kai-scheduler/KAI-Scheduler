@@ -4,6 +4,7 @@
 package utils
 
 import (
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
@@ -32,7 +33,7 @@ type JobsOrderByQueues struct {
 	rootNodes  *scheduler_util.PriorityQueue      // Top-level queue nodes (nodes with no parent)
 	queueNodes map[common_info.QueueID]*queueNode // All queue nodes by ID for quick lookup
 
-	poppedJobsByQueue map[common_info.QueueID][]*podgroup_info.PodGroupInfo
+	poppedJobsByQueue map[common_info.QueueID][]api.QueueVictimResources
 }
 
 func NewJobsOrderByQueues(ssn *framework.Session, options JobsOrderInitOptions) JobsOrderByQueues {
@@ -40,7 +41,7 @@ func NewJobsOrderByQueues(ssn *framework.Session, options JobsOrderInitOptions) 
 		ssn:               ssn,
 		options:           options,
 		queueNodes:        map[common_info.QueueID]*queueNode{},
-		poppedJobsByQueue: map[common_info.QueueID][]*podgroup_info.PodGroupInfo{},
+		poppedJobsByQueue: map[common_info.QueueID][]api.QueueVictimResources{},
 	}
 }
 
@@ -84,7 +85,9 @@ func (jo *JobsOrderByQueues) PopNextJob() *podgroup_info.PodGroupInfo {
 	job := leafNode.children.Pop().(*podgroup_info.PodGroupInfo)
 
 	if jo.options.VictimQueue {
-		jo.poppedJobsByQueue[leafNode.queue.UID] = append(jo.poppedJobsByQueue[leafNode.queue.UID], job)
+		jo.poppedJobsByQueue[leafNode.queue.UID] = append(jo.poppedJobsByQueue[leafNode.queue.UID], api.QueueVictimResources{
+			AllocatedVector: job.AllocatedVector.Clone(), VectorMap: job.VectorMap,
+		})
 	}
 
 	// Handle cleanup and bubble up needsReorder
@@ -328,7 +331,7 @@ func (jo *JobsOrderByQueues) buildNodeOrderFn(reverseOrder bool) func(interface{
 
 // getBestJobFromNode recursively finds the best job in a node's subtree.
 // Returns (pending, victims) where exactly one is populated based on VictimQueue option.
-func (jo *JobsOrderByQueues) getBestJobFromNode(node *queueNode) (*podgroup_info.PodGroupInfo, []*podgroup_info.PodGroupInfo) {
+func (jo *JobsOrderByQueues) getBestJobFromNode(node *queueNode) (*podgroup_info.PodGroupInfo, []api.QueueVictimResources) {
 	if node.isLeaf {
 		return jo.extractJobsForComparison(node.queue.UID, node)
 	}
@@ -342,7 +345,7 @@ func (jo *JobsOrderByQueues) getBestJobFromNode(node *queueNode) (*podgroup_info
 func (jo *JobsOrderByQueues) extractJobsForComparison(
 	queueID common_info.QueueID,
 	node *queueNode,
-) (*podgroup_info.PodGroupInfo, []*podgroup_info.PodGroupInfo) {
+) (*podgroup_info.PodGroupInfo, []api.QueueVictimResources) {
 	if node.children.Empty() {
 		log.InfraLogger.V(7).Do(func() {
 			log.InfraLogger.Warningf("extractJobsForComparison: node %v has no children", node.queue.Name)
@@ -358,8 +361,8 @@ func (jo *JobsOrderByQueues) extractJobsForComparison(
 	return pending, nil
 }
 
-// getVictimsForQueue returns all popped jobs plus the next job in queue for victim ordering.
-func (jo *JobsOrderByQueues) getVictimsForQueue(queueID common_info.QueueID, node *queueNode) []*podgroup_info.PodGroupInfo {
+// getVictimsForQueue preserves each pop's allocation, including repeated pops of an elastic job.
+func (jo *JobsOrderByQueues) getVictimsForQueue(queueID common_info.QueueID, node *queueNode) []api.QueueVictimResources {
 	victims := jo.poppedJobsByQueue[queueID]
 	if node.children.Empty() {
 		log.InfraLogger.V(7).Do(func() {
@@ -368,5 +371,5 @@ func (jo *JobsOrderByQueues) getVictimsForQueue(queueID common_info.QueueID, nod
 		return victims
 	}
 	nextJob := node.children.Peek().(*podgroup_info.PodGroupInfo)
-	return append(victims, nextJob)
+	return append(victims, api.QueueVictimResources{AllocatedVector: nextJob.AllocatedVector, VectorMap: nextJob.VectorMap})
 }

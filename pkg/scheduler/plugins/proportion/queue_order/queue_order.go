@@ -4,6 +4,7 @@
 package queue_order
 
 import (
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
@@ -44,7 +45,7 @@ func jobInitResources(
 func GetQueueOrderResult(
 	lQueue *rs.QueueAttributes, rQueue *rs.QueueAttributes,
 	lJobInfo, rJobInfo *podgroup_info.PodGroupInfo,
-	lVictims, rVictims []*podgroup_info.PodGroupInfo,
+	lVictims, rVictims []api.QueueVictimResources,
 	subGroupOrderFn common_info.LessFn, taskOrderFn common_info.LessFn,
 	totalResources rs.ResourceQuantities, minNodeGPUMemory *int64,
 	queuePriorityInQuotaReclaim bool,
@@ -242,7 +243,7 @@ func penalizeZeroShareWithJob(
 func prioritizeSmallerResourceShare(
 	lQueue *rs.QueueAttributes, rQueue *rs.QueueAttributes,
 	lJobInfo, rJobInfo *podgroup_info.PodGroupInfo,
-	lVictims, rVictims []*podgroup_info.PodGroupInfo,
+	lVictims, rVictims []api.QueueVictimResources,
 	subGroupOrderFn common_info.LessFn, taskOrderFn common_info.LessFn,
 	totalResources rs.ResourceQuantities, minNodeGPUMemory *int64,
 ) int {
@@ -301,7 +302,7 @@ func prioritizeBasedOnCreationTime(lQueue *rs.QueueAttributes, rQueue *rs.QueueA
 
 func calculateDominantResourceShareWithJob(
 	queueAttributes *rs.QueueAttributes, jobInfo *podgroup_info.PodGroupInfo,
-	victims []*podgroup_info.PodGroupInfo,
+	victims []api.QueueVictimResources,
 	subGroupOrderFn common_info.LessFn, taskOrderFn common_info.LessFn, totalResources rs.ResourceQuantities,
 	minNodeGPUMemory *int64,
 ) float64 {
