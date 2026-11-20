@@ -11,6 +11,7 @@ import (
 	. "go.uber.org/mock/gomock"
 	"gopkg.in/h2non/gock.v1"
 	resourceapi "k8s.io/api/resource/v1"
+	"k8s.io/dynamic-resource-allocation/structured"
 
 	featuregates "github.com/kai-scheduler/KAI-scheduler/pkg/common/feature_gates"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
@@ -585,6 +586,243 @@ func TestStatementEvictUnevict_WithDRAClaims(t *testing.T) {
 			assertTaskStateRestored(t, task, initialState, "unevict")
 		})
 	}
+}
+
+const (
+	extendedClaimName = "test-job-0-extended-resources"
+	extendedClaimPod  = "test-job-0"
+)
+
+type extendedClaimProbe struct {
+	task            *pod_info.PodInfo
+	ssn             *framework.Session
+	initial         *resourceapi.AllocationResult
+	deviceAllocated func() bool
+	getClaim        func() *resourceapi.ResourceClaim
+}
+
+// newExtendedClaimProbe runs a pod on node0 that holds its GPU through an extended-resource claim, next to a free node1.
+func newExtendedClaimProbe(t *testing.T, controller *Controller, claimExists bool) *extendedClaimProbe {
+	var claims []*dra_fake.TestResourceClaim
+	if claimExists {
+		claims = append(claims, dra_fake.NewTestResourceClaim(extendedClaimName, "test", "q-1").
+			WithAllocation("node0", "0", extendedClaimPod).
+			ExtendedResourceFor(extendedClaimPod))
+	}
+	ssn := setupTestSession(t, test_utils.TestTopologyBasic{
+		Queues: []test_utils.TestQueueBasic{{Name: "q-1"}},
+		Jobs: []*jobs_fake.TestJobBasic{
+			{
+				Name:      "test-job",
+				Namespace: "test",
+				QueueName: "q-1",
+				Tasks: []*tasks_fake.TestTaskBasic{
+					{
+						Name:                      "test-task",
+						State:                     pod_status.Running,
+						NodeName:                  "node0",
+						ExtendedResourceClaimName: extendedClaimName,
+					},
+				},
+			},
+		},
+		Nodes: map[string]nodes_fake.TestNodeBasic{"node0": {GPUs: 1}, "node1": {GPUs: 1}},
+		TestDRAObjects: dra_fake.TestDRAObjects{
+			DeviceClasses: []string{"nvidia.com/gpu"},
+			ResourceSlices: []*dra_fake.TestResourceSlice{
+				{Name: "node0-gpu", DeviceClassName: "nvidia.com/gpu", NodeName: "node0", Count: 1},
+				{Name: "node1-gpu", DeviceClassName: "nvidia.com/gpu", NodeName: "node1", Count: 1},
+			},
+			ResourceClaims: claims,
+		},
+	}, controller)
+
+	manager := ssn.InternalK8sPlugins().SessionDRAManager.ResourceClaims()
+	probe := &extendedClaimProbe{
+		ssn:  ssn,
+		task: getTaskByStatus(t, ssn, "test-job", pod_status.Running),
+		deviceAllocated: func() bool {
+			state, err := manager.GatherAllocatedState()
+			assert.NoError(t, err)
+			return state.AllocatedDevices.Has(structured.MakeDeviceID("nvidia.com/gpu", "node0", "0"))
+		},
+		getClaim: func() *resourceapi.ResourceClaim {
+			claim, err := manager.Get("test", extendedClaimName)
+			assert.NoError(t, err)
+			return claim
+		},
+	}
+	if claimExists {
+		probe.initial = probe.getClaim().Status.Allocation.DeepCopy()
+	}
+	return probe
+}
+
+func evictForReclaim(t *testing.T, stmt *framework.Statement, task *pod_info.PodInfo) {
+	assert.NoError(t, stmt.Evict(task, "test eviction", eviction_info.EvictionMetadata{EvictionGangSize: 1, Action: "reclaim"}))
+	assert.Equal(t, pod_status.Releasing, task.Status)
+}
+
+// Evicting a pod frees the devices of its extended-resource claim (KEP-5004), and undoing the eviction restores them.
+func TestStatementEvictUnevict_WithExtendedResourceClaim(t *testing.T) {
+	test_utils.InitTestingInfrastructure()
+	controller := NewController(t)
+	defer controller.Finish()
+	defer gock.Off()
+
+	probe := newExtendedClaimProbe(t, controller, true)
+	assert.True(t, probe.deviceAllocated(), "The running pod holds the device")
+
+	stmt := probe.ssn.Statement()
+	cp := stmt.Checkpoint()
+
+	evictForReclaim(t, stmt, probe.task)
+	assert.False(t, probe.deviceAllocated(), "Evicting the pod frees the device of its extended resource claim")
+	assert.Nil(t, probe.getClaim().Status.Allocation)
+	assert.Empty(t, probe.getClaim().Status.ReservedFor)
+
+	assert.NoError(t, stmt.Rollback(cp))
+	assert.Equal(t, pod_status.Running, probe.task.Status)
+	assert.True(t, probe.deviceAllocated(), "Undoing the eviction gives the device back")
+	assert.Equal(t, probe.initial, probe.getClaim().Status.Allocation)
+	assert.Len(t, probe.getClaim().Status.ReservedFor, 1)
+}
+
+// Rolling back an evicted pod that was pipelined elsewhere still restores the devices it held.
+func TestStatementEvictPipelineRollback_WithExtendedResourceClaim(t *testing.T) {
+	test_utils.InitTestingInfrastructure()
+	controller := NewController(t)
+	defer controller.Finish()
+	defer gock.Off()
+
+	probe := newExtendedClaimProbe(t, controller, true)
+	stmt := probe.ssn.Statement()
+	cp := stmt.Checkpoint()
+
+	evictForReclaim(t, stmt, probe.task)
+
+	// The DRA plugin's pre-filter marks a pod that is placed anew with a pending extended-resource claim.
+	probe.task.ExtendedResourceClaim = &pod_info.ExtendedResourceClaim{}
+	assert.NoError(t, stmt.Pipeline(probe.task, "node1", false))
+	assert.Equal(t, "node1", probe.task.NodeName)
+	assert.False(t, probe.deviceAllocated(), "A pod placed anew does not get its old devices back")
+
+	assert.NoError(t, stmt.Rollback(cp))
+	assert.Equal(t, pod_status.Running, probe.task.Status)
+	assert.Equal(t, "node0", probe.task.NodeName)
+	assert.True(t, probe.deviceAllocated(), "Rolling everything back gives the original device back")
+	assert.Equal(t, probe.initial, probe.getClaim().Status.Allocation)
+	assert.Len(t, probe.getClaim().Status.ReservedFor, 1)
+}
+
+// The solver re-places a victim through the pre-filter, which marks it as pending, before undoing its eviction on its own node.
+// The victim must still get the allocation it held, not a new one.
+func TestStatementEvictThenPipelineToSameNode_WithExtendedResourceClaim(t *testing.T) {
+	test_utils.InitTestingInfrastructure()
+	controller := NewController(t)
+	defer controller.Finish()
+	defer gock.Off()
+
+	probe := newExtendedClaimProbe(t, controller, true)
+	stmt := probe.ssn.Statement()
+
+	evictForReclaim(t, stmt, probe.task)
+	assert.False(t, probe.deviceAllocated(), "Evicting the pod frees the device")
+
+	probe.task.ExtendedResourceClaim = &pod_info.ExtendedResourceClaim{}
+	assert.NoError(t, stmt.Pipeline(probe.task, "node0", true))
+
+	assert.Equal(t, pod_status.Running, probe.task.Status)
+	assert.Equal(t, "node0", probe.task.NodeName)
+	assert.True(t, probe.deviceAllocated(), "The victim that returns to its node holds its device again")
+	assert.Equal(t, probe.initial, probe.getClaim().Status.Allocation)
+	assert.Len(t, probe.getClaim().Status.ReservedFor, 1)
+	assert.Nil(t, probe.task.ExtendedResourceClaim, "The victim keeps its allocation, so it has no pending claim")
+}
+
+// A victim kept in one scenario can be evicted and kept again in the next one.
+func TestStatementEvictThenPipelineToSameNode_Repeated(t *testing.T) {
+	test_utils.InitTestingInfrastructure()
+	controller := NewController(t)
+	defer controller.Finish()
+	defer gock.Off()
+
+	probe := newExtendedClaimProbe(t, controller, true)
+	stmt := probe.ssn.Statement()
+
+	for range 3 {
+		evictForReclaim(t, stmt, probe.task)
+		assert.False(t, probe.deviceAllocated(), "Evicting the pod frees the device")
+
+		probe.task.ExtendedResourceClaim = &pod_info.ExtendedResourceClaim{}
+		assert.NoError(t, stmt.Pipeline(probe.task, "node0", true))
+		assert.True(t, probe.deviceAllocated(), "The victim that returns to its node holds its device again")
+		assert.Equal(t, probe.initial, probe.getClaim().Status.Allocation)
+	}
+}
+
+// The preemptor is placed before the victims return, so it can take a victim's device. The victim must not get it back too.
+func TestStatementEvictThenPipelineToSameNode_DeviceTaken(t *testing.T) {
+	test_utils.InitTestingInfrastructure()
+	controller := NewController(t)
+	defer controller.Finish()
+	defer gock.Off()
+
+	probe := newExtendedClaimProbe(t, controller, true)
+	stmt := probe.ssn.Statement()
+	manager := probe.ssn.InternalK8sPlugins().SessionDRAManager.ResourceClaims()
+
+	evictForReclaim(t, stmt, probe.task)
+	assert.False(t, probe.deviceAllocated(), "Evicting the pod frees the device")
+
+	preemptorClaim := probe.getClaim().DeepCopy()
+	preemptorClaim.Name = "preemptor-claim"
+	preemptorClaim.UID = "preemptor-claim-uid"
+	preemptorClaim.Status.Allocation = probe.initial.DeepCopy()
+	assert.NoError(t, manager.SignalClaimPendingAllocation(preemptorClaim.UID, preemptorClaim))
+	assert.True(t, probe.deviceAllocated(), "The preemptor took the freed device")
+
+	probe.task.ExtendedResourceClaim = &pod_info.ExtendedResourceClaim{}
+	assert.NoError(t, stmt.Pipeline(probe.task, "node0", true))
+
+	assert.Nil(t, probe.getClaim().Status.Allocation, "The victim does not get back a device that was given to another pod")
+	assert.Empty(t, probe.getClaim().Status.ReservedFor)
+}
+
+// A victim placed on another node is placed anew, even when the solver allows undoing its eviction.
+func TestStatementEvictThenPipelineToOtherNode_DoesNotRestore(t *testing.T) {
+	test_utils.InitTestingInfrastructure()
+	controller := NewController(t)
+	defer controller.Finish()
+	defer gock.Off()
+
+	probe := newExtendedClaimProbe(t, controller, true)
+	stmt := probe.ssn.Statement()
+
+	evictForReclaim(t, stmt, probe.task)
+	probe.task.ExtendedResourceClaim = &pod_info.ExtendedResourceClaim{}
+	assert.NoError(t, stmt.Pipeline(probe.task, "node1", true))
+
+	assert.Equal(t, "node1", probe.task.NodeName)
+	assert.False(t, probe.deviceAllocated(), "A pod placed on another node does not get its old device back")
+	assert.Nil(t, probe.getClaim().Status.Allocation)
+}
+
+// A pod whose extended-resource claim no longer exists is evicted and restored without errors.
+func TestStatementEvictUnevict_ExtendedResourceClaimMissing(t *testing.T) {
+	test_utils.InitTestingInfrastructure()
+	controller := NewController(t)
+	defer controller.Finish()
+	defer gock.Off()
+
+	probe := newExtendedClaimProbe(t, controller, false)
+	stmt := probe.ssn.Statement()
+	cp := stmt.Checkpoint()
+
+	evictForReclaim(t, stmt, probe.task)
+	assert.NoError(t, stmt.Rollback(cp))
+	assert.Equal(t, pod_status.Running, probe.task.Status)
+	assert.Equal(t, "node0", probe.task.NodeName)
 }
 
 func TestStatementPipelineUnpipeline_WithDRAClaims(t *testing.T) {
