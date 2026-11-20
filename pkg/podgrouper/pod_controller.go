@@ -145,7 +145,8 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 
 	err = r.assignPodToGroupAndSubGroup(ctx, &pod, metadata)
 	if err != nil {
-		logger.V(1).Error(err, "Failed to assign pod to group and subgroup", "pod", pod)
+		logger.V(1).Error(err, "Failed to assign pod to group and subgroup",
+			"pod", fmt.Sprintf("%s/%s", pod.Namespace, pod.Name), "podGroup", metadata.Name)
 		return ctrl.Result{}, err
 	}
 
