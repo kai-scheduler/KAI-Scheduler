@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Write PodGroup scheduling status with a JSON patch that tests the conditions it was computed from, so an unrelated status write no longer delays an Unschedulable verdict until the next scheduling cycle
+custom:
+  Author: "Thezone-1"
+  Issue: "2374"

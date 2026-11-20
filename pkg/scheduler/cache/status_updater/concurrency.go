@@ -99,9 +99,7 @@ func (su *defaultStatusUpdater) updatePodGroup(
 	var statusErr, patchErr error
 	if updateData.updateStatus {
 		var updated *enginev2alpha2.PodGroup
-		updated, statusErr = su.kaiClient.SchedulingV2alpha2().PodGroups(podGroup.Namespace).UpdateStatus(
-			ctx, podGroup, metav1.UpdateOptions{},
-		)
+		updated, statusErr = su.updatePodGroupStatus(ctx, podGroup, updateData.statusPatch)
 		if statusErr == nil {
 			updateData.writtenResourceVersions = append(updateData.writtenResourceVersions, updated.ResourceVersion)
 		}
@@ -162,6 +160,24 @@ func (su *defaultStatusUpdater) updatePodGroup(
 	if !loaded {
 		su.appliedPodGroupUpdates.Delete(key)
 	}
+}
+
+// updatePodGroupStatus patches the status so a write to unrelated fields since the snapshot doesn't
+// conflict. A failed patch test (422) falls back to updating the snapshot, which still conflicts if the
+// pod group really changed but goes through if the test only failed on a serialization difference.
+func (su *defaultStatusUpdater) updatePodGroupStatus(
+	ctx context.Context, podGroup *enginev2alpha2.PodGroup, statusPatch []byte,
+) (*enginev2alpha2.PodGroup, error) {
+	podGroups := su.kaiClient.SchedulingV2alpha2().PodGroups(podGroup.Namespace)
+	if len(statusPatch) > 0 {
+		patched, err := podGroups.Patch(ctx, podGroup.Name, types.JSONPatchType, statusPatch, metav1.PatchOptions{}, "status")
+		if !apierrors.IsInvalid(err) {
+			return patched, err
+		}
+		log.StatusUpdaterLogger.V(5).Infof("Status patch for pod group %s/%s was rejected, updating instead: %v",
+			podGroup.Namespace, podGroup.Name, err)
+	}
+	return podGroups.UpdateStatus(ctx, podGroup, metav1.UpdateOptions{})
 }
 
 // isTerminalUpdateError reports whether an update error can never succeed on retry.
