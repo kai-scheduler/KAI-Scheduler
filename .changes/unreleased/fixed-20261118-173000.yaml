@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Ignore queues whose parent queues form a cycle, so a queue that is its own parent no longer makes the scheduler loop forever
+custom:
+  Author: "BahaaMattar"
+  Issue: "2719"
