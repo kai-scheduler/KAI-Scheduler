@@ -160,6 +160,10 @@ func UpdateConfigMapEnvironmentVariable(
 		logger.Error(err, "failed to get configMap", "configMapName", configMapName)
 		return err
 	}
+	if !gpusharingconfigmap.IsOwnedByPod(configMap, task) {
+		return fmt.Errorf("configmap %s/%s is not exclusively owned by pod %s/%s with UID %s",
+			configMap.Namespace, configMap.Name, task.Namespace, task.Name, task.UID)
+	}
 	if configMap.Data == nil {
 		configMap.Data = map[string]string{}
 	}
@@ -169,7 +173,8 @@ func UpdateConfigMapEnvironmentVariable(
 		return err
 	}
 
-	err = kubeclient.Patch(ctx, configMap, client.MergeFrom(origConfigMap))
+	err = kubeclient.Patch(ctx, configMap,
+		client.MergeFromWithOptions(origConfigMap, client.MergeFromWithOptimisticLock{}))
 	if err != nil {
 		logger.Error(err, "failed to update config map", "configMapName",
 			configMapName, "error", err.Error())
