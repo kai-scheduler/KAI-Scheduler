@@ -4,6 +4,7 @@
 package topology
 
 import (
+	"fmt"
 	"slices"
 	"sort"
 	"testing"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
@@ -28,6 +30,176 @@ import (
 )
 
 var testVectorMap = resource_info.NewResourceVectorMap()
+
+func TestUseRepresentorPodsAccounting(t *testing.T) {
+	tests := []struct {
+		name     string
+		vectors  []resource_info.ResourceVector
+		expected bool
+	}{
+		{name: "empty", expected: true},
+		{name: "single", vectors: []resource_info.ResourceVector{{2000, 32, 1, 1}}, expected: true},
+		{name: "identical", vectors: []resource_info.ResourceVector{{8000, 32, 1, 1, 2}, {8000, 32, 1, 1, 2}}, expected: true},
+		{name: "different CPU", vectors: []resource_info.ResourceVector{{2000, 32, 1, 1}, {8000, 32, 1, 1}}},
+		{name: "different memory", vectors: []resource_info.ResourceVector{{8000, 16, 1, 1}, {8000, 32, 1, 1}}},
+		{name: "different GPU count", vectors: []resource_info.ResourceVector{{8000, 32, 1, 1}, {8000, 32, 2, 1}}},
+		{name: "different GPU fractions", vectors: []resource_info.ResourceVector{{8000, 32, 0.25, 1}, {8000, 32, 0.5, 1}}},
+		{name: "mixed GPU and CPU", vectors: []resource_info.ResourceVector{{8000, 32, 0, 1}, {8000, 32, 1, 1}}},
+		{name: "different extended resource count", vectors: []resource_info.ResourceVector{{8000, 32, 0, 1, 1}, {8000, 32, 0, 1, 4}}},
+		{name: "different resource types", vectors: []resource_info.ResourceVector{{8000, 32, 0, 1, 1, 0}, {8000, 32, 0, 1, 0, 1}}},
+		{name: "different pod count", vectors: []resource_info.ResourceVector{{8000, 32, 0, 1}, {8000, 32, 0, 2}}},
+		{name: "implicit zero", vectors: []resource_info.ResourceVector{{8000, 32, 1, 1}, {8000, 32, 1, 1, 0}}, expected: true},
+		{name: "extra nonzero dimension", vectors: []resource_info.ResourceVector{{8000, 32, 1, 1}, {8000, 32, 1, 1, 1}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			vectorMap := resource_info.NewResourceVectorMap()
+			vectorMap.AddResource("example.com/device")
+			vectorMap.AddResource("example.com/other-device")
+			var tasks []*pod_info.PodInfo
+			for _, vector := range tt.vectors {
+				tasks = append(tasks, &pod_info.PodInfo{
+					VectorMap: vectorMap, ResReqVector: vector,
+					GpuRequirement: *resource_info.NewGpuResourceRequirementWithGpus(vector.Get(resource_info.GPUIndex), 0),
+				})
+			}
+			assert.Equal(t, tt.expected, useRepresentorPodsAccounting(tasks))
+		})
+	}
+}
+
+func TestTopologyPlugin_subsetNodesFnResourceSizes(t *testing.T) {
+	tests := []struct {
+		name            string
+		requests        []resource_info.ResourceVector
+		capacities      []resource_info.ResourceVector
+		sharedFractions bool
+		expectedFit     bool
+	}{
+		{name: "heterogeneous CPU fits", requests: []resource_info.ResourceVector{{2000, 16, 1, 1}, {8000, 16, 1, 1}}, capacities: []resource_info.ResourceVector{{10000, 64, 2, 100}}, expectedFit: true},
+		{name: "heterogeneous CPU insufficient", requests: []resource_info.ResourceVector{{2000, 16, 1, 1}, {8000, 16, 1, 1}}, capacities: []resource_info.ResourceVector{{9000, 64, 2, 100}}},
+		{name: "heterogeneous memory fits", requests: []resource_info.ResourceVector{{2000, 16, 1, 1}, {2000, 48, 1, 1}}, capacities: []resource_info.ResourceVector{{10000, 64, 2, 100}}, expectedFit: true},
+		{name: "heterogeneous GPU fits", requests: []resource_info.ResourceVector{{2000, 16, 1, 1}, {2000, 16, 2, 1}}, capacities: []resource_info.ResourceVector{{10000, 64, 3, 100}}, expectedFit: true},
+		{name: "homogeneous fragmentation rejected", requests: []resource_info.ResourceVector{{8000, 16, 1, 1}, {8000, 16, 1, 1}}, capacities: []resource_info.ResourceVector{{10000, 64, 2, 100}, {6000, 64, 2, 100}}},
+		{name: "heterogeneous CPU-only fits", requests: []resource_info.ResourceVector{{2000, 16, 0, 1}, {8000, 16, 0, 1}}, capacities: []resource_info.ResourceVector{{10000, 64, 0, 100}}, expectedFit: true},
+		{name: "heterogeneous extended resource fits", requests: []resource_info.ResourceVector{{2000, 16, 0, 1, 1}, {2000, 16, 0, 1, 4}}, capacities: []resource_info.ResourceVector{{10000, 64, 0, 100, 5}}, expectedFit: true},
+		{name: "heterogeneous extended resource insufficient", requests: []resource_info.ResourceVector{{2000, 16, 0, 1, 1}, {2000, 16, 0, 1, 4}}, capacities: []resource_info.ResourceVector{{10000, 64, 0, 100, 4}}},
+		{name: "homogeneous fractions fit shared GPUs", requests: []resource_info.ResourceVector{{2000, 16, 0.5, 1}, {2000, 16, 0.5, 1}}, capacities: []resource_info.ResourceVector{{10000, 64, 0, 100}}, sharedFractions: true, expectedFit: true},
+		{name: "heterogeneous fractions fit shared GPUs", requests: []resource_info.ResourceVector{{2000, 16, 0.25, 1}, {2000, 16, 0.5, 1}}, capacities: []resource_info.ResourceVector{{10000, 64, 0, 100}}, sharedFractions: true, expectedFit: true},
+		{name: "heterogeneous CPU with fractions fits", requests: []resource_info.ResourceVector{{2000, 16, 0.5, 1}, {8000, 16, 0.5, 1}}, capacities: []resource_info.ResourceVector{{10000, 64, 0, 100}}, sharedFractions: true, expectedFit: true},
+		{name: "insufficient shared fractions rejected", requests: []resource_info.ResourceVector{{2000, 16, 0.5, 1}, {2000, 16, 0.75, 1}}, capacities: []resource_info.ResourceVector{{10000, 64, 0, 100}}, sharedFractions: true},
+		{name: "whole GPUs cannot use shared fractions", requests: []resource_info.ResourceVector{{2000, 16, 1, 1}, {8000, 16, 1, 1}}, capacities: []resource_info.ResourceVector{{10000, 64, 1, 100}}, sharedFractions: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			vectorMap := resource_info.NewResourceVectorMap()
+			vectorMap.AddResource("example.com/device")
+			root := &DomainInfo{ID: rootDomainId, Level: rootLevel, Nodes: map[string]*node_info.NodeInfo{}}
+			zone := &DomainInfo{ID: "zone1", Level: "zone", Nodes: map[string]*node_info.NodeInfo{}}
+			root.Children = []*DomainInfo{zone}
+			tree := &Info{
+				Name: "test-topology", VectorMap: vectorMap,
+				TopologyResource: &kaiv1alpha1.Topology{Spec: kaiv1alpha1.TopologySpec{Levels: []kaiv1alpha1.TopologyLevel{{NodeLabel: "zone"}}}},
+				DomainsByLevel:   domainsByLevel{rootLevel: {rootDomainId: root}, "zone": {"zone1": zone}},
+			}
+			var nodes node_info.NodeSet
+			for i, capacity := range tt.capacities {
+				node := newNodeInfo(fmt.Sprintf("node-%d", i), map[string]string{"zone": "zone1"})
+				node.VectorMap = vectorMap
+				node.IdleVector = capacity.Clone()
+				node.ReleasingVector = resource_info.NewResourceVector(vectorMap)
+				if tt.sharedFractions {
+					node.MemoryOfEveryGpuOnNode = 1000
+					node.UsedSharedGPUsMemory = map[string]int64{"GPU-0": 500, "GPU-1": 500}
+					node.AllocatedSharedGPUsMemory = map[string]int64{"GPU-0": 500, "GPU-1": 500}
+				}
+				zone.Nodes[node.Name] = node
+				root.Nodes[node.Name] = node
+				nodes = append(nodes, node)
+			}
+			job := &podgroup_info.PodGroupInfo{Name: "test-job", Namespace: "default",
+				RootSubGroupSet: subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName,
+					&topology_info.TopologyConstraintInfo{Topology: tree.Name, RequiredLevel: "zone"})}
+			var tasks []*pod_info.PodInfo
+			for _, request := range tt.requests {
+				tasks = append(tasks, &pod_info.PodInfo{VectorMap: vectorMap, ResReqVector: request,
+					GpuRequirement: *resource_info.NewGpuResourceRequirementWithGpus(request.Get(resource_info.GPUIndex), 0)})
+			}
+			plugin := &topologyPlugin{TopologyTrees: map[string]*Info{tree.Name: tree}}
+			subsets, err := plugin.subSetNodesFn(job, &job.RootSubGroupSet.SubGroupInfo, nil, tasks, nodes)
+			assert.NoError(t, err)
+			if tt.expectedFit {
+				assert.Len(t, subsets, 1)
+				if len(subsets) == 1 {
+					assert.Len(t, subsets[0], len(nodes))
+				}
+				assert.Empty(t, job.JobFitErrors)
+			} else {
+				assert.Empty(t, subsets)
+				assert.NotEmpty(t, job.JobFitErrors)
+			}
+		})
+	}
+}
+
+func TestTopologyPlugin_subsetNodesFnSharedFractionOrdering(t *testing.T) {
+	for _, tt := range []struct {
+		name          string
+		gpuRequest    float64
+		expectedFirst string
+		expectedGPUA  float64
+	}{
+		{name: "fractional requests include shared capacity", gpuRequest: 0.5, expectedFirst: "node-b", expectedGPUA: 3},
+		{name: "whole GPU requests exclude shared capacity", gpuRequest: 1, expectedFirst: "node-b", expectedGPUA: 1},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			vectorMap := resource_info.NewResourceVectorMap()
+			root := &DomainInfo{ID: rootDomainId, Level: rootLevel, Nodes: map[string]*node_info.NodeInfo{}}
+			levelDomains := LevelDomainInfos{}
+			var nodes node_info.NodeSet
+			for i, name := range []string{"a", "b"} {
+				node := newNodeInfo("node-"+name, map[string]string{"zone": name})
+				node.VectorMap = vectorMap
+				node.IdleVector = resource_info.ResourceVector{100000, 1000, float64(i + 1), 100}
+				node.ReleasingVector = resource_info.NewResourceVector(vectorMap)
+				if name == "a" {
+					node.MemoryOfEveryGpuOnNode = 1000
+					node.UsedSharedGPUsMemory = map[string]int64{"GPU-0": 500, "GPU-1": 500, "GPU-2": 500, "GPU-3": 500}
+					node.AllocatedSharedGPUsMemory = map[string]int64{"GPU-0": 500, "GPU-1": 500, "GPU-2": 500, "GPU-3": 500}
+				}
+				domain := &DomainInfo{ID: DomainID(name), Level: "zone", Nodes: map[string]*node_info.NodeInfo{node.Name: node}}
+				levelDomains[domain.ID] = domain
+				root.Children = append(root.Children, domain)
+				root.Nodes[node.Name] = node
+				nodes = append(nodes, node)
+			}
+			tree := &Info{
+				Name: "test-topology", VectorMap: vectorMap,
+				TopologyResource: &kaiv1alpha1.Topology{Spec: kaiv1alpha1.TopologySpec{Levels: []kaiv1alpha1.TopologyLevel{{NodeLabel: "zone"}}}},
+				DomainsByLevel:   domainsByLevel{rootLevel: {rootDomainId: root}, "zone": levelDomains},
+			}
+			job := &podgroup_info.PodGroupInfo{Name: "test-job", Namespace: "default",
+				RootSubGroupSet: subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName,
+					&topology_info.TopologyConstraintInfo{Topology: tree.Name, RequiredLevel: "zone"})}
+			task := &pod_info.PodInfo{VectorMap: vectorMap, ResReqVector: resource_info.ResourceVector{2000, 16, tt.gpuRequest, 1},
+				GpuRequirement: *resource_info.NewGpuResourceRequirementWithGpus(tt.gpuRequest, 0)}
+			plugin := &topologyPlugin{TopologyTrees: map[string]*Info{tree.Name: tree}}
+			subsets, err := plugin.subSetNodesFn(job, &job.RootSubGroupSet.SubGroupInfo, nil, []*pod_info.PodInfo{task, task}, nodes)
+			assert.NoError(t, err)
+			assert.Empty(t, job.JobFitErrors)
+			if tt.gpuRequest < 1 {
+				assert.Len(t, subsets, 2)
+			} else {
+				assert.Len(t, subsets, 1)
+			}
+			if len(subsets) > 0 && len(subsets[0]) == 1 {
+				assert.Equal(t, tt.expectedFirst, subsets[0][0].Name)
+			}
+			assert.Equal(t, tt.expectedGPUA, levelDomains["a"].IdleOrReleasingVector.Get(resource_info.GPUIndex))
+			assert.Equal(t, float64(1), nodes[0].IdleVector.Get(resource_info.GPUIndex))
+		})
+	}
+}
 
 func TestTopologyPlugin_subsetNodesFn(t *testing.T) {
 	tests := []struct {
