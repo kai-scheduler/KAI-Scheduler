@@ -93,7 +93,7 @@ func (t *topologyPlugin) subSetNodesFn(
 		t.subGroupNodeScores[subGroup.GetName()] = calculateNodeScores(domain, preferredLevel)
 	}
 
-	jobAllocatableDomains, err := t.getJobAllocatableDomains(job, subGroup, tasksResources, tasksCount, topologyTree, dbc)
+	jobAllocatableDomains, err := t.getJobAllocatableDomains(job, subGroup, tasksResources, tasksCount, topologyTree, domain, dbc)
 	if err != nil {
 		return nil, err
 	}
@@ -270,10 +270,10 @@ func calcNodeAccommodation(jobAllocationMetaData *jobAllocationMetaData, node *n
 
 func (t *topologyPlugin) getJobAllocatableDomains(
 	job *podgroup_info.PodGroupInfo, subGroup *subgroup_info.SubGroupInfo, tasksResources resource_info.ResourceVector,
-	tasksCount int, topologyTree *Info,
+	tasksCount int, topologyTree *Info, lowestCommonDomain *DomainInfo,
 	dbc *extendedresourcecache.ExtendedResourceCache,
 ) ([]*DomainInfo, error) {
-	relevantLevels, err := t.calculateRelevantDomainLevels(subGroup, topologyTree)
+	relevantLevels, err := t.calculateRelevantDomainLevels(subGroup, topologyTree, lowestCommonDomain.Level)
 	if err != nil {
 		return nil, err
 	}
@@ -289,6 +289,10 @@ func (t *topologyPlugin) getJobAllocatableDomains(
 			DomainLevel(subGroup.GetTopologyConstraint().RequiredLevel))
 	} else {
 		relevantDomainsByLevel = topologyTree.DomainsByLevel
+	}
+
+	if len(relevantLevels) == 0 {
+		relevantLevels = []DomainLevel{lowestCommonDomain.Level}
 	}
 
 	var domains []*DomainInfo
@@ -425,7 +429,7 @@ func checkJobDomainFit(job *podgroup_info.PodGroupInfo, subGroup *subgroup_info.
 }
 
 func (*topologyPlugin) calculateRelevantDomainLevels(
-	subGroup *subgroup_info.SubGroupInfo, topologyTree *Info,
+	subGroup *subgroup_info.SubGroupInfo, topologyTree *Info, lowestCommonDomainLevel DomainLevel,
 ) ([]DomainLevel, error) {
 	topologyConstraint := subGroup.GetTopologyConstraint()
 	requiredPlacement := DomainLevel(topologyConstraint.RequiredLevel)
@@ -445,6 +449,7 @@ func (*topologyPlugin) calculateRelevantDomainLevels(
 	}
 
 	var relevantLevels []DomainLevel
+	withinSearchSubtree := true
 	for _, level := range levels {
 		if level == preferredPlacement {
 			foundPreferredLevel = true
@@ -452,8 +457,11 @@ func (*topologyPlugin) calculateRelevantDomainLevels(
 		if level == requiredPlacement {
 			foundRequiredLevel = true
 		}
-		if foundPreferredLevel || foundRequiredLevel {
+		if withinSearchSubtree && (foundPreferredLevel || foundRequiredLevel) {
 			relevantLevels = append(relevantLevels, level)
+		}
+		if level == lowestCommonDomainLevel {
+			withinSearchSubtree = false
 		}
 		if foundRequiredLevel {
 			break
