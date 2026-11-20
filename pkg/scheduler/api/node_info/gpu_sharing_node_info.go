@@ -31,6 +31,12 @@ type GpuSharingNodeInfo struct {
 	// by several pods through one ResourceClaim (status.reservedFor with more
 	// than one entry) must contribute to the node's used GPU count only once.
 	DRASharedDeviceRefCount map[string]int
+
+	// ReservationPodsPerGpuGroup counts the live reservation pods on the node per
+	// gpu group. A reservation pod holds a whole nvidia.com/gpu device at the kubelet
+	// for as long as it runs, including after the last fractional pod of its group is
+	// gone and before the binder deletes it.
+	ReservationPodsPerGpuGroup map[string]int
 }
 
 func newGpuSharingNodeInfo() *GpuSharingNodeInfo {
@@ -42,6 +48,8 @@ func newGpuSharingNodeInfo() *GpuSharingNodeInfo {
 		AllocatedSharedGPUsMemory: make(map[string]int64),
 
 		DRASharedDeviceRefCount: make(map[string]int),
+
+		ReservationPodsPerGpuGroup: make(map[string]int),
 	}
 }
 
@@ -63,8 +71,56 @@ func (g *GpuSharingNodeInfo) Clone() *GpuSharingNodeInfo {
 	for k, v := range g.DRASharedDeviceRefCount {
 		gpuSharingNodeInfo.DRASharedDeviceRefCount[k] = v
 	}
+	for k, v := range g.ReservationPodsPerGpuGroup {
+		gpuSharingNodeInfo.ReservationPodsPerGpuGroup[k] = v
+	}
 
 	return gpuSharingNodeInfo
+}
+
+func (ni *NodeInfo) addReservationPodGpuGroup(task *pod_info.PodInfo) {
+	gpuGroup, found := task.Pod.Labels[commonconstants.GPUGroup]
+	if !found {
+		return
+	}
+	ni.ReservationPodsPerGpuGroup[gpuGroup]++
+}
+
+func (ni *NodeInfo) removeReservationPodGpuGroup(task *pod_info.PodInfo) {
+	gpuGroup, found := task.Pod.Labels[commonconstants.GPUGroup]
+	if !found {
+		return
+	}
+	ni.ReservationPodsPerGpuGroup[gpuGroup]--
+	if ni.ReservationPodsPerGpuGroup[gpuGroup] <= 0 {
+		delete(ni.ReservationPodsPerGpuGroup, gpuGroup)
+	}
+}
+
+// GpusHeldByIdleReservationPods returns the number of whole GPU devices that the kubelet has
+// already handed to reservation pods whose gpu group has no fractional task on this node.
+// The scheduler's vectors count those devices as idle, but the kubelet rejects any new pod
+// that requests one of them (UnexpectedAdmissionError), so they must not be offered as a
+// whole GPU or as the device behind a new gpu group.
+func (ni *NodeInfo) GpusHeldByIdleReservationPods() int64 {
+	held := int64(0)
+	for gpuGroup := range ni.ReservationPodsPerGpuGroup {
+		if ni.UsedSharedGPUsMemory[gpuGroup] > 0 {
+			continue
+		}
+		held++
+	}
+	return held
+}
+
+// wholeGpusAvailable returns the GPU count of vector minus the devices held by idle
+// reservation pods, floored at zero.
+func (ni *NodeInfo) wholeGpusAvailable(vector resource_info.ResourceVector) float64 {
+	available := vector.Get(resource_info.GPUIndex) - float64(ni.GpusHeldByIdleReservationPods())
+	if available < 0 {
+		return 0
+	}
+	return available
 }
 
 func (ni *NodeInfo) IsGpuGroupComputeSharingModeCompatible(gpuGroup string, task *pod_info.PodInfo) bool {

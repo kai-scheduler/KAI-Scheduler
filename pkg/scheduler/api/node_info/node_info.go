@@ -364,6 +364,10 @@ func (ni *NodeInfo) isTaskAllocatableOnNonAllocatedResources(
 	task *pod_info.PodInfo, nodeNonAllocatedVector resource_info.ResourceVector,
 ) bool {
 	if task.IsRegularGPURequest() || task.IsMigProfileRequest() {
+		if held := ni.GpusHeldByIdleReservationPods(); held > 0 {
+			nodeNonAllocatedVector = nodeNonAllocatedVector.Clone()
+			nodeNonAllocatedVector.Set(resource_info.GPUIndex, ni.wholeGpusAvailable(nodeNonAllocatedVector))
+		}
 		return ni.lessEqualTaskToNodeResources(task, nodeNonAllocatedVector)
 	}
 
@@ -374,7 +378,7 @@ func (ni *NodeInfo) isTaskAllocatableOnNonAllocatedResources(
 	if !ni.isValidGpuPortion(&task.GpuRequirement) {
 		return false
 	}
-	nodeIdleOrReleasingWholeGpus := int64(math.Floor(nodeNonAllocatedVector.Get(resource_info.GPUIndex)))
+	nodeIdleOrReleasingWholeGpus := int64(math.Floor(ni.wholeGpusAvailable(nodeNonAllocatedVector)))
 	nodeNonAllocatedResourcesMatchingSharedGpus := ni.fractionTaskGpusAllocatableDeviceCount(task)
 	if nodeIdleOrReleasingWholeGpus+nodeNonAllocatedResourcesMatchingSharedGpus >= task.GpuRequirement.GetNumOfGpuDevices() {
 		return true
@@ -497,6 +501,7 @@ func (ni *NodeInfo) addTaskResources(task *pod_info.PodInfo) {
 	if pod_info.IsResourceReservationTask(task.Pod) {
 		// Reservation pod: track all resources except GPUs
 		resourcesToTrackVector.Set(resource_info.GPUIndex, 0)
+		ni.addReservationPodGpuGroup(task)
 	}
 
 	// A physical DRA device shared by several pods (one ResourceClaim with
@@ -579,6 +584,7 @@ func (ni *NodeInfo) removeTaskResources(task *pod_info.PodInfo) {
 	if pod_info.IsResourceReservationTask(task.Pod) {
 		// Reservation pod: untrack all resources except GPUs
 		resourcesToTrackVector.Set(resource_info.GPUIndex, 0)
+		ni.removeReservationPodGpuGroup(task)
 	}
 
 	// Mirror of dedupSharedDRAGpus: keep a shared physical DRA device in the
@@ -655,7 +661,10 @@ func (ni *NodeInfo) String() string {
 
 func (ni *NodeInfo) GetSumOfIdleGPUs() (float64, int64) {
 	sumOfSharedGPUs, sumOfSharedGPUsMemory := ni.getSumOfAvailableSharedGPUs()
-	idleGPUs := ni.IdleVector.TotalGPUs(ni.VectorMap)
+	idleGPUs := ni.IdleVector.TotalGPUs(ni.VectorMap) - float64(ni.GpusHeldByIdleReservationPods())
+	if idleGPUs < 0 {
+		idleGPUs = 0
+	}
 	return sumOfSharedGPUs + idleGPUs, sumOfSharedGPUsMemory + (int64(idleGPUs) * ni.MemoryOfEveryGpuOnNode)
 }
 
