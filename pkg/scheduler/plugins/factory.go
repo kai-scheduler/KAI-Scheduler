@@ -41,6 +41,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/priority"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/ray"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/recorder"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/reflectjoborder"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/resourcetype"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/snapshot"
@@ -77,6 +78,7 @@ func InitDefaultPlugins() {
 
 	// Other Plugins
 	framework.RegisterPluginBuilder("snapshot", snapshot.New)
+	framework.RegisterPluginBuilder(recorder.Name, recorder.New)
 	framework.RegisterPluginBuilder(backgroundpods.Name, backgroundpods.New)
 	framework.RegisterPluginBuilder(nodelocalgreedy.Name, nodelocalgreedy.New)
 	framework.RegisterPluginBuilder(multinodegang.Name, multinodegang.New)

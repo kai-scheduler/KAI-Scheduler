@@ -107,8 +107,14 @@ type Session struct {
 	Config  *conf.SchedulerConfiguration
 	plugins map[string]Plugin
 	// pluginsInOrder records the order plugins were opened in, so they can be closed in reverse.
-	pluginsInOrder  []Plugin
-	eventHandlers   []*EventHandler
+	pluginsInOrder []Plugin
+	eventHandlers  []*EventHandler
+	// onCommit is set when a handler has OnCommit. Callers check it before building records.
+	onCommit bool
+	// attempted is the pod groups an action entered a placement function for. The map is created
+	// only after a handler registers OnCommit, so a recorder-off cycle does not create it.
+	attempted       map[common_info.PodGroupID]struct{}
+	currentAction   ActionType
 	SchedulerParams conf.SchedulerParams
 	mux             *http.ServeMux
 
@@ -120,6 +126,29 @@ type Session struct {
 
 func (ssn *Session) Statement() *Statement {
 	return &Statement{ssn: ssn, sessionID: ssn.ID}
+}
+
+// SetCurrentAction names the action whose commits are about to be published.
+func (ssn *Session) SetCurrentAction(action ActionType) {
+	ssn.currentAction = action
+}
+
+// publishCommit invokes OnCommit inline. Handlers must not block.
+// The event is built only when a plugin registered OnCommit.
+func (ssn *Session) publishCommit(ops []CommitOp) {
+	if ssn == nil || !ssn.onCommit || len(ops) == 0 {
+		return
+	}
+	event := &CommitEvent{
+		SessionID: ssn.ID,
+		Action:    ssn.currentAction,
+		Ops:       ops,
+	}
+	for _, handler := range ssn.eventHandlers {
+		if handler != nil && handler.OnCommit != nil {
+			handler.OnCommit(event)
+		}
+	}
 }
 
 func (ssn *Session) GetSessionStateForResource(uid types.UID) k8s_internal.SessionState {
@@ -166,6 +195,20 @@ func (ssn *Session) Evict(pod *pod_info.PodInfo, message string, evictionMetadat
 	if err := ssn.Cache.Evict(pod.Pod, podGroup, evictionMetadata, message); err != nil {
 		return err
 	}
+	// Stale-gang eviction calls Session.Evict and never reaches Statement.Commit.
+	// Build the record only when a plugin registered OnCommit.
+	if ssn.onCommit {
+		meta := withEvictionReason(evictionMetadata)
+		ssn.publishCommit([]CommitOp{{
+			Kind:      CommitOpEvict,
+			UID:       string(pod.UID),
+			Namespace: pod.Namespace,
+			Name:      pod.Name,
+			Node:      pod.NodeName,
+			Reason:    meta.Reason,
+			Eviction:  meta,
+		}})
+	}
 	if err := ssn.updatePodOnSession(pod, pod_status.Releasing); err != nil {
 		return err
 	}
@@ -182,8 +225,32 @@ func (ssn *Session) Evict(pod *pod_info.PodInfo, message string, evictionMetadat
 	return nil
 }
 
+// NoteSchedulingAttempt records that an action entered its placement function for this group.
+// The call returns before allocating when no commit handler is registered.
+func (ssn *Session) NoteSchedulingAttempt(id common_info.PodGroupID) {
+	if ssn == nil || !ssn.onCommit || id == "" {
+		return
+	}
+	if ssn.attempted == nil {
+		ssn.attempted = make(map[common_info.PodGroupID]struct{})
+	}
+	ssn.attempted[id] = struct{}{}
+}
+
+// JobWasAttempted reports whether NoteSchedulingAttempt saw this group during the session.
+func (ssn *Session) JobWasAttempted(id common_info.PodGroupID) bool {
+	if ssn == nil || ssn.attempted == nil {
+		return false
+	}
+	_, ok := ssn.attempted[id]
+	return ok
+}
+
 func (ssn *Session) AddEventHandler(eh *EventHandler) {
 	ssn.eventHandlers = append(ssn.eventHandlers, eh)
+	if eh != nil && eh.OnCommit != nil {
+		ssn.onCommit = true
+	}
 }
 
 // FittingGPUs returns a list of GPUs that fit the pod, sorted by fit score (descending)
@@ -463,6 +530,7 @@ func (ssn *Session) clear() {
 	ssn.plugins = nil
 	ssn.pluginsInOrder = nil
 	ssn.eventHandlers = nil
+	ssn.currentAction = ""
 	ssn.GpuOrderFns = nil
 	ssn.NodePreOrderFns = nil
 	ssn.NodeOrderFns = nil

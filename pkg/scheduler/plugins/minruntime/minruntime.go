@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/clock"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
@@ -148,7 +149,7 @@ func (mr *minruntimePlugin) isReclaimMinRuntimeProtected(pendingJob *podgroup_in
 	// the victim is protected from reclaim
 	if victim.LastStartTimestamp != nil && !victim.LastStartTimestamp.IsZero() {
 		protectedUntil := victim.LastStartTimestamp.Add(minRuntime.Duration)
-		return time.Now().Before(protectedUntil)
+		return clock.Now().Before(protectedUntil)
 	}
 	return false
 }
@@ -166,7 +167,7 @@ func (mr *minruntimePlugin) isPreemptMinRuntimeProtected(_ *podgroup_info.PodGro
 	// the victim is protected from preemption
 	if victim.LastStartTimestamp != nil && !victim.LastStartTimestamp.IsZero() {
 		protectedUntil := victim.LastStartTimestamp.Add(minRuntime.Duration)
-		return time.Now().Before(protectedUntil)
+		return clock.Now().Before(protectedUntil)
 	}
 
 	return false

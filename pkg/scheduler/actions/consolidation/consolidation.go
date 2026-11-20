@@ -96,6 +96,7 @@ func (alloc *consolidationAction) Execute(ssn *framework.Session) {
 func attemptToConsolidateForPreemptor(
 	ssn *framework.Session, job *podgroup_info.PodGroupInfo, actionBudget *solvers.ActionSearchBudget,
 ) (bool, *framework.Statement, *solvers.SearchResult) {
+	ssn.NoteSchedulingAttempt(job.UID)
 	resReq := podgroup_info.GetTasksToAllocateInitResourceVector(job, ssn.SubGroupOrderFn, ssn.TaskOrderFn,
 		podgroup_info.SimulatedTaskAllocation, ssn.ClusterInfo.MinNodeGPUMemoryMiB)
 	log.InfraLogger.V(3).Infof(

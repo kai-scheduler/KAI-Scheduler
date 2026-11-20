@@ -11,4 +11,6 @@ type EvictionMetadata struct {
 	EvictionGangSize int
 	Action           string
 	Preemptor        *types.NamespacedName
+	// Reason is a stable code for why the pod was evicted. The free-text message is not stored.
+	Reason string `json:"reason,omitempty"`
 }

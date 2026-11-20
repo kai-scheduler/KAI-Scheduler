@@ -55,6 +55,9 @@ type SchedulingShardReconciler struct {
 	shardOperandsForShard func(*kaiv1.SchedulingShard) []operands.Operand
 	deployablePerShard    map[string]*deployable.DeployableOperands
 	statusReconcilers     map[string]*status_reconciler.StatusReconciler
+	// APIReader is an uncached reader. spec.recorder is not on the generated types yet,
+	// and the typed cache drops it. Reconcile reads it once, before the Config name is replaced.
+	APIReader client.Reader
 }
 
 func NewSchedulingShardReconciler(client client.Client, scheme *runtime.Scheme) *SchedulingShardReconciler {
@@ -88,8 +91,9 @@ func (r *SchedulingShardReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 	shard.Spec.SetDefaultsWhereNeeded()
 
+	shardOperands := r.shardOperandsForShard(shard)
 	r.deployablePerShard[shard.Name] = deployable.New(
-		r.shardOperandsForShard(shard),
+		shardOperands,
 		known_types.SchedulingShardRegisteredCollectable,
 	)
 	r.deployablePerShard[shard.Name].RegisterFieldsInheritFromClusterObjects(&admissionv1.ValidatingWebhookConfiguration{},
@@ -122,6 +126,32 @@ func (r *SchedulingShardReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, err
 	}
 	kaiConfig.Spec.SetDefaultsWhereNeeded()
+	recorderSpec, recorderErr := scheduler.NewSchedulerForShard(shard).ResolveRecorder(ctx, r.APIReader, kaiConfig, shard)
+	var unavailable *scheduler.RecorderUnavailable
+	if errors.As(recorderErr, &unavailable) {
+		logger.Error(recorderErr, "Skipping the scheduling recorder because it is not enabled and its spec could not be read")
+		recorderSpec = nil
+		recorderErr = nil
+	}
+	if recorderErr != nil {
+		return ctrl.Result{}, recorderErr
+	}
+	var hashKeyOperand *scheduler.SchedulerForShard
+	for _, operand := range shardOperands {
+		shardOperand, ok := operand.(*scheduler.SchedulerForShard)
+		if !ok {
+			continue
+		}
+		shardOperand.SetResolvedRecorder(recorderSpec)
+		if hashKeyOperand == nil {
+			hashKeyOperand = shardOperand
+		}
+	}
+	if hashKeyOperand != nil {
+		if err := hashKeyOperand.EnsureSharedHashKey(ctx, r.Client, r.Client, kaiConfig, shard); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
 	kaiConfig.Name = shard.Name
 
 	if err = statusReconciler.UpdateStartReconcileStatus(

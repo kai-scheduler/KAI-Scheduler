@@ -26,6 +26,10 @@ import (
 // scheduler queue metrics. The interesting case is a queue whose Spec.DisplayName
 // differs from metadata.name: queue_name carries the legacy display-name-fallback
 // value, while queue_metadata_name and queue_display_name disambiguate it.
+func TestNamespaceReportsTheRegisteredPrefix(t *testing.T) {
+	require.Equal(t, "", Namespace())
+}
+
 func TestQueueLabels(t *testing.T) {
 	cases := []struct {
 		name              string

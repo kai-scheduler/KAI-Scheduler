@@ -106,6 +106,7 @@ func New() (*App, error) {
 	shardReconciler := controller.NewSchedulingShardReconciler(
 		mgr.GetClient(), mgr.GetScheme(),
 	)
+	shardReconciler.APIReader = mgr.GetAPIReader()
 
 	return &App{
 		manager:          mgr,

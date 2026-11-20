@@ -133,6 +133,12 @@ func (s *SchedulerForShard) deploymentForShard(
 		},
 	}
 
+	recorderSpec, err := s.recorderForShard(ctx, readerClient, kaiConfig, shard)
+	if err != nil {
+		return nil, err
+	}
+	appendRecorderSidecar(deployment, recorderSpec, kaiConfig)
+
 	return deployment, nil
 }
 
@@ -152,7 +158,11 @@ func (s *SchedulerForShard) configMapForShard(
 	}
 	innerConfig := conf.SchedulerConfiguration{}
 
-	innerConfig.Tiers = []conf.Tier{{Plugins: resolvePlugins(shard.Spec.Plugins)}}
+	recorderSpec, err := s.recorderForShard(ctx, readerClient, kaiConfig, shard)
+	if err != nil {
+		return nil, err
+	}
+	innerConfig.Tiers = []conf.Tier{{Plugins: resolvePlugins(pluginsWithRecorder(shard.Spec.Plugins, recorderSpec, kaiConfig, shard))}}
 	actions := resolveActions(shard.Spec.Actions)
 	innerConfig.Actions = strings.Join(actions, ", ")
 	if err = validateScenarioSearchBudgets(shard.Spec.ScenarioSearchBudgets); err != nil {

@@ -1,0 +1,6 @@
+kind: Added
+body: |-
+  Optional recorder for scheduling decisions and the cluster state that produced them
+custom:
+  Author: "eladb"
+  Issue: "2642"

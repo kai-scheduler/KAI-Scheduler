@@ -9,6 +9,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/clock"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
 	"github.com/kai-scheduler/api/constants"
@@ -45,7 +46,7 @@ type generatorSearchBudget struct {
 
 // NewActionSearchBudget parses scenario search budget config for one scheduler action.
 func NewActionSearchBudget(ssn *framework.Session, action framework.ActionType) (*ActionSearchBudget, error) {
-	return newActionSearchBudgetWithClock(ssn, action, time.Now)
+	return newActionSearchBudgetWithClock(ssn, action, clock.Now)
 }
 
 func newActionSearchBudgetWithClock(

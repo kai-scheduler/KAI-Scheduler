@@ -33,6 +33,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/clock"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
@@ -1023,4 +1024,14 @@ func TestGetTaskStatusStuckInReleasing(t *testing.T) {
 			assert.Equal(t, tt.expected, got)
 		})
 	}
+
+	// A deletion in 2024 is years old on the wall clock. The decision clock
+	// still classifies it as releasing when it is inside the threshold.
+	recorded := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	deleted := metav1.NewTime(recorded.Add(-30 * time.Second))
+	restore := clock.Set(recorded)
+	t.Cleanup(restore)
+	assert.Equal(t, pod_status.Releasing, getTaskStatus(runningPod(&deleted), nil, 2*time.Minute))
+	clock.Set(recorded.Add(time.Hour))
+	assert.Equal(t, pod_status.StuckInReleasing, getTaskStatus(runningPod(&deleted), nil, 2*time.Minute))
 }

@@ -157,6 +157,7 @@ func solveDeferredResize(ssn *framework.Session, actionBudget *solvers.ActionSea
 func (ra *reclaimAction) attemptToReclaimForSpecificJob(
 	ssn *framework.Session, reclaimer *podgroup_info.PodGroupInfo, actionBudget *solvers.ActionSearchBudget,
 ) (bool, *framework.Statement, []string, *solvers.SearchResult) {
+	ssn.NoteSchedulingAttempt(reclaimer.UID)
 	queue := ssn.ClusterInfo.Queues[reclaimer.Queue]
 	resReq := podgroup_info.GetTasksToAllocateInitResourceVector(reclaimer, ssn.SubGroupOrderFn, ssn.TaskOrderFn,
 		podgroup_info.SimulatedTaskAllocation, ssn.ClusterInfo.MinNodeGPUMemoryMiB)

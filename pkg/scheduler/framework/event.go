@@ -20,7 +20,20 @@ limitations under the License.
 package framework
 
 import (
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+)
+
+// SessionCloseAction tags commits that run while plugins close, after the configured actions.
+const SessionCloseAction ActionType = "session-close"
+
+// CommitOpKind is the operation name stored on a commit. The JSON value matches the operation name.
+type CommitOpKind string
+
+const (
+	CommitOpEvict    CommitOpKind = evict
+	CommitOpPipeline CommitOpKind = pipeline
+	CommitOpAllocate CommitOpKind = allocate
 )
 
 type Event struct {
@@ -30,4 +43,60 @@ type Event struct {
 type EventHandler struct {
 	AllocateFunc   func(event *Event)
 	DeallocateFunc func(event *Event)
+	// OnCommit runs inline on the scheduling goroutine for Statement.Commit
+	// and Session.Evict. Discard does not publish. It must not block.
+	// The recorder copies each CommitEvent into a bounded buffer. A separate
+	// goroutine saves it. When the buffer is full the event is dropped and counted.
+	OnCommit func(event *CommitEvent)
+}
+
+// CommitOp is one operation inside a commit. Failed is set when that operation's commit returned an error.
+// Reason is a stable code for that failure, or for an eviction. It is empty when the operation succeeded
+// and was not an eviction.
+type CommitOp struct {
+	Kind         CommitOpKind                   `json:"kind"`
+	UID          string                         `json:"uid,omitempty"`
+	Namespace    string                         `json:"namespace,omitempty"`
+	Name         string                         `json:"name,omitempty"`
+	Node         string                         `json:"node,omitempty"`
+	Failed       bool                           `json:"failed,omitempty"`
+	NotAttempted bool                           `json:"notAttempted,omitempty"`
+	Reason       string                         `json:"reason,omitempty"`
+	Eviction     eviction_info.EvictionMetadata `json:"eviction"`
+}
+
+// CommitEvent is one committed statement. Undo operations are not included.
+type CommitEvent struct {
+	SessionID string     `json:"sessionID"`
+	Action    ActionType `json:"action,omitempty"`
+	Ops       []CommitOp `json:"ops,omitempty"`
+}
+
+// withEvictionReason fills a stable eviction code when the caller did not set one.
+// The free-text eviction message is not copied onto the record.
+func withEvictionReason(meta eviction_info.EvictionMetadata) eviction_info.EvictionMetadata {
+	if meta.Reason == "" {
+		meta.Reason = evictionReasonCode(meta.Action)
+	}
+	return meta
+}
+
+func evictionReasonCode(action string) string {
+	switch ActionType(action) {
+	case Preempt:
+		return "Preempted"
+	case Reclaim:
+		return "Reclaimed"
+	case Consolidation:
+		return "Consolidated"
+	case StaleGangEviction:
+		return "StaleGang"
+	case "":
+		return "Evicted"
+	default:
+		if action == "backgroundpods" {
+			return "BackgroundPod"
+		}
+		return "Evicted"
+	}
 }

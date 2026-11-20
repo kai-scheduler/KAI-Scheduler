@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/clock"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
@@ -39,7 +40,7 @@ func (action *staleGangEviction) Execute(ssn *framework.Session) {
 
 func handleStaleJob(ssn *framework.Session, job *podgroup_info.PodGroupInfo) {
 	if job.StalenessInfo.TimeStamp == nil {
-		timeNow := time.Now()
+		timeNow := clock.Now()
 		job.StalenessInfo.TimeStamp = &timeNow
 	}
 
@@ -54,7 +55,7 @@ func handleStaleJob(ssn *framework.Session, job *podgroup_info.PodGroupInfo) {
 		return
 	}
 
-	timeInStaleStatus := time.Since(*job.StalenessInfo.TimeStamp)
+	timeInStaleStatus := clock.Since(*job.StalenessInfo.TimeStamp)
 	if timeInStaleStatus < gracePeriod {
 		return
 	}

@@ -33,6 +33,7 @@ import (
 	resourcehelpers "k8s.io/component-helpers/resource"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/clock"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
@@ -477,7 +478,7 @@ func getTaskStatus(pod *v1.Pod, bindRequest *bindrequest_info.BindRequestInfo, s
 	switch pod.Status.Phase {
 	case v1.PodRunning:
 		if pod.DeletionTimestamp != nil {
-			if time.Since(pod.DeletionTimestamp.Time) > stuckInReleasingThreshold {
+			if clock.Since(pod.DeletionTimestamp.Time) > stuckInReleasingThreshold {
 				return pod_status.StuckInReleasing
 			}
 			return pod_status.Releasing

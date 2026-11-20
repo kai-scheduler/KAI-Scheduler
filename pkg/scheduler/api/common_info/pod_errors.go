@@ -227,6 +227,19 @@ func (f *TasksFitErrors) UniqueReasonCount() int {
 	return len(f.reasonCounts)
 }
 
+// ReasonCodes lists the short fit reasons counted for this pod, in sorted order.
+func (f *TasksFitErrors) ReasonCodes() []string {
+	if f == nil || len(f.reasonCounts) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(f.reasonCounts))
+	for reason := range f.reasonCounts {
+		out = append(out, reason)
+	}
+	sort.Strings(out)
+	return out
+}
+
 func (f *TasksFitErrors) DetailedError(nodeErrors []*TasksFitError) string {
 	baseError := f.err
 	if baseError == "" {

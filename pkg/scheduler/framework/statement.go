@@ -21,11 +21,12 @@ package framework
 
 import (
 	"fmt"
-	"time"
+	"strings"
 
 	"golang.org/x/exp/slices"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/clock"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
@@ -159,7 +160,7 @@ func (s *Statement) commitEvict(reclaimee *pod_info.PodInfo, evictOp evictOperat
 	}
 	reclaimee.IsVirtualStatus = false
 
-	evictionTime := time.Now()
+	evictionTime := clock.Now()
 	reclaimeePodGroup.LastEvictionTimestamp = &evictionTime
 
 	return nil
@@ -602,12 +603,19 @@ func (s *Statement) Commit() error {
 	}
 
 	var err error
+	var recorded []CommitOp
+	recording := s.ssn != nil && s.ssn.onCommit
 	type evictionEventKey struct {
 		podGroup common_info.PodGroupID
 		action   string
 	}
 	committedEvictions := map[evictionEventKey]*podgroup_info.PodGroupInfo{}
 	defer func() {
+		// Clear after the records are taken. The eviction metrics below only use the saved pod groups.
+		defer s.clearOperations()
+		if recording {
+			s.ssn.publishCommit(recorded)
+		}
 		for key, podGroup := range committedEvictions {
 			s.ssn.Cache.RecordPodGroupEvictionEvent(podGroup, key.action)
 		}
@@ -620,11 +628,14 @@ func (s *Statement) Commit() error {
 		}
 
 		taskInfo := op.TaskInfo()
+		var opErr error
 		switch op.Name() {
 		case evict:
 			log.InfraLogger.V(4).Infof("Evicting task: %v/%v", taskInfo.Namespace, taskInfo.Name)
 			evictOp := op.(evictOperation)
-			if err = s.commitEvict(taskInfo, evictOp); err != nil {
+			err = s.commitEvict(taskInfo, evictOp)
+			opErr = err
+			if err != nil {
 				log.InfraLogger.Errorf("Failed to evict task <%v/%v>, error: <%v>",
 					taskInfo.Namespace, taskInfo.Name, err)
 			} else {
@@ -637,17 +648,89 @@ func (s *Statement) Commit() error {
 		case allocate:
 			log.InfraLogger.V(4).Infof("Allocating task: %v/%v", taskInfo.Namespace, taskInfo.Name)
 			err = s.commitAllocate(taskInfo)
+			opErr = err
 			if err != nil {
 				log.InfraLogger.Errorf("Failed to allocate task. error: %s", err.Error())
-				s.clearOperations()
-				return err
 			}
+		default:
+			continue
+		}
+		if recording {
+			recordCommit(&recorded, op, opErr)
+		}
+		// An allocation failure stops the commit, so the operations after it never run.
+		// Mark those as not attempted. Do this only while recording: the walk allocates,
+		// and nothing reads the result when the recorder is off.
+		if op.Name() == allocate && opErr != nil {
+			if recording {
+				for j := i + 1; j < len(s.operations); j++ {
+					later := s.operations[j]
+					if later.Name() == undo || !s.operationValid(j) {
+						continue
+					}
+					skipped := commitOpFrom(later)
+					skipped.NotAttempted = true
+					recorded = append(recorded, skipped)
+				}
+			}
+			return err
 		}
 	}
 
-	s.clearOperations()
-
 	return err
+}
+
+func recordCommit(recorded *[]CommitOp, op Operation, commitErr error) {
+	recordedOp := commitOpFrom(op)
+	if commitErr != nil {
+		recordedOp.Failed = true
+		recordedOp.Reason = commitFailureReason(op, commitErr)
+	}
+	*recorded = append(*recorded, recordedOp)
+}
+
+func commitFailureReason(op Operation, err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "node doesn") || strings.Contains(msg, "failed to find node"):
+		return "NodeNotFound"
+	case strings.Contains(msg, "podGroup"):
+		return "PodGroupNotFound"
+	case strings.Contains(msg, "find job") || strings.Contains(msg, "find Job"):
+		return "JobNotFound"
+	case strings.Contains(msg, "update task"):
+		return "TaskUpdateFailed"
+	}
+	if op != nil && op.Name() == allocate {
+		return "BindFailed"
+	}
+	return "CommitFailed"
+}
+
+func commitOpFrom(op Operation) CommitOp {
+	task := op.TaskInfo()
+	recorded := CommitOp{Kind: CommitOpKind(op.Name())}
+	if task != nil {
+		recorded.UID = string(task.UID)
+		recorded.Namespace = task.Namespace
+		recorded.Name = task.Name
+	}
+	switch typed := op.(type) {
+	case evictOperation:
+		if typed.previousNode != nil {
+			recorded.Node = typed.previousNode.Name
+		}
+		recorded.Eviction = withEvictionReason(typed.evictionMetadata)
+		recorded.Reason = recorded.Eviction.Reason
+	case pipelineOperation:
+		recorded.Node = typed.nextNode
+	case allocateOperation:
+		recorded.Node = typed.nextNode
+	}
+	return recorded
 }
 
 // undoEarliestValidOperation will undo the earliest valid operation of the given type
