@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Scope GPU reservation lookup and synchronization by node name in addition to GPU group
+custom:
+  Author: "NVGreg"
+  Issue: "2635"
