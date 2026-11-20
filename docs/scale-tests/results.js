@@ -63,6 +63,17 @@
     return sanitized;
   }
 
+  // The scale test records service client config in its results; the upload workflow moves it to metadata.
+  function runMetadata(metadata, result) {
+    const serviceClientConfig = result.service_client_config;
+    if (!metadata && !serviceClientConfig) return null;
+    const merged = { ...metadata };
+    if (serviceClientConfig && !Object.hasOwn(merged, 'service_client_config')) {
+      merged.service_client_config = serviceClientConfig;
+    }
+    return sanitizeMetadata(merged);
+  }
+
   function loadRun(payload, meta, now = Date.now()) {
     if (isScaleResults(payload)) {
       validateScaleResults(payload.results);
@@ -71,7 +82,7 @@
         meta: { ...meta },
         payload,
         result: payload.results,
-        metadata: sanitizeMetadata(payload.metadata),
+        metadata: runMetadata(payload.metadata, payload.results),
       };
     }
 
@@ -82,7 +93,7 @@
         meta: { ...meta },
         payload,
         result: payload,
-        metadata: null,
+        metadata: runMetadata(null, payload),
       };
     }
 
