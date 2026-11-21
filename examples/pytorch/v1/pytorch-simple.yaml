@@ -1,0 +1,39 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: "kubeflow.org/v1"
+kind: PyTorchJob
+metadata:
+  name: pytorch-simple
+  labels:
+    kai.scheduler/queue: default-queue
+spec:
+  pytorchReplicaSpecs:
+    Master:
+      replicas: 1
+      restartPolicy: OnFailure
+      template:
+        spec:
+          schedulerName: kai-scheduler
+          containers:
+            - name: pytorch
+              image: docker.io/kubeflowkatib/pytorch-mnist:v1beta1-45c5727
+              imagePullPolicy: Always
+              command:
+                - "python3"
+                - "/opt/pytorch-mnist/mnist.py"
+                - "--epochs=1"
+    Worker:
+      replicas: 1
+      restartPolicy: OnFailure
+      template:
+        spec:
+          schedulerName: kai-scheduler
+          containers:
+            - name: pytorch
+              image: docker.io/kubeflowkatib/pytorch-mnist:v1beta1-45c5727
+              imagePullPolicy: Always
+              command:
+                - "python3"
+                - "/opt/pytorch-mnist/mnist.py"
+                - "--epochs=1"
