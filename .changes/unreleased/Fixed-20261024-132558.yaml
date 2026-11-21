@@ -3,4 +3,4 @@ body: '  Reject dead admission.cdi Helm value; document unset binder.cdiEnabled 
 time: 2026-10-24T13:25:58.147749924+01:00
 custom:
     Author: dttung2905
-    Issue: ""
+    Issue: "2502"
