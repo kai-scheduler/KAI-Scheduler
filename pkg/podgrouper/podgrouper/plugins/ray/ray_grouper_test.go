@@ -15,6 +15,8 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	rayv1 "github.com/ray-project/kuberay/ray-operator/apis/ray/v1"
+
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
 	schedulingv2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
 )
@@ -51,7 +53,7 @@ func TestRayAutoscalingWorkerMinimum(t *testing.T) {
 			spec := map[string]interface{}{"workerGroupSpecs": []interface{}{
 				elastic,
 				map[string]interface{}{"groupName": "fixed", "replicas": int64(3), "minReplicas": int64(2)},
-				map[string]interface{}{"groupName": "suspended", "replicas": int64(3), "suspended": true},
+				map[string]interface{}{"groupName": "suspended", "replicas": int64(3), "suspend": true},
 			}}
 			if tt.autoscaling != nil {
 				spec["enableInTreeAutoscaling"] = tt.autoscaling
@@ -65,6 +67,34 @@ func TestRayAutoscalingWorkerMinimum(t *testing.T) {
 			assert.Equal(t, tt.wantWorkers, groups[1].MinAvailable)
 			assert.Equal(t, int32(2), groups[2].MinAvailable)
 		})
+	}
+}
+
+// The worker group fields are read from the unstructured object, so check them
+// against the JSON that the KubeRay types produce.
+func TestRaySuspendedWorkerGroupFromKubeRayTypes(t *testing.T) {
+	cluster := &rayv1.RayCluster{
+		Spec: rayv1.RayClusterSpec{
+			WorkerGroupSpecs: []rayv1.WorkerGroupSpec{
+				{GroupName: "active", Replicas: ptr.To(int32(2)), MinReplicas: ptr.To(int32(2)), NumOfHosts: 1},
+				{GroupName: "suspended", Replicas: ptr.To(int32(3)), MinReplicas: ptr.To(int32(3)), NumOfHosts: 1, Suspend: ptr.To(true)},
+			},
+		},
+	}
+	obj, err := runtime.DefaultUnstructuredConverter.ToUnstructured(cluster)
+	if !assert.NoError(t, err) {
+		return
+	}
+
+	minimum, groups, err := calcJobNumOfPodsAndSubGroups(&unstructured.Unstructured{Object: obj})
+	if !assert.NoError(t, err) {
+		return
+	}
+	// 1 (head) + 2 (active); the suspended group has no Pods.
+	assert.Equal(t, int32(3), minimum)
+	if assert.Len(t, groups, 2) {
+		assert.Equal(t, "active", groups[1].Name)
+		assert.Equal(t, int32(2), groups[1].MinAvailable)
 	}
 }
 
@@ -156,7 +186,7 @@ var (
 						"minReplicas": int64(2),
 					},
 					map[string]interface{}{
-						"suspended":   true,
+						"suspend":     true,
 						"replicas":    int64(3),
 						"minReplicas": int64(1),
 					},
