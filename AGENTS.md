@@ -4,9 +4,9 @@ Kubernetes scheduler for GPU/AI workloads, built on kube-batch with a plugin arc
 
 ## Hard rules
 
-- **Never hand-edit generated files**: `zz_generated*`, `pkg/apis/client/`, `deployments/kai-scheduler/crds/`, `deployments/kai-scheduler/templates/rbac/`, `*_mock.go`. Change the source (types, kubebuilder markers, interfaces) and regenerate: `make generate manifests clients generate-mocks`.
+- **Never hand-edit generated files**: `zz_generated*`, `deployments/kai-scheduler/crds/`, `deployments/kai-scheduler/templates/rbac/`, `*_mock.go`. Change the source (types, kubebuilder markers, interfaces) and regenerate: `make manifests generate-mocks`.
 - New mocks must be added to the explicit `generate-mocks` list in the `Makefile`.
-- `make validate` regenerates everything and ends with `git diff --exit-code`. Commit all regenerated output or CI fails. Run it before finishing any non-trivial change.
+- `make validate` runs `manifests`, `gen-license`, `generate-mocks` and `lint`, then `git diff --exit-code`. Commit all regenerated output or CI fails. Run it before finishing any non-trivial change.
 - Sign off every commit (`git commit -s`); the DCO check fails otherwise.
 - Use `git mv` when moving files.
 - New files need the Apache-2.0 + NVIDIA header. `make gen-license` adds it.
@@ -14,10 +14,9 @@ Kubernetes scheduler for GPU/AI workloads, built on kube-batch with a plugin arc
 
 ### API types
 
-API types are owned by the standalone module `github.com/kai-scheduler/api` (version in `go.mod`); all Go code here imports them from there. `pkg/apis` is a mirror that `make generate manifests clients` still read to produce `deployments/kai-scheduler/crds/` and `pkg/apis/client/`.
+API types, generated clients, and the `constants`, `utilities/resources` and `utilities/podgroup` packages live in the standalone module `github.com/kai-scheduler/api` (version in `go.mod`); all Go code here imports them from there.
 
 - Do not change API types, CRD fields or API constants only in this repo. Ask first how the change should land in the `api` module and here; the two must not diverge. Process: [CONTRIBUTING.md](CONTRIBUTING.md#changing-api-types-and-shared-utilities).
-- Storage versions: `grep -rn storageversion pkg/apis`. Config and SchedulingShard are `kai/v1`.
 - A field change in a served version is an API change and needs a changelog fragment. CRDs are upgraded through `pkg/helmhooks` (`apply_crds.go`); check that path still works.
 
 ## Where to look

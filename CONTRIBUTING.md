@@ -42,7 +42,7 @@ API types, generated clients, and the `constants`, `utilities/resources` and `ut
 2. Test it here with a local `replace github.com/kai-scheduler/api => ../api` in `go.mod`. Do not commit the `replace`.
 3. Release a new api version, then bump it here with `go get github.com/kai-scheduler/api@vX.Y.Z`.
 
-Do not edit the old in-tree copies under `pkg/apis/{scheduling,kai/v1alpha1,client}` and `pkg/common/{constants,resources,podgroup}`. Most code no longer imports them, so changes there usually have no effect, and they will be removed. See the api repo's [Contributing](https://github.com/kai-scheduler/api/blob/main/README.md#contributing) section.
+The in-tree copies under `pkg/apis` and `pkg/common/{constants,podgroup}` have been removed. See the api repo's [Contributing](https://github.com/kai-scheduler/api/blob/main/README.md#contributing) section.
 
 ### Build, Test and Validate
 `make test` and `make build` run in Docker and are slow; prefer targeted commands while iterating. See [Building from Source](docs/developer/building-from-source.md) for the full flow.
@@ -68,7 +68,7 @@ Only what linters and `gofmt` do not enforce:
 - Comments explain why, not what. Keep them short, with no pronouns (`I`, `we`). Do not add obvious comments.
 - New files need the Apache-2.0 + NVIDIA header (`make gen-license`).
 - Add RBAC through kubebuilder markers, e.g. `// +kubebuilder:rbac:groups=core,resources=pods,verbs=get`, then run `make manifests`.
-- Never hand-edit generated files (`zz_generated*`, `pkg/apis/client/`, CRDs, RBAC templates, `*_mock.go`); change the source and run `make generate manifests clients generate-mocks`. New mocks go in the `generate-mocks` list in the `Makefile`.
+- Never hand-edit generated files (`zz_generated*`, CRDs, RBAC templates, `*_mock.go`); change the source and run `make manifests generate-mocks`. New mocks go in the `generate-mocks` list in the `Makefile`.
 - Logging follows the practices below. V(5+) scheduler logs must be guarded with `.Do(...)`.
 
 ### Logging Practices
