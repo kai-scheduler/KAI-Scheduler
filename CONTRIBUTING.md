@@ -31,7 +31,7 @@ Help us keep the docs clear and useful by fixing typos, updating outdated inform
 - Create a Branch – Use a descriptive branch name, such as feature/add-cool-feature or bugfix/fix-issue123.
 - Make Changes – Keep your commits small, focused, and well-documented. For detailed build and test instructions, refer to [Building from Source](docs/developer/building-from-source.md).
 - Log Changes – For behavior-affecting changes (features, fixes, API changes), add a changelog entry by running `make changelog` (powered by [changie](https://changie.dev)). This creates a small fragment file under `.changes/unreleased/` instead of editing `CHANGELOG.md` directly, so entries never conflict between PRs or backports. `CHANGELOG.md` is the source of truth for released versions (following [keepachangelog.com](https://keepachangelog.com/en/1.1.0/)); your fragment stays in `.changes/unreleased/` until a maintainer cuts the next release, which folds the pending fragments into `CHANGELOG.md` and clears them. Skip logging internal changes like refactoring or tests. CI checks for a fragment; add the `skip-changelog` label to your PR to skip if your change doesn't require a changelog entry.
-- Submit a PR – Open a pull request and reference any relevant issues or discussions.
+- Submit a PR – Open a pull request that links an issue (`Fixes #<number>` in the description). A bot comments and labels PRs that are missing one.
 - Approval Policy – PRs from external contributors require approval from 2 trusted reviewers (organization members or collaborators) before merging.
 - Coverage - Please look at the coverage change details and create unit tests, integration tests or end-to-end tests to cover new functionality or changes.
 
