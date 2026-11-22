@@ -243,11 +243,18 @@ func objectsFromCluster(info *api.ClusterInfo, params *conf.SchedulerParams) *sn
 		raw.Queues = append(raw.Queues, queueFromInfo(queue, params))
 	}
 	classes := map[string]int32{}
+	var jobs []*podgroup_info.PodGroupInfo
 	for _, job := range info.PodGroupInfos {
 		if job == nil || job.PodGroup == nil {
 			continue
 		}
-		pg := recordedPodGroup(job)
+		jobs = append(jobs, job)
+		if name := job.PodGroup.Spec.PriorityClassName; name != "" {
+			classes[name] = job.Priority
+		}
+	}
+	for _, job := range jobs {
+		pg := recordedPodGroup(job, classes)
 		raw.PodGroups = append(raw.PodGroups, pg)
 		if pg.Spec.PriorityClassName != "" {
 			classes[pg.Spec.PriorityClassName] = job.Priority
@@ -285,15 +292,29 @@ func objectsFromCluster(info *api.ClusterInfo, params *conf.SchedulerParams) *sn
 
 // recordedPodGroup keeps the priority the session resolved. A group that names no class
 // inherited the cluster default; the copy names a class with that value so replay does too.
-// The live object is left unchanged.
-func recordedPodGroup(job *podgroup_info.PodGroupInfo) *enginev2alpha2.PodGroup {
+// The live object is left unchanged. The generated name stays kai-effective-<n> unless that
+// name is already used with a different value, in which case a numeric suffix is added.
+func recordedPodGroup(job *podgroup_info.PodGroupInfo, classes map[string]int32) *enginev2alpha2.PodGroup {
 	pg := job.PodGroup
 	if pg.Spec.PriorityClassName != "" {
 		return pg
 	}
 	copied := pg.DeepCopy()
-	copied.Spec.PriorityClassName = fmt.Sprintf("kai-effective-%d", job.Priority)
+	copied.Spec.PriorityClassName = uniqueEffectivePriorityClass(job.Priority, classes)
 	return copied
+}
+
+func uniqueEffectivePriorityClass(priority int32, classes map[string]int32) string {
+	base := fmt.Sprintf("kai-effective-%d", priority)
+	if value, ok := classes[base]; !ok || value == priority {
+		return base
+	}
+	for i := 2; ; i++ {
+		name := fmt.Sprintf("%s-%d", base, i)
+		if value, ok := classes[name]; !ok || value == priority {
+			return name
+		}
+	}
 }
 
 func sortRawObjects(raw *snapshot.RawKubernetesObjects) {
@@ -316,6 +337,18 @@ func sortRawObjects(raw *snapshot.RawKubernetesObjects) {
 		return lessMeta(raw.ConfigMaps[i].Namespace, raw.ConfigMaps[i].Name, raw.ConfigMaps[j].Namespace, raw.ConfigMaps[j].Name)
 	})
 	sort.Slice(raw.Topologies, func(i, j int) bool { return raw.Topologies[i].Name < raw.Topologies[j].Name })
+	sort.Slice(raw.NodeResourceTopologies, func(i, j int) bool {
+		return raw.NodeResourceTopologies[i].Name < raw.NodeResourceTopologies[j].Name
+	})
+	sort.Slice(raw.ResourceClaims, func(i, j int) bool {
+		return lessMeta(raw.ResourceClaims[i].Namespace, raw.ResourceClaims[i].Name, raw.ResourceClaims[j].Namespace, raw.ResourceClaims[j].Name)
+	})
+	sort.Slice(raw.ResourceSlices, func(i, j int) bool {
+		return lessMeta(raw.ResourceSlices[i].Namespace, raw.ResourceSlices[i].Name, raw.ResourceSlices[j].Namespace, raw.ResourceSlices[j].Name)
+	})
+	sort.Slice(raw.DeviceClasses, func(i, j int) bool {
+		return raw.DeviceClasses[i].Name < raw.DeviceClasses[j].Name
+	})
 }
 
 func lessMeta(nsA, nameA, nsB, nameB string) bool {

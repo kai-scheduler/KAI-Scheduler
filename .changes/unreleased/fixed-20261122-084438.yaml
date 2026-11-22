@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Stable recorder state id and unique inherited priority class names
+custom:
+  Author: "eladb"
+  Issue: "2642"
