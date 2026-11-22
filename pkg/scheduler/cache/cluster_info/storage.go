@@ -60,7 +60,7 @@ func (c *ClusterInfo) snapshotStorageClasses() (map[common_info.StorageClassID]*
 
 		if *sc.VolumeBindingMode != storage.VolumeBindingWaitForFirstConsumer {
 			log.InfraLogger.V(7).Do(func() {
-				log.InfraLogger.V(7).Info("VolumeBindingMode is %s for storage class %s, ignoring",
+				log.InfraLogger.Infof("VolumeBindingMode is %s for storage class %s, ignoring",
 					*sc.VolumeBindingMode, sc.Name)
 			})
 			continue

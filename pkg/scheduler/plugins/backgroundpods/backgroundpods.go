@@ -147,14 +147,18 @@ func (p *backgroundPodsPlugin) canRestore(
 
 	// PrePredicateFn first: the k8s filters read the cycle state their prefilter populates.
 	if err := ssn.PrePredicateFn(podInfo, job); err != nil {
-		log.InfraLogger.V(5).Infof("Background pod <%s/%s> fails pre-predicates, not restoring: %v",
-			podInfo.Namespace, podInfo.Name, err)
+		log.InfraLogger.V(5).Do(func() {
+			log.InfraLogger.Infof("Background pod <%s/%s> fails pre-predicates, not restoring: %v",
+				podInfo.Namespace, podInfo.Name, err)
+		})
 		return false
 	}
 
 	if err := ssn.PredicateFn(podInfo, job, node); err != nil {
-		log.InfraLogger.V(5).Infof("Background pod <%s/%s> no longer fits node <%s>, not restoring: %v",
-			podInfo.Namespace, podInfo.Name, node.Name, err)
+		log.InfraLogger.V(5).Do(func() {
+			log.InfraLogger.Infof("Background pod <%s/%s> no longer fits node <%s>, not restoring: %v",
+				podInfo.Namespace, podInfo.Name, node.Name, err)
+		})
 		return false
 	}
 
@@ -178,8 +182,10 @@ func (p *backgroundPodsPlugin) backgroundPodsOnNode(
 		job, found := ssn.ClusterInfo.PodGroupInfos[nodeCopy.Job]
 		if !found {
 			// Statement.Evict needs the pod's PodGroup, so pods KAI did not schedule are skipped.
-			log.InfraLogger.V(5).Infof("Background pod <%s/%s> has no PodGroup in session, skipping",
-				nodeCopy.Namespace, nodeCopy.Name)
+			log.InfraLogger.V(5).Do(func() {
+				log.InfraLogger.Infof("Background pod <%s/%s> has no PodGroup in session, skipping",
+					nodeCopy.Namespace, nodeCopy.Name)
+			})
 			continue
 		}
 
