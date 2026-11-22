@@ -14,6 +14,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/utils/ptr"
@@ -433,6 +434,11 @@ func TestDeploymentForKAIConfig(t *testing.T) {
 			assert.Equal(t, constants.DefaultKAINamespace, deploymentObj.GetNamespace())
 
 			deployment := deploymentObj.(*appsv1.Deployment)
+			assert.Equal(t, appsv1.RollingUpdateDeploymentStrategyType, deployment.Spec.Strategy.Type)
+			require.NotNil(t, deployment.Spec.Strategy.RollingUpdate)
+			assert.Equal(t, intstr.FromInt32(0), *deployment.Spec.Strategy.RollingUpdate.MaxUnavailable)
+			assert.Equal(t, intstr.FromInt32(1), *deployment.Spec.Strategy.RollingUpdate.MaxSurge)
+
 			container := deployment.Spec.Template.Spec.Containers[0]
 			args := container.Args
 
