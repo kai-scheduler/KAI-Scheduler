@@ -47,6 +47,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/subgrouporder"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/taskorder"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/topology"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/victimreallocation"
 )
 
 func InitDefaultPlugins() {
@@ -56,6 +57,7 @@ func InitDefaultPlugins() {
 	framework.RegisterPluginBuilder("gpujoborder", gpujoborder.New)
 	framework.RegisterPluginBuilder("nodeplacement", nodeplacement.New)
 	framework.RegisterPluginBuilder("nominatednode", nominatednode.New)
+	framework.RegisterPluginBuilder(victimreallocation.PluginName, victimreallocation.New)
 	framework.RegisterPluginBuilder("numa", numa.New)
 	framework.RegisterPluginBuilder("nodeavailability", nodeavailability.New)
 	framework.RegisterPluginBuilder("gpusharingorder", gpusharingorder.New)
