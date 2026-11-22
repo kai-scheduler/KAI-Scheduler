@@ -225,8 +225,6 @@ func (su *defaultStatusUpdater) RecordJobStatusEvent(
 		return err
 	}
 
-	// The status helpers below replace the conditions slice and scheduling state rather than
-	// mutating them, so a shallow copy keeps the values the status patch is tested against.
 	oldStatus := job.PodGroup.Status
 	updatePodgroupStatus := updateCorePods(job)
 	if job.GetNumPendingTasks() > 0 || job.GetNumGatedTasks() > 0 {

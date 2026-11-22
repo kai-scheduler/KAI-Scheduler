@@ -137,7 +137,7 @@ var _ = Describe("PodGroup status patch", func() {
 		}, 10*time.Second, 50*time.Millisecond).Should(Succeed())
 	})
 
-	It("keeps patching across consecutive cycles", func(ctx context.Context) {
+	It("writes status repeatedly through PATCH without PUT fallback", func(ctx context.Context) {
 		pg := newPodGroup(ctx)
 		live := pg.DeepCopy()
 		live.Status.ResourcesStatus.Allocated = corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2")}
@@ -154,6 +154,7 @@ var _ = Describe("PodGroup status patch", func() {
 				got := &schedulingv2alpha2.PodGroup{}
 				g.Expect(ctrlClient.Get(ctx, types.NamespacedName{Namespace: namespace, Name: podGroupStatusPatchName}, got)).To(Succeed())
 				g.Expect(got.ResourceVersion).NotTo(Equal(snapshot.ResourceVersion))
+				g.Expect(got.Status.SchedulingConditions).To(HaveLen(1))
 			}, 10*time.Second, 50*time.Millisecond).Should(Succeed())
 		}
 
