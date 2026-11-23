@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Clear stale Prometheus operand status after disabling bundled Prometheus
+custom:
+  Author: "enoodle"
+  Issue: "2751"
