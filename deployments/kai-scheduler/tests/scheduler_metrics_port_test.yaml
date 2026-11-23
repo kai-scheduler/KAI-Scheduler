@@ -1,0 +1,17 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+suite: test scheduler metrics port in kai-config
+
+templates:
+  - hooks/post/kai-config-deployer/configmap.yaml
+
+tests:
+  - it: should set schedulerService port and targetPort from metricsPort
+    set:
+      scheduler.ports.metricsPort: 9090
+    asserts:
+      - matchRegex:
+          path: data["kai-config.yaml"]
+          pattern: "schedulerService:\n\\s+port: 9090\n\\s+targetPort: 9090"
+        template: hooks/post/kai-config-deployer/configmap.yaml

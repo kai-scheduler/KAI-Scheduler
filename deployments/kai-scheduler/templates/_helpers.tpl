@@ -374,6 +374,7 @@ spec:
     {{- if and .Values.scheduler.ports .Values.scheduler.ports.metricsPort }}
     schedulerService:
       port: {{ .Values.scheduler.ports.metricsPort }}
+      targetPort: {{ .Values.scheduler.ports.metricsPort }}
     {{- end }}
 
   {{- if or .Values.prometheus.enabled .Values.prometheus.serviceMonitor.enabled }}
