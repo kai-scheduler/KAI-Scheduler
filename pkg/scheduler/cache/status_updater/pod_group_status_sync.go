@@ -4,11 +4,12 @@
 package status_updater
 
 import (
+	"slices"
 	"strconv"
 
-	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/utils"
+	commonconstants "github.com/kai-scheduler/api/constants"
+	enginev2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
 )
 
 type podGroupStatusSyncResult string
@@ -29,6 +30,10 @@ func (su *defaultStatusUpdater) SyncPodGroupsWithPendingUpdates(podGroups []*eng
 			continue
 		}
 		podGroup := pgLatestUpdate.object.(*enginev2alpha2.PodGroup)
+		if !inFlightUpdateFound && pgLatestUpdate.isSupersededBy(podGroups[i]) {
+			su.appliedPodGroupUpdates.Delete(key)
+			continue
+		}
 		podGroupsyncResults := su.syncPodGroup(podGroup, podGroups[i])
 		// Delete the inflight update if it was applied + the pod group in the lister matches the inFlight
 		if podGroupsyncResults != snapshotStatusIsOlder && appliedUpdateFound {
@@ -40,6 +45,14 @@ func (su *defaultStatusUpdater) SyncPodGroupsWithPendingUpdates(podGroups []*eng
 
 	// Cleanup podGroups that don't comeup anymore
 	su.cleanUpdatesForNonSeenPodGroups(usedKeys)
+}
+
+func (u *inflightUpdate) isSupersededBy(live *enginev2alpha2.PodGroup) bool {
+	base := u.object.(*enginev2alpha2.PodGroup)
+	if live.ResourceVersion == base.ResourceVersion {
+		return false
+	}
+	return !slices.Contains(u.writtenResourceVersions, live.ResourceVersion)
 }
 
 func (su *defaultStatusUpdater) getLatestPgUpdate(key updatePayloadKey) (*inflightUpdate, bool, bool) {
@@ -74,19 +87,13 @@ func (su *defaultStatusUpdater) syncPodGroup(inFlightPodGroup, snapshotPodGroup 
 	if snapshotPodGroup.Annotations[commonconstants.StalePodgroupTimeStamp] == inFlightPodGroup.Annotations[commonconstants.StalePodgroupTimeStamp] {
 		staleTimeStampUpdated = true
 	} else {
-		if snapshotPodGroup.Annotations == nil {
-			snapshotPodGroup.Annotations = make(map[string]string)
-		}
-		snapshotPodGroup.Annotations[commonconstants.StalePodgroupTimeStamp] = inFlightPodGroup.Annotations[commonconstants.StalePodgroupTimeStamp]
+		syncAnnotation(snapshotPodGroup, inFlightPodGroup, commonconstants.StalePodgroupTimeStamp)
 	}
 	lastStartTimestampUpdated := false
 	if snapshotPodGroup.Annotations[commonconstants.LastStartTimeStamp] == inFlightPodGroup.Annotations[commonconstants.LastStartTimeStamp] {
 		lastStartTimestampUpdated = true
 	} else {
-		if snapshotPodGroup.Annotations == nil {
-			snapshotPodGroup.Annotations = make(map[string]string)
-		}
-		snapshotPodGroup.Annotations[commonconstants.LastStartTimeStamp] = inFlightPodGroup.Annotations[commonconstants.LastStartTimeStamp]
+		syncAnnotation(snapshotPodGroup, inFlightPodGroup, commonconstants.LastStartTimeStamp)
 	}
 
 	statusComparison := compareSchedulingConditions(inFlightPodGroup, snapshotPodGroup)
@@ -99,6 +106,20 @@ func (su *defaultStatusUpdater) syncPodGroup(inFlightPodGroup, snapshotPodGroup 
 	}
 
 	return statusComparison
+}
+
+// syncAnnotation removes the key when absent from the in-flight pod group, so no "" value is
+// written that a later JSON patch would try to remove from a server object that lacks the key.
+func syncAnnotation(snapshotPodGroup, inFlightPodGroup *enginev2alpha2.PodGroup, key string) {
+	value, found := inFlightPodGroup.Annotations[key]
+	if !found {
+		delete(snapshotPodGroup.Annotations, key)
+		return
+	}
+	if snapshotPodGroup.Annotations == nil {
+		snapshotPodGroup.Annotations = make(map[string]string)
+	}
+	snapshotPodGroup.Annotations[key] = value
 }
 
 func compareSchedulingConditions(inFlightPodGroup, snapshotPodGroup *enginev2alpha2.PodGroup) podGroupStatusSyncResult {

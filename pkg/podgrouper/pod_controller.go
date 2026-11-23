@@ -25,7 +25,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper"
 	pluginshub "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/hub"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/api/constants"
 )
 
 const (
@@ -50,6 +50,7 @@ type Configs struct {
 	MaxConcurrentReconciles  int
 	SearchForLegacyPodGroups bool
 	KnativeGangSchedule      bool
+	DeploymentGangSchedule   bool
 	GenericKartaFallback     bool
 	SchedulerName            string
 	SchedulingQueueLabelKey  string
@@ -146,7 +147,8 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 
 	err = r.assignPodToGroupAndSubGroup(ctx, &pod, metadata)
 	if err != nil {
-		logger.V(1).Error(err, "Failed to assign pod to group and subgroup", "pod", pod)
+		logger.V(1).Error(err, "Failed to assign pod to group and subgroup",
+			"pod", fmt.Sprintf("%s/%s", pod.Namespace, pod.Name), "podGroup", metadata.Name)
 		return ctrl.Result{}, err
 	}
 

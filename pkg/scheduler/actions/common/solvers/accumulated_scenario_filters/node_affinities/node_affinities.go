@@ -5,6 +5,8 @@ package node_affinities
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"maps"
 	"slices"
 
@@ -31,6 +33,14 @@ type NodeAffinitiesFilter struct {
 	feasibleNodes      map[string]*v1.Node
 	processedVictims   map[common_info.PodID]bool
 	nodeAffinityPlugin ksf.Plugin
+	matchingNodes      map[[32]byte]nodeAffinityMatches
+	constraintKeys     map[common_info.PodID][32]byte
+}
+
+type nodeAffinityMatches struct {
+	nodes sets.Set[string]
+	// hasExplicitNodeNames allows named nodes that can be freed through preemption.
+	hasExplicitNodeNames bool
 }
 
 func NewNodeAffinitiesFilter(
@@ -48,6 +58,8 @@ func NewNodeAffinitiesFilter(
 		allNodeInfos:       make(map[string]*k8sframework.NodeInfo, len(session.ClusterInfo.Nodes)),
 		processedVictims:   make(map[common_info.PodID]bool),
 		nodeAffinityPlugin: session.Cache.InternalK8sPlugins().NodeAffinity,
+		matchingNodes:      make(map[[32]byte]nodeAffinityMatches),
+		constraintKeys:     make(map[common_info.PodID][32]byte),
 	}
 	nodeAffinitiesFilter.initNodeMaps(feasibleNodeInfos, session)
 	nodeAffinitiesFilter.updateStateWithScenario(scenario)
@@ -132,52 +144,75 @@ func hasRequiredNodeAffinity(task *pod_info.PodInfo) bool {
 }
 
 func (naf *NodeAffinitiesFilter) hasNodeMatchingPodInSet(task *pod_info.PodInfo) bool {
-	preFilterPlugin := naf.nodeAffinityPlugin.(k8s_internal.NodePreFilter)
-	filterPlugin := naf.nodeAffinityPlugin.(k8s_internal.NodeFilter)
-
-	state := k8s_internal.NewSessionState()
-	preFilteredNodes, preFilterPassed := naf.preFilteredNodeNames(preFilterPlugin, state, task.Pod)
-	if !preFilterPassed {
-		return false
+	key, found := naf.constraintKeys[task.UID]
+	if !found {
+		key = nodeAffinityKey(task.Pod)
+		naf.constraintKeys[task.UID] = key
 	}
-	for allowedNodeName := range preFilteredNodes {
-		k8sNodeInfo := naf.allNodeInfos[allowedNodeName]
-		if k8sNodeInfo == nil {
-			continue
-		}
-		status := filterPlugin.Filter(context.Background(), state, task.Pod, k8sNodeInfo)
-		if status == nil || status.IsSuccess() {
+	matches, found := naf.matchingNodes[key]
+	if !found {
+		matches = naf.findMatchingNodes(task.Pod)
+		naf.matchingNodes[key] = matches
+	}
+	if matches.hasExplicitNodeNames {
+		return matches.nodes.Len() > 0
+	}
+	for nodeName := range matches.nodes {
+		if _, feasible := naf.feasibleNodes[nodeName]; feasible {
 			return true
 		}
 	}
 	return false
 }
 
+func (naf *NodeAffinitiesFilter) findMatchingNodes(pod *v1.Pod) nodeAffinityMatches {
+	preFilterPlugin := naf.nodeAffinityPlugin.(k8s_internal.NodePreFilter)
+	filterPlugin := naf.nodeAffinityPlugin.(k8s_internal.NodeFilter)
+
+	state := k8s_internal.NewSessionState()
+	preFilteredNodes, preFilterPassed, hasExplicitNodeNames := naf.preFilteredNodeNames(preFilterPlugin, state, pod)
+	if !preFilterPassed {
+		return nodeAffinityMatches{}
+	}
+	matchingNodes := sets.New[string]()
+	for allowedNodeName := range preFilteredNodes {
+		k8sNodeInfo := naf.allNodeInfos[allowedNodeName]
+		if k8sNodeInfo == nil {
+			continue
+		}
+		status := filterPlugin.Filter(context.Background(), state, pod, k8sNodeInfo)
+		if status == nil || status.IsSuccess() {
+			matchingNodes.Insert(allowedNodeName)
+		}
+	}
+	return nodeAffinityMatches{nodes: matchingNodes, hasExplicitNodeNames: hasExplicitNodeNames}
+}
+
 func (naf *NodeAffinitiesFilter) preFilteredNodeNames(
 	preFilterPlugin k8s_internal.NodePreFilter,
 	state k8s_internal.SessionState,
 	pod *v1.Pod,
-) (sets.Set[string], bool) {
+) (sets.Set[string], bool, bool) {
 	preFilterResult, status := preFilterPlugin.PreFilter(
-		context.Background(), state, pod, naf.feasibleNodeInfos())
+		context.Background(), state, pod, naf.allNodeInfoSlice())
 	if status != nil && status.IsSkip() {
 		// Skip means no required terms (e.g. preferred-only affinity) — all nodes remain eligible.
-		return sets.New(slices.Collect(maps.Keys(naf.feasibleNodes))...), true
+		return sets.New(slices.Collect(maps.Keys(naf.allNodes))...), true, false
 	}
 	if status != nil && !status.IsSuccess() {
-		return nil, false
+		return nil, false, false
 	}
 	if preFilterResult == nil || preFilterResult.NodeNames == nil {
 		// Per the k8s scheduler framework contract, a nil PreFilterResult (or nil NodeNames within it)
 		// means the plugin has no node restriction to apply — all nodes passed to PreFilter remain eligible.
-		return sets.New(slices.Collect(maps.Keys(naf.feasibleNodes))...), true
+		return sets.New(slices.Collect(maps.Keys(naf.allNodes))...), true, false
 	}
-	return preFilterResult.NodeNames, true
+	return preFilterResult.NodeNames, true, true
 }
 
-func (naf *NodeAffinitiesFilter) feasibleNodeInfos() []ksf.NodeInfo {
-	nodes := make([]ksf.NodeInfo, 0, len(naf.feasibleNodes))
-	for name := range naf.feasibleNodes {
+func (naf *NodeAffinitiesFilter) allNodeInfoSlice() []ksf.NodeInfo {
+	nodes := make([]ksf.NodeInfo, 0, len(naf.allNodeInfos))
+	for name := range naf.allNodeInfos {
 		k8sNodeInfo := naf.allNodeInfos[name]
 		if k8sNodeInfo == nil {
 			continue
@@ -185,6 +220,18 @@ func (naf *NodeAffinitiesFilter) feasibleNodeInfos() []ksf.NodeInfo {
 		nodes = append(nodes, k8sNodeInfo)
 	}
 	return nodes
+}
+
+func nodeAffinityKey(pod *v1.Pod) [32]byte {
+	constraints := struct {
+		NodeSelector map[string]string `json:"nodeSelector,omitempty"`
+		Required     *v1.NodeSelector  `json:"required,omitempty"`
+	}{NodeSelector: pod.Spec.NodeSelector}
+	if pod.Spec.Affinity != nil && pod.Spec.Affinity.NodeAffinity != nil {
+		constraints.Required = pod.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution
+	}
+	encoded, _ := json.Marshal(constraints)
+	return sha256.Sum256(encoded)
 }
 
 func (naf *NodeAffinitiesFilter) k8sNodeInfoForNode(node *v1.Node) *k8sframework.NodeInfo {

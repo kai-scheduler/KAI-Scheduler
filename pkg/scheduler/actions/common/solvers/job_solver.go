@@ -98,7 +98,8 @@ func (s *JobSolver) SolveWithResult(
 
 	originalNumActiveTasks := pendingJob.GetNumActiveUsedTasks()
 
-	tasksToAllocate := podgroup_info.GetTasksToAllocate(pendingJob, ssn.SubGroupOrderFn, ssn.TaskOrderFn, false)
+	tasksToAllocate := podgroup_info.GetTasksToAllocate(pendingJob, ssn.SubGroupOrderFn, ssn.TaskOrderFn,
+		podgroup_info.SimulatedTaskAllocation)
 	n := len(tasksToAllocate)
 	if n == 0 {
 		searchResult := terminalSearchResult(SearchResultGeneratorsExhausted, false)
@@ -167,21 +168,23 @@ func (s *JobSolver) solvePendingJobWithGenerator(
 	generatorBudget *generatorSearchBudget,
 ) *SearchResult {
 	n := len(tasksToAllocate)
-	maxSolvedK, searchResult := s.searchMaxSolvableK(
-		ssn, state, pendingJob, tasksToAllocate, jobBudget, availableGenerator, generatorBudget,
-	)
-	if maxSolvedK == 0 {
-		if searchResult == nil {
-			searchResult = terminalSearchResult(SearchResultGeneratorsExhausted, jobBudget.ReducedBudget())
+	if n > 1 {
+		maxSolvedK, searchResult := s.searchMaxSolvableK(
+			ssn, state, pendingJob, tasksToAllocate, jobBudget, availableGenerator, generatorBudget,
+		)
+		if maxSolvedK == 0 {
+			if searchResult == nil {
+				searchResult = terminalSearchResult(SearchResultGeneratorsExhausted, jobBudget.ReducedBudget())
+			}
+			return searchResult
 		}
-		return searchResult
 	}
 
 	result := s.probeAtK(ssn, state, pendingJob, tasksToAllocate, n, jobBudget, availableGenerator, generatorBudget)
 	return result
 }
 
-// searchMaxSolvableK returns the largest k in [0, n] for which a probe at k succeeds.
+// searchMaxSolvableK returns the largest k in [0, n) for which a probe at k succeeds.
 // Each probe is discarded before returning, so session state is clean on return.
 // Successful probes update hints in state for use by subsequent probes.
 // Complexity: O(log n) probes — exponential doubling to locate a failing k (or reach n),
@@ -196,7 +199,7 @@ func (s *JobSolver) searchMaxSolvableK(
 	generatorBudget *generatorSearchBudget,
 ) (int, *SearchResult) {
 	n := len(tasksToAllocate)
-	if n == 0 {
+	if n <= 1 {
 		return 0, nil
 	}
 
@@ -208,7 +211,7 @@ func (s *JobSolver) searchMaxSolvableK(
 }
 
 func searchMaxSolvableK(n int, probe func(k int) *SearchResult) (int, *SearchResult) {
-	if n == 0 {
+	if n <= 1 {
 		return 0, nil
 	}
 
@@ -216,7 +219,7 @@ func searchMaxSolvableK(n int, probe func(k int) *SearchResult) (int, *SearchRes
 	var hi int
 	var lastUnsolvedResult *SearchResult
 	k := 1
-	for {
+	for k < n {
 		result := probe(k)
 		if shouldStopSearch(result) {
 			return 0, result
@@ -227,12 +230,9 @@ func searchMaxSolvableK(n int, probe func(k int) *SearchResult) (int, *SearchRes
 			break
 		}
 		lo = k
-		if k == n {
-			return n, lastUnsolvedResult
-		}
 		k *= 2
-		if k > n {
-			k = n
+		if k >= n {
+			return lo, lastUnsolvedResult
 		}
 	}
 
@@ -266,14 +266,18 @@ func (s *JobSolver) tryProbeAndDiscard(
 ) *SearchResult {
 	result := s.probeAtK(ssn, state, pendingJob, tasksToAllocate, k, jobBudget, availableGenerator, generatorBudget)
 	if !resultSolved(result) {
-		log.InfraLogger.V(5).Infof("No solution found for %d tasks out of %d tasks to allocate for %s",
-			k, len(tasksToAllocate), pendingJob.Name)
+		log.InfraLogger.V(5).Do(func() {
+			log.InfraLogger.Infof("No solution found for %d tasks out of %d tasks to allocate for %s",
+				k, len(tasksToAllocate), pendingJob.Name)
+		})
 		return result
 	}
 	solution := result.solution
-	log.InfraLogger.V(5).Infof(
-		"Scenario probed for %d tasks out of %d tasks to allocate for %s. Victims: %s",
-		k, len(tasksToAllocate), pendingJob.Name, victimPrintingStruct{solution.victimsTasks})
+	log.InfraLogger.V(5).Do(func() {
+		log.InfraLogger.Infof(
+			"Scenario probed for %d tasks out of %d tasks to allocate for %s. Victims: %s",
+			k, len(tasksToAllocate), pendingJob.Name, victimPrintingStruct{solution.victimsTasks})
+	})
 	state.recordedVictimsTasks = solution.victimsTasks
 	state.recordedVictimsJobs = solution.victimJobs
 	if solution.statement != nil {
@@ -353,7 +357,9 @@ func (s *JobSolver) solvePartialJob(
 			ssn.AllowConsolidatingReclaim(),
 			s.actionType)
 
-		log.InfraLogger.V(5).Infof("Trying to solve scenario: %s", scenarioToSolve)
+		log.InfraLogger.V(5).Do(func() {
+			log.InfraLogger.Infof("Trying to solve scenario: %s", scenarioToSolve)
+		})
 		metrics.IncScenarioSimulatedByAction()
 		metrics.IncScenarioSearchScenario(s.actionType, generatorName, "simulated")
 

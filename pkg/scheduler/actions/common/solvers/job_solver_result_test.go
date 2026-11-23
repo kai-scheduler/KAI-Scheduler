@@ -14,8 +14,6 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
@@ -26,6 +24,8 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/api/constants"
+	kaiv1 "github.com/kai-scheduler/api/kai/v1"
 )
 
 func TestNewJobsSolverDefaultsNilBudgetToUnlimited(t *testing.T) {
@@ -206,7 +206,8 @@ func TestSolveWithResultRecordsUnsolvedScenarioDurationAfterSimulation(t *testin
 	ssn.ClusterInfo.Nodes = map[string]*node_info.NodeInfo{"node-1": {}}
 	scenarioToSolve := scenario.NewByNodeScenario(
 		ssn, pendingJob,
-		podgroup_info.GetTasksToAllocate(pendingJob, ssn.SubGroupOrderFn, ssn.TaskOrderFn, false),
+		podgroup_info.GetTasksToAllocate(pendingJob, ssn.SubGroupOrderFn, ssn.TaskOrderFn,
+			podgroup_info.SimulatedTaskAllocation),
 		nil, nil,
 	)
 	ssn.AddScenarioGenerator(generatorName, portfolioTestFactory(&portfolioTestGenerator{
@@ -249,7 +250,8 @@ func TestSolveWithResultRunsCompletePartialSearchForOneGeneratorBeforeNext(t *te
 		solveCtx := ctx.(*SolveContext)
 		factoryCalls = append(factoryCalls, fmt.Sprintf("second:%d", solveCtx.ProbeK))
 		pendingTasks := podgroup_info.GetTasksToAllocate(
-			solveCtx.PartialPendingJob, ssn.SubGroupOrderFn, ssn.TaskOrderFn, false,
+			solveCtx.PartialPendingJob, ssn.SubGroupOrderFn, ssn.TaskOrderFn,
+			podgroup_info.SimulatedTaskAllocation,
 		)
 		sn := scenario.NewByNodeScenario(
 			ssn, solveCtx.PartialPendingJob, pendingTasks,
@@ -273,7 +275,7 @@ func TestSolveWithResultRunsCompletePartialSearchForOneGeneratorBeforeNext(t *te
 
 	require.True(t, solved)
 	require.Equal(t, SearchResultSolved, result.Reason())
-	require.Equal(t, []string{"first:1", "second:1", "second:2", "second:3", "second:3"}, factoryCalls)
+	require.Equal(t, []string{"first:1", "second:1", "second:2", "second:3"}, factoryCalls)
 }
 
 func TestSolveWithResultStillSolvesWhenGeneratorRepeatsScenarios(t *testing.T) {
@@ -291,7 +293,8 @@ func TestSolveWithResultStillSolvesWhenGeneratorRepeatsScenarios(t *testing.T) {
 	ssn.AddScenarioGenerator(generatorName, func(ctx framework.ScenarioGeneratorContext) framework.ScenarioGenerator {
 		solveCtx := ctx.(*SolveContext)
 		pendingTasks := podgroup_info.GetTasksToAllocate(
-			solveCtx.PartialPendingJob, ssn.SubGroupOrderFn, ssn.TaskOrderFn, false,
+			solveCtx.PartialPendingJob, ssn.SubGroupOrderFn, ssn.TaskOrderFn,
+			podgroup_info.SimulatedTaskAllocation,
 		)
 		failing := scenario.NewByNodeScenario(
 			ssn, solveCtx.PartialPendingJob, pendingTasks, nil, solveCtx.RecordedVictimsJobs,

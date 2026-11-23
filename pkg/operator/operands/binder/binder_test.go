@@ -17,12 +17,12 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
-	kaiv1binder "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/binder"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
 	binderplugins "github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common/test_utils"
+	"github.com/kai-scheduler/api/constants"
+	kaiv1 "github.com/kai-scheduler/api/kai/v1"
+	kaiv1binder "github.com/kai-scheduler/api/kai/v1/binder"
+	"github.com/kai-scheduler/api/kai/v1/common"
 
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
@@ -127,6 +127,21 @@ var _ = Describe("Binder", func() {
 				Expect(*pluginConfig[binderplugins.HamiCorePluginName].Enabled).To(BeFalse())
 			})
 
+			It("passes --fips-only only when global.fipsOnly is set", func(ctx context.Context) {
+				objects, err := b.DesiredState(ctx, fakeKubeClient, kaiConfig)
+				Expect(err).To(BeNil())
+				deploymentT := test_utils.FindTypeInObjects[*appsv1.Deployment](objects)
+				Expect(deploymentT).NotTo(BeNil())
+				Expect((*deploymentT).Spec.Template.Spec.Containers[0].Args).NotTo(ContainElement("--fips-only"))
+
+				kaiConfig.Spec.Global.FIPSOnly = ptr.To(true)
+				objects, err = b.DesiredState(ctx, fakeKubeClient, kaiConfig)
+				Expect(err).To(BeNil())
+				deploymentT = test_utils.FindTypeInObjects[*appsv1.Deployment](objects)
+				Expect(deploymentT).NotTo(BeNil())
+				Expect((*deploymentT).Spec.Template.Spec.Containers[0].Args).To(ContainElement("--fips-only"))
+			})
+
 			It("passes volume binding timeout through plugin arguments", func(ctx context.Context) {
 				kaiConfig = kaiConfigForBinderWithConfig(&kaiv1binder.Binder{
 					VolumeBindingTimeoutSeconds: ptr.To(45),
@@ -175,6 +190,17 @@ var _ = Describe("Binder", func() {
 					expectGPUSharingCDI((*deploymentT).Spec.Template.Spec.Containers[0].Args, true)
 				})
 
+				It("resolves CDI flag for the nvfractions plugin from cluster policy, like gpusharing", func(ctx context.Context) {
+					kaiConfig = kaiConfigForBinderNvFractions()
+					Expect(fakeKubeClient.Create(ctx, clusterPolicy)).To(Succeed())
+					objects, err := b.DesiredState(ctx, fakeKubeClient, kaiConfig)
+					Expect(err).To(BeNil())
+
+					deploymentT := test_utils.FindTypeInObjects[*appsv1.Deployment](objects)
+					Expect(deploymentT).NotTo(BeNil())
+					expectNvFractionsCDI((*deploymentT).Spec.Template.Spec.Containers[0].Args, true)
+				})
+
 				It("sets CDI flag to false if not set by default cluser policy", func(ctx context.Context) {
 					clusterPolicy.Spec.CDI.Default = ptr.To(false)
 					Expect(fakeKubeClient.Create(ctx, clusterPolicy)).To(Succeed())
@@ -214,6 +240,19 @@ var _ = Describe("Binder", func() {
 					deploymentT := test_utils.FindTypeInObjects[*appsv1.Deployment](objects)
 					Expect(deploymentT).NotTo(BeNil())
 					expectGPUSharingCDI((*deploymentT).Spec.Template.Spec.Containers[0].Args, false)
+				})
+
+				It("resolves NRI plugin flag from the gpu-operator cluster-policy", func(ctx context.Context) {
+					clusterPolicy.Name = "cluster-policy"
+					clusterPolicy.Spec.CDI.NRIPluginEnabled = ptr.To(true)
+					Expect(fakeKubeClient.Create(ctx, clusterPolicy)).To(Succeed())
+
+					objects, err := b.DesiredState(ctx, fakeKubeClient, kaiConfig)
+					Expect(err).To(BeNil())
+
+					deploymentT := test_utils.FindTypeInObjects[*appsv1.Deployment](objects)
+					Expect(deploymentT).NotTo(BeNil())
+					expectGPUSharingNRIPlugin((*deploymentT).Spec.Template.Spec.Containers[0].Args, true)
 				})
 
 				It("uses explicit CDIEnabled=true from config, ignoring ClusterPolicy", func(ctx context.Context) {
@@ -484,6 +523,32 @@ func expectGPUSharingCDI(args []string, enabled bool) {
 	pluginConfig := binderPluginsConfig(args)
 	Expect(pluginConfig[binderplugins.GPUSharingPluginName].Arguments[binderplugins.CDIEnabledArgument]).
 		To(Equal(strconv.FormatBool(enabled)))
+}
+
+func expectNvFractionsCDI(args []string, enabled bool) {
+	expectNoStandalonePluginArgs(args)
+	pluginConfig := binderPluginsConfig(args)
+	Expect(pluginConfig[binderplugins.NvFractionsPluginName].Arguments[binderplugins.CDIEnabledArgument]).
+		To(Equal(strconv.FormatBool(enabled)))
+}
+
+func expectGPUSharingNRIPlugin(args []string, enabled bool) {
+	expectNoStandalonePluginArgs(args)
+	pluginConfig := binderPluginsConfig(args)
+	Expect(pluginConfig[binderplugins.GPUSharingPluginName].Arguments[binderplugins.NRIPluginEnabledArgument]).
+		To(Equal(strconv.FormatBool(enabled)))
+}
+
+func kaiConfigForBinderNvFractions() *kaiv1.Config {
+	kaiConfig := &kaiv1.Config{}
+	kaiConfig.Spec.Binder = &kaiv1binder.Binder{
+		Plugins: map[string]kaiv1binder.PluginConfig{
+			kaiv1binder.NvFractionsPluginName: {Enabled: ptr.To(true)},
+		},
+	}
+	kaiConfig.Spec.SetDefaultsWhereNeeded()
+	kaiConfig.Spec.Binder.Service.Enabled = ptr.To(true)
+	return kaiConfig
 }
 
 func binderPluginsConfig(args []string) binderplugins.Config {

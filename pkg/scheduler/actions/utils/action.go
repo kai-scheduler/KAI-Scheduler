@@ -184,15 +184,19 @@ func GetAllPendingJobs(ssn *framework.Session) map[common_info.PodGroupID]*podgr
 	return pendingJobs
 }
 
-func IsEnoughGPUsAllocatableForJob(job *podgroup_info.PodGroupInfo, ssn *framework.Session, isRealAllocation bool) bool {
+func IsEnoughGPUsAllocatableForJob(
+	job *podgroup_info.PodGroupInfo, ssn *framework.Session, allocationMode podgroup_info.TaskAllocationMode,
+) bool {
 	sumOfAllAllocatableGPUs, sumOfAllAllocatableGPUsMemory := getSumOfAvailableGPUs(ssn)
 	requestedGPUs, requestedGpuMemory := podgroup_info.GetTasksToAllocateRequestedGPUs(job, ssn.SubGroupOrderFn,
-		ssn.TaskOrderFn, isRealAllocation)
-	resReq := podgroup_info.GetTasksToAllocateInitResourceVector(job, ssn.SubGroupOrderFn, ssn.TaskOrderFn, isRealAllocation,
+		ssn.TaskOrderFn, allocationMode)
+	resReq := podgroup_info.GetTasksToAllocateInitResourceVector(job, ssn.SubGroupOrderFn, ssn.TaskOrderFn, allocationMode,
 		ssn.ClusterInfo.MinNodeGPUMemoryMiB)
-	log.InfraLogger.V(7).Infof(
-		"Task: <%v/%v> resources requires: <%v>, sumOfAllAllocatableGPUs: <%v, %v mb>",
-		job.Namespace, job.Name, resReq, sumOfAllAllocatableGPUs, sumOfAllAllocatableGPUsMemory)
+	log.InfraLogger.V(7).Do(func() {
+		log.InfraLogger.Infof(
+			"Task: <%v/%v> resources requires: <%v>, sumOfAllAllocatableGPUs: <%v, %v mb>",
+			job.Namespace, job.Name, resReq, sumOfAllAllocatableGPUs, sumOfAllAllocatableGPUsMemory)
+	})
 	return sumOfAllAllocatableGPUs >= requestedGPUs && sumOfAllAllocatableGPUsMemory >= requestedGpuMemory
 }
 

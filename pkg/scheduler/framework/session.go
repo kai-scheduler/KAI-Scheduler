@@ -20,10 +20,13 @@ limitations under the License.
 package framework
 
 import (
+	"cmp"
 	"fmt"
 	"net/http"
 	"runtime"
+	"slices"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -101,13 +104,16 @@ type Session struct {
 	PreJobAllocationFns                   []api.PreJobAllocationFn
 	ScenarioGeneratorRegistrations        []ScenarioGeneratorRegistration
 
-	Config          *conf.SchedulerConfiguration
-	plugins         map[string]Plugin
+	Config  *conf.SchedulerConfiguration
+	plugins map[string]Plugin
+	// pluginsInOrder records the order plugins were opened in, so they can be closed in reverse.
+	pluginsInOrder  []Plugin
 	eventHandlers   []*EventHandler
 	SchedulerParams conf.SchedulerParams
 	mux             *http.ServeMux
 
 	k8sResourceStateCache  sync.Map
+	terminatingPods        *terminatingPods
 	nodeScoringPool        *ants.Pool
 	scoringPoolWorkerCount int
 }
@@ -133,8 +139,11 @@ func (ssn *Session) GetNodes() []ksf.NodeInfo {
 
 func (ssn *Session) BindPod(pod *pod_info.PodInfo) error {
 	bindRequestAnnotations := ssn.MutateBindRequestAnnotations(pod, pod.NodeName)
-	predictedNUMAZones := numaPlacementToZones(pod, ssn.ClusterInfo.Nodes[pod.NodeName])
-	if err := ssn.Cache.Bind(pod, pod.NodeName, bindRequestAnnotations, predictedNUMAZones); err != nil {
+	numa := cache.NUMAPrediction{
+		Zones:        numaPlacementToZones(pod, ssn.ClusterInfo.Nodes[pod.NodeName]),
+		MemoryGroups: numaPlacementToMemoryGroups(pod, ssn.ClusterInfo.Nodes[pod.NodeName]),
+	}
+	if err := ssn.Cache.Bind(pod, pod.NodeName, bindRequestAnnotations, numa); err != nil {
 		return err
 	}
 
@@ -194,7 +203,7 @@ func (ssn *Session) FittingGPUs(node *node_info.NodeInfo, pod *pod_info.PodInfo)
 func filterGpusByEnoughResources(node *node_info.NodeInfo, pod *pod_info.PodInfo) []string {
 	filteredGPUs := []string{}
 	for gpuIdx := range node.UsedSharedGPUsMemory {
-		if node.IsTaskFitOnGpuGroup(&pod.GpuRequirement, gpuIdx) {
+		if node.IsTaskFitOnGpuGroup(pod, gpuIdx) {
 			filteredGPUs = append(filteredGPUs, gpuIdx)
 		}
 	}
@@ -224,37 +233,69 @@ func (ssn *Session) sortGPUs(filteredGPUs []string, pod *pod_info.PodInfo, node 
 	return sortedGPUs
 }
 
-func (ssn *Session) FittingNode(task *pod_info.PodInfo, node *node_info.NodeInfo, writeFittingDelta bool) bool {
-	var fitErrors *common_info.TasksFitErrors
-	if writeFittingDelta {
-		fitErrors = common_info.NewFitErrors()
-	}
-
+// FittingNode reports whether the task fits the node, and whether the fit must be pipelined rather than
+// bound. A simulation checks predicates without the pods that were already terminating, and always
+// pipelines. A real allocation checks the cluster as it is first, and falls back to the cluster
+// without them; a fit found only there must be pipelined.
+func (ssn *Session) FittingNode(
+	task *pod_info.PodInfo, node *node_info.NodeInfo, isSimulation bool,
+) (fits bool, mustPipeline bool) {
 	job := ssn.ClusterInfo.PodGroupInfos[task.Job]
 
-	log.InfraLogger.V(6).Infof("Checking if task <%v/%v> is allocatable on node <%v>: <%v> vs. <%v>",
-		task.Namespace, task.Name, node.Name, task.ResReqVector, node.IdleVector)
-	allocatable, fitError := ssn.isTaskAllocatableOnNode(task, job, node, writeFittingDelta)
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("Checking if task <%v/%v> is allocatable on node <%v>: <%v> vs. <%v>",
+			task.Namespace, task.Name, node.Name, task.ResReqVector, node.IdleVector)
+	})
+	allocatable, fitError := ssn.isTaskAllocatableOnNode(task, job, node, !isSimulation)
 	if !allocatable {
-		if fitError != nil && writeFittingDelta {
-			fitErrors.AddNodeError(fitError)
-			job.AddTaskFitErrors(task, fitErrors)
+		if fitError != nil && !isSimulation {
+			addNodeFitError(task, job, fitError)
 		}
-		return false
+		return false, false
 	}
 
-	log.InfraLogger.V(6).Infof("Running predicates for task <%v/%v> on node <%v>",
-		task.Namespace, task.Name, node.Name)
-	if err := ssn.PredicateFn(task, job, node); err != nil {
-		log.InfraLogger.V(6).Infof("Predicates failed for task <%s/%s> on node <%s>: %v",
-			task.Namespace, task.Name, node.Name, err)
-		if writeFittingDelta {
-			fitErrors.AddNodeError(err)
-			job.AddTaskFitErrors(task, fitErrors)
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("Running predicates for task <%v/%v> on node <%v>",
+			task.Namespace, task.Name, node.Name)
+	})
+	var currentErr error
+	if !isSimulation {
+		if currentErr = ssn.PredicateFn(task, job, node); currentErr == nil {
+			return true, false
 		}
-		return false
+		logPredicateFailure(task, node, currentErr)
+		if !ssn.terminatingPodsMatter(task, node) {
+			addNodeFitError(task, job, currentErr)
+			return false, false
+		}
 	}
-	return true
+
+	if err := ssn.fitsWithoutTerminatingPods(task, job, node); err != nil {
+		logPredicateFailure(task, node, err)
+		if !isSimulation {
+			// The error against the cluster as it is explains the failure better.
+			addNodeFitError(task, job, currentErr)
+		}
+		return false, false
+	}
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("Task <%s/%s> fits node <%s> once the terminating pods are gone",
+			task.Namespace, task.Name, node.Name)
+	})
+	return true, true
+}
+
+func addNodeFitError(task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo, err error) {
+	fitErrors := common_info.NewFitErrors()
+	fitErrors.AddNodeError(err)
+	job.AddTaskFitErrors(task, fitErrors)
+}
+
+func logPredicateFailure(task *pod_info.PodInfo, node *node_info.NodeInfo, err error) {
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("Predicates failed for task <%s/%s> on node <%s>: %v",
+			task.Namespace, task.Name, node.Name, err)
+	})
 }
 
 // OrderedNodesByTask scores nodes for a task and returns them in order of their scores
@@ -263,16 +304,15 @@ func (ssn *Session) OrderedNodesByTask(nodes []*node_info.NodeInfo, task *pod_in
 	ssn.NodePreOrderFn(task, nodes)
 
 	numWorkersToUseInParallel := max(min(ssn.scoringPoolWorkerCount, len(nodes)), 1)
-	workerLocalScores := make([]map[float64][]*node_info.NodeInfo, numWorkersToUseInParallel)
+	scores := make([]nodeScore, len(nodes))
 
 	var wg sync.WaitGroup
 	chunkSize := (len(nodes) + numWorkersToUseInParallel - 1) / numWorkersToUseInParallel
 	scoreChunk := func(idx int) {
-		workerNodes := ssn.getWorkerNodes(nodes, idx, chunkSize)
-		if workerNodes == nil {
-			return
+		start := idx * chunkSize
+		for i := start; i < min(start+chunkSize, len(nodes)); i++ {
+			scores[i] = ssn.scoreNode(nodes[i], task)
 		}
-		workerLocalScores[idx] = ssn.scoreNodes(workerNodes, task)
 	}
 	for workerIdx := range numWorkersToUseInParallel {
 		wg.Add(1)
@@ -289,37 +329,26 @@ func (ssn *Session) OrderedNodesByTask(nodes []*node_info.NodeInfo, task *pod_in
 	}
 	wg.Wait()
 
-	nodeScores := workerLocalScores[0]
-	for _, m := range workerLocalScores[1:] {
-		for score, ns := range m {
-			nodeScores[score] = append(nodeScores[score], ns...)
-		}
-	}
-	return sortNodesByScore(nodeScores)
+	return sortNodesByScore(scores)
 }
 
-func (ssn *Session) getWorkerNodes(nodes []*node_info.NodeInfo, workerIdx int, chunkSize int) []*node_info.NodeInfo {
-	start := workerIdx * chunkSize
-	end := min(start+chunkSize, len(nodes))
-	if start >= end {
-		return nil
-	}
-	return nodes[start:end]
+type nodeScore struct {
+	node  *node_info.NodeInfo
+	score float64
 }
 
-func (ssn *Session) scoreNodes(nodes []*node_info.NodeInfo, task *pod_info.PodInfo) map[float64][]*node_info.NodeInfo {
-	workerScores := make(map[float64][]*node_info.NodeInfo)
-	for _, node := range nodes {
-		score, err := ssn.NodeOrderFn(task, node)
-		if err != nil {
-			log.InfraLogger.Errorf("Error in Calculating Priority for the node:%v", err)
-			continue
-		}
-		workerScores[score] = append(workerScores[score], node)
-		log.InfraLogger.V(5).Infof("Overall priority node score of node <%v> for task <%v/%v> is: %f",
+// scoreNode leaves node nil when scoring fails, so the node is dropped.
+func (ssn *Session) scoreNode(node *node_info.NodeInfo, task *pod_info.PodInfo) nodeScore {
+	score, err := ssn.NodeOrderFn(task, node)
+	if err != nil {
+		log.InfraLogger.Errorf("Error in Calculating Priority for the node:%v", err)
+		return nodeScore{}
+	}
+	log.InfraLogger.V(5).Do(func() {
+		log.InfraLogger.Infof("Overall priority node score of node <%v> for task <%v/%v> is: %f",
 			node.Name, task.Namespace, task.Name, score)
-	}
-	return workerScores
+	})
+	return nodeScore{node: node, score: score}
 }
 
 func (ssn *Session) isTaskAllocatableOnNode(task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo,
@@ -329,9 +358,11 @@ func (ssn *Session) isTaskAllocatableOnNode(task *pod_info.PodInfo, job *podgrou
 
 	if !node.IsTaskAllocatableOnReleasingOrIdle(task) {
 		allocatable = false
-		log.InfraLogger.V(6).Infof("Not enough resources for task: <%s/%s>, init requested: <%v>. "+
-			"Node <%s> with limited resources, releasing: <%v>, idle: <%v>",
-			task.Namespace, task.Name, task.ResReqVector, node.Name, node.ReleasingVector, node.IdleVector)
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof("Not enough resources for task: <%s/%s>, init requested: <%v>. "+
+				"Node <%s> with limited resources, releasing: <%v>, idle: <%v>",
+				task.Namespace, task.Name, task.ResReqVector, node.Name, node.ReleasingVector, node.IdleVector)
+		})
 		if writeFittingDelta {
 			if taskAllocatable := node.IsTaskAllocatable(task); !taskAllocatable {
 				fitError = node.FittingError(task, len(job.GetAllPodsMap()) > 1)
@@ -430,6 +461,7 @@ func (ssn *Session) updatePodOnSession(pod *pod_info.PodInfo, status pod_status.
 func (ssn *Session) clear() {
 	ssn.ClusterInfo = nil
 	ssn.plugins = nil
+	ssn.pluginsInOrder = nil
 	ssn.eventHandlers = nil
 	ssn.GpuOrderFns = nil
 	ssn.NodePreOrderFns = nil
@@ -489,6 +521,7 @@ func openSession(cache cache.Cache, sessionId string, schedulerParams conf.Sched
 		ClusterInfo: &api.ClusterInfo{},
 
 		plugins:               map[string]Plugin{},
+		pluginsInOrder:        []Plugin{},
 		SchedulerParams:       schedulerParams,
 		mux:                   mux,
 		k8sResourceStateCache: sync.Map{},
@@ -514,12 +547,17 @@ func openSession(cache cache.Cache, sessionId string, schedulerParams conf.Sched
 }
 
 func closeSession(ssn *Session) {
-	log.InfraLogger.V(6).Infof("Close Session %v with <%d> Jobs and <%d> Queues",
-		ssn.ID, len(ssn.ClusterInfo.PodGroupInfos), len(ssn.ClusterInfo.Queues))
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("Close Session %v with <%d> Jobs and <%d> Queues",
+			ssn.ID, len(ssn.ClusterInfo.PodGroupInfos), len(ssn.ClusterInfo.Queues))
+	})
 
 	// Push all jobs for status update into the channel
 	resolveDetailedFitErrors := ssn.RecomputeDetailedFitErrors
 	for _, job := range ssn.ClusterInfo.PodGroupInfos {
+		if job.IsSemiPreemptibleJob() {
+			job.CorePodNames = podgroup_info.GetCorePodNames(job, ssn.TaskOrderFn)
+		}
 		if err := ssn.Cache.RecordJobStatusEvent(job, resolveDetailedFitErrors); err != nil {
 			log.InfraLogger.Errorf("Failed to record job status event for job <%s>: %v", job.Name, err)
 		}
@@ -530,7 +568,9 @@ func closeSession(ssn *Session) {
 	stopCh := make(chan struct{})
 	ssn.Cache.WaitForWorkers(stopCh)
 
-	log.InfraLogger.V(6).Infof("Done updating job statuses for session: %v", ssn.ID)
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("Done updating job statuses for session: %v", ssn.ID)
+	})
 }
 
 func (ssn *Session) GetMaxNumberConsolidationPreemptees() int {
@@ -543,6 +583,14 @@ func (ssn *Session) OverrideMaxNumberConsolidationPreemptees(maxPreemptees int) 
 
 func (ssn *Session) UseSchedulingSignatures() bool {
 	return ssn.SchedulerParams.UseSchedulingSignatures
+}
+
+func (ssn *Session) DeferredResizePreemptionEnabled() bool {
+	return ssn.SchedulerParams.DeferredResizePreemption
+}
+
+func (ssn *Session) OverrideDeferredResizePreemption(enabled bool) {
+	ssn.SchedulerParams.DeferredResizePreemption = enabled
 }
 
 func (ssn *Session) GetJobsDepth(action ActionType) int {
@@ -613,25 +661,23 @@ func (ssn *Session) ResourceVectorMap() *resource_info.ResourceVectorMap {
 	return ssn.ClusterInfo.ResourceVectorMap
 }
 
-func sortNodesByScore(nodeScores map[float64][]*node_info.NodeInfo) []*node_info.NodeInfo {
-	var nodesInorder []*node_info.NodeInfo
-	var keys []float64
-	for key := range nodeScores {
-		keys = append(keys, key)
+// sortNodesByScore orders nodes by score, highest first, and by name within a score.
+func sortNodesByScore(scores []nodeScore) []*node_info.NodeInfo {
+	scores = slices.DeleteFunc(scores, func(s nodeScore) bool { return s.node == nil })
+	if len(scores) == 0 {
+		return nil
 	}
-	sort.Sort(sort.Reverse(sort.Float64Slice(keys)))
-	for _, key := range keys {
-		nodes := sortNodesByName(nodeScores[key])
-		nodesInorder = append(nodesInorder, nodes...)
-	}
-	return nodesInorder
-}
-
-func sortNodesByName(nodes []*node_info.NodeInfo) []*node_info.NodeInfo {
-	sort.Slice(nodes, func(i, j int) bool {
-		return nodes[i].Name < nodes[j].Name
+	slices.SortFunc(scores, func(a, b nodeScore) int {
+		if c := cmp.Compare(b.score, a.score); c != 0 {
+			return c
+		}
+		return strings.Compare(a.node.Name, b.node.Name)
 	})
-	return nodes
+	ordered := make([]*node_info.NodeInfo, len(scores))
+	for i, s := range scores {
+		ordered[i] = s.node
+	}
+	return ordered
 }
 
 func sortGPUs(gpuScores map[float64][]string) []string {

@@ -4,13 +4,13 @@
 package capacity_policy
 
 import (
-	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	rs "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/utils"
+	"github.com/kai-scheduler/api/constants"
+	"github.com/kai-scheduler/api/scheduling/v2alpha2"
 )
 
 func (cp *CapacityPolicy) resultsOverLimit(requestedShare rs.ResourceQuantities,
@@ -58,7 +58,7 @@ func isOverLimit(queueAttributes *rs.QueueAttributes, requested rs.ResourceQuant
 		if !found || requestedQty == 0 {
 			continue
 		}
-		if resourceShare.MaxAllowed < resourceShare.Allocated+requestedQty {
+		if !resource_info.LessOrEqualWithTolerance(resourceShare.Allocated+requestedQty, resourceShare.MaxAllowed) {
 			return true, resource
 		}
 	}

@@ -9,14 +9,14 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/node_scale_adjuster"
 	kaiConfigUtils "github.com/kai-scheduler/KAI-scheduler/pkg/operator/config"
+	"github.com/kai-scheduler/api/kai/v1/node_scale_adjuster"
 
 	v1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common"
+	kaiv1 "github.com/kai-scheduler/api/kai/v1"
 )
 
 const (
@@ -37,6 +37,7 @@ func deploymentForKAIConfig(
 		kaiConfig.Spec.NodeScaleAdjuster,
 		*kaiConfig.Spec.Global.SchedulerName,
 		kaiConfig.Spec.Global.JSONLog,
+		common.IsFIPSOnly(kaiConfig.Spec.Global),
 	)
 
 	return deployment, nil
@@ -80,7 +81,9 @@ func scalingPodServiceAccountForKAIConfig(
 	return sa, err
 }
 
-func argsForKAIConfig(config *node_scale_adjuster.NodeScaleAdjuster, schedulerName string, jsonLog *bool) []string {
+func argsForKAIConfig(
+	config *node_scale_adjuster.NodeScaleAdjuster, schedulerName string, jsonLog *bool, fipsOnly bool,
+) []string {
 	args := []string{
 		"--scheduler-name", schedulerName,
 	}
@@ -100,6 +103,10 @@ func argsForKAIConfig(config *node_scale_adjuster.NodeScaleAdjuster, schedulerNa
 	if config.Args.GPUMemoryToFractionRatio != nil {
 		args = append(args, "--gpu-memory-to-fraction-ratio",
 			fmt.Sprintf("%f", *config.Args.GPUMemoryToFractionRatio))
+	}
+
+	if fipsOnly {
+		args = append(args, "--fips-only")
 	}
 
 	return common.AddControllerRuntimeJSONLogArg(jsonLog, args)

@@ -24,7 +24,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	schedulingv1alpha2 "github.com/kai-scheduler/api/scheduling/v1alpha2"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding/resourcereservation"
@@ -112,8 +112,8 @@ var _ = BeforeSuite(func() {
 
 	rrs = resourcereservation.NewService(false, clientWithWatch, "", 40*time.Second,
 		resourceReservationNameSpace, resourceReservationServiceAccount, resourceReservationAppLabelValue, scalingPodsNamespace, "",
-		nil, nil, nil)
-	podBinder := binding.NewBinder(k8sManager.GetClient(), rrs, binderPlugins)
+		nil, nil, nil, false)
+	podBinder := binding.NewBinder(k8sManager.GetClient(), k8sManager.GetAPIReader(), rrs, binderPlugins)
 
 	err = controllers.NewBindRequestReconciler(
 		k8sManager.GetClient(), k8sManager.GetScheme(), k8sManager.GetEventRecorderFor("binder"), params,

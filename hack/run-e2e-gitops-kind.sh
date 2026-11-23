@@ -79,12 +79,6 @@ fi
 
 ${REPO_ROOT}/hack/setup-gitops-e2e.sh --chart-tgz "$CHART_TGZ"
 
-# Install ginkgo if it's not installed
-if [ ! -f ${GOBIN}/ginkgo ]; then
-    echo "Installing ginkgo"
-    GOBIN=${GOBIN} go install github.com/onsi/ginkgo/v2/ginkgo@v2.25.3
-fi
-
 echo "Running gitops tests..."
 export GITOPS_CHART_VERSION=$PACKAGE_VERSION
 # Locally-built images live in the in-cluster registry; released images are
@@ -92,7 +86,7 @@ export GITOPS_CHART_VERSION=$PACKAGE_VERSION
 if [ "$LOCAL_IMAGES_BUILD" = "true" ]; then
     export GITOPS_KAI_REGISTRY=localhost:30100
 fi
-${GOBIN}/ginkgo -r --keep-going --trace -vv --label-filter 'gitops' ${REPO_ROOT}/test/e2e/suites/gitops
+(cd ${REPO_ROOT} && go tool ginkgo -r --keep-going --trace -vv --label-filter 'gitops' ${REPO_ROOT}/test/e2e/suites/gitops)
 
 # Cleanup
 rm -rf "$CHART_TGZ"

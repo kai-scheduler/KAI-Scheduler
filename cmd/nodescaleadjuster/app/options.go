@@ -7,8 +7,8 @@ import (
 	"flag"
 	"fmt"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/nodescaleadjuster/consts"
+	"github.com/kai-scheduler/api/constants"
 )
 
 type Options struct {
@@ -19,6 +19,7 @@ type Options struct {
 	ScalingPodAppLabel       string
 	ScalingPodServiceAccount string
 	EnableLeaderElection     bool
+	FIPSOnly                 bool
 
 	// k8s client options
 	Qps   int
@@ -55,6 +56,9 @@ func (o *Options) AddFlags() {
 		"leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
+	flag.BoolVar(&o.FIPSOnly,
+		"fips-only", false,
+		"Set GODEBUG=fips140=only on scaling pods")
 	flag.IntVar(&o.Qps, "qps", 50, "Queries per second to the K8s API server")
 	flag.IntVar(&o.Burst, "burst", 300, "Burst to the K8s API server")
 }

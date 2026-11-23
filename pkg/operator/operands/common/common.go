@@ -21,9 +21,10 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
-	kaiv1common "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/fips"
 	kaiConfigUtils "github.com/kai-scheduler/KAI-scheduler/pkg/operator/config"
+	kaiv1 "github.com/kai-scheduler/api/kai/v1"
+	kaiv1common "github.com/kai-scheduler/api/kai/v1/common"
 )
 
 var controllerTypes = []string{"Deployment", "DaemonSet"}
@@ -35,10 +36,11 @@ const (
 
 // PodDisruptionBudgetImplementedServices lists operand resource names with operator-side PDB creation.
 var PodDisruptionBudgetImplementedServices = map[string]struct{}{
-	"admission":   {},
-	"scheduler":   {},
-	"pod-grouper": {},
-	"binder":      {},
+	"admission":        {},
+	"scheduler":        {},
+	"pod-grouper":      {},
+	"binder":           {},
+	"queue-controller": {},
 }
 
 func PodDisruptionBudgetImplemented(serviceName string) bool {
@@ -251,10 +253,11 @@ func DaemonSetForKAIConfig(
 // outbound TLS handshake (e.g. to the API server via client-go) unless the hybrid
 // curve is disabled. See https://github.com/kubernetes/kubernetes/issues/133743.
 func FIPSOnlyEnv(global *kaiv1.GlobalConfig) []v1.EnvVar {
-	if global == nil || !ptr.Deref(global.FIPSOnly, false) {
-		return nil
-	}
-	return []v1.EnvVar{{Name: "GODEBUG", Value: "fips140=only,tlsmlkem=0"}}
+	return fips.OnlyEnv(IsFIPSOnly(global))
+}
+
+func IsFIPSOnly(global *kaiv1.GlobalConfig) bool {
+	return global != nil && ptr.Deref(global.FIPSOnly, false)
 }
 
 func ShouldCreatePodDisruptionBudget(replicas *int32, service *kaiv1common.Service) bool {
@@ -411,12 +414,13 @@ func MergeAffinities(localAffinity *v1.Affinity,
 	globalAffinity *v1.Affinity,
 	podAntiAffinityLabel map[string]string,
 	requireDefaultPodAntiAffinityTerm bool) *v1.Affinity {
+	// Unset affinities are merged as empty ones so the default podAntiAffinity term is still added.
 	if localAffinity == nil {
-		return globalAffinity
+		localAffinity = &v1.Affinity{}
 	}
 
 	if globalAffinity == nil {
-		return localAffinity
+		globalAffinity = &v1.Affinity{}
 	}
 
 	affinity := &v1.Affinity{}

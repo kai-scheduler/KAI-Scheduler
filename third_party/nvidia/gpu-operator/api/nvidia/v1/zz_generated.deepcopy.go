@@ -26,6 +26,11 @@ func (in *CDIConfigSpec) DeepCopyInto(out *CDIConfigSpec) {
 		*out = new(bool)
 		**out = **in
 	}
+	if in.NRIPluginEnabled != nil {
+		in, out := &in.NRIPluginEnabled, &out.NRIPluginEnabled
+		*out = new(bool)
+		**out = **in
+	}
 }
 
 // DeepCopy is a deepcopy function, copying the receiver, creating a new CDIConfigSpec.

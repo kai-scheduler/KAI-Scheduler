@@ -48,7 +48,8 @@ func NewPodAccumulatedScenarioBuilder(
 
 	var scenario *solverscenario.ByNodeScenario = nil
 	recordedVictimsTasks := make(map[common_info.PodID]*pod_info.PodInfo)
-	tasksToAllocate := podgroup_info.GetTasksToAllocate(pendingJob, session.SubGroupOrderFn, session.TaskOrderFn, false)
+	tasksToAllocate := podgroup_info.GetTasksToAllocate(pendingJob, session.SubGroupOrderFn, session.TaskOrderFn,
+		podgroup_info.PartialTaskAllocation)
 	if len(tasksToAllocate) != 0 {
 		scenario = solverscenario.NewByNodeScenario(session, pendingJob, tasksToAllocate, nil, recordedVictimsJobs)
 		for _, job := range recordedVictimsJobs {
@@ -59,23 +60,25 @@ func NewPodAccumulatedScenarioBuilder(
 	}
 
 	var scenarioFilters []accumulated_scenario_filters.Interface
+	// A resize stand-in is only checked for room on its own node, in AllocateJob.
+	if !pendingJob.IsResizeStandIn() {
+		// Filter scenario if it has any pods with node affinities that cannot be satisfied by the available nodes for allocation
+		nodeSelectorFilter := node_affinities.NewNodeAffinitiesFilter(scenario, feasibleNodes, session)
+		if nodeSelectorFilter != nil {
+			scenarioFilters = append(scenarioFilters, nodeSelectorFilter)
+		}
 
-	// Filter scenario if it has any pods with node affinities that cannot be satisfied by the available nodes for allocation
-	nodeSelectorFilter := node_affinities.NewNodeAffinitiesFilter(scenario, feasibleNodes, session)
-	if nodeSelectorFilter != nil {
-		scenarioFilters = append(scenarioFilters, nodeSelectorFilter)
-	}
+		// Basic topology-aware gpu capacity filter
+		topologyAwareFilter := idle_gpus_filter.NewTopologyAwareIdleGpusFilter(scenario, session.ClusterInfo.Nodes)
+		if topologyAwareFilter != nil {
+			scenarioFilters = append(scenarioFilters, topologyAwareFilter)
+		}
 
-	// Basic topology-aware gpu capacity filter
-	topologyAwareFilter := idle_gpus_filter.NewTopologyAwareIdleGpusFilter(scenario, session.ClusterInfo.Nodes)
-	if topologyAwareFilter != nil {
-		scenarioFilters = append(scenarioFilters, topologyAwareFilter)
-	}
-
-	// Full cluster-level idle GPUs filter
-	idleGpusScenarioFilter := idle_gpus_filter.NewIdleGpusFilter(scenario, session.ClusterInfo.Nodes)
-	if idleGpusScenarioFilter != nil {
-		scenarioFilters = append(scenarioFilters, idleGpusScenarioFilter)
+		// Full cluster-level idle GPUs filter
+		idleGpusScenarioFilter := idle_gpus_filter.NewIdleGpusFilter(scenario, session.ClusterInfo.Nodes)
+		if idleGpusScenarioFilter != nil {
+			scenarioFilters = append(scenarioFilters, idleGpusScenarioFilter)
+		}
 	}
 
 	return &PodAccumulatedScenarioBuilder{
@@ -197,7 +200,9 @@ func (asb *PodAccumulatedScenarioBuilder) nextFromSubEmitter() *solverscenario.B
 func (asb *PodAccumulatedScenarioBuilder) outerScenarioValid() bool {
 	isValid, failedFilterName := asb.isScenarioValid()
 	if !isValid {
-		log.InfraLogger.V(5).Infof("Filtered by %s for scenario: %s", failedFilterName, asb.lastScenario)
+		log.InfraLogger.V(5).Do(func() {
+			log.InfraLogger.Infof("Filtered by %s for scenario: %s", failedFilterName, asb.lastScenario)
+		})
 		metrics.IncScenarioFilteredByAction()
 	}
 	return isValid
@@ -230,7 +235,9 @@ func (asb *PodAccumulatedScenarioBuilder) addNextPotentialVictims() bool {
 		}
 	}
 
-	if jobHasMoreTasks {
+	// A job that yielded no victims will yield none again, so re-pushing it would leave the queue
+	// unable to drain. Semi-preemptible jobs sitting at their core are the case that hits this.
+	if jobHasMoreTasks && len(potentialVictimTasks) > 0 {
 		var remainingTasks []*pod_info.PodInfo
 		for _, task := range nextVictimJob.GetAllPodsMap() {
 			if !slices.Contains(potentialVictimTasks, task) {

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -18,9 +19,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/record"
 
-	kai "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned"
-	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -30,6 +28,9 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/utils"
+	kai "github.com/kai-scheduler/api/client/clientset/versioned"
+	commonconstants "github.com/kai-scheduler/api/constants"
+	enginev2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
 )
 
 const (
@@ -55,6 +56,8 @@ type inflightUpdate struct {
 	patchData    []byte
 	updateStatus bool
 	subResources []string
+
+	writtenResourceVersions []string
 }
 
 type defaultStatusUpdater struct {
@@ -100,6 +103,7 @@ func New(
 }
 
 func (su *defaultStatusUpdater) Evicted(
+	evictedPod *v1.Pod,
 	evictedPodGroup *enginev2alpha2.PodGroup,
 	evictionMetadata eviction_info.EvictionMetadata,
 	message string,
@@ -119,11 +123,10 @@ func (su *defaultStatusUpdater) Evicted(
 
 	nodepool := utils.GetNodePoolNameFromLabels(evictedPodGroup.Labels, su.nodePoolLabelKey)
 	metrics.IncPodGroupEvictedPods(
-		evictedPodGroup.Name,
-		evictedPodGroup.Namespace,
-		string(evictedPodGroup.UID),
+		evictedPodGroup,
 		nodepool,
 		evictionMetadata.Action,
+		evictedPod.Labels[commonconstants.SubGroupLabelKey],
 	)
 }
 
@@ -170,7 +173,9 @@ func (su *defaultStatusUpdater) Pipelined(pod *v1.Pod, message string) {
 }
 
 func (su *defaultStatusUpdater) PatchPodLabels(pod *v1.Pod, labels map[string]any) {
-	log.InfraLogger.V(6).Infof("Patching pod labels for %s/%s", pod.Namespace, pod.Name)
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("Patching pod labels for %s/%s", pod.Namespace, pod.Name)
+	})
 
 	patchBytes, err := json.Marshal(map[string]any{
 		"metadata": map[string]any{
@@ -206,7 +211,9 @@ func (su *defaultStatusUpdater) RecordJobStatusEvent(
 	var err error
 	var patchData []byte
 	if patchData, err = su.updatePodGroupAnnotations(job); err != nil {
-		log.InfraLogger.V(7).Warnf("Failed to update podgroup annotations, error: %s", err)
+		log.InfraLogger.V(7).Do(func() {
+			log.InfraLogger.Warningf("Failed to update podgroup annotations, error: %s", err)
+		})
 	}
 	if job.StalenessInfo.Stale {
 		su.recordStaleJobEvent(job)
@@ -215,39 +222,64 @@ func (su *defaultStatusUpdater) RecordJobStatusEvent(
 		return err
 	}
 
-	updatePodgroupStatus := false
+	updatePodgroupStatus := updateCorePods(job)
 	if job.GetNumPendingTasks() > 0 || job.GetNumGatedTasks() > 0 {
 		if !job.IsReadyForScheduling() {
 			su.recordJobNotReadyEvent(job)
+			su.pushPodGroupUpdate(job, patchData, updatePodgroupStatus)
 			return nil
 		}
 		if err := su.recordUnschedulablePodsEvents(job, resolveDetailedFitErrors); err != nil {
 			return err
 		}
-		updatePodgroupStatus = su.recordUnschedulablePodGroup(job)
+		updatePodgroupStatus = su.recordUnschedulablePodGroup(job) || updatePodgroupStatus
 	} else {
-		updatePodgroupStatus = su.clearPodGroupSchedulingCondition(job)
+		updatePodgroupStatus = su.clearPodGroupSchedulingCondition(job) || updatePodgroupStatus
 	}
 
-	if len(patchData) > 0 || updatePodgroupStatus {
-		su.pushToUpdateQueue(
-			&updatePayload{
-				key:        su.keyForPodGroupPayload(job.PodGroup.Name, job.PodGroup.Namespace, job.PodGroup.UID),
-				objectType: podGroupType,
-			},
-			&inflightUpdate{
-				object:       job.PodGroup,
-				patchData:    patchData,
-				updateStatus: updatePodgroupStatus,
-			},
-		)
-	}
+	su.pushPodGroupUpdate(job, patchData, updatePodgroupStatus)
 
 	return nil
 }
 
+// updateCorePods writes the scheduler-owned core pod set onto the pod group status for
+// semi-preemptible jobs, and reports whether it changed. The status write is a full UpdateStatus of
+// the snapshot object, so it must only fire when core membership actually changed.
+func updateCorePods(job *podgroup_info.PodGroupInfo) bool {
+	if !job.IsSemiPreemptibleJob() {
+		return false
+	}
+	if job.PodGroup.Status.SchedulingState != nil &&
+		slices.Equal(job.PodGroup.Status.SchedulingState.CorePods, job.CorePodNames) {
+		return false
+	}
+	job.PodGroup.Status.SchedulingState = &enginev2alpha2.PodGroupSchedulingState{CorePods: job.CorePodNames}
+	return true
+}
+
+func (su *defaultStatusUpdater) pushPodGroupUpdate(
+	job *podgroup_info.PodGroupInfo, patchData []byte, updateStatus bool,
+) {
+	if len(patchData) == 0 && !updateStatus {
+		return
+	}
+	su.pushToUpdateQueue(
+		&updatePayload{
+			key:        su.keyForPodGroupPayload(job.PodGroup.Name, job.PodGroup.Namespace, job.PodGroup.UID),
+			objectType: podGroupType,
+		},
+		&inflightUpdate{
+			object:       job.PodGroup,
+			patchData:    patchData,
+			updateStatus: updateStatus,
+		},
+	)
+}
+
 func (su *defaultStatusUpdater) markTaskUnschedulable(pod *v1.Pod, message string, updatePodCondition bool) error {
-	log.InfraLogger.V(6).Infof("setting message for task: %v", pod.Name)
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("setting message for task: %v", pod.Name)
+	})
 	su.recorder.Eventf(pod, v1.EventTypeWarning, v1.PodReasonUnschedulable, message)
 
 	if updatePodCondition {
@@ -281,7 +313,15 @@ func (su *defaultStatusUpdater) recordStaleJobEvent(job *podgroup_info.PodGroupI
 		}
 	}
 
-	message := fmt.Sprintf("Job is stale. %d pods are active, minMember is %d", totalActivePods, totalMinAvailable) + subGroupMessages
+	// A minSubGroup job never had to reach the sum of every leaf's minMember, so reporting that sum
+	// names a requirement it does not have. Report the requirement it does.
+	header := fmt.Sprintf("Job is stale. %d pods are active, minMember is %d", totalActivePods, totalMinAvailable)
+	if root := job.RootSubGroupSet; root != nil && root.GetMinSubGroup() != nil {
+		header = fmt.Sprintf("Job is stale. %d pods are active, %d of %d required subGroups are satisfied",
+			totalActivePods, root.GetNumGangSatisfiedMembers(), root.GetMinMembersToSatisfy())
+	}
+
+	message := header + subGroupMessages
 
 	su.recorder.Eventf(job.PodGroup, v1.EventTypeNormal, "StaleJob", message)
 }
@@ -327,9 +367,11 @@ func (su *defaultStatusUpdater) markPodGroupUnschedulable(job *podgroup_info.Pod
 }
 
 func (su *defaultStatusUpdater) updatePodCondition(pod *v1.Pod, condition *v1.PodCondition) error {
-	log.InfraLogger.V(6).Infof(
-		"Updating pod condition for %s/%s to (%s==%s)",
-		pod.Namespace, pod.Name, condition.Type, condition.Status)
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof(
+			"Updating pod condition for %s/%s to (%s==%s)",
+			pod.Namespace, pod.Name, condition.Type, condition.Status)
+	})
 	if k8s_internal.UpdatePodCondition(&pod.Status, condition) {
 		statusPatchBaseObject := v1.PodStatus{}
 		statusPatchBaseObject.Conditions = []v1.PodCondition{*condition}
@@ -378,7 +420,9 @@ func (su *defaultStatusUpdater) recordUnschedulablePodsEvents(
 		}
 
 		msg = su.addNodePoolPrefixIfNeeded(job, msg)
-		log.InfraLogger.V(6).Infof("setting message for task: %v, %v", taskInfo.Name, msg)
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof("setting message for task: %v, %v", taskInfo.Name, msg)
+		})
 		updatePodCondition := utils.GetMarkUnschedulableValue(job.PodGroup.Spec.MarkUnschedulable)
 		if err := su.markTaskUnschedulable(taskInfo.Pod, msg, updatePodCondition); err != nil {
 			errs = append(errs, fmt.Errorf("failed to update unschedulable task status <%s/%s>: %v",
@@ -425,7 +469,7 @@ func (su *defaultStatusUpdater) taskFitErrorMessage(
 		if err != nil || len(nodeErrors) == 0 {
 			return
 		}
-		log.InfraLogger.V(6).Infof("Full fit error: %s", fitError.DetailedError(nodeErrors))
+		log.InfraLogger.Infof("Full fit error: %s", fitError.DetailedError(nodeErrors))
 	})
 	return compactMessage
 }
@@ -481,7 +525,9 @@ func (su *defaultStatusUpdater) recordUnschedulablePodGroup(job *podgroup_info.P
 	if su.detailedFitErrors {
 		msg = common_info.JobFitErrorsToDetailedMessage(job.JobFitErrors)
 	} else {
-		log.InfraLogger.V(6).Infof("Full job fit error: %s", common_info.JobFitErrorsToDetailedMessage(job.JobFitErrors))
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof("Full job fit error: %s", common_info.JobFitErrorsToDetailedMessage(job.JobFitErrors))
+		})
 	}
 
 	if len(msg) == 0 {
@@ -495,9 +541,11 @@ func (su *defaultStatusUpdater) recordUnschedulablePodGroup(job *podgroup_info.P
 func (su *defaultStatusUpdater) updatePodGroupSchedulingCondition(
 	podGroup *enginev2alpha2.PodGroup, schedulingCondition *enginev2alpha2.SchedulingCondition,
 ) bool {
-	log.InfraLogger.V(6).Infof(
-		"Updating pod group scheduling condition for %s/%s to (%s,nodepool=%s)",
-		podGroup.Namespace, podGroup.Name, schedulingCondition.Type, schedulingCondition.NodePool)
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof(
+			"Updating pod group scheduling condition for %s/%s to (%s,nodepool=%s)",
+			podGroup.Namespace, podGroup.Name, schedulingCondition.Type, schedulingCondition.NodePool)
+	})
 	return setPodGroupSchedulingCondition(podGroup, schedulingCondition)
 }
 

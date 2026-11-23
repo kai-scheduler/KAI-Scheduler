@@ -4,10 +4,12 @@
 package runtimeenforcement
 
 import (
+	"context"
+
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/utils/ptr"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
+	"github.com/kai-scheduler/api/utilities/resources"
 )
 
 type RuntimeEnforcement struct {
@@ -24,7 +26,7 @@ func (p *RuntimeEnforcement) Name() string {
 	return "runtimeenforcement"
 }
 
-func (p *RuntimeEnforcement) Validate(pod *v1.Pod) error {
+func (p *RuntimeEnforcement) Validate(context.Context, *v1.Pod, *v1.Pod) error {
 	return nil
 }
 

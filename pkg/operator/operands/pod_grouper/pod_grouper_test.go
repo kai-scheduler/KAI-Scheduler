@@ -12,9 +12,9 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	enginev1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
 	test_utils "github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common/test_utils"
+	enginev1alpha1 "github.com/kai-scheduler/api/kai/v1"
+	"github.com/kai-scheduler/api/kai/v1/common"
 
 	appsv1 "k8s.io/api/apps/v1"
 	policyv1 "k8s.io/api/policy/v1"

@@ -17,7 +17,7 @@ tests:
     asserts:
       - equal:
           path: spec.template.spec.containers[0].image
-          value: ghcr.io/nvidia/kai-scheduler/crd-upgrader:0.0.0
+          value: ghcr.io/nvidia/kai-scheduler/helm-hooks:0.0.0
 
   - it: should override image registry when crdupgrader.image.registry is set
     set:
@@ -26,4 +26,10 @@ tests:
     asserts:
       - equal:
           path: spec.template.spec.containers[0].image
-          value: my-mirror.example.com/kai/crd-upgrader:0.0.0
+          value: my-mirror.example.com/kai/helm-hooks:0.0.0
+
+  - it: should run the apply-crds subcommand
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].args
+          value: ["apply-crds"]

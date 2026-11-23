@@ -6,8 +6,8 @@ package binder
 import (
 	"context"
 
-	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common"
+	kaiv1 "github.com/kai-scheduler/api/kai/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 

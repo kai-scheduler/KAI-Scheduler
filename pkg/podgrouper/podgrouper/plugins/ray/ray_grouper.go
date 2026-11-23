@@ -16,10 +16,10 @@ import (
 
 	"github.com/ray-project/kuberay/ray-operator/controllers/ray/utils"
 
-	schedulingv2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
+	"github.com/kai-scheduler/api/podgrouper/constants"
+	schedulingv2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
 )
 
 var logger = log.FromContext(context.Background())
@@ -202,6 +202,11 @@ func calcJobNumOfPodsAndSubGroups(topOwner *unstructured.Unstructured) (int32, [
 		return minReplicas, subGroups, nil
 	}
 
+	autoscaling, _, err := unstructured.NestedBool(topOwner.Object, "spec", "enableInTreeAutoscaling")
+	if err != nil {
+		return 0, nil, err
+	}
+
 	for groupIndex, groupSpec := range workerGroupSpecs {
 		groupMinReplicas, groupDesiredReplicas, err := getReplicaCountersForWorkerGroup(groupSpec, groupIndex)
 		if err != nil {
@@ -217,8 +222,9 @@ func calcJobNumOfPodsAndSubGroups(topOwner *unstructured.Unstructured) (int32, [
 		}
 
 		workerGroupMinReplicas := int32(groupDesiredReplicas * numOfHosts)
-		if groupMinReplicas > 0 {
-			// if minReplicas is set, use it to calculate the min number for workload scheduling
+		if autoscaling || groupMinReplicas > 0 {
+			// Autoscaling uses minReplicas for the subgroup minimum, even when
+			// it is zero or omitted, regardless of the desired replica count.
 			workerGroupMinReplicas = int32(groupMinReplicas * numOfHosts)
 		}
 		minReplicas += workerGroupMinReplicas

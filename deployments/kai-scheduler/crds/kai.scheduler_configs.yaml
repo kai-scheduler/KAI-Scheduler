@@ -1139,6 +1139,14 @@ spec:
                             type: object
                         type: object
                     type: object
+                  serviceName:
+                    description: |-
+                      ServiceName overrides the webhook Service name and certificate DNS identity.
+                      Defaults to the admission operand's resource name when omitted.
+                    maxLength: 63
+                    minLength: 1
+                    pattern: ^[a-z]([-a-z0-9]*[a-z0-9])?$
+                    type: string
                   validatingWebhookConfigurationName:
                     description: ValidatingWebhookConfigurationName is the name of
                       the ValidatingWebhookConfiguration for the admission service
@@ -4023,6 +4031,16 @@ spec:
                       non-approved cryptographic algorithm is used - see
                       https://go.dev/doc/security/fips140#the-fips140-godebug-option.
                     type: boolean
+                  gpuSharingMode:
+                    description: |-
+                      GpuSharingMode selects a preset that sets defaults for GPU-sharing plugins
+                      across the admission and binder components.
+                    enum:
+                    - NonMemoryEnforced
+                    - HamiCore
+                    - NvFractions
+                    - Disabled
+                    type: string
                   imagesPullSecret:
                     description: |-
                       Deprecated: ImagePullSecret defines a single container registry secret credential.
@@ -8000,6 +8018,11 @@ spec:
                           of the configmap that contains default priorities for pod
                           groups
                         type: string
+                      gangScheduleDeployment:
+                        description: GangScheduleDeployment specifies whether to group
+                          all the pods of a deployment under a single podgroup. Default
+                          is true. Disable to create a podgroup per pod.
+                        type: boolean
                       gangScheduleKnative:
                         description: GangScheduleKnative specifies whether to enable
                           gang scheduling for Knative revisions. Default is true.

@@ -7,10 +7,10 @@ import (
 	"context"
 	"fmt"
 
-	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	generate "github.com/kai-scheduler/KAI-scheduler/pkg/operator/cert-utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common"
+	"github.com/kai-scheduler/api/constants"
+	kaiv1 "github.com/kai-scheduler/api/kai/v1"
 
 	admissionv1 "k8s.io/api/admissionregistration/v1"
 	v1 "k8s.io/api/core/v1"
@@ -68,6 +68,28 @@ func (q *QueueController) deploymentForKAIConfig(
 	}
 
 	return []client.Object{deployment}, nil
+}
+
+func (q *QueueController) podDisruptionBudgetForKAIConfig(
+	ctx context.Context, runtimeClient client.Reader, kaiConfig *kaiv1.Config,
+) ([]client.Object, error) {
+	config := kaiConfig.Spec.QueueController
+	pdbObj, err := common.PodDisruptionBudgetForKAIConfig(
+		ctx,
+		runtimeClient,
+		kaiConfig.Spec.Namespace,
+		q.BaseResourceName,
+		config.Replicas,
+		config.Service,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if pdbObj == nil {
+		return nil, nil
+	}
+
+	return []client.Object{pdbObj}, nil
 }
 
 func (q *QueueController) serviceAccountForKAIConfig(

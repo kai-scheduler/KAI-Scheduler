@@ -55,6 +55,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/version"
+	kaiv1common "github.com/kai-scheduler/api/kai/v1/common"
 )
 
 const (
@@ -96,13 +97,14 @@ func BuildSchedulerParams(opt *options.ServerOption) *conf.SchedulerParams {
 		NodePoolLabelValue: opt.NodePoolLabelValue,
 	}
 
-	return &conf.SchedulerParams{
+	params := &conf.SchedulerParams{
 		SchedulerName:                     opt.SchedulerName,
 		RestrictSchedulingNodes:           opt.RestrictSchedulingNodes,
 		PartitionParams:                   schedulingPartitionParams,
 		MaxNumberConsolidationPreemptees:  opt.MaxNumberConsolidationPreemptees,
 		ScheduleCSIStorage:                opt.ScheduleCSIStorage,
 		UseSchedulingSignatures:           opt.UseSchedulingSignatures,
+		DeferredResizePreemption:          opt.DeferredResizePreemption,
 		FullHierarchyFairness:             opt.FullHierarchyFairness,
 		AllowConsolidatingReclaim:         opt.AllowConsolidatingReclaim,
 		NumOfStatusRecordingWorkers:       opt.NumOfStatusRecordingWorkers,
@@ -113,6 +115,11 @@ func BuildSchedulerParams(opt *options.ServerOption) *conf.SchedulerParams {
 		UpdatePodEvictionCondition:        opt.UpdatePodEvictionCondition,
 		QueueLabelKey:                     opt.QueueLabelKey,
 	}
+	if opt.GpuSharingMode != "" {
+		gpuSharingMode := kaiv1common.GpuSharingMode(opt.GpuSharingMode)
+		params.GpuSharingMode = &gpuSharingMode
+	}
+	return params
 }
 
 func RunApp() error {

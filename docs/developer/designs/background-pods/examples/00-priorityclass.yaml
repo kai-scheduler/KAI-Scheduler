@@ -1,0 +1,13 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# Low priority class for background/maintenance pods.
+# KAI treats a PodGroup as preemptible when its priority is below 100
+# (pkg/common/podgroup/preemptible.go), so any low value works here.
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: maintenance
+value: 1
+globalDefault: false
+description: "Background health-check pods. Always preemptible/reclaimable."

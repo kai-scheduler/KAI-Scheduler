@@ -5,16 +5,16 @@ package resources
 
 import (
 	"context"
-	"reflect"
 	"testing"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/api/constants"
 )
 
 func Test_extractReceivedResources(t *testing.T) {
@@ -70,6 +70,40 @@ func Test_extractReceivedResources(t *testing.T) {
 			v1.ResourceList{constants.NvidiaGpuResource: resource.MustParse("0.4")},
 			false,
 		},
+		{
+			"receivedTypeFraction on multiple devices",
+			args{
+				&v1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Annotations: map[string]string{
+							receivedResourceTypeAnnotationName: receivedTypeFraction,
+							constants.GpuFraction:              "0.5",
+							constants.GpuFractionsNumDevices:   "2",
+						},
+					},
+				},
+				&v1.Node{},
+			},
+			v1.ResourceList{constants.NvidiaGpuResource: resource.MustParse("1")},
+			false,
+		},
+		{
+			"receivedTypeFraction on three devices exceeds one GPU",
+			args{
+				&v1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Annotations: map[string]string{
+							receivedResourceTypeAnnotationName: receivedTypeFraction,
+							constants.GpuFraction:              "0.6",
+							constants.GpuFractionsNumDevices:   "3",
+						},
+					},
+				},
+				&v1.Node{},
+			},
+			v1.ResourceList{constants.NvidiaGpuResource: resource.MustParse("1.8")},
+			false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -85,7 +119,7 @@ func Test_extractReceivedResources(t *testing.T) {
 				t.Errorf("extractReceivedResources() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if !reflect.DeepEqual(got, tt.want) {
+			if !equality.Semantic.DeepEqual(got, tt.want) {
 				t.Errorf("extractReceivedResources() got = %v, want %v", got, tt.want)
 			}
 		})

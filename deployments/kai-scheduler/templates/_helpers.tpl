@@ -132,6 +132,18 @@ spec:
     {{- if .Values.podgrouper.queueLabelKey }}
     queueLabelKey: {{ .Values.podgrouper.queueLabelKey | quote }}
     {{- end }}
+    {{- /* GpuSharingMode precedence: nvFractions.set forces NvFractions (validate.yaml has
+           already rejected a conflicting explicit mode, so this only guards against a legacy
+           gpuSharing value downgrading it); then an explicit (non-empty) mode; then a legacy
+           gpuSharing value is passed through (operator derives the mode); when none is set,
+           default to NonMemoryEnforced. */}}
+    {{- if .Values.global.nvFractions.set }}
+    gpuSharingMode: NvFractions
+    {{- else if .Values.global.gpuSharingMode }}
+    gpuSharingMode: {{ .Values.global.gpuSharingMode }}
+    {{- else if not (hasKey .Values.global "gpuSharing") }}
+    gpuSharingMode: NonMemoryEnforced
+    {{- end }}
 
   binder:
     service:
@@ -214,8 +226,17 @@ spec:
         maxUnavailable: {{ .Values.podgrouper.podDisruptionBudget.maxUnavailable }}
         {{- end }}
       {{- end }}
+    {{- $pgArgs := dict }}
+    {{- range $k, $v := (.Values.podgrouper.args | default dict) }}
+    {{- $_ := set $pgArgs $k $v }}
+    {{- end }}
+    {{- if hasKey .Values.podgrouper "genericKartaFallback" }}
+    {{- $_ := set $pgArgs "genericKartaFallback" .Values.podgrouper.genericKartaFallback }}
+    {{- end }}
+    {{- if $pgArgs }}
     args:
-      genericKartaFallback: {{ .Values.podgrouper.genericKartaFallback }}
+      {{- toYaml $pgArgs | nindent 6 }}
+    {{- end }}
 
   podGroupController:
     service:
@@ -250,6 +271,15 @@ spec:
       affinity:
         {{- toYaml .Values.queuecontroller.affinity | nindent 8 }}
       {{- end }}
+      {{- if .Values.queuecontroller.podDisruptionBudget }}
+      podDisruptionBudget:
+        {{- if hasKey .Values.queuecontroller.podDisruptionBudget "enabled" }}
+        enabled: {{ .Values.queuecontroller.podDisruptionBudget.enabled }}
+        {{- end }}
+        {{- if hasKey .Values.queuecontroller.podDisruptionBudget "maxUnavailable" }}
+        maxUnavailable: {{ .Values.queuecontroller.podDisruptionBudget.maxUnavailable }}
+        {{- end }}
+      {{- end }}
 
   admission:
     service:
@@ -276,7 +306,9 @@ spec:
         maxUnavailable: {{ .Values.admission.podDisruptionBudget.maxUnavailable }}
         {{- end }}
       {{- end }}
-    gpuSharing: {{ .Values.global.gpuSharing | default false }}
+    {{- if and (not .Values.global.nvFractions.set) (not .Values.global.gpuSharingMode) (hasKey .Values.global "gpuSharing") }}
+    gpuSharing: {{ .Values.global.gpuSharing }}
+    {{- end }}
     blockNvidiaVisibleDevices: {{ .Values.global.blockNvidiaVisibleDevices | default false }}
     queueLabelSelector: false
     webhook:
@@ -344,11 +376,15 @@ spec:
       port: {{ .Values.scheduler.ports.metricsPort }}
     {{- end }}
 
-  {{- if .Values.prometheus.enabled }}
+  {{- if or .Values.prometheus.enabled .Values.prometheus.serviceMonitor.enabled }}
   prometheus:
-    enabled: true
+    enabled: {{ .Values.prometheus.enabled }}
     {{- if .Values.prometheus.externalPrometheusUrl }}
     externalPrometheusUrl: {{ .Values.prometheus.externalPrometheusUrl | quote }}
+    {{- end }}
+    {{- if .Values.prometheus.serviceMonitor.enabled }}
+    serviceMonitor:
+      enabled: {{ .Values.prometheus.serviceMonitor.enabled }}
     {{- end }}
   {{- end }}
 

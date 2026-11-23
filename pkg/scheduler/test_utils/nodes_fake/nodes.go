@@ -17,9 +17,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 
-	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -30,6 +27,9 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/resources_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
+	commonconstants "github.com/kai-scheduler/api/constants"
+	schedulingv1alpha2 "github.com/kai-scheduler/api/scheduling/v1alpha2"
+	"github.com/kai-scheduler/api/utilities/resources"
 )
 
 const (
@@ -58,6 +58,9 @@ type TestNodeBasic struct {
 	MaxTaskNum      *int
 	Labels          map[string]string
 	NumaTopology    *node_info.NumaTopology
+	Conditions      *[]v1.NodeCondition
+	Unschedulable   bool
+	Taints          []v1.Taint
 }
 
 func BuildNodesInfoMap(
@@ -194,6 +197,18 @@ func buildNodeInfo(
 	}
 	for labelKey, labelValue := range nodeMetadata.Labels {
 		node.Labels[labelKey] = labelValue
+	}
+	node.Spec.Unschedulable = nodeMetadata.Unschedulable
+	node.Spec.Taints = nodeMetadata.Taints
+	if nodeMetadata.Conditions != nil {
+		node.Status.Conditions = *nodeMetadata.Conditions
+	} else if nodeMetadata.GPUs > 0 {
+		node.Status.Conditions = []v1.NodeCondition{
+			{
+				Type:   v1.NodeConditionType(commonconstants.NvFractionNodeReadyConditionType),
+				Status: v1.ConditionTrue,
+			},
+		}
 	}
 	if nodeMetadata.GPUMemory > 0 {
 		node.Labels[node_info.GpuMemoryLabel] = strconv.Itoa(nodeMetadata.GPUMemory)

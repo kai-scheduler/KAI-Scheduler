@@ -11,6 +11,7 @@ metadata:
     kai.scheduler/queue: default-queue   # Required: assigns pod to a queue
 spec:
   schedulerName: kai-scheduler           # Required: use KAI Scheduler
+  automountServiceAccountToken: false
   containers:
     - name: main
       image: ubuntu
@@ -19,4 +20,5 @@ spec:
       resources:
         limits:
           nvidia.com/gpu: "1"            # Request 1 GPU
+          memory: 1Gi
 

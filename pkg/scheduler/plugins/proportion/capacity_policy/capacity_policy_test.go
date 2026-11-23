@@ -9,8 +9,6 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -19,6 +17,8 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	rs "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
+	commonconstants "github.com/kai-scheduler/api/constants"
+	"github.com/kai-scheduler/api/scheduling/v2alpha2"
 	"k8s.io/utils/ptr"
 )
 
@@ -375,8 +375,7 @@ var _ = Describe("Capacity Policy Check", func() {
 				testData := data
 				It(testName, func() {
 					capacityPolicy := New(testData.queues, ptr.To[int64](node_info.DefaultGpuMemory))
-					tasksToAllocate := podgroup_info.GetTasksToAllocate(testData.job, dummyTasksLessThen,
-						dummyTasksLessThen, true)
+					tasksToAllocate := getTasksToAllocate(testData.job)
 					result := capacityPolicy.IsJobOverQueueCapacity(testData.job, tasksToAllocate)
 					Expect(result.IsSchedulable).To(Equal(testData.expectedResult))
 				})
@@ -534,8 +533,7 @@ var _ = Describe("Capacity Policy Check", func() {
 				testData := data
 				It(testName, func() {
 					capacityPolicy := New(testData.queues, ptr.To[int64](node_info.DefaultGpuMemory))
-					tasksToAllocate := podgroup_info.GetTasksToAllocate(testData.job, dummyTasksLessThen,
-						dummyTasksLessThen, true)
+					tasksToAllocate := getTasksToAllocate(testData.job)
 					result := capacityPolicy.IsJobOverQueueCapacity(testData.job, tasksToAllocate)
 					Expect(result.IsSchedulable).To(Equal(testData.expectedResult))
 				})
@@ -696,8 +694,7 @@ var _ = Describe("Capacity Policy Check", func() {
 				testData := data
 				It(testName, func() {
 					capacityPolicy := New(testData.queues, ptr.To[int64](node_info.DefaultGpuMemory))
-					tasksToAllocate := podgroup_info.GetTasksToAllocate(testData.job, dummyTasksLessThen,
-						dummyTasksLessThen, true)
+					tasksToAllocate := getTasksToAllocate(testData.job)
 					result := capacityPolicy.IsNonPreemptibleJobOverQuota(testData.job, tasksToAllocate)
 					Expect(result.IsSchedulable).To(Equal(testData.expectedResult))
 				})
@@ -1432,4 +1429,15 @@ var _ = Describe("Capacity Policy Check", func() {
 
 func dummyTasksLessThen(_ interface{}, _ interface{}) bool {
 	return false
+}
+
+func getTasksToAllocate(job *podgroup_info.PodGroupInfo) []*pod_info.PodInfo {
+	root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+	for _, podSet := range job.PodSets {
+		root.AddPodSet(podSet)
+	}
+	job.RootSubGroupSet = root
+	return podgroup_info.GetTasksToAllocate(
+		job, dummyTasksLessThen, dummyTasksLessThen, podgroup_info.RealTaskAllocation,
+	)
 }

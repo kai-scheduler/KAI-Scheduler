@@ -24,7 +24,6 @@ import (
 	"maps"
 	"net/http"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
@@ -34,6 +33,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/api/constants"
 )
 
 func (ssn *Session) AddGPUOrderFn(gof api.GpuOrderFn) {
@@ -136,9 +136,9 @@ func (ssn *Session) AddNumaPlacementFn(fn api.NumaPlacementFn) {
 	ssn.NumaPlacementFn = fn
 }
 
-func (ssn *Session) GetNumaPlacement(task *pod_info.PodInfo, node *node_info.NodeInfo) pod_info.NUMAPlacement {
+func (ssn *Session) GetNumaPlacement(task *pod_info.PodInfo, node *node_info.NodeInfo) (pod_info.NUMAPlacement, error) {
 	if ssn.NumaPlacementFn == nil {
-		return nil
+		return pod_info.NUMAPlacement{}, nil
 	}
 	return ssn.NumaPlacementFn(task, node)
 }
@@ -418,8 +418,10 @@ func (ssn *Session) SubsetNodesFn(
 ) ([]node_info.NodeSet, error) {
 	nodeSets := []node_info.NodeSet{initNodeSet}
 	for _, subsetNodesFn := range ssn.SubsetNodesFns {
-		log.InfraLogger.V(7).Infof(
-			"Running plugin func <%v> on podGroup <%s/%s>", subsetNodesFn, podGroup.Namespace, podGroup.Namespace)
+		log.InfraLogger.V(7).Do(func() {
+			log.InfraLogger.Infof(
+				"Running plugin func <%v> on podGroup <%s/%s>", subsetNodesFn, podGroup.Namespace, podGroup.Namespace)
+		})
 		var newNodeSets []node_info.NodeSet
 		for _, nodeSet := range nodeSets {
 			nodeSubsets, err := subsetNodesFn(podGroup, subGroupInfo, podSets, tasks, nodeSet)
@@ -445,18 +447,21 @@ func logNodeSetsPluginResult(subsetNodesFn api.SubsetNodesFn, podGroup *podgroup
 			}
 			nodeSetNames = append(nodeSetNames, names)
 		}
-		log.InfraLogger.V(7).Infof(
+		log.InfraLogger.Infof(
 			"Result of plugin func <%v> on podGroup <%s/%s> is %v", subsetNodesFn, podGroup.Namespace, podGroup.Namespace,
 			nodeSetNames)
 	})
 }
 
 func (ssn *Session) PrePredicateFn(task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo) error {
+	ssn.dropAffinityState(task.Pod.UID)
 	for _, prePredicate := range ssn.PrePredicateFns {
 		err := prePredicate(task, job)
 		if err != nil {
-			log.InfraLogger.V(6).Infof(
-				"Failed to run Pre-Predicate on task %s", task.Name)
+			log.InfraLogger.V(6).Do(func() {
+				log.InfraLogger.Infof(
+					"Failed to run Pre-Predicate on task %s", task.Name)
+			})
 			return err
 		}
 	}
@@ -479,8 +484,10 @@ func (ssn *Session) PredicateFn(task *pod_info.PodInfo, job *podgroup_info.PodGr
 	for _, pfn := range ssn.PredicateFns {
 		err := pfn(task, job, node)
 		if err != nil {
-			log.InfraLogger.V(6).Infof(
-				"Failed to run Predicate on task %s", task.Name)
+			log.InfraLogger.V(6).Do(func() {
+				log.InfraLogger.Infof(
+					"Failed to run Predicate on task %s", task.Name)
+			})
 			return err
 		}
 	}

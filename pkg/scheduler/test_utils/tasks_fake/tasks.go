@@ -6,15 +6,17 @@ package tasks_fake
 import (
 	"fmt"
 	"maps"
+	"strconv"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	commonconstants "github.com/kai-scheduler/api/constants"
+	"github.com/kai-scheduler/api/utilities/resources"
 )
 
 const (
@@ -23,14 +25,20 @@ const (
 )
 
 type TestTaskBasic struct {
-	Name                       string
-	GPUGroups                  []string
-	SubGroupName               string
-	RequiredGPUs               *int64
-	State                      pod_status.PodStatus
-	NodeName                   string // Relevant if job is running
-	NodeAffinityNames          []string
-	PodAffinityLabels          map[string]string
+	Name              string
+	GPUGroups         []string
+	SubGroupName      string
+	RequiredGPUs      *int64
+	State             pod_status.PodStatus
+	NodeName          string // Relevant if job is running
+	NodeAffinityNames []string
+	Annotations       map[string]string
+	PodAffinityLabels map[string]string
+	// PodAffinityLabels are put on the pod and, by default, also select the pods it attracts and
+	// repels (a pod attracting/repelling its own kind). PodAntiAffinitySelector overrides only the
+	// required anti-affinity term's matchLabels and is never added to the pod's labels, so a task
+	// can repel another set of pods without repelling itself. nil keeps the legacy behaviour.
+	PodAntiAffinitySelector    map[string]string
 	PodAffinityTopologyKey     string
 	PodAntiAffinityTopologyKey string
 	RequiredMigInstances       map[v1.ResourceName]int
@@ -39,14 +47,26 @@ type TestTaskBasic struct {
 	ResourceClaimTemplates     map[string]string
 	ResourceClaimNames         []string
 	PersistentVolumeClaimNames []string
-	Annotations                map[string]string
+	// ResizeStatus holds the allocated/enacted size; the job's request is the desired size.
+	ResizeStatus *TestResizeStatus
+	HostPorts    []int32
+	// ConfigMapNames are required by the main container through envFrom.
+	ConfigMapNames []string
+}
+
+// TestResizeStatus uses the same units as the job's RequiredCPUsPerTask/RequiredMemoryPerTask.
+type TestResizeStatus struct {
+	ActualCPUs   float64
+	ActualMemory float64
+	Deferred     bool
+	Infeasible   bool
 }
 
 func BuildPod(
 	name, namespace string,
 	task *TestTaskBasic,
 	phase v1.PodPhase, req v1.ResourceList,
-	gpuFraction, gpuMemory string, gpuGroups []string, jobName string,
+	gpuFraction string, gpuMemoryMiB uint64, gpuGroups []string, jobName string,
 ) *v1.Pod {
 	controllerBool := true
 	pod := &v1.Pod{
@@ -68,7 +88,6 @@ func BuildPod(
 			}(),
 			Annotations: map[string]string{
 				commonconstants.GpuFraction:              gpuFraction,
-				commonconstants.GpuMemory:                gpuMemory,
 				commonconstants.PodGroupAnnotationForPod: jobName,
 			},
 		},
@@ -79,6 +98,7 @@ func BuildPod(
 			NodeName: task.NodeName,
 			Containers: []v1.Container{
 				{
+					Name: "main",
 					Resources: v1.ResourceRequirements{
 						Requests: req,
 					},
@@ -86,6 +106,10 @@ func BuildPod(
 			},
 			SchedulerName: "kai-scheduler",
 		},
+	}
+	maps.Copy(pod.Annotations, task.Annotations)
+	if gpuMemoryMiB > 0 {
+		pod.Annotations[resources.CalcGpuFractionAnnotationForContainer("main")] = resources.GpuMemoryAnnotationToNvFractionsMemoryRequest(gpuMemoryMiB).String()
 	}
 	if len(gpuGroups) > 1 {
 		for _, gpuGroup := range gpuGroups {
@@ -116,13 +140,29 @@ func BuildPod(
 		pod.Spec.Affinity = &v1.Affinity{NodeAffinity: affinity}
 	}
 	pod.Spec.Affinity = applyPodAffinityLabels(
-		pod.Spec.Affinity, task.PodAffinityLabels, task.PodAffinityTopologyKey, task.PodAntiAffinityTopologyKey)
+		pod.Spec.Affinity, task.PodAffinityLabels, task.PodAntiAffinitySelector,
+		task.PodAffinityTopologyKey, task.PodAntiAffinityTopologyKey)
 
 	for migInstance, count := range task.RequiredMigInstances {
 		pod.Annotations[migInstance.String()] = fmt.Sprintf("%d", count)
 	}
 
 	maps.Copy(pod.Annotations, task.Annotations)
+
+	applyResizeStatus(pod, task.ResizeStatus)
+	for _, hostPort := range task.HostPorts {
+		pod.Spec.Containers[0].Ports = append(pod.Spec.Containers[0].Ports, v1.ContainerPort{
+			ContainerPort: hostPort,
+			HostPort:      hostPort,
+			Protocol:      v1.ProtocolTCP,
+		})
+	}
+
+	for _, configMapName := range task.ConfigMapNames {
+		pod.Spec.Containers[0].EnvFrom = append(pod.Spec.Containers[0].EnvFrom, v1.EnvFromSource{
+			ConfigMapRef: &v1.ConfigMapEnvSource{LocalObjectReference: v1.LocalObjectReference{Name: configMapName}},
+		})
+	}
 
 	for _, claimName := range task.ResourceClaimNames {
 		pod.Spec.ResourceClaims = append(pod.Spec.ResourceClaims, v1.PodResourceClaim{
@@ -145,6 +185,36 @@ func BuildPod(
 	return pod
 }
 
+func applyResizeStatus(pod *v1.Pod, resizeStatus *TestResizeStatus) {
+	if resizeStatus == nil {
+		return
+	}
+	actual := pod.Spec.Containers[0].Resources.Requests.DeepCopy()
+	if resizeStatus.ActualCPUs > 0 {
+		actual[v1.ResourceCPU] = resource.MustParse(strconv.FormatFloat(resizeStatus.ActualCPUs, 'f', -1, 64))
+	}
+	if resizeStatus.ActualMemory > 0 {
+		actual[v1.ResourceMemory] = resource.MustParse(strconv.FormatFloat(resizeStatus.ActualMemory, 'f', -1, 64))
+	}
+	pod.Status.ContainerStatuses = []v1.ContainerStatus{{
+		Name:               pod.Spec.Containers[0].Name,
+		AllocatedResources: actual,
+		Resources:          &v1.ResourceRequirements{Requests: actual.DeepCopy()},
+	}}
+
+	if resizeStatus.Deferred || resizeStatus.Infeasible {
+		reason := v1.PodReasonDeferred
+		if resizeStatus.Infeasible {
+			reason = v1.PodReasonInfeasible
+		}
+		pod.Status.Conditions = append(pod.Status.Conditions, v1.PodCondition{
+			Type:   v1.PodResizePending,
+			Status: v1.ConditionTrue,
+			Reason: reason,
+		})
+	}
+}
+
 func GetTestTaskGPUIndex(testTask *TestTaskBasic) []string {
 	var gpuIndexValue []string
 	if len(testTask.GPUGroups) > 0 {
@@ -163,11 +233,17 @@ func IsTaskStartedStatus(status pod_status.PodStatus) bool {
 }
 
 func applyPodAffinityLabels(
-	affinity *v1.Affinity, podAffinityLabels map[string]string,
+	affinity *v1.Affinity, podAffinityLabels, podAntiAffinitySelector map[string]string,
 	podAffinityTopologyKey, podAntiAffinityTopologyKey string,
 ) *v1.Affinity {
 	if affinity == nil {
 		affinity = &v1.Affinity{}
+	}
+	// Legacy default: a pod repels pods carrying its own PodAffinityLabels. The selector is an
+	// override, not a merge: matchLabels is a conjunction, so merging would narrow it and could
+	// not express two values of the same key (e.g. repel tier=train while being tier=preprocess).
+	if podAntiAffinitySelector == nil {
+		podAntiAffinitySelector = podAffinityLabels
 	}
 
 	if podAffinityLabels != nil && len(podAffinityTopologyKey) != 0 {
@@ -185,12 +261,12 @@ func applyPodAffinityLabels(
 		affinity.PodAffinity.RequiredDuringSchedulingIgnoredDuringExecution = terms
 	}
 
-	if podAffinityLabels != nil && len(podAntiAffinityTopologyKey) != 0 {
+	if podAntiAffinitySelector != nil && len(podAntiAffinityTopologyKey) != 0 {
 		terms := []v1.PodAffinityTerm{
 			{
 				TopologyKey: podAntiAffinityTopologyKey,
 				LabelSelector: &metav1.LabelSelector{
-					MatchLabels: podAffinityLabels,
+					MatchLabels: podAntiAffinitySelector,
 				},
 			},
 		}

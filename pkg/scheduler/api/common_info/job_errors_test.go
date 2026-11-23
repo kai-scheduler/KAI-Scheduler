@@ -10,8 +10,8 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
-	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	enginev2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
 )
 
 var errorsTestVectorMap *resource_info.ResourceVectorMap
@@ -445,7 +445,7 @@ func TestNewTopologyInsufficientResourcesError(t *testing.T) {
 					subGroupName:     "subgroup1",
 					reason:           UnschedulableWorkloadReason,
 					messages:         []string{"node-group(s) didn't have enough resources: custom.io/res"},
-					detailedMessages: []string{"domain1 didn't have enough resource: custom.io/res, requested: 5000, available: 3000"},
+					detailedMessages: []string{"domain1 didn't have enough resource: custom.io/res, requested: 5, available: 3"},
 				},
 				nodesGroupName: "domain1",
 			},

@@ -7,8 +7,8 @@ import (
 	"context"
 	"fmt"
 
-	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	v2 "github.com/kai-scheduler/api/scheduling/v2"
+	"github.com/kai-scheduler/api/scheduling/v2alpha2"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -44,6 +44,7 @@ func init() {
 }
 
 // +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
 func Run(opts *Options, clientConfig *rest.Config, ctx context.Context) error {
 	metrics.InitMetrics(opts.MetricsNamespace, opts.QueueLabelToMetricLabel.Get(), opts.QueueLabelToDefaultMetricValue.Get())

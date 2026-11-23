@@ -25,7 +25,7 @@ spec:
         imagePullPolicy: {{ .Values.operator.image.pullPolicy }}
         {{- with .Values.operator.resources }}
         resources:
-          {{- toYaml . | nindent 12 }}
+          {{- toYaml . | nindent 10 }}
         {{- end }}
         args:
           - --metrics-bind-address={{ .Values.operator.metricsBindAddress | default ":8080" }}

@@ -65,6 +65,7 @@ spec:
     spec:
       schedulerName: kai-scheduler
       restartPolicy: Never
+      automountServiceAccountToken: false
       containers:
         - name: worker
           image: busybox:1.36
@@ -72,9 +73,11 @@ spec:
           resources:
             requests:
               cpu: "250m"
+              memory: "1Gi"
               nvidia.com/gpu: "4"
             limits:
               cpu: "250m"
+              memory: "1Gi"
               nvidia.com/gpu: "4"
 
 ---
@@ -98,6 +101,7 @@ spec:
     spec:
       schedulerName: kai-scheduler
       restartPolicy: Never
+      automountServiceAccountToken: false
       containers:
         - name: worker
           image: busybox:1.36
@@ -105,7 +109,9 @@ spec:
           resources:
             requests:
               cpu: "250m"
+              memory: "1Gi"
               nvidia.com/gpu: "4"
             limits:
               cpu: "250m"
+              memory: "1Gi"
               nvidia.com/gpu: "4"

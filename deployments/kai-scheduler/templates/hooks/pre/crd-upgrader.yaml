@@ -41,6 +41,7 @@ spec:
       - name: upgrader
         image: "{{ .Values.crdupgrader.image.registry | default .Values.global.registry }}/{{ .Values.crdupgrader.image.name }}:{{ include "kai-scheduler.imageTag" (dict "root" $ "tag" .Values.crdupgrader.image.tag) }}"
         imagePullPolicy: {{ .Values.crdupgrader.image.pullPolicy }}
+        args: ["apply-crds"]
         {{- with .Values.crdupgrader.resources }}
         resources:
           {{- toYaml . | nindent 10 }}

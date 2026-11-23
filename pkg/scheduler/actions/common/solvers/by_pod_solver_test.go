@@ -48,6 +48,7 @@ func newByPodSolverRollbackTestScenario(t *testing.T) (*framework.Session, *scen
 	require.NoError(t, ssn.InitNodeScoringPool())
 	_, victimTasks := addGeneratorTestJob(t, ssn, 1, 20, "team-victim", "node-1")
 	pendingJob := addGeneratorTestPendingJob(t, ssn, 1, 10, "team-pending")
-	pendingTasks := podgroup_info.GetTasksToAllocate(pendingJob, ssn.SubGroupOrderFn, ssn.TaskOrderFn, false)
+	pendingTasks := podgroup_info.GetTasksToAllocate(pendingJob, ssn.SubGroupOrderFn, ssn.TaskOrderFn,
+		podgroup_info.SimulatedTaskAllocation)
 	return ssn, scenario.NewByNodeScenario(ssn, pendingJob, pendingTasks, victimTasks, nil)
 }

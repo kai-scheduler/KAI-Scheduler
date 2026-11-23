@@ -15,17 +15,18 @@ import (
 	"k8s.io/dynamic-resource-allocation/deviceclass/extendedresourcecache"
 	"k8s.io/dynamic-resource-allocation/structured"
 	ksf "k8s.io/kube-scheduler/framework"
+	k8splfeature "k8s.io/kubernetes/pkg/scheduler/framework/plugins/feature"
 
-	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	featuregates "github.com/kai-scheduler/KAI-scheduler/pkg/common/feature_gates"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/k8s_utils"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/api/constants"
+	schedulingv1alpha2 "github.com/kai-scheduler/api/scheduling/v1alpha2"
+	"github.com/kai-scheduler/api/utilities/resources"
 )
 
 const (
@@ -36,11 +37,26 @@ const (
 type draPlugin struct {
 	manager               ksf.SharedDRAManager
 	celCache              *cel.Cache
+	allocatorFeatures     structured.Features
 	queueLabelKey         string
 	deviceClassByResource *extendedresourcecache.ExtendedResourceCache
 }
 
 // +kubebuilder:rbac:groups="resource.k8s.io",resources=deviceclasses;resourceslices;resourceclaims,verbs=get;list;watch
+
+// allocatorFeatures maps the upstream scheduler feature gates to the
+// structured allocator's Features, mirroring
+// k8s.io/kubernetes/pkg/scheduler/framework/plugins/dynamicresources.AllocatorFeatures.
+func allocatorFeatures(features k8splfeature.Features) structured.Features {
+	return structured.Features{
+		AdminAccess:            features.EnableDRAAdminAccess,
+		PrioritizedList:        features.EnableDRAPrioritizedList,
+		PartitionableDevices:   features.EnableDRAPartitionableDevices,
+		DeviceTaints:           features.EnableDRADeviceTaints,
+		DeviceBindingAndStatus: features.EnableDRADeviceBindingConditions && features.EnableDRAResourceClaimDeviceStatus,
+		ConsumableCapacity:     features.EnableDRAConsumableCapacity,
+	}
+}
 
 func New(pluginArgs framework.PluginArguments) framework.Plugin {
 	maxCelCacheEntries, err := pluginArgs.GetInt(maxCelCacheEntriesKey, defaultMaxCelCacheEntries)
@@ -51,7 +67,8 @@ func New(pluginArgs framework.PluginArguments) framework.Plugin {
 
 	features := k8s_utils.GetK8sFeatures()
 	return &draPlugin{
-		celCache: cel.NewCache(maxCelCacheEntries, cel.Features{EnableConsumableCapacity: features.EnableDRAConsumableCapacity}),
+		celCache:          cel.NewCache(maxCelCacheEntries, cel.Features{EnableConsumableCapacity: features.EnableDRAConsumableCapacity}),
+		allocatorFeatures: allocatorFeatures(features),
 	}
 }
 
@@ -270,7 +287,7 @@ func (drap *draPlugin) filter(task *pod_info.PodInfo, _ *podgroup_info.PodGroupI
 	}
 
 	allocator, err := structured.NewAllocator(
-		context.Background(), structured.Features{},
+		context.Background(), drap.allocatorFeatures,
 		*allocatedState,
 		drap.manager.DeviceClasses(),
 		slices,
@@ -415,7 +432,7 @@ func (drap *draPlugin) allocate(node *v1.Node, claims []*resourceapi.ResourceCla
 		return nil, fmt.Errorf("failed to list resource slices: %v", err)
 	}
 	allocator, err := structured.NewAllocator(
-		context.Background(), structured.Features{},
+		context.Background(), drap.allocatorFeatures,
 		*allocatedState,
 		drap.manager.DeviceClasses(),
 		slices,
@@ -465,7 +482,9 @@ func (drap *draPlugin) allocateResourceClaim(task *pod_info.PodInfo, podClaim *v
 		return fmt.Errorf("failed to update resource claim %s/%s: %v", task.Namespace, claimName, err)
 	}
 
-	log.InfraLogger.V(6).Infof("Allocated claim <%s/%s>, devices <%s>, allocation data from podInfo: %t.", task.Namespace, claimName, getClaimDevicesString(claim), allocatedFromMemory)
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("Allocated claim <%s/%s>, devices <%s>, allocation data from podInfo: %t.", task.Namespace, claimName, getClaimDevicesString(claim), allocatedFromMemory)
+	})
 
 	task.ResourceClaimInfo[podClaim.Name] = &schedulingv1alpha2.ResourceClaimAllocation{
 		Name:       podClaim.Name,
@@ -488,8 +507,6 @@ func (drap *draPlugin) deallocateResourceClaim(task *pod_info.PodInfo, podClaim 
 
 	claim := originalClaim.DeepCopy() // Modifying the original object will cause the manager to think there were no updates
 
-	devicesDeallocatedStr := getClaimDevicesString(claim)
-
 	resources.RemoveReservedFor(claim, task.Pod)
 	if len(claim.Status.ReservedFor) == 0 {
 		claim.Status.Allocation = nil
@@ -506,7 +523,9 @@ func (drap *draPlugin) deallocateResourceClaim(task *pod_info.PodInfo, podClaim 
 		}
 	}
 
-	log.InfraLogger.V(6).Infof("Deallocated claim <%s/%s>, devices <%s>.", task.Namespace, claimName, devicesDeallocatedStr)
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("Deallocated claim <%s/%s>, devices <%s>.", task.Namespace, claimName, getClaimDevicesString(originalClaim))
+	})
 
 	return nil
 }

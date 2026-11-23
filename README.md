@@ -43,6 +43,7 @@ It can run alongside other schedulers installed on the cluster.
 - [Min-guaranteed-runtime](https://github.com/kai-scheduler/KAI-scheduler/tree/main/docs/developer/designs/min-runtime): ensures a time period in which the scheduler must not preempt or reclaim a running workload, even if preemptible.
 - Workload Consolidation: Reallocate running workloads intelligently to reduce fragmentation and increase cluster utilization.
 - [Elastic Workloads](docs/elastic/README.md): Dynamically scale workloads within defined minimum and maximum pod or SubGroup thresholds.
+- [Background Pods](docs/background-pods/README.md): Run maintenance workloads that the scheduler plans around and evicts on demand, so they never hold capacity from users.
 - Dynamic Resource Allocation (DRA): Support vendor-specific hardware resources through Kubernetes ResourceClaims (e.g., GPUs from NVIDIA or AMD).
 - [Topology-Aware Scheduling (TAS)](https://github.com/kai-scheduler/KAI-scheduler/tree/main/docs/topology): supports optimized placement with [topology aware scheduling](https://github.com/kai-scheduler/KAI-scheduler/tree/main/docs/developer/designs/topology-awareness) and hierarchical topology aware scheduling for [Hierarchical PodGroups](https://github.com/kai-scheduler/KAI-scheduler/tree/main/docs/developer/designs/hierarchical-podgroup).
 - [Hierarchical PodGroups](https://github.com/kai-scheduler/KAI-scheduler/tree/main/docs/developer/designs/hierarchical-podgroup): supports gang scheduling with optimized topology aware scheduling of multi-level workloads, such as distributed and disaggregated workloads such as Dynamo/Grove.
@@ -98,8 +99,10 @@ Follow the instructions [here](docs/developer/building-from-source.md)
 When `gpu-operator` <v25.10.0 is installed, the following flag should be added to the installation command:
 
 ```
---set admission.gpuFractionRuntimeClassName=null
+--set-string admission.gpuFractionRuntimeClassName=""
 ```
+
+Do not set this value to `null`; an unset value is defaulted by the operator to `nvidia`.
 If CDI is enabled, add `--set binder.cdiEnabled=true` to the installation command.
 
 ## Support & Breaking changes

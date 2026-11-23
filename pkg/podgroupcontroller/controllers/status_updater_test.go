@@ -17,7 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/api/scheduling/v2alpha2"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgroupcontroller/controllers/cluster_relations"
 )
@@ -720,7 +720,7 @@ func Test_handlePodGroupStatus(t *testing.T) {
 					Requested: map[v1.ResourceName]resource.Quantity{
 						v1.ResourceCPU:      resource.MustParse("500m"),
 						v1.ResourceMemory:   resource.MustParse("1G"),
-						"run.ai/gpu.memory": resource.MustParse("1k"),
+						"run.ai/gpu.memory": resource.MustParse("1000Mi"),
 					},
 				},
 			},

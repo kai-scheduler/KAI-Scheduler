@@ -15,6 +15,8 @@ import (
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+
+	"github.com/kai-scheduler/api/utilities/resources"
 )
 
 const (
@@ -24,12 +26,6 @@ const (
 	configMapNameNumRandomChars   = 7
 	configMapNameExtraChars       = configMapNameNumRandomChars + 6
 )
-
-type PodContainerRef struct {
-	Container *v1.Container
-	Index     int
-	Type      ContainerType
-}
 
 func UpsertJobConfigMap(ctx context.Context,
 	kubeClient client.Client, pod *v1.Pod, configMapName string, data map[string]string) (err error) {
@@ -97,6 +93,9 @@ func patchConfigMap(
 		updatedConfigMap := existingConfigMap.DeepCopy()
 		for k, v := range desiredConfigMap.Data {
 			if len(v) != 0 {
+				if updatedConfigMap.Data == nil {
+					updatedConfigMap.Data = map[string]string{}
+				}
 				updatedConfigMap.Data[k] = v
 			}
 		}
@@ -112,14 +111,14 @@ func patchConfigMap(
 	return nil
 }
 
-func SetGpuCapabilitiesConfigMapName(pod *v1.Pod, containerRef *PodContainerRef) string {
+func SetGpuCapabilitiesConfigMapName(pod *v1.Pod, containerRef *resources.PodContainerRef) string {
 	namePrefix, found := pod.Annotations[gpuSharingConfigMapAnnotation]
 	if !found {
 		namePrefix = generateConfigMapNamePrefix(pod, containerRef.Index)
 		setConfigMapNameAnnotation(pod, namePrefix)
 	}
 	containerIndexStr := strconv.Itoa(containerRef.Index)
-	if containerRef.Type == InitContainer {
+	if containerRef.Type == resources.InitContainer {
 		containerIndexStr = "i" + containerIndexStr
 	}
 	capabilitiesConfigMapName := fmt.Sprintf("%s-%s", namePrefix, containerIndexStr)
@@ -146,9 +145,9 @@ func generateConfigMapNamePrefix(pod *v1.Pod, containerIndex int) string {
 		utilrand.String(configMapNameNumRandomChars), gpuSharingConfigMap)
 }
 
-func ExtractCapabilitiesConfigMapName(pod *v1.Pod, containerRef *PodContainerRef) (string, error) {
+func ExtractCapabilitiesConfigMapName(pod *v1.Pod, containerRef *resources.PodContainerRef) (string, error) {
 	containerIndexStr := strconv.Itoa(containerRef.Index)
-	if containerRef.Type == InitContainer {
+	if containerRef.Type == resources.InitContainer {
 		containerIndexStr = "i" + containerIndexStr
 	}
 
@@ -160,7 +159,7 @@ func ExtractCapabilitiesConfigMapName(pod *v1.Pod, containerRef *PodContainerRef
 	return capabilitiesConfigMapName, nil
 }
 
-func ExtractDirectEnvVarsConfigMapName(pod *v1.Pod, containerRef *PodContainerRef) (string, error) {
+func ExtractDirectEnvVarsConfigMapName(pod *v1.Pod, containerRef *resources.PodContainerRef) (string, error) {
 	configNameBase, err := ExtractCapabilitiesConfigMapName(pod, containerRef)
 	if err != nil {
 		return "", err

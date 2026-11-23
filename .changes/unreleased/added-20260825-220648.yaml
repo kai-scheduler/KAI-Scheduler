@@ -1,3 +1,0 @@
-kind: Added
-body: |-
-  Add fipsMode=only to allow the enforcement of GODEBUG=fips140=only at runtime on all KAI containers

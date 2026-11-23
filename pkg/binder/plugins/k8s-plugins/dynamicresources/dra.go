@@ -6,6 +6,7 @@ package dynamicresources
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	"google.golang.org/grpc/status"
@@ -20,9 +21,9 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	plugins "github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/k8s-plugins/common"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
+	"github.com/kai-scheduler/api/scheduling/v1alpha2"
+	"github.com/kai-scheduler/api/utilities/resources"
 )
 
 type dynamicResourcesPlugin struct {
@@ -133,6 +134,16 @@ func (drp *dynamicResourcesPlugin) bindResourceClaim(ctx context.Context, desire
 			return err
 		}
 		claim := originalClaim.DeepCopy()
+
+		// The controller needs this finalizer to release unused allocations.
+		// Persist it before UpdateStatus, which cannot update finalizers.
+		if !slices.Contains(claim.Finalizers, resourceapi.Finalizer) {
+			claim.Finalizers = append(claim.Finalizers, resourceapi.Finalizer)
+			claim, err = drp.client.ResourceV1().ResourceClaims(pod.Namespace).Update(ctx, claim, metav1.UpdateOptions{})
+			if err != nil {
+				return err
+			}
+		}
 
 		resources.UpsertReservedFor(claim, pod)
 		if claim.Status.Allocation == nil {

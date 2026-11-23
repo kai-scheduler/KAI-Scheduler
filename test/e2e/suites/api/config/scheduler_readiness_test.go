@@ -18,12 +18,12 @@ import (
 	"k8s.io/utils/ptr"
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/configurations"
 	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/testconfig"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
+	"github.com/kai-scheduler/api/constants"
+	kaiv1 "github.com/kai-scheduler/api/kai/v1"
 )
 
 var _ = Describe("Scheduler leader routing", Ordered, func() {

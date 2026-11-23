@@ -60,17 +60,23 @@ func (jo *JobsOrderByQueues) Len() int {
 
 func (jo *JobsOrderByQueues) PopNextJob() *podgroup_info.PodGroupInfo {
 	if jo.IsEmpty() {
-		log.InfraLogger.V(7).Infof("No active queues")
+		log.InfraLogger.V(7).Do(func() {
+			log.InfraLogger.Infof("No active queues")
+		})
 		return nil
 	}
 
-	log.InfraLogger.V(7).Infof("PopNextJob: rootNodes.Len()=%d, queueNodes count=%d",
-		jo.rootNodes.Len(), len(jo.queueNodes))
+	log.InfraLogger.V(7).Do(func() {
+		log.InfraLogger.Infof("PopNextJob: rootNodes.Len()=%d, queueNodes count=%d",
+			jo.rootNodes.Len(), len(jo.queueNodes))
+	})
 
 	// Traverse down the tree to find the best leaf node
 	leafNode := jo.traverseToLeaf(jo.rootNodes)
 	if leafNode == nil {
-		log.InfraLogger.V(7).Warnf("PopNextJob: traverseToLeaf returned nil")
+		log.InfraLogger.V(7).Do(func() {
+			log.InfraLogger.Warningf("PopNextJob: traverseToLeaf returned nil")
+		})
 		return nil
 	}
 
@@ -84,7 +90,9 @@ func (jo *JobsOrderByQueues) PopNextJob() *podgroup_info.PodGroupInfo {
 	// Handle cleanup and bubble up needsReorder
 	jo.handlePopFromNode(leafNode)
 
-	log.InfraLogger.V(7).Infof("Popped job: %v", job.Name)
+	log.InfraLogger.V(7).Do(func() {
+		log.InfraLogger.Infof("Popped job: %v", job.Name)
+	})
 	return job
 }
 
@@ -92,7 +100,9 @@ func (jo *JobsOrderByQueues) PushJob(job *podgroup_info.PodGroupInfo) {
 	leafQueueInfo := jo.ssn.ClusterInfo.Queues[job.Queue]
 
 	if !leafQueueInfo.IsLeafQueue() {
-		log.InfraLogger.V(7).Warnf("PushJob: job <%v> is targeting a non-leaf queue <%v>", job.Name, leafQueueInfo.Name)
+		log.InfraLogger.V(7).Do(func() {
+			log.InfraLogger.Warningf("PushJob: job <%v> is targeting a non-leaf queue <%v>", job.Name, leafQueueInfo.Name)
+		})
 		return
 	}
 
@@ -116,7 +126,9 @@ func (jo *JobsOrderByQueues) PushJob(job *podgroup_info.PodGroupInfo) {
 	// Mark ancestors for reordering
 	jo.markAncestorsForReorder(leafNode)
 
-	log.InfraLogger.V(7).Infof("Pushed job: %v for queue %v", job.Name, leafQueueInfo.Name)
+	log.InfraLogger.V(7).Do(func() {
+		log.InfraLogger.Infof("Pushed job: %v for queue %v", job.Name, leafQueueInfo.Name)
+	})
 }
 
 // isRootQueue returns true if the queue has no parent (is at the root level).
@@ -149,8 +161,10 @@ func (jo *JobsOrderByQueues) ensureAncestorChainForPush(childNode *queueNode, ch
 
 	parentQueueInfo, parentExists := jo.ssn.ClusterInfo.Queues[childQueue.ParentQueue]
 	if !parentExists {
-		log.InfraLogger.V(7).Warnf("Queue's parent doesn't exist. Queue: <%v>, Parent: <%v>",
-			childQueue.Name, childQueue.ParentQueue)
+		log.InfraLogger.V(7).Do(func() {
+			log.InfraLogger.Warningf("Queue's parent doesn't exist. Queue: <%v>, Parent: <%v>",
+				childQueue.Name, childQueue.ParentQueue)
+		})
 		return
 	}
 
@@ -206,11 +220,15 @@ func (jo *JobsOrderByQueues) getNextNode(pq *scheduler_util.PriorityQueue) *queu
 
 	if node.children.Empty() {
 		// This should never happen as we prune empty nodes from the tree on handlePopFromNode.
-		log.InfraLogger.V(7).Warnf("Queue node <%v> is active but has no children", node.queue.Name)
+		log.InfraLogger.V(7).Do(func() {
+			log.InfraLogger.Warningf("Queue node <%v> is active but has no children", node.queue.Name)
+		})
 		return nil
 	}
 
-	log.InfraLogger.V(7).Infof("Selected queue: %v (isLeaf=%v)", node.queue.Name, node.isLeaf)
+	log.InfraLogger.V(7).Do(func() {
+		log.InfraLogger.Infof("Selected queue: %v (isLeaf=%v)", node.queue.Name, node.isLeaf)
+	})
 	return node
 }
 
@@ -283,12 +301,16 @@ func (jo *JobsOrderByQueues) buildNodeOrderFn(reverseOrder bool) func(interface{
 		rNode := r.(*queueNode)
 
 		if lNode.children.Empty() {
-			log.InfraLogger.V(7).Infof("Queue node %v has no children", lNode.queue.Name)
+			log.InfraLogger.V(7).Do(func() {
+				log.InfraLogger.Infof("Queue node %v has no children", lNode.queue.Name)
+			})
 			return !reverseOrder
 		}
 
 		if rNode.children.Empty() {
-			log.InfraLogger.V(7).Infof("Queue node %v has no children", rNode.queue.Name)
+			log.InfraLogger.V(7).Do(func() {
+				log.InfraLogger.Infof("Queue node %v has no children", rNode.queue.Name)
+			})
 			return reverseOrder
 		}
 
@@ -322,7 +344,9 @@ func (jo *JobsOrderByQueues) extractJobsForComparison(
 	node *queueNode,
 ) (*podgroup_info.PodGroupInfo, []*podgroup_info.PodGroupInfo) {
 	if node.children.Empty() {
-		log.InfraLogger.V(7).Warnf("extractJobsForComparison: node %v has no children", node.queue.Name)
+		log.InfraLogger.V(7).Do(func() {
+			log.InfraLogger.Warningf("extractJobsForComparison: node %v has no children", node.queue.Name)
+		})
 		return nil, nil
 	}
 
@@ -338,7 +362,9 @@ func (jo *JobsOrderByQueues) extractJobsForComparison(
 func (jo *JobsOrderByQueues) getVictimsForQueue(queueID common_info.QueueID, node *queueNode) []*podgroup_info.PodGroupInfo {
 	victims := jo.poppedJobsByQueue[queueID]
 	if node.children.Empty() {
-		log.InfraLogger.V(7).Warnf("getVictimsForQueue: node %v has no children", node.queue.Name)
+		log.InfraLogger.V(7).Do(func() {
+			log.InfraLogger.Warningf("getVictimsForQueue: node %v has no children", node.queue.Name)
+		})
 		return victims
 	}
 	nextJob := node.children.Peek().(*podgroup_info.PodGroupInfo)

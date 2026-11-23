@@ -8,6 +8,8 @@ import (
 	"reflect"
 	"testing"
 
+	"k8s.io/utils/ptr"
+
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
@@ -250,6 +252,127 @@ func TestSubGroupSet_MinSubGroupZero_AlwaysSatisfied(t *testing.T) {
 		}
 		if got := root.GetNumActiveAllocatedDirectSubGroups(); got != 1 {
 			t.Errorf("root.GetNumActiveAllocatedDirectSubGroups() = %d, want 1 (inner is satisfied via minSubGroup=0)", got)
+		}
+	})
+}
+
+func TestSubGroupSet_IsGangSatisfied(t *testing.T) {
+	tests := []struct {
+		name     string
+		root     *SubGroupSet
+		expected bool
+	}{
+		{
+			name: "nested branch satisfied with optional leaf below minimum",
+			root: func() *SubGroupSet {
+				inner := NewSubGroupSet("inner", nil)
+				inner.SetMinSubGroup(ptr.To(int32(1)))
+				inner.AddPodSet(podSetWithRunningPods("ready", 1, 1))
+				inner.AddPodSet(podSetWithRunningPods("optional", 2, 0))
+
+				root := NewSubGroupSet("root", nil)
+				root.AddSubGroup(inner)
+				return root
+			}(),
+			expected: true,
+		},
+		{
+			name: "required nested branch below leaf minimum",
+			root: func() *SubGroupSet {
+				inner := NewSubGroupSet("inner", nil)
+				inner.AddPodSet(podSetWithRunningPods("not-ready", 2, 1))
+
+				root := NewSubGroupSet("root", nil)
+				root.AddSubGroup(inner)
+				return root
+			}(),
+			expected: false,
+		},
+		{
+			name: "minSubGroup zero is satisfied without active leaves",
+			root: func() *SubGroupSet {
+				root := NewSubGroupSet("root", nil)
+				root.SetMinSubGroup(ptr.To(int32(0)))
+				root.AddPodSet(podSetWithRunningPods("optional", 2, 0))
+				return root
+			}(),
+			expected: true,
+		},
+		{
+			name: "releasing leaf remains gang satisfied",
+			root: func() *SubGroupSet {
+				podSet := NewPodSet("releasing", 1, nil)
+				podSet.AssignTask(&pod_info.PodInfo{UID: "releasing-1", Status: pod_status.Releasing})
+
+				root := NewSubGroupSet("root", nil)
+				root.AddPodSet(podSet)
+				return root
+			}(),
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.root.IsGangSatisfied(); got != tt.expected {
+				t.Errorf("IsGangSatisfied() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+
+	t.Run("no_minSubGroup_requires_all_members", func(t *testing.T) {
+		root := NewSubGroupSet("root", nil)
+		root.AddPodSet(podSetWithRunningPods("a", 2, 2))
+		root.AddPodSet(podSetWithRunningPods("b", 2, 1))
+		if root.IsGangSatisfied() {
+			t.Error("IsGangSatisfied() = true, want false when a member is short and minSubGroup is unset")
+		}
+	})
+	t.Run("no_minSubGroup_all_members_satisfied", func(t *testing.T) {
+		root := NewSubGroupSet("root", nil)
+		root.AddPodSet(podSetWithRunningPods("a", 2, 2))
+		root.AddPodSet(podSetWithRunningPods("b", 2, 2))
+		if !root.IsGangSatisfied() {
+			t.Error("IsGangSatisfied() = false, want true")
+		}
+	})
+	t.Run("minSubGroup_met_with_member_short", func(t *testing.T) {
+		root := NewSubGroupSet("root", nil)
+		root.SetMinSubGroup(ptr.To(int32(2)))
+		root.AddPodSet(podSetWithRunningPods("a", 2, 2))
+		root.AddPodSet(podSetWithRunningPods("b", 2, 2))
+		root.AddPodSet(podSetWithRunningPods("c", 2, 1))
+		if !root.IsGangSatisfied() {
+			t.Error("IsGangSatisfied() = false, want true with 2 of 3 members satisfied")
+		}
+	})
+	t.Run("minSubGroup_not_met", func(t *testing.T) {
+		root := NewSubGroupSet("root", nil)
+		root.SetMinSubGroup(ptr.To(int32(2)))
+		root.AddPodSet(podSetWithRunningPods("a", 2, 2))
+		root.AddPodSet(podSetWithRunningPods("b", 2, 1))
+		root.AddPodSet(podSetWithRunningPods("c", 2, 1))
+		if root.IsGangSatisfied() {
+			t.Error("IsGangSatisfied() = true, want false with 1 of 3 members satisfied")
+		}
+	})
+	t.Run("nested_child_minSubGroup", func(t *testing.T) {
+		root := NewSubGroupSet("root", nil)
+		root.SetMinSubGroup(ptr.To(int32(2)))
+		child := NewSubGroupSet("child", nil)
+		child.SetMinSubGroup(ptr.To(int32(2)))
+		child.AddPodSet(podSetWithRunningPods("x0", 2, 2))
+		child.AddPodSet(podSetWithRunningPods("x1", 2, 2))
+		child.AddPodSet(podSetWithRunningPods("x2", 2, 1))
+		root.AddSubGroup(child)
+		root.AddPodSet(podSetWithRunningPods("y", 2, 2))
+		if !root.IsGangSatisfied() {
+			t.Error("IsGangSatisfied() = false, want true - child is satisfied by its own minSubGroup")
+		}
+
+		child.SetMinSubGroup(ptr.To(int32(3)))
+		if root.IsGangSatisfied() {
+			t.Error("IsGangSatisfied() = true, want false - child now needs all three members")
 		}
 	})
 }

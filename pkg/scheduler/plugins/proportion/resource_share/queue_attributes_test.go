@@ -10,8 +10,8 @@ import (
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	commonconstants "github.com/kai-scheduler/api/constants"
 )
 
 func TestQueueAttributes(t *testing.T) {

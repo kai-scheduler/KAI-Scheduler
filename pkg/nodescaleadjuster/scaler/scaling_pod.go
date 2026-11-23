@@ -10,17 +10,24 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/fips"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/nodescaleadjuster/consts"
+	"github.com/kai-scheduler/api/constants"
 )
 
 func scalingPodName(unschedulablePodNamespace string, unschedulablePodName string) string {
+	// Namespaces cannot contain dots; the prefix also avoids names created with the old hyphen separator.
+	return fmt.Sprintf("scaling.%s.%s", unschedulablePodNamespace, unschedulablePodName)
+}
+
+// legacyScalingPodName is the name format used before scalingPodName added the dot separator.
+func legacyScalingPodName(unschedulablePodNamespace string, unschedulablePodName string) string {
 	return fmt.Sprintf("%s-%s", unschedulablePodNamespace, unschedulablePodName)
 }
 
 func createScalingPodSpec(
 	scalingPodAppLabel string, scalingPodServiceAccount string,
-	unschedulablePod *corev1.Pod, image, namespace string, numDevices int64,
+	unschedulablePod *corev1.Pod, image, namespace string, numDevices int64, fipsOnly bool,
 ) *corev1.Pod {
 	resources := corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{
@@ -58,6 +65,7 @@ func createScalingPodSpec(
 					Image:           image,
 					ImagePullPolicy: corev1.PullIfNotPresent,
 					Resources:       resources,
+					Env:             fips.OnlyEnv(fipsOnly),
 				},
 			},
 			ServiceAccountName: scalingPodServiceAccount,

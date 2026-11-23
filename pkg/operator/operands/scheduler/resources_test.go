@@ -14,15 +14,15 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/kai-scheduler/KAI-scheduler/cmd/scheduler/app/options"
-	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
-	kaiprometheus "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/prometheus"
-	kaiv1qc "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/queue_controller"
-	kaiv1scheduler "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/scheduler"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	operatorcommon "github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common"
 	usagedbapi "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/api/constants"
+	kaiv1 "github.com/kai-scheduler/api/kai/v1"
+	kaiv1common "github.com/kai-scheduler/api/kai/v1/common"
+	kaiprometheus "github.com/kai-scheduler/api/kai/v1/prometheus"
+	kaiv1qc "github.com/kai-scheduler/api/kai/v1/queue_controller"
+	kaiv1scheduler "github.com/kai-scheduler/api/kai/v1/scheduler"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -411,6 +411,33 @@ func TestBuildArgsList(t *testing.T) {
 			notExpected: []string{"leader-elect"},
 		},
 		{
+			name: "with deferred resize preemption from shard args",
+			config: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Global: &kaiv1.GlobalConfig{
+						SchedulerName: ptr.To("test-scheduler"),
+					},
+					Namespace: "kai-system",
+					Scheduler: &kaiv1scheduler.Scheduler{
+						Replicas: ptr.To(int32(1)),
+					},
+				},
+			},
+			shard: &kaiv1.SchedulingShard{
+				Spec: kaiv1.SchedulingShardSpec{
+					Args: map[string]string{
+						"deferred-resize-preemption": "true",
+					},
+				},
+			},
+			expected: map[string]string{
+				"scheduler-conf":             "config.yaml",
+				"scheduler-name":             "test-scheduler",
+				"namespace":                  "kai-system",
+				"deferred-resize-preemption": "true",
+			},
+		},
+		{
 			name: "with json logging",
 			config: &kaiv1.Config{
 				Spec: kaiv1.ConfigSpec{
@@ -432,6 +459,30 @@ func TestBuildArgsList(t *testing.T) {
 				"scheduler-name": "test-scheduler",
 				"namespace":      "kai-system",
 				"log-json":       "true",
+			},
+		},
+		{
+			name: "with gpu sharing mode from global config",
+			config: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Global: &kaiv1.GlobalConfig{
+						SchedulerName:  ptr.To("test-scheduler"),
+						GpuSharingMode: ptr.To(kaiv1common.GpuSharingModeNvFractions),
+					},
+					Namespace: "kai-system",
+					Scheduler: &kaiv1scheduler.Scheduler{
+						Replicas: ptr.To(int32(1)),
+					},
+				},
+			},
+			shard: &kaiv1.SchedulingShard{
+				Spec: kaiv1.SchedulingShardSpec{},
+			},
+			expected: map[string]string{
+				"scheduler-conf":   "config.yaml",
+				"scheduler-name":   "test-scheduler",
+				"namespace":        "kai-system",
+				"gpu-sharing-mode": "NvFractions",
 			},
 		},
 	}
@@ -524,7 +575,8 @@ tiers:
     arguments:
       cpu: binpack
       gpu: binpack
-  - name: gpusharingorder`,
+  - name: gpusharingorder
+  - name: backgroundpods`,
 			},
 		},
 		{
@@ -577,7 +629,8 @@ tiers:
   - name: nodeplacement
     arguments:
       cpu: binpack
-      gpu: spread`,
+      gpu: spread
+  - name: backgroundpods`,
 			},
 		},
 		{
@@ -662,7 +715,8 @@ tiers:
     arguments:
       cpu: binpack
       gpu: binpack
-  - name: gpusharingorder`,
+  - name: gpusharingorder
+  - name: backgroundpods`,
 			},
 		},
 		{
@@ -711,7 +765,8 @@ tiers:
     arguments:
       cpu: binpack
       gpu: binpack
-  - name: gpusharingorder`,
+  - name: gpusharingorder
+  - name: backgroundpods`,
 			},
 		},
 		{
@@ -761,7 +816,8 @@ tiers:
     arguments:
       cpu: binpack
       gpu: binpack
-  - name: gpusharingorder`,
+  - name: gpusharingorder
+  - name: backgroundpods`,
 			},
 		},
 		{
@@ -814,7 +870,8 @@ tiers:
     arguments:
       cpu: binpack
       gpu: binpack
-  - name: gpusharingorder`,
+  - name: gpusharingorder
+  - name: backgroundpods`,
 			},
 		},
 		{
@@ -867,7 +924,8 @@ tiers:
     arguments:
       cpu: binpack
       gpu: binpack
-  - name: gpusharingorder`,
+  - name: gpusharingorder
+  - name: backgroundpods`,
 			},
 		},
 		{
@@ -917,7 +975,8 @@ tiers:
   - name: nodeplacement
     arguments:
       cpu: binpack
-      gpu: spread`,
+      gpu: spread
+  - name: backgroundpods`,
 			},
 		},
 		{
@@ -966,6 +1025,7 @@ tiers:
       cpu: binpack
       gpu: binpack
   - name: gpusharingorder
+  - name: backgroundpods
 usageDBConfig:
   clientType: prometheus
   connectionString: http://prometheus-operated.kai-scheduler.svc.cluster.local:9090
@@ -1213,6 +1273,7 @@ tiers:
       cpu: binpack
       gpu: binpack
   - name: gpusharingorder
+  - name: backgroundpods
 usageDBConfig:
   clientType: prometheus
   connectionString: http://prometheus-operated.kai-scheduler.svc.cluster.local:9090
@@ -1344,6 +1405,79 @@ func TestGetUsageDBConfig(t *testing.T) {
 				assert.NotNil(t, result)
 				assert.Equal(t, "prometheus", result.ClientType)
 				assert.Equal(t, "http://external-tsdb:9090", result.ConnectionString)
+			},
+		},
+		{
+			name: "prometheus with external TSDB connection and internal prometheus enabled",
+			shard: &kaiv1.SchedulingShard{
+				Spec: kaiv1.SchedulingShardSpec{
+					UsageDBConfig: &usagedbapi.UsageDBConfig{
+						ClientType: "prometheus",
+					},
+				},
+			},
+			kaiConfig: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Namespace: "kai-system",
+					Prometheus: &kaiprometheus.Prometheus{
+						Enabled:               ptr.To(true),
+						ExternalPrometheusUrl: ptr.To("http://external-tsdb:9090"),
+					},
+				},
+			},
+			expectError: false,
+			validate: func(t *testing.T, result *usagedbapi.UsageDBConfig) {
+				assert.NotNil(t, result)
+				assert.Equal(t, "http://external-tsdb:9090", result.ConnectionString)
+			},
+		},
+		{
+			name: "prometheus with empty external TSDB connection and internal prometheus enabled",
+			shard: &kaiv1.SchedulingShard{
+				Spec: kaiv1.SchedulingShardSpec{
+					UsageDBConfig: &usagedbapi.UsageDBConfig{
+						ClientType: "prometheus",
+					},
+				},
+			},
+			kaiConfig: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Namespace: "kai-system",
+					Prometheus: &kaiprometheus.Prometheus{
+						Enabled:               ptr.To(true),
+						ExternalPrometheusUrl: ptr.To(""),
+					},
+				},
+			},
+			expectError: false,
+			validate: func(t *testing.T, result *usagedbapi.UsageDBConfig) {
+				assert.NotNil(t, result)
+				assert.Equal(t, "http://usage-prometheus.kai-system.svc.cluster.local:9090", result.ConnectionString)
+			},
+		},
+		{
+			name: "prometheus with explicit connection string and external TSDB connection",
+			shard: &kaiv1.SchedulingShard{
+				Spec: kaiv1.SchedulingShardSpec{
+					UsageDBConfig: &usagedbapi.UsageDBConfig{
+						ClientType:       "prometheus",
+						ConnectionString: "http://shard-prometheus:9090",
+					},
+				},
+			},
+			kaiConfig: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Namespace: "kai-system",
+					Prometheus: &kaiprometheus.Prometheus{
+						Enabled:               ptr.To(true),
+						ExternalPrometheusUrl: ptr.To("http://external-tsdb:9090"),
+					},
+				},
+			},
+			expectError: false,
+			validate: func(t *testing.T, result *usagedbapi.UsageDBConfig) {
+				assert.NotNil(t, result)
+				assert.Equal(t, "http://shard-prometheus:9090", result.ConnectionString)
 			},
 		},
 		{
@@ -1498,7 +1632,7 @@ func TestPodDisruptionBudgetForShard(t *testing.T) {
 			config := &kaiv1.Config{}
 			config.Spec.SetDefaultsWhereNeeded()
 			config.Spec.Scheduler.Replicas = ptr.To(tt.replicas)
-			config.Spec.Scheduler.Service.PodDisruptionBudget = &common.PodDisruptionBudget{
+			config.Spec.Scheduler.Service.PodDisruptionBudget = &kaiv1common.PodDisruptionBudget{
 				Enabled:        ptr.To(tt.pdbEnabled),
 				MaxUnavailable: ptr.To(tt.maxUnavailable),
 			}

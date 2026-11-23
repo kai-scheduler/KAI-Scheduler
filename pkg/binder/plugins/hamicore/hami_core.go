@@ -11,10 +11,11 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/common"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/state"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/api/constants"
+	"github.com/kai-scheduler/api/scheduling/v1alpha2"
+	"github.com/kai-scheduler/api/utilities/resources"
 )
 
 type Plugin struct {
@@ -38,10 +39,11 @@ func (p *Plugin) PreBind(
 
 	cudaDeviceMemoryLimit, err := calculateCudaDeviceMemoryLimit(node, bindRequest)
 	if err != nil {
-		return nil
+		return fmt.Errorf("failed to calculate CUDA_DEVICE_MEMORY_LIMIT for pod <%s/%s>: %w",
+			pod.Namespace, pod.Name, err)
 	}
 
-	containerRef, err := common.GetFractionContainerRef(pod)
+	containerRef, err := resources.GetFractionContainerRef(pod)
 	if err != nil {
 		return fmt.Errorf("failed to get fraction container ref: %w", err)
 	}

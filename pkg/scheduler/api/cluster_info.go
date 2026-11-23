@@ -24,7 +24,6 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 
-	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/configmap_info"
@@ -36,29 +35,30 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/storagecapacity_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/storageclaim_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/storageclass_info"
+	kaiv1alpha1 "github.com/kai-scheduler/api/kai/v1alpha1"
 	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/dynamic-resource-allocation/deviceclass/extendedresourcecache"
 )
 
 // ClusterInfo is a snapshot of cluster by cache.
 type ClusterInfo struct {
-	Pods                        []*v1.Pod
-	PodGroupInfos               map[common_info.PodGroupID]*podgroup_info.PodGroupInfo
-	Nodes                       map[string]*node_info.NodeInfo
-	ResourceClaims              []*resourceapi.ResourceClaim
-	ResourceSlices              []*resourceapi.ResourceSlice
-	DeviceClasses               []*resourceapi.DeviceClass
-	BindRequests                bindrequest_info.BindRequestMap
-	BindRequestsForDeletedNodes []*bindrequest_info.BindRequestInfo
-	Queues                      map[common_info.QueueID]*queue_info.QueueInfo
-	QueueResourceUsage          queue_info.ClusterUsage
-	Departments                 map[common_info.QueueID]*queue_info.QueueInfo
-	StorageClaims               map[storageclaim_info.Key]*storageclaim_info.StorageClaimInfo
-	StorageCapacities           map[common_info.StorageCapacityID]*storagecapacity_info.StorageCapacityInfo
-	CSIDrivers                  map[common_info.CSIDriverID]*csidriver_info.CSIDriverInfo
-	StorageClasses              map[common_info.StorageClassID]*storageclass_info.StorageClassInfo
-	ConfigMaps                  map[common_info.ConfigMapID]*configmap_info.ConfigMapInfo
-	Topologies                  []*kaiv1alpha1.Topology
+	Pods                       []*v1.Pod
+	PodGroupInfos              map[common_info.PodGroupID]*podgroup_info.PodGroupInfo
+	Nodes                      map[string]*node_info.NodeInfo
+	ResourceClaims             []*resourceapi.ResourceClaim
+	ResourceSlices             []*resourceapi.ResourceSlice
+	DeviceClasses              []*resourceapi.DeviceClass
+	BindRequests               bindrequest_info.BindRequestMap
+	FailedBindRequestsForShard []*bindrequest_info.BindRequestInfo
+	Queues                     map[common_info.QueueID]*queue_info.QueueInfo
+	QueueResourceUsage         queue_info.ClusterUsage
+	Departments                map[common_info.QueueID]*queue_info.QueueInfo
+	StorageClaims              map[storageclaim_info.Key]*storageclaim_info.StorageClaimInfo
+	StorageCapacities          map[common_info.StorageCapacityID]*storagecapacity_info.StorageCapacityInfo
+	CSIDrivers                 map[common_info.CSIDriverID]*csidriver_info.CSIDriverInfo
+	StorageClasses             map[common_info.StorageClassID]*storageclass_info.StorageClassInfo
+	ConfigMaps                 map[common_info.ConfigMapID]*configmap_info.ConfigMapInfo
+	Topologies                 []*kaiv1alpha1.Topology
 
 	MinNodeGPUMemoryMiB *int64 // nil if no node has GPUs
 	MaxNodeGPUMemoryMiB *int64 // nil if no node has GPUs

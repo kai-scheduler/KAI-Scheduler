@@ -29,6 +29,7 @@ metadata:
 spec:
   schedulerName: kai-scheduler
   restartPolicy: Never
+  automountServiceAccountToken: false
   containers:
     - name: training
       image: ubuntu
@@ -44,6 +45,7 @@ spec:
       resources:
         limits:
           nvidia.com/gpu: "8"    # Request 8 GPUs (adjust based on your cluster)
+          memory: "4Gi"
         requests:
           cpu: "1"
           memory: "4Gi"
@@ -60,6 +62,7 @@ metadata:
 spec:
   schedulerName: kai-scheduler
   restartPolicy: Never
+  automountServiceAccountToken: false
   containers:
     - name: training
       image: ubuntu
@@ -75,6 +78,7 @@ spec:
       resources:
         limits:
           nvidia.com/gpu: "8"    # Request 8 GPUs (adjust based on your cluster)
+          memory: "4Gi"
         requests:
           cpu: "1"
           memory: "4Gi"

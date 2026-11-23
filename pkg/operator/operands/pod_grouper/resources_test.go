@@ -16,11 +16,11 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
-	kaiv1common "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/pod_grouper"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/api/constants"
+	kaiv1 "github.com/kai-scheduler/api/kai/v1"
+	"github.com/kai-scheduler/api/kai/v1/common"
+	kaiv1common "github.com/kai-scheduler/api/kai/v1/common"
+	"github.com/kai-scheduler/api/kai/v1/pod_grouper"
 )
 
 func TestBuildArgsList(t *testing.T) {
@@ -157,6 +157,31 @@ func TestBuildArgsList(t *testing.T) {
 				"--queue-label-key", constants.DefaultQueueLabel,
 				"--nodepool-label-key", constants.DefaultNodePoolLabelKey,
 				"--knative-gang-schedule=true",
+			},
+		},
+		{
+			name: "with gang schedule deployment disabled",
+			config: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Global: &kaiv1.GlobalConfig{
+						SchedulerName:    ptr.To(constants.DefaultSchedulerName),
+						QueueLabelKey:    ptr.To(constants.DefaultQueueLabel),
+						NodePoolLabelKey: ptr.To(constants.DefaultNodePoolLabelKey),
+					},
+					PodGrouper: &pod_grouper.PodGrouper{
+						Replicas: ptr.To(int32(1)),
+						Args: &pod_grouper.Args{
+							GangScheduleDeployment: ptr.To(false),
+						},
+						K8sClientConfig: &common.K8sClientConfig{},
+					},
+				},
+			},
+			expected: []string{
+				"--scheduler-name", constants.DefaultSchedulerName,
+				"--queue-label-key", constants.DefaultQueueLabel,
+				"--nodepool-label-key", constants.DefaultNodePoolLabelKey,
+				"--deployment-gang-schedule=false",
 			},
 		},
 		{

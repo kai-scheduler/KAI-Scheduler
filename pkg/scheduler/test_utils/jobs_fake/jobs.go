@@ -17,9 +17,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
 
-	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
-	pg "github.com/kai-scheduler/KAI-scheduler/pkg/common/podgroup"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
@@ -29,6 +26,9 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/constants/labels"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/resources_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
+	commonconstants "github.com/kai-scheduler/api/constants"
+	enginev2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
+	pg "github.com/kai-scheduler/api/utilities/podgroup"
 )
 
 type TestJobBasic struct {
@@ -80,7 +80,7 @@ func BuildJobsAndTasksMaps(Jobs []*TestJobBasic, vectorMap *resource_info.Resour
 		taskInfos := generateTasks(job, jobAllocatedResource, usedSharedGPUs, allocatedGPUs,
 			tasksToNodeMap, draClaimsMap, vectorMap)
 
-		jobUID := common_info.PodGroupID(jobName)
+		jobUID := common_info.NewPodGroupID(job.Namespace, jobName)
 		queueUID := common_info.QueueID(job.QueueName)
 		numberOfJobs := len(Jobs)
 
@@ -96,7 +96,7 @@ func BuildJobsAndTasksMaps(Jobs []*TestJobBasic, vectorMap *resource_info.Resour
 			job.Priority, job.Preemptibility, queueUID, jobCreationTime, job.StaleDuration, job.PerJobStalenessGracePeriod, vectorMap,
 		)
 		jobInfo.PodGroup.Spec.PreemptionDelay = job.PreemptionDelay
-		jobsInfoMap[common_info.PodGroupID(job.Name)] = jobInfo
+		jobsInfoMap[jobUID] = jobInfo
 	}
 
 	return jobsInfoMap, tasksToNodeMap, usedSharedGPUs
@@ -205,12 +205,12 @@ func generateTasks(
 	for taskIndex, task := range job.Tasks {
 		gpuGroups := tasks_fake.GetTestTaskGPUIndex(task)
 
-		podResourceList, gpuMemory, gpuFraction, gpuGroups :=
+		podResourceList, gpuMemoryMiB, gpuFraction, gpuGroups :=
 			CalcJobAndPodResources(job, jobAllocatedResource, task, gpuGroups,
 				usedSharedGPUs)
 
 		podOfTask := createPodOfTask(job, taskIndex, task, podResourceList, gpuFraction,
-			gpuMemory, gpuGroups)
+			gpuMemoryMiB, gpuGroups)
 		if job.QOSClass != "" {
 			podOfTask.Status.QOSClass = job.QOSClass
 		}
@@ -226,7 +226,7 @@ func generateTasks(
 
 		taskInfo := pod_info.NewTaskInfo(podOfTask, vectorMap, pod_info.TaskInfoOptions{DraPodClaims: draPodClaims})
 		taskInfo.Status = task.State
-		taskInfo.GPUGroups = gpuGroups
+		taskInfo.SetGPUGroupIDs(gpuGroups)
 		taskInfo.SubGroupName = task.SubGroupName
 		taskInfo.IsLegacyMIGtask = task.IsLegacyMigTask
 		taskInfos = append(taskInfos, taskInfo)
@@ -243,7 +243,7 @@ func generateTasks(
 		}
 
 		if tasks_fake.IsTaskStartedStatus(taskInfo.Status) {
-			gpuName := taskInfo.NodeName + fmt.Sprint(taskInfo.GPUGroups)
+			gpuName := taskInfo.NodeName + fmt.Sprint(taskInfo.GPUGroupIDs())
 			if _, ok := allocatedGPUs[gpuName]; !ok {
 				var void interface{}
 				allocatedGPUs[gpuName] = void
@@ -278,10 +278,10 @@ func getDraClaimsForPod(task *tasks_fake.TestTaskBasic, draClaimsMap map[string]
 
 func CalcJobAndPodResources(job *TestJobBasic, jobAllocatedResource *resource_info.Resource,
 	task *tasks_fake.TestTaskBasic, gpuGroups []string,
-	usedSharedGPUs map[string]map[string]bool) (*v1.ResourceList, string, string, []string) {
+	usedSharedGPUs map[string]map[string]bool) (*v1.ResourceList, uint64, string, []string) {
 	var podResourceList *v1.ResourceList
 	var gpuFraction string
-	var gpuMemory string
+	var gpuMemoryMiB uint64
 	if job.IsBestEffortJob {
 		podResourceList =
 			resources_fake.BuildResourceList(nil, nil, nil, nil)
@@ -292,7 +292,7 @@ func CalcJobAndPodResources(job *TestJobBasic, jobAllocatedResource *resource_in
 		requiredMemoryInput = CalcRequiredMemory(job, requiredMemoryAsString, requiredMemoryInput)
 
 		// whole GPU job
-		gpuMemory = strconv.FormatUint(job.RequiredGpuMemory, 10)
+		gpuMemoryMiB = job.RequiredGpuMemory
 		if float64(int(job.RequiredGPUsPerTask)) == job.RequiredGPUsPerTask {
 			requiredGPUsAsString = strconv.Itoa(int(job.RequiredGPUsPerTask))
 		} else {
@@ -305,7 +305,7 @@ func CalcJobAndPodResources(job *TestJobBasic, jobAllocatedResource *resource_in
 
 	(*podResourceList)[v1.ResourcePods] = resource.MustParse("1")
 
-	return podResourceList, gpuMemory, gpuFraction, gpuGroups
+	return podResourceList, gpuMemoryMiB, gpuFraction, gpuGroups
 }
 
 func CalcRequiredMemory(job *TestJobBasic, requiredMemoryAsString string, requiredMemoryInput *string) *string {
@@ -352,9 +352,9 @@ func resourceFractionCalc(job *TestJobBasic, jobAllocatedResource *resource_info
 
 func createPodOfTask(job *TestJobBasic, taskIndex int,
 	task *tasks_fake.TestTaskBasic, podResourceList *v1.ResourceList,
-	gpuFraction string, gpuMemory string, gpuGroups []string) *v1.Pod {
+	gpuFraction string, gpuMemoryMiB uint64, gpuGroups []string) *v1.Pod {
 	podName := fmt.Sprintf("%s-%d", job.Name, taskIndex)
-	podOfTask := tasks_fake.BuildPod(podName, job.Namespace, task, v1.PodPending, *podResourceList, gpuFraction, gpuMemory,
+	podOfTask := tasks_fake.BuildPod(podName, job.Namespace, task, v1.PodPending, *podResourceList, gpuFraction, gpuMemoryMiB,
 		gpuGroups, job.Name)
 	addPersistentVolumeClaimVolumes(podOfTask, task.PersistentVolumeClaimNames)
 

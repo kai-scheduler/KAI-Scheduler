@@ -8,7 +8,7 @@ import (
 	"sort"
 	"testing"
 
-	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
+	kaiv1alpha1 "github.com/kai-scheduler/api/kai/v1alpha1"
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/exp/maps"
 	v1 "k8s.io/api/core/v1"
@@ -575,7 +575,7 @@ func TestTopologyPlugin_subsetNodesFn(t *testing.T) {
 			vectorMap := resource_info.NewResourceVectorMap()
 			jobsInfoMap, tasksToNodeMap, _ := jobs_fake.BuildJobsAndTasksMaps(clusterPodGroups, vectorMap)
 			nodesInfoMap := nodes_fake.BuildNodesInfoMap(tt.nodes, tasksToNodeMap, nil, vectorMap)
-			job := jobsInfoMap[common_info.PodGroupID(jobName)]
+			job := jobsInfoMap[common_info.NewPodGroupID(tt.job.Namespace, jobName)]
 
 			// Setup topology tree
 			topologyTree := tt.setupTopologyTree()
@@ -603,7 +603,8 @@ func TestTopologyPlugin_subsetNodesFn(t *testing.T) {
 
 			// Call the function under test
 			subsets, err := plugin.subSetNodesFn(job, &job.RootSubGroupSet.SubGroupInfo,
-				job.RootSubGroupSet.GetDescendantPodSets(), podgroup_info.GetTasksToAllocate(job, nil, nil, true),
+				job.RootSubGroupSet.GetDescendantPodSets(), podgroup_info.GetTasksToAllocate(job, nil, nil,
+					podgroup_info.RealTaskAllocation),
 				maps.Values(nodesInfoMap))
 
 			// Check error
@@ -1522,7 +1523,7 @@ func TestTopologyPlugin_calcTreeAllocatable(t *testing.T) {
 			vectorMap := resource_info.NewResourceVectorMap()
 			jobsInfoMap, tasksToNodeMap, _ := jobs_fake.BuildJobsAndTasksMaps(clusterPodGroups, vectorMap)
 			nodesInfoMap := nodes_fake.BuildNodesInfoMap(tt.nodes, tasksToNodeMap, nil, vectorMap)
-			job := jobsInfoMap[common_info.PodGroupID(jobName)]
+			job := jobsInfoMap[common_info.NewPodGroupID(tt.job.Namespace, jobName)]
 
 			topologyTree := tt.setupTopologyTree()
 			for nodeName, domainId := range tt.nodesToDomains {
@@ -1540,7 +1541,8 @@ func TestTopologyPlugin_calcTreeAllocatable(t *testing.T) {
 			plugin := &topologyPlugin{}
 
 			// Call the function under test
-			err := plugin.calcTreeAllocatable(podgroup_info.GetTasksToAllocate(job, nil, nil, true), topologyTree.DomainsByLevel[rootLevel][rootDomainId])
+			err := plugin.calcTreeAllocatable(podgroup_info.GetTasksToAllocate(job, nil, nil,
+				podgroup_info.RealTaskAllocation), topologyTree.DomainsByLevel[rootLevel][rootDomainId])
 			if err != nil {
 				t.Errorf("failed to calc tree allocatable. job: %s, error: %v", job.PodGroup.Name, err)
 			}
@@ -2180,9 +2182,9 @@ func TestTopologyPlugin_getJobAllocatableDomains(t *testing.T) {
 
 			jobsInfoMap, _, _ := jobs_fake.BuildJobsAndTasksMaps(
 				[]*jobs_fake.TestJobBasic{tt.job}, testVectorMap)
-			job := jobsInfoMap[common_info.PodGroupID(tt.job.Name)]
+			job := jobsInfoMap[common_info.NewPodGroupID(tt.job.Namespace, tt.job.Name)]
 
-			tasks := podgroup_info.GetTasksToAllocate(job, nil, nil, true)
+			tasks := podgroup_info.GetTasksToAllocate(job, nil, nil, podgroup_info.RealTaskAllocation)
 			tasksResources := resource_info.NewResource(0, 0, 0)
 			for _, task := range tasks {
 				tasksResources.AddVectorAndGpuReq(task.ResReqVector, task.VectorMap, &task.GpuRequirement)
@@ -2190,8 +2192,7 @@ func TestTopologyPlugin_getJobAllocatableDomains(t *testing.T) {
 			tasksCount := len(tasks)
 
 			result, err := plugin.getJobAllocatableDomains(job, &job.RootSubGroupSet.SubGroupInfo,
-				job.RootSubGroupSet.GetDescendantPodSets(), tasksResources.ToVector(testVectorMap), tasksCount,
-				tt.topologyTree, nil)
+				tasksResources.ToVector(testVectorMap), tasksCount, tt.topologyTree, nil)
 
 			// Check error
 			if tt.expectedError != "" {

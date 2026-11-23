@@ -16,8 +16,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/constant"
 	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/capacity"
@@ -25,11 +23,14 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/queue"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/utils"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
+	"github.com/kai-scheduler/api/constants"
+	v2 "github.com/kai-scheduler/api/scheduling/v2"
 )
 
 const (
-	specPodAffinityLabelName  = "pod-affinity-test"
-	specPodAffinityLabelValue = "true"
+	specPodAffinityLabelName   = "pod-affinity-test"
+	specPodAffinityLabelValue  = "true"
+	specPriorityClassLabelName = "priorityClassName"
 )
 
 func DescribeAffinitySpecs() bool {
@@ -48,6 +49,8 @@ func DescribeAffinitySpecs() bool {
 		})
 
 		AfterAll(func(ctx context.Context) {
+			err := rd.DeleteAllE2EPriorityClasses(ctx, testCtx.ControllerClient)
+			Expect(err).To(Succeed())
 			testCtx.ClusterCleanup(ctx)
 		})
 
@@ -118,8 +121,13 @@ func DescribeAffinitySpecs() bool {
 						},
 					},
 				}
+				// Consolidation can otherwise evict pod1 to place it next to pod2, and a bare pod is never recreated.
+				nonPreemptible, err := rd.CreateNonPreemptiblePriorityClass(ctx, testCtx.KubeClientset)
+				Expect(err).To(Succeed())
+				pod1Labels := maps.Clone(podAffinityLabels)
+				pod1Labels[specPriorityClassLabelName] = nonPreemptible
 				pod1 := specSubmitWaitAndGetPod(
-					ctx, testCtx, testCtx.Queues[0], podAffinity, podAffinityLabels)
+					ctx, testCtx, testCtx.Queues[0], podAffinity, pod1Labels)
 
 				podAffinityToPod1WithNodeAffinityToDifferentNode := &v1.Affinity{
 					PodAffinity:  podAffinity.PodAffinity,

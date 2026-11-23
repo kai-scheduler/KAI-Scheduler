@@ -27,11 +27,20 @@ type BaseScenario struct {
 
 	// Deprecated: Use preemptor instead
 	victimsJobsTaskGroups map[common_info.PodGroupID][]*podgroup_info.PodGroupInfo
+
+	recordedVictimsRepresentatives []*podgroup_info.PodGroupInfo
 }
 
 func NewBaseScenario(
 	session *framework.Session, originalJob *podgroup_info.PodGroupInfo, pendingTasks []*pod_info.PodInfo, victimsTasks []*pod_info.PodInfo,
 	recordedVictimsJobs []*podgroup_info.PodGroupInfo,
+) *BaseScenario {
+	return newBaseScenario(session, originalJob, pendingTasks, victimsTasks, recordedVictimsJobs, nil)
+}
+
+func newBaseScenario(
+	session *framework.Session, originalJob *podgroup_info.PodGroupInfo, pendingTasks []*pod_info.PodInfo, victimsTasks []*pod_info.PodInfo,
+	recordedVictimsJobs []*podgroup_info.PodGroupInfo, recordedVictimsRepresentatives []*podgroup_info.PodGroupInfo,
 ) *BaseScenario {
 	s := &BaseScenario{
 		session:               session,
@@ -56,7 +65,12 @@ func NewBaseScenario(
 		for _, podInfo := range recordedVictimJob.GetAllPodsMap() {
 			tasks = append(tasks, podInfo)
 		}
-		s.appendTasksAsVictimJob(tasks)
+		var representative *podgroup_info.PodGroupInfo
+		if index < len(recordedVictimsRepresentatives) {
+			representative = recordedVictimsRepresentatives[index]
+		}
+		victimJob := s.appendTasksAsVictimJob(tasks, representative)
+		s.recordedVictimsRepresentatives = append(s.recordedVictimsRepresentatives, victimJob)
 	}
 	s.recordedVictimsTasks = s.RecordedVictimsTasks()
 
@@ -104,12 +118,30 @@ func (s *BaseScenario) AddPotentialVictimsTasks(tasks []*pod_info.PodInfo) {
 	}
 
 	s.potentialVictimsTasks = append(s.potentialVictimsTasks, tasks...)
-	s.appendTasksAsVictimJob(tasks)
+	s.appendTasksAsVictimJob(tasks, nil)
 }
 
-func (s *BaseScenario) appendTasksAsVictimJob(tasks []*pod_info.PodInfo) {
+// AddPotentialVictimsTasksWithRepresentative reuses a representative another scenario built from the same tasks.
+func (s *BaseScenario) AddPotentialVictimsTasksWithRepresentative(
+	tasks []*pod_info.PodInfo, representative *podgroup_info.PodGroupInfo,
+) {
+	if len(tasks) == 0 {
+		return
+	}
+
+	s.potentialVictimsTasks = append(s.potentialVictimsTasks, tasks...)
+	s.appendTasksAsVictimJob(tasks, representative)
+}
+
+// appendTasksAsVictimJob clones the representative from tasks unless a matching one is given.
+func (s *BaseScenario) appendTasksAsVictimJob(
+	tasks []*pod_info.PodInfo, representative *podgroup_info.PodGroupInfo,
+) *podgroup_info.PodGroupInfo {
 	originalJob := s.getJobForTask(tasks[0])
-	job := originalJob.CloneWithTasks(tasks)
+	job := representative
+	if job == nil || len(job.GetAllPodsMap()) != len(tasks) {
+		job = originalJob.CloneWithTasks(tasks)
+	}
 
 	s.victimsJobsTaskGroups[job.UID] = append(s.victimsJobsTaskGroups[job.UID], job)
 
@@ -124,6 +156,7 @@ func (s *BaseScenario) appendTasksAsVictimJob(tasks []*pod_info.PodInfo) {
 		Job:   originalJob,
 		Tasks: victimTasks,
 	}
+	return job
 }
 
 func (s *BaseScenario) GetVictimJobRepresentativeById(victimPodInfo *pod_info.PodInfo) *podgroup_info.PodGroupInfo {

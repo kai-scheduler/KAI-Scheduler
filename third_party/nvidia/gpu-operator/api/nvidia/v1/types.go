@@ -56,6 +56,8 @@ type CDIConfigSpec struct {
 	Enabled *bool `json:"enabled,omitempty"`
 	// Default indicates whether to use CDI as the default mechanism for GPU access.
 	Default *bool `json:"default,omitempty"`
+	// NRIPluginEnabled indicates whether the GPU Operator CDI NRI plugin is enabled.
+	NRIPluginEnabled *bool `json:"nriPluginEnabled,omitempty"`
 }
 
 // ClusterPolicySpec mirrors the subset of the upstream ClusterPolicy spec we use.

@@ -10,7 +10,7 @@ metadata:
     {{- include "kai-scheduler.post-delete-hook-annotations" . | nindent 4 }}
 subjects:
   - kind: ServiceAccount
-    name: post-delete-cleanup
+    name: {{ .Values.postCleanup.serviceAccountName }}
     namespace: {{ .Release.Namespace }}
 roleRef:
   kind: ClusterRole

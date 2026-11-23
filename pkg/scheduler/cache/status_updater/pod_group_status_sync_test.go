@@ -21,14 +21,16 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/ptr"
 
-	kubeaischedfake "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/fake"
-	fakeschedulingv2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/typed/scheduling/v2alpha2/fake"
-	schedulingv2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/utils"
+	kubeaischedfake "github.com/kai-scheduler/api/client/clientset/versioned/fake"
+	fakeschedulingv2alpha2 "github.com/kai-scheduler/api/client/clientset/versioned/typed/scheduling/v2alpha2/fake"
+	commonconstants "github.com/kai-scheduler/api/constants"
+	schedulingv2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
 )
 
 var _ = Describe("Status Updater - Pod Groups Syncing", func() {
@@ -229,8 +231,24 @@ var _ = Describe("Status Updater - Pod Groups Syncing", func() {
 	It("should accept newer pod group versions as synced", func() {
 		close(finishUpdatesChan)
 		wg.Wait()
+		// The reactor finishes before the worker moves the update between caches.
+		Eventually(func(g Gomega) {
+			appliedUpdates := 0
+			statusUpdater.appliedPodGroupUpdates.Range(func(_, _ any) bool {
+				appliedUpdates++
+				return true
+			})
+			g.Expect(appliedUpdates).To(Equal(len(podGroupsOriginals)))
+			inFlightUpdates := 0
+			statusUpdater.inFlightPodGroups.Range(func(_, _ any) bool {
+				inFlightUpdates++
+				return true
+			})
+			g.Expect(inFlightUpdates).To(BeZero())
+		}, 5*time.Second).Should(Succeed())
 
-		podGroupsList, _ := kubeAiSchedClient.SchedulingV2alpha2().PodGroups("default").List(context.TODO(), metav1.ListOptions{})
+		podGroupsList, err := kubeAiSchedClient.SchedulingV2alpha2().PodGroups("default").List(context.TODO(), metav1.ListOptions{})
+		Expect(err).To(Succeed())
 		podGroupsFromCluster := make([]*schedulingv2alpha2.PodGroup, 0, len(podGroupsList.Items))
 		for _, podGroup := range podGroupsList.Items {
 			podGroupCopy := podGroup.DeepCopy()
@@ -272,5 +290,112 @@ var _ = Describe("Status Updater - Pod Groups Syncing", func() {
 		for _, podGroup := range podGroupsOriginals {
 			Expect(podGroup.Status.SchedulingConditions).To(BeEmpty())
 		}
+	})
+
+	It("should drop applied updates once the cluster moved past the written object", func() {
+		close(finishUpdatesChan)
+		wg.Wait()
+		Eventually(func() int {
+			appliedPodGroupUpdatesCount := 0
+			statusUpdater.appliedPodGroupUpdates.Range(func(key any, value any) bool {
+				appliedPodGroupUpdatesCount += 1
+				return true
+			})
+			return appliedPodGroupUpdatesCount
+		}, 5*time.Second).Should(Equal(len(podGroupsOriginals)))
+
+		// An external writer (e.g. pod-group-assigner) cleared the scheduling conditions after our update landed.
+		podGroupsFromCluster := make([]*schedulingv2alpha2.PodGroup, 0, len(podGroupsOriginals))
+		for _, podGroup := range podGroupsOriginals {
+			podGroupCopy := podGroup.DeepCopy()
+			podGroupCopy.ResourceVersion = "external-write"
+			podGroupCopy.Status.SchedulingConditions = nil
+			podGroupsFromCluster = append(podGroupsFromCluster, podGroupCopy)
+		}
+
+		statusUpdater.SyncPodGroupsWithPendingUpdates(podGroupsFromCluster)
+
+		for _, podGroup := range podGroupsFromCluster {
+			Expect(podGroup.Status.SchedulingConditions).To(BeEmpty())
+		}
+		appliedPodGroupUpdatesCount := 0
+		statusUpdater.appliedPodGroupUpdates.Range(func(key any, value any) bool {
+			appliedPodGroupUpdatesCount += 1
+			return true
+		})
+		Expect(appliedPodGroupUpdatesCount).To(Equal(0))
+	})
+})
+
+var _ = Describe("syncPodGroup annotations", func() {
+	It("removes annotations missing from the in-flight pod group instead of blanking them", func() {
+		su := &defaultStatusUpdater{}
+		snapshot := &schedulingv2alpha2.PodGroup{ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{
+			commonconstants.StalePodgroupTimeStamp: "2025-01-01T00:00:00Z",
+			commonconstants.LastStartTimeStamp:     "2025-01-01T00:00:00Z",
+		}}}
+		inFlight := &schedulingv2alpha2.PodGroup{}
+
+		su.syncPodGroup(inFlight, snapshot)
+
+		Expect(snapshot.Annotations).ToNot(HaveKey(commonconstants.StalePodgroupTimeStamp))
+		Expect(snapshot.Annotations).ToNot(HaveKey(commonconstants.LastStartTimeStamp))
+	})
+})
+
+var _ = Describe("Status Updater - annotation removal across cycles", func() {
+	It("does not build a remove patch for annotations the in-flight update already cleared", func() {
+		kubeClient := fake.NewSimpleClientset()
+		kubeAiSchedClient := kubeaischedfake.NewSimpleClientset()
+		su := New(kubeClient, kubeAiSchedClient, record.NewFakeRecorder(100), 4, false, nodePoolLabelKey)
+
+		finishUpdates := make(chan struct{})
+		kubeAiSchedClient.SchedulingV2alpha2().(*fakeschedulingv2alpha2.FakeSchedulingV2alpha2).PrependReactor(
+			"update", "podgroups", func(faketesting.Action) (bool, runtime.Object, error) {
+				<-finishUpdates
+				return false, nil, nil
+			},
+		)
+		stopCh := make(chan struct{})
+		su.Run(stopCh)
+		defer close(stopCh)
+		defer close(finishUpdates)
+
+		vectorMap := resource_info.NewResourceVectorMap()
+		jobInfos, _, _ := jobs_fake.BuildJobsAndTasksMaps([]*jobs_fake.TestJobBasic{{
+			Name:      "job-0",
+			Namespace: "default",
+			QueueName: "queue-1",
+			Tasks:     []*tasks_fake.TestTaskBasic{{Name: "task-0", State: pod_status.Pending}},
+		}}, vectorMap)
+		var job *podgroup_info.PodGroupInfo
+		for _, j := range jobInfos {
+			job = j
+		}
+
+		stale := time.Now().UTC().Format(time.RFC3339)
+		job.PodGroup.Annotations = map[string]string{
+			commonconstants.StalePodgroupTimeStamp: stale,
+			commonconstants.LastStartTimeStamp:     stale,
+		}
+		// Informer view of the cluster, which still carries the annotations.
+		informerPodGroup := job.PodGroup.DeepCopy()
+
+		// Cycle N: the scheduler clears both annotations and the update stays in flight.
+		job.StalenessInfo.TimeStamp = nil
+		job.LastStartTimestamp = nil
+		Expect(su.RecordJobStatusEvent(job, nil)).To(Succeed())
+		Expect(job.PodGroup.Annotations).ToNot(HaveKey(commonconstants.StalePodgroupTimeStamp))
+
+		// Cycle N+1: the informer snapshot is merged with the in-flight update.
+		su.SyncPodGroupsWithPendingUpdates([]*schedulingv2alpha2.PodGroup{informerPodGroup})
+		Expect(informerPodGroup.Annotations).ToNot(HaveKey(commonconstants.StalePodgroupTimeStamp))
+		Expect(informerPodGroup.Annotations).ToNot(HaveKey(commonconstants.LastStartTimeStamp))
+
+		// The job built from the synced snapshot must not try to remove keys the server no longer has.
+		job.PodGroup = informerPodGroup
+		patch, err := su.updatePodGroupAnnotations(job)
+		Expect(err).To(Succeed())
+		Expect(patch).To(BeEmpty())
 	})
 })

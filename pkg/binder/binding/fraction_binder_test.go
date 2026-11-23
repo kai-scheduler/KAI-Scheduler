@@ -15,8 +15,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/api/constants"
+	"github.com/kai-scheduler/api/scheduling/v1alpha2"
 
 	rrmock "github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding/resourcereservation/mock"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/common"
@@ -73,6 +73,9 @@ var happyFlowObjectsBc = []runtime.Object{
 	&v1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "my-node",
+			Labels: map[string]string{
+				constants.NvidiaGpuMemory: "1000",
+			},
 		},
 	},
 }
@@ -117,6 +120,9 @@ var happyFlowObjects = []runtime.Object{
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "my-node",
+			Labels: map[string]string{
+				constants.NvidiaGpuMemory: "1000",
+			},
 		},
 	},
 }
@@ -176,10 +182,10 @@ var _ = Describe("FractionBinder", func() {
 					testData.kubeObjects...).WithInterceptorFuncs(testData.clientInterceptFuncs).Build()
 
 				binderPlugins := plugins.New()
-				bindingGpuSharingPlugin := bindinggpusharing.New(fakeClient, false)
+				bindingGpuSharingPlugin := bindinggpusharing.New(fakeClient, false, false)
 				binderPlugins.RegisterPlugin(bindingGpuSharingPlugin)
 
-				testedBinder := NewBinder(fakeClient, rrs, binderPlugins)
+				testedBinder := NewBinder(fakeClient, nil, rrs, binderPlugins)
 
 				pod := testData.kubeObjects[0].(*v1.Pod)
 
@@ -198,6 +204,9 @@ var _ = Describe("FractionBinder", func() {
 				result := testedBinder.Bind(
 					context.TODO(), pod, &v1.Node{ObjectMeta: metav1.ObjectMeta{
 						Name: "my-node",
+						Labels: map[string]string{
+							constants.NvidiaGpuMemory: "1000",
+						},
 					}}, bindRequest)
 				if testData.expectedErrorContains != "" {
 					Expect(result).NotTo(BeNil())
@@ -238,10 +247,10 @@ var _ = Describe("FractionBinder", func() {
 			happyFlowObjects...).WithInterceptorFuncs(clientInterceptFuncs).Build()
 
 		binderPlugins := plugins.New()
-		bindingGpuSharingPlugin := bindinggpusharing.New(fakeClient, false)
+		bindingGpuSharingPlugin := bindinggpusharing.New(fakeClient, false, false)
 		binderPlugins.RegisterPlugin(bindingGpuSharingPlugin)
 
-		testedBinder := NewBinder(fakeClient, rrs, binderPlugins)
+		testedBinder := NewBinder(fakeClient, nil, rrs, binderPlugins)
 
 		pod := happyFlowObjects[0].(*v1.Pod)
 
@@ -260,6 +269,9 @@ var _ = Describe("FractionBinder", func() {
 		result := testedBinder.Bind(
 			context.TODO(), pod, &v1.Node{ObjectMeta: metav1.ObjectMeta{
 				Name: "my-node",
+				Labels: map[string]string{
+					constants.NvidiaGpuMemory: "1000",
+				},
 			}}, bindRequest)
 
 		Expect(result).NotTo(BeNil())

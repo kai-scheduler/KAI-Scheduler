@@ -25,8 +25,8 @@ import (
 	"github.com/spf13/pflag"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/api/constants"
 )
 
 const (
@@ -66,6 +66,7 @@ type ServerOption struct {
 	UpdatePodEvictionCondition        bool
 	ScheduleCSIStorage                bool
 	UseSchedulingSignatures           bool
+	DeferredResizePreemption          bool
 	FullHierarchyFairness             bool
 	AllowConsolidatingReclaim         bool
 	NumOfStatusRecordingWorkers       int
@@ -76,6 +77,7 @@ type ServerOption struct {
 	GPUWorkerNodeLabelKey             string
 	MIGWorkerNodeLabelKey             string
 	QueueLabelKey                     string
+	GpuSharingMode                    string
 	Namspace                          string
 
 	JSONLog bool
@@ -100,6 +102,7 @@ func (s *ServerOption) AddFlags(fs *pflag.FlagSet) {
 	fs.BoolVar(&s.RestrictSchedulingNodes, "restrict-node-scheduling", false, "kai-scheduler will allocate jobs only to restricted nodes")
 	fs.StringVar(&s.NodePoolLabelKey, "nodepool-label-key", constants.DefaultNodePoolLabelKey, "The label key by which to filter scheduling nodepool")
 	fs.StringVar(&s.QueueLabelKey, "queue-label-key", constants.DefaultQueueLabel, "The label key for the queue")
+	fs.StringVar(&s.GpuSharingMode, "gpu-sharing-mode", "", "The effective GPU-sharing mode resolved from the KAI config")
 	fs.StringVar(&s.NodePoolLabelValue, "partition-label-value", "", "The label value by which to filter scheduling partition")
 	fs.StringVar(&s.SchedulerConf, "scheduler-conf", "", "The absolute path of scheduler configuration file")
 	fs.DurationVar(&s.SchedulePeriod, "schedule-period", defaultSchedulerPeriod, "The period between each scheduling cycle")
@@ -122,6 +125,7 @@ func (s *ServerOption) AddFlags(fs *pflag.FlagSet) {
 	fs.BoolVar(&s.UpdatePodEvictionCondition, "update-pod-eviction-condition", false, "Update pod eviction condition to reflect the pod's eviction status")
 	fs.BoolVar(&s.ScheduleCSIStorage, "schedule-csi-storage", false, "Enables advanced scheduling (preempt, reclaim) for csi storage objects")
 	fs.BoolVar(&s.UseSchedulingSignatures, "use-scheduling-signatures", true, "Use scheduling signatures to avoid duplicate scheduling attempts for identical jobs")
+	fs.BoolVar(&s.DeferredResizePreemption, "deferred-resize-preemption", false, "Preempt or reclaim on a pod's node to make room for an in-place resize the kubelet marked as Deferred")
 	fs.BoolVar(&s.FullHierarchyFairness, "full-hierarchy-fairness", true, "Fairness across project and department levels")
 	fs.BoolVar(&s.AllowConsolidatingReclaim, "allow-consolidating-reclaim", true, "Do not count pipelined pods towards 'reclaimed' resources")
 	fs.IntVar(&s.NumOfStatusRecordingWorkers, "num-of-status-recording-workers", defaultNumOfStatusRecordingWorkers, "specifies the max number of go routines spawned to update pod and podgroups conditions and events. Defaults to 5")

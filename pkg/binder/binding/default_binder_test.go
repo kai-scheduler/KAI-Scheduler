@@ -15,8 +15,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/api/constants"
+	"github.com/kai-scheduler/api/scheduling/v1alpha2"
 
 	rrmock "github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding/resourcereservation/mock"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/common"
@@ -71,10 +71,10 @@ func TestBind(t *testing.T) {
 	kubeClient := fake.NewClientBuilder().WithRuntimeObjects(kubeObjects...).WithInterceptorFuncs(test_utils.EmptyBind).Build()
 
 	binderPlugins := plugins.New()
-	bindingGpuSharingPlugin := bindinggpusharing.New(kubeClient, false)
+	bindingGpuSharingPlugin := bindinggpusharing.New(kubeClient, false, false)
 	binderPlugins.RegisterPlugin(bindingGpuSharingPlugin)
 
-	binder := NewBinder(kubeClient, rrs, binderPlugins)
+	binder := NewBinder(kubeClient, nil, rrs, binderPlugins)
 
 	err := binder.Bind(
 		context.TODO(),
@@ -175,13 +175,16 @@ func TestBindApplyResourceReceivedType(t *testing.T) {
 	kubeClient := fake.NewClientBuilder().WithRuntimeObjects(kubeObjects...).WithInterceptorFuncs(test_utils.EmptyBind).Build()
 
 	binderPlugins := plugins.New()
-	bindingGpuSharingPlugin := bindinggpusharing.New(kubeClient, false)
+	bindingGpuSharingPlugin := bindinggpusharing.New(kubeClient, false, false)
 	binderPlugins.RegisterPlugin(bindingGpuSharingPlugin)
 
-	binder := NewBinder(kubeClient, rrs, binderPlugins)
+	binder := NewBinder(kubeClient, nil, rrs, binderPlugins)
 
 	err := binder.Bind(context.TODO(), pod, &v1.Node{ObjectMeta: metav1.ObjectMeta{
 		Name: "my-node",
+		Labels: map[string]string{
+			constants.NvidiaGpuMemory: "1000",
+		},
 	}}, bindRequest)
 
 	assert.Nil(t, err)
@@ -222,10 +225,10 @@ func TestBindFail(t *testing.T) {
 	kubeClient := fake.NewClientBuilder().WithRuntimeObjects(kubeObjects...).WithInterceptorFuncs(test_utils.EmptyBind).Build()
 
 	binderPlugins := plugins.New()
-	bindingGpuSharingPlugin := bindinggpusharing.New(kubeClient, false)
+	bindingGpuSharingPlugin := bindinggpusharing.New(kubeClient, false, false)
 	binderPlugins.RegisterPlugin(bindingGpuSharingPlugin)
 
-	binder := NewBinder(kubeClient, rrs, binderPlugins)
+	binder := NewBinder(kubeClient, nil, rrs, binderPlugins)
 
 	err := binder.Bind(context.TODO(), pod, &v1.Node{ObjectMeta: metav1.ObjectMeta{
 		Name: "my-node",

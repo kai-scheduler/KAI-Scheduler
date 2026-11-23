@@ -144,3 +144,81 @@ curl {pod-ip}:9394/metrics
 ### Memory value precision
 
 The `gpu-memory` annotation accepts an **integer in MiB** (no unit suffix). Internally, KAI-Scheduler converts this to a GPU fraction with 2-decimal precision, which is then multiplied against the total GPU memory to compute the actual limit. As a result, the value seen in `nvidia-smi` may differ slightly from the requested value. For example, requesting `4096` MiB on a `15360` MiB GPU (T4) rounds to a `0.27` fraction, yielding `4147m` as the enforced limit.
+
+## Local e2e testing
+
+The HAMi-core e2e suite lives at `test/e2e/suites/integrations/third_party/hamicore/`. It checks KAI’s isolation contract (`CUDA_DEVICE_MEMORY_LIMIT` injection and limited `nvidia-smi` visible memory). It is **not wired into CI**: KAI PR e2e runs on kind with the fake GPU operator and has no real GPUs, so these specs soft-skip unless the `hamicore` binder plugin and the `kai-resource-isolator` mutating webhook are present.
+
+Use a machine with a real NVIDIA GPU (for example minikube with `--gpus=all`). Docker must be able to run `docker run --rm --gpus all nvidia/cuda:12.6.0-base-ubuntu22.04 nvidia-smi` before you start.
+
+### 1. Start minikube with GPU access
+
+```bash
+minikube start --driver=docker --gpus=all --cpus=6 --memory=12288
+kubectl config use-context minikube
+```
+
+### 2. NVIDIA device plugin + node labels
+
+The binder and e2e helpers read `nvidia.com/gpu.memory` (MiB per GPU). Label the node with the card’s total from `nvidia-smi` (example below is an 11264 MiB 2080 Ti):
+
+```bash
+kubectl apply -f https://raw.githubusercontent.com/NVIDIA/k8s-device-plugin/v0.17.1/deployments/static/nvidia-device-plugin.yml
+
+kubectl label node minikube \
+  nvidia.com/gpu.present=true \
+  nvidia.com/gpu.memory=11264 \
+  --overwrite
+
+kubectl -n kube-system rollout status ds/nvidia-device-plugin-daemonset --timeout=180s
+kubectl get node minikube -o jsonpath='{.status.allocatable.nvidia\.com/gpu}{"\n"}{.metadata.labels.nvidia\.com/gpu.memory}{"\n"}'
+```
+
+### 3. Install KAI with GPU sharing + hamicore
+
+If the cluster has no `RuntimeClass` named `nvidia` (common on bare device-plugin minikube), clear the default runtime-class settings so admission does not reject fraction pods:
+
+```bash
+helm upgrade -i kai-scheduler \
+  oci://ghcr.io/kai-scheduler/kai-scheduler/kai-scheduler \
+  --namespace kai-scheduler --create-namespace \
+  --version v0.17.0 \
+  --set global.gpuSharing=true \
+  --set binder.plugins.hamicore.enabled=true \
+  --set binder.resourceReservation.runtimeClassName="" \
+  --set admission.gpuFractionRuntimeClassName="" \
+  --wait
+```
+
+### 4. Install kai-resource-isolator
+
+Prefer the helper under `hack/hami/` (also used by `--test-hami` in kind cluster setup):
+
+```bash
+# from the KAI-Scheduler repo root
+./hack/hami/deploy_isolator.sh
+
+# or a local isolator chart checkout:
+# ISOLATOR_CHART_REF=/path/to/KAI-resource-isolator/chart/kai-resource-isolator \
+#   ./hack/hami/deploy_isolator.sh
+```
+
+Confirm the webhook exists:
+
+```bash
+kubectl get mutatingwebhookconfiguration kai-resource-isolator-mutating
+kubectl -n kai-resource-isolator get deploy,ds,pods
+```
+
+### 5. Run the suite
+
+```bash
+export PATH="$(go env GOPATH)/bin:$PATH"
+go install github.com/onsi/ginkgo/v2/ginkgo@latest
+
+ginkgo -v --trace ./test/e2e/suites/integrations/third_party/hamicore/
+```
+
+### Optional: kind helper flag
+
+`hack/setup-e2e-cluster.sh --test-hami` (and `hack/run-e2e-kind.sh --test-hami`) enables `binder.plugins.hamicore.enabled=true` and runs `hack/hami/deploy_isolator.sh`. That is useful for install plumbing on kind, but the hamicore specs still need a real GPU and will skip or fail against the fake GPU operator alone.

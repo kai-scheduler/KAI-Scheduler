@@ -24,15 +24,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	featuregates "github.com/kai-scheduler/KAI-scheduler/pkg/common/feature_gates"
-	draversionawareclient "github.com/kai-scheduler/KAI-scheduler/pkg/common/resources/dra_version_aware_client"
+	schedulingv1alpha2 "github.com/kai-scheduler/api/scheduling/v1alpha2"
+	draversionawareclient "github.com/kai-scheduler/api/utilities/resources/dra_version_aware_client"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding/resourcereservation"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/controllers"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/api/constants"
 )
 
 var (
@@ -116,7 +116,8 @@ func New(options *Options, config *rest.Config) (*App, error) {
 		options.ResourceReservationAppLabel, options.ScalingPodNamespace, options.RuntimeClassName,
 		options.ResourceReservationPodResources.Value,
 		options.ResourceReservationPodSecurityContext.Value,
-		options.ResourceReservationContainerSecurityContext.Value)
+		options.ResourceReservationContainerSecurityContext.Value,
+		options.FIPSOnly)
 
 	reconcilerParams := &controllers.ReconcilerParams{
 		MaxConcurrentReconciles:     options.MaxConcurrentReconciles,
@@ -146,10 +147,11 @@ func (app *App) RegisterPlugins(plugins *plugins.BinderPlugins) {
 func (app *App) Run(ctx context.Context) error {
 	var err error
 	go func() {
-		app.manager.GetCache().WaitForCacheSync(context.Background())
+		if !app.manager.GetCache().WaitForCacheSync(ctx) {
+			return
+		}
 		setupLog.Info("syncing resource reservation")
-		err := app.rrs.Sync(context.Background())
-		if err != nil {
+		if err := app.rrs.Sync(ctx); err != nil && ctx.Err() == nil {
 			setupLog.Error(err, "unable to sync resource reservation")
 			panic(err)
 		}
@@ -165,7 +167,7 @@ func (app *App) Run(ctx context.Context) error {
 		return err
 	}
 
-	binder := binding.NewBinder(app.Client, app.rrs, app.plugins)
+	binder := binding.NewBinder(app.Client, app.manager.GetAPIReader(), app.rrs, app.plugins)
 
 	app.InformerFactory.Start(ctx.Done())
 	app.InformerFactory.WaitForCacheSync(ctx.Done())

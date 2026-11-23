@@ -4,12 +4,14 @@
 package hamicore
 
 import (
+	"context"
+
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/utils/ptr"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/common"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/common/gpusharingconfigmap"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
+	"github.com/kai-scheduler/api/utilities/resources"
 )
 
 type HamiCore struct{}
@@ -22,7 +24,7 @@ func (p *HamiCore) Name() string {
 	return "hamicore"
 }
 
-func (p *HamiCore) Validate(_ *v1.Pod) error {
+func (p *HamiCore) Validate(context.Context, *v1.Pod, *v1.Pod) error {
 	return nil
 }
 
@@ -40,7 +42,7 @@ func (p *HamiCore) Mutate(pod *v1.Pod) error {
 		return nil
 	}
 
-	containerRef, err := common.GetFractionContainerRef(pod)
+	containerRef, err := resources.GetFractionContainerRef(pod)
 	if err != nil {
 		return err
 	}

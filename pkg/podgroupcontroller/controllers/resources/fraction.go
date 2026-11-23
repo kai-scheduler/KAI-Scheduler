@@ -15,7 +15,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/api/constants"
+	"github.com/kai-scheduler/api/utilities/resources"
 )
 
 const (
@@ -31,28 +32,35 @@ var (
 func calculateAllocatedFraction(
 	ctx context.Context, pod *v1.Pod, kubeClient client.Client,
 ) (resource.Quantity, error) {
-	gpuFractionStr, hasFractionAnnotation := pod.Annotations[constants.GpuFraction]
-	if hasFractionAnnotation {
-		return resource.MustParse(gpuFractionStr), nil
+	req, err := resources.ParsePodGPUFractionRequest(pod)
+	if err != nil {
+		return resource.Quantity{}, fmt.Errorf("failed to parse GPU fraction for pod %s/%s: %s", pod.Namespace, pod.Name, err)
+	}
+	if req == nil {
+		return resource.Quantity{}, fmt.Errorf("cannot calculate fraction because the pod doesn't have a fraction or memory annotation")
 	}
 
-	gpuMemoryStr, hasMemoryAnnotation := pod.Annotations[constants.GpuMemory]
-	if !hasMemoryAnnotation {
-		return resource.Quantity{}, fmt.Errorf(
-			"cannot calculate fraction because the pod doesn't a fraction or memory annotation")
+	var fraction resource.Quantity
+	if req.Portion > 0 {
+		fraction = resource.MustParse(fmt.Sprintf("%g", req.Portion))
+	} else {
+		fraction, err = getFractionFromMemoryRequest(ctx, req.Memory.Value()/resources.BytesInMiB, pod.Spec.NodeName, kubeClient)
+		if err != nil {
+			return resource.Quantity{}, err
+		}
 	}
 
-	return getFractionFromMemoryRequest(ctx, gpuMemoryStr, pod.Spec.NodeName, kubeClient)
+	fractionStr := fraction.String()
+	if ok := fraction.Mul(req.NumDevices); !ok {
+		return resource.Quantity{}, fmt.Errorf("failed to multiply gpu fraction by device count. fraction <%s>, count: %d",
+			fractionStr, req.NumDevices)
+	}
+	return fraction, nil
 }
 
 func getFractionFromMemoryRequest(
-	ctx context.Context, gpuMemoryStr string, nodeName string, kubeClient client.Client,
+	ctx context.Context, gpuMemory int64, nodeName string, kubeClient client.Client,
 ) (resource.Quantity, error) {
-	gpuMemory, err := strconv.ParseInt(gpuMemoryStr, 10, 64)
-	if err != nil {
-		return resource.Quantity{}, fmt.Errorf("failed to parse %s annotation to int: %w", constants.GpuMemory, err)
-	}
-
 	nodeGpuMemory, err := getNodeSingleGpuMemory(ctx, nodeName, kubeClient)
 	if err != nil {
 		return resource.Quantity{}, fmt.Errorf("failed extract node gpu memory for node %s : %w",

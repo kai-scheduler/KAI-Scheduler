@@ -109,7 +109,7 @@ func (ph *DefaultPluginsHub) getRegularPlugin(gvk metav1.GroupVersionKind) (grou
 }
 
 func NewDefaultPluginsHub(kubeClient client.Client, searchForLegacyPodGroups,
-	gangScheduleKnative, genericKartaFallback bool, queueLabelKey, nodePoolLabelKey string,
+	gangScheduleKnative, gangScheduleDeployment, genericKartaFallback bool, queueLabelKey, nodePoolLabelKey string,
 	defaultConfigPerTypeConfigMapName, defaultConfigPerTypeConfigMapNamespace string) *DefaultPluginsHub {
 	defaultGrouper := defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, kubeClient)
 	defaultGrouper.SetDefaultConfigPerTypeConfigMapParams(defaultConfigPerTypeConfigMapName, defaultConfigPerTypeConfigMapNamespace)
@@ -133,7 +133,7 @@ func NewDefaultPluginsHub(kubeClient client.Client, searchForLegacyPodGroups,
 			Group:   "apps",
 			Version: "v1",
 			Kind:    "Deployment",
-		}: deployment.NewDeploymentGrouper(defaultGrouper),
+		}: deployment.NewDeploymentGrouper(kubeClient, defaultGrouper, gangScheduleDeployment),
 		{
 			Group:   "machinelearning.seldon.io",
 			Version: "v1alpha2",

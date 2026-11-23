@@ -11,10 +11,10 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	commonconstants "github.com/kai-scheduler/api/constants"
 )
 
 func Test_getNodePreferableGpuForSharing(t *testing.T) {
@@ -284,15 +284,19 @@ func Test_getNodePreferableGpuForSharing(t *testing.T) {
 				t.Errorf("getNodePreferableGpuForSharing().IsReleasing = %v, want %v",
 					tt.want.isReleasing, gpusForSharing.IsReleasing)
 			}
-			if len(gpusForSharing.Groups) != tt.want.groupLength {
+			gpuGroupIDs := make([]string, 0, len(gpusForSharing.FractionalGpuGroups))
+			for _, fractionalGpuGroup := range gpusForSharing.FractionalGpuGroups {
+				gpuGroupIDs = append(gpuGroupIDs, fractionalGpuGroup.ID)
+			}
+			if len(gpuGroupIDs) != tt.want.groupLength {
 				t.Errorf("getNodePreferableGpuForSharing() groups array %v, wanted length %v",
-					gpusForSharing.Groups, tt.want.groupLength)
+					gpuGroupIDs, tt.want.groupLength)
 			}
 			if tt.want.expectedGroupsInList != nil {
 				for _, expectedGroup := range tt.want.expectedGroupsInList {
-					if !slices.Contains(gpusForSharing.Groups, expectedGroup) {
+					if !slices.Contains(gpuGroupIDs, expectedGroup) {
 						t.Errorf("getNodePreferableGpuForSharing() groups array %v, expected to include %v",
-							gpusForSharing.Groups, expectedGroup)
+							gpuGroupIDs, expectedGroup)
 					}
 				}
 			}

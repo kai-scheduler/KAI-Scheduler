@@ -27,18 +27,59 @@ import (
 	"gotest.tools/assert"
 	v1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 
-	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/storageclaim_info"
+	commonconstants "github.com/kai-scheduler/api/constants"
+	schedulingv1alpha2 "github.com/kai-scheduler/api/scheduling/v1alpha2"
+	"github.com/kai-scheduler/api/utilities/resources"
 )
+
+func TestRequestedGPUComputeSharingMode(t *testing.T) {
+	tests := []struct {
+		name        string
+		annotations map[string]string
+		want        schedulingv1alpha2.GPUComputeSharingMode
+	}{
+		{
+			name:        "no annotations defaults to time-slicing",
+			annotations: map[string]string{},
+			want:        schedulingv1alpha2.GPUComputeSharingModeTimeSlicing,
+		},
+		{
+			name: "NvFractions pod honors the compute-mode annotation",
+			annotations: map[string]string{
+				resources.CalcGpuFractionAnnotationForContainer("main"):           "1Gi",
+				resources.CalcGpuComputeSharingModeAnnotationForContainer("main"): string(schedulingv1alpha2.GPUComputeSharingModeSMSharing),
+			},
+			want: schedulingv1alpha2.GPUComputeSharingModeSMSharing,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pi := &PodInfo{
+				Pod: &v1.Pod{
+					ObjectMeta: metav1.ObjectMeta{Annotations: tt.annotations},
+					Spec:       v1.PodSpec{Containers: []v1.Container{{Name: "main"}}},
+				},
+			}
+
+			got := pi.RequestedGPUComputeSharingMode()
+
+			if got != tt.want {
+				t.Errorf("RequestedGPUComputeSharingMode() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
 
 func TestGetPodResourceRequest(t *testing.T) {
 	tests := []struct {
@@ -251,6 +292,94 @@ func TestGetPodResourceRequest(t *testing.T) {
 			},
 			expectedResource: resource_info.NewResourceRequirements(1, 4000, 3000000000),
 		},
+		{
+			// KEP-2837: a pod-level request replaces the container-derived
+			// value for that resource. This is what kubelet admission charges,
+			// so the scheduler must charge it too or it over-commits the node.
+			name: "pod-level resources override the container sum",
+			pod: &v1.Pod{
+				Spec: v1.PodSpec{
+					Resources: &v1.ResourceRequirements{
+						Requests: common_info.BuildResourceList("4000m", "96Gi"),
+					},
+					Containers: []v1.Container{
+						{
+							Resources: v1.ResourceRequirements{
+								Requests: common_info.BuildResourceListWithGPU("0", "0", "1"),
+							},
+						},
+						{},
+					},
+				},
+			},
+			// containers contribute 0 cpu / 0 memory, pod-level supplies both;
+			// the GPU stays with the container.
+			expectedResource: resource_info.NewResourceRequirements(1, 4000, 103079215104),
+		},
+		{
+			// Only one resource set at pod level: the other keeps the
+			// container-derived value.
+			name: "pod-level cpu only, memory from containers",
+			pod: &v1.Pod{
+				Spec: v1.PodSpec{
+					Resources: &v1.ResourceRequirements{
+						Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("6")},
+					},
+					Containers: []v1.Container{
+						{
+							Resources: v1.ResourceRequirements{
+								Requests: common_info.BuildResourceList("1000m", "1G"),
+							},
+						},
+						{
+							Resources: v1.ResourceRequirements{
+								Requests: common_info.BuildResourceList("2000m", "1G"),
+							},
+						},
+					},
+				},
+			},
+			expectedResource: resource_info.RequirementsFromResourceList(common_info.BuildResourceList("6000m", "2G")),
+		},
+		{
+			// Pod-level resources sit outside the init-phase max and above
+			// the sidecar sum, exactly as in upstream PodRequests; overhead is
+			// still added on top.
+			name: "pod-level resources with sidecar, init container and overhead",
+			pod: &v1.Pod{
+				Spec: v1.PodSpec{
+					Resources: &v1.ResourceRequirements{
+						Requests: common_info.BuildResourceList("8000m", "16Gi"),
+					},
+					InitContainers: []v1.Container{
+						{
+							RestartPolicy: ptr.To(v1.ContainerRestartPolicyAlways),
+							Resources: v1.ResourceRequirements{
+								Requests: common_info.BuildResourceList("500m", "256Mi"),
+							},
+						},
+						{
+							Resources: v1.ResourceRequirements{
+								Requests: common_info.BuildResourceList("5000m", "1Gi"),
+							},
+						},
+					},
+					Containers: []v1.Container{
+						{
+							Resources: v1.ResourceRequirements{
+								Requests: common_info.BuildResourceList("1000m", "1Gi"),
+							},
+						},
+					},
+					Overhead: common_info.BuildResourceList("1000m", "1Gi"),
+				},
+			},
+			// pod-level (8000m, 16Gi) replaces the init/sidecar-derived
+			// (5500m, 1Gi+256Mi); overhead (1000m, 1Gi) is added: 9000m, 17Gi.
+			expectedResource: resource_info.RequirementsFromResourceList(
+				common_info.BuildResourceList("9000m", "18253611008"),
+			),
+		},
 	}
 	for i, test := range tests {
 		if _, exists := test.expectedResource.ScalarResources()[resource_info.PodsResourceName]; !exists {
@@ -345,7 +474,7 @@ func TestPodInfo_updatePodAdditionalFields(t *testing.T) {
 					nil,
 					map[string]string{},
 					map[string]string{
-						commonconstants.GpuMemory: "1024",
+						resources.CalcGpuFractionAnnotationForContainer("main"): "1Gi",
 					}),
 			},
 			expected{
@@ -369,8 +498,8 @@ func TestPodInfo_updatePodAdditionalFields(t *testing.T) {
 					nil,
 					map[string]string{},
 					map[string]string{
-						commonconstants.GpuMemory:              "1024",
-						commonconstants.GpuFractionsNumDevices: "2",
+						resources.CalcGpuFractionAnnotationForContainer("main"): "1Gi",
+						commonconstants.GpuFractionsNumDevices:                  "2",
 					}),
 			},
 			expected{
@@ -487,6 +616,30 @@ func TestPodInfo_updatePodAdditionalFields(t *testing.T) {
 				GPUGroups:            nil,
 			},
 		},
+		{
+			"Legacy gpu-memory annotation fallback (pod predates NvFractions webhook)",
+			podFields{
+				Job:       common_info.FakePogGroupId,
+				Name:      "p1",
+				Namespace: "ns1",
+				Status:    pod_status.Pending,
+				Pod: common_info.BuildPod("ns1", "p1", "node1", v1.PodPending,
+					common_info.BuildResourceList("2000m", "2G"),
+					nil,
+					map[string]string{},
+					map[string]string{
+						commonconstants.GpuMemory: "2048",
+					}),
+			},
+			expected{
+				GpuRequirement:      *resource_info.NewGpuResourceRequirementWithGpus(0, 2048),
+				ResourceRequestType: "GpuMemory",
+				GPUGroups:           nil,
+				SelectedMigProfile:  "",
+				IsBound:             false,
+				IsChiefPod:          true,
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -502,7 +655,6 @@ func TestPodInfo_updatePodAdditionalFields(t *testing.T) {
 				Status:         tt.fields.Status,
 				Pod:            tt.fields.Pod,
 				GpuRequirement: *resource_info.NewGpuResourceRequirement(),
-				GPUGroups:      make([]string, 0),
 				VectorMap:      vectorMap,
 			}
 			pi.updatePodAdditionalFields(tt.fields.bindingRequest)
@@ -516,9 +668,9 @@ func TestPodInfo_updatePodAdditionalFields(t *testing.T) {
 					tt.name, tt.expected.AcceptedGpuRequirement, pi.AcceptedGpuRequirement)
 			}
 			assert.Equal(t, string(pi.ResourceRequestType), tt.expected.ResourceRequestType)
-			if !reflect.DeepEqual(pi.GPUGroups, tt.expected.GPUGroups) {
+			if !reflect.DeepEqual(pi.GPUGroupIDs(), tt.expected.GPUGroups) {
 				t.Errorf("case (%s) failed: GPUGroups \n expected %v, \n got: %v \n",
-					tt.name, tt.expected.GPUGroups, pi.GPUGroups)
+					tt.name, tt.expected.GPUGroups, pi.GPUGroupIDs())
 			}
 		})
 	}
@@ -587,7 +739,7 @@ func TestGetPodStorageClaims(t *testing.T) {
 	assert.Equal(t, "owned-pvc-name", pod.GetOwnedStorageClaims()[ownedClaimKey].Name)
 }
 
-func TestIsRequireAnyKindOfGPU_DRA(t *testing.T) {
+func TestRequiresGPUCapacity_DRA(t *testing.T) {
 	gpuReq := resource_info.NewGpuResourceRequirement()
 	gpuReq.SetDraGpus(map[string]int64{"nvidia.com/gpu": 2})
 	pi := &PodInfo{
@@ -595,8 +747,49 @@ func TestIsRequireAnyKindOfGPU_DRA(t *testing.T) {
 		GpuRequirement: *gpuReq,
 		Pod:            &v1.Pod{},
 	}
-	assert.Assert(t, pi.IsRequireAnyKindOfGPU(), "pod with only DRA GPU requests should require GPU")
+	assert.Assert(t, pi.requiresGPUCapacity(), "pod with only DRA GPU requests should require GPU capacity")
 	assert.Assert(t, !pi.IsCPUOnlyRequest(), "pod with only DRA GPU requests should not be CPU-only")
+}
+
+func TestRequiresGPUNode_AdminAccessClaim(t *testing.T) {
+	claim := &resourceapi.ResourceClaim{
+		ObjectMeta: metav1.ObjectMeta{Name: "dcgm-exporter", Namespace: "ns1"},
+		Spec: resourceapi.ResourceClaimSpec{
+			Devices: resourceapi.DeviceClaim{
+				Requests: []resourceapi.DeviceRequest{{
+					Name: "gpus",
+					Exactly: &resourceapi.ExactDeviceRequest{
+						DeviceClassName: "gpu.nvidia.com",
+						AllocationMode:  resourceapi.DeviceAllocationModeAll,
+						AdminAccess:     ptr.To(true),
+					},
+				}},
+			},
+		},
+	}
+	pod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{UID: types.UID("pod-uid"), Name: "p1", Namespace: "ns1"},
+		Spec: v1.PodSpec{
+			Containers: []v1.Container{
+				{Resources: v1.ResourceRequirements{Requests: common_info.BuildResourceList("1000m", "1G")}},
+			},
+			ResourceClaims: []v1.PodResourceClaim{
+				{Name: "dcgm-exporter", ResourceClaimName: ptr.To("dcgm-exporter")},
+			},
+		},
+		Status: v1.PodStatus{Phase: v1.PodPending},
+	}
+
+	pi := NewTaskInfo(pod, resource_info.NewResourceVectorMap(), TaskInfoOptions{
+		DraPodClaims: []*resourceapi.ResourceClaim{claim},
+	})
+	assert.Assert(t, pi.HasDRAGPUClaim)
+	assert.Assert(t, pi.RequiresGPUNode(), "an admin access GPU claim still needs a GPU node")
+	assert.Assert(t, pi.Clone().RequiresGPUNode())
+
+	cpuPod := NewTaskInfo(&v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "p2", Namespace: "ns1"}},
+		resource_info.NewResourceVectorMap())
+	assert.Assert(t, !cpuPod.RequiresGPUNode())
 }
 
 func TestNewTaskInfoWithBindRequest_ResourceClaimInfo(t *testing.T) {
@@ -754,6 +947,19 @@ func TestPodInfo_Clone_ResourceClaimInfo(t *testing.T) {
 	assert.DeepEqual(t, alloc, clonedAlloc.Allocation)
 	assert.Assert(t, cloned.ResourceClaimInfo["gpu-claim"].Allocation != pi.ResourceClaimInfo["gpu-claim"].Allocation,
 		"Clone should copy Allocation, not share pointer")
+}
+
+func TestPodInfo_Clone_SharesOnlyTheRequestVector(t *testing.T) {
+	pi := createPodInfoWithGPU()
+	originalAcceptedVector := pi.AcceptedResourceVector.Clone()
+
+	cloned := pi.Clone()
+
+	assert.Assert(t, &cloned.ResReqVector[0] == &pi.ResReqVector[0], "Clone should share the request vector")
+
+	cloned.AcceptedResourceVector.Set(resource_info.GPUIndex, 7)
+
+	assert.DeepEqual(t, originalAcceptedVector, pi.AcceptedResourceVector)
 }
 
 func TestPodInfo_ShouldAllocate(t *testing.T) {

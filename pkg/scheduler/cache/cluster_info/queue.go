@@ -9,10 +9,10 @@ import (
 	"github.com/pkg/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	enginev2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	enginev2 "github.com/kai-scheduler/api/scheduling/v2"
 )
 
 const (
@@ -121,7 +121,9 @@ func deleteQueueAndChildren(queues map[common_info.QueueID]*queue_info.QueueInfo
 		return
 	}
 
-	log.InfraLogger.V(6).Infof("Deleting queue %s and children %s", queueID, queue.ChildQueues)
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("Deleting queue %s and children %s", queueID, queue.ChildQueues)
+	})
 	for _, child := range queue.ChildQueues {
 		deleteQueueAndChildren(queues, child)
 	}

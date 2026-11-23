@@ -11,8 +11,12 @@ metadata:
     gpu-memory: "2000" # in Mib
 spec:
   schedulerName: kai-scheduler
+  automountServiceAccountToken: false
   containers:
     - name: gpu-workload
       image: nvidia/cuda:13.0.2-base-ubi8
       command: ["nvidia-smi"]
       args: ["-L"]
+      resources:
+        limits:
+          memory: 1Gi

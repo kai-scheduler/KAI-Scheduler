@@ -8,8 +8,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	commonconstants "github.com/kai-scheduler/api/constants"
 )
 
 func TestQueueResourceShare_ResourceShare(t *testing.T) {
@@ -113,6 +113,14 @@ func TestQueueResourceShare_AddResourceShare(t *testing.T) {
 	assert.Equal(t, float64(17), qrs.GPU.FairShare)
 }
 
+func TestQueueResourceShare_SetFairShare(t *testing.T) {
+	qrs := createQueueResourceShare()
+	assert.Equal(t, float64(16), qrs.GetFairShare()[GpuResource])
+	qrs.SetFairShare(GpuResource, 4)
+	assert.Equal(t, float64(4), qrs.GPU.FairShare)
+	assert.Equal(t, float64(4), qrs.GetFairShare()[GpuResource])
+}
+
 func TestQueueResourceShare_SetQuotaResources(t *testing.T) {
 	qrs := createQueueResourceShare()
 	qrs.SetQuotaResources(CpuResource, 8.8, 9.9, 1.1)
@@ -200,6 +208,18 @@ func TestQueueResourceShare_AllocatedPlusResourcesLessEqualDeserved(t *testing.T
 			assert.Equal(t, test.expected, test.share.AllocatedPlusResourcesLessEqualDeserved(resources, vectorMap))
 		})
 	}
+}
+
+func TestQueueResourceShare_AllocatedPlusFractionalGPUExactlyMatchesDeserved(t *testing.T) {
+	vectorMap := resource_info.NewResourceVectorMap()
+	resources := resource_info.NewResourceVectorWithValues(1, 1, 0.2, vectorMap)
+	share := QueueResourceShare{
+		CPU:    ResourceShare{Allocated: 1, Deserved: 2},
+		Memory: ResourceShare{Allocated: 1, Deserved: 2},
+		GPU:    ResourceShare{Allocated: 0.1, Deserved: 0.3},
+	}
+
+	assert.True(t, share.AllocatedPlusResourcesLessEqualDeserved(resources, vectorMap))
 }
 
 func TestQueueResourceShare_AllocatedPlusNoResourcesLessEqualDeserved(t *testing.T) {

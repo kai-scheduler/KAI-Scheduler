@@ -31,7 +31,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding/resourcereservation"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/common"
 
-	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	schedulingv1alpha2 "github.com/kai-scheduler/api/scheduling/v1alpha2"
 )
 
 const (
@@ -102,11 +102,7 @@ func (r *BindRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return result, client.IgnoreNotFound(err)
 	}
 
-	if bindRequest.DeletionTimestamp != nil {
-		return result, nil
-	}
-
-	if bindRequest.Status.Phase == schedulingv1alpha2.BindRequestPhaseSucceeded {
+	if !isActionableBindRequest(bindRequest) {
 		return result, nil
 	}
 
@@ -119,7 +115,7 @@ func (r *BindRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 		result, err = r.UpdateStatus(ctx, bindRequest, result, err)
 		if pod != nil {
-			r.updatePodCondition(ctx, bindRequest, pod, result, err)
+			r.updatePodCondition(ctx, bindRequest, pod)
 		}
 
 		if finalError != nil {
@@ -176,7 +172,7 @@ func (r *BindRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 // SetupWithManager sets up the controller with the Manager.
 func (r *BindRequestReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&schedulingv1alpha2.BindRequest{}).
+		Named("bindrequest").
 		Watches(&schedulingv1alpha2.BindRequest{}, r.eventHandlers()).
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: r.params.MaxConcurrentReconciles,
@@ -192,10 +188,21 @@ func (r *BindRequestReconciler) SetupWithManager(mgr ctrl.Manager) error {
 func (r *BindRequestReconciler) eventHandlers() handler.Funcs {
 	return handler.Funcs{
 		CreateFunc: func(ctx context.Context, event event.CreateEvent, wq workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+			bindRequest, ok := event.Object.(*schedulingv1alpha2.BindRequest)
+			if !ok {
+				return
+			}
+
+			if !isActionableBindRequest(bindRequest) {
+				return
+			}
 			h := handler.EnqueueRequestForObject{}
 			h.Create(ctx, event, wq)
 		},
 		UpdateFunc: func(ctx context.Context, event event.UpdateEvent, wq workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+			if !shouldEnqueueBindRequestUpdate(event.ObjectOld, event.ObjectNew) {
+				return
+			}
 			h := handler.EnqueueRequestForObject{}
 			h.Update(ctx, event, wq)
 		},
@@ -214,7 +221,7 @@ func (r *BindRequestReconciler) deleteHandler(ctx context.Context, event event.T
 	}
 
 	if common.IsSharedGPUAllocation(bindRequest) {
-		for _, gpuGroup := range bindRequest.Spec.SelectedGPUGroups {
+		for _, gpuGroup := range bindRequest.Spec.SelectedFractionalGpuGroupIDs() {
 			err := r.resourceReservation.SyncForGpuGroup(ctx, gpuGroup)
 			if err != nil {
 				logger.Error(err, "Failed to sync reservation for GPU Group",
@@ -246,17 +253,36 @@ func (r *BindRequestReconciler) UpdateStatus(
 		return result, nil
 	}
 
-	patchErr := r.Client.Status().Patch(ctx, bindRequest, client.MergeFrom(originalBindRequest))
+	// The patch is addressed by name, and the scheduler may replace a BindRequest under the
+	// same name while a reconcile is in flight. The precondition keeps this outcome from
+	// landing on an object it does not describe.
+	patchErr := r.Client.Status().Patch(ctx, bindRequest,
+		client.MergeFromWithOptions(originalBindRequest, client.MergeFromWithOptimisticLock{}))
 	if patchErr != nil {
+		if kerrors.IsConflict(patchErr) || kerrors.IsNotFound(patchErr) {
+			logger.Info("BindRequest was replaced or removed during reconcile, discarding outcome.",
+				"Namespace", bindRequest.Namespace, "Name", bindRequest.Name,
+				"phase", bindRequest.Status.Phase)
+			if bindRequest.Status.Phase == schedulingv1alpha2.BindRequestPhaseSucceeded {
+				logger.Error(patchErr,
+					"The binder made a successful binding based on the older bindingRequest.",
+					"If this point has been reached, a bug has occurred ",
+					"(a bindingRequest was replaced by a newer one while the binder was binding the pod).")
+			}
+			return result, nil
+		}
 		logger.Error(patchErr, "Failed to patch status for BindRequest",
 			"Namespace", bindRequest.Namespace, "Name", bindRequest.Name)
 	}
 
+	if err != nil && result.RequeueAfter == 0 {
+		return result, reconcile.TerminalError(err)
+	}
 	return result, err
 }
 
 func (r *BindRequestReconciler) updatePodCondition(
-	ctx context.Context, bindRequest *schedulingv1alpha2.BindRequest, pod *v1.Pod, result ctrl.Result, err error,
+	ctx context.Context, bindRequest *schedulingv1alpha2.BindRequest, pod *v1.Pod,
 ) {
 	logger := log.FromContext(ctx)
 
@@ -265,7 +291,7 @@ func (r *BindRequestReconciler) updatePodCondition(
 	var eventType string
 	var reason string
 
-	if err == nil || result.RequeueAfter != 0 {
+	if bindRequest.Status.Phase == schedulingv1alpha2.BindRequestPhaseSucceeded {
 		message = fmt.Sprintf("Pod bound successfully to node %s", bindRequest.Spec.SelectedNode)
 		condition = &v1.PodCondition{
 			Type:    podBoundCondition,
@@ -278,7 +304,7 @@ func (r *BindRequestReconciler) updatePodCondition(
 	} else {
 		message = fmt.Sprintf(
 			"Failed to bind pod %s/%s to node %s: %s", pod.Namespace, pod.Name,
-			bindRequest.Spec.SelectedNode, err.Error(),
+			bindRequest.Spec.SelectedNode, bindRequest.Status.Reason,
 		)
 		condition = &v1.PodCondition{
 			Type:    podBoundCondition,
@@ -308,5 +334,39 @@ func (r *BindRequestReconciler) updatePodCondition(
 			logger.Error(err, "Failed to patch pod status", "pod", pod.Name,
 				"namespace", pod.Namespace)
 		}
+	}
+}
+
+func shouldEnqueueBindRequestUpdate(oldObject, newObject client.Object) bool {
+	newBindRequest, ok := newObject.(*schedulingv1alpha2.BindRequest)
+	if !ok || !isActionableBindRequest(newBindRequest) {
+		return false
+	}
+
+	if newObject.GetUID() != oldObject.GetUID() {
+		return true
+	}
+
+	oldBindRequest, ok := oldObject.(*schedulingv1alpha2.BindRequest)
+	if !ok {
+		return true
+	}
+
+	return oldBindRequest.Generation != newBindRequest.Generation
+}
+
+func isActionableBindRequest(bindRequest *schedulingv1alpha2.BindRequest) bool {
+	if bindRequest == nil || bindRequest.DeletionTimestamp != nil {
+		return false
+	}
+
+	switch bindRequest.Status.Phase {
+	case schedulingv1alpha2.BindRequestPhaseSucceeded:
+		return false
+	case schedulingv1alpha2.BindRequestPhaseFailed:
+		return bindRequest.Spec.BackoffLimit != nil &&
+			bindRequest.Status.FailedAttempts < *bindRequest.Spec.BackoffLimit
+	default:
+		return true
 	}
 }

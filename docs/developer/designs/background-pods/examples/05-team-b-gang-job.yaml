@@ -1,0 +1,39 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# Demo C - drain the cluster.
+# team-b takes the remaining 32 GPUs, forcing the last four background pods out.
+# Afterwards all eight healthcheck replicas stay Pending: the maintenance queue
+# has overQuotaWeight 0, so it gets nothing back until a user job releases
+# capacity. That starvation is the defining behaviour of this workaround.
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: team-b-gang
+  annotations:
+    kai.scheduler/batch-min-member: "4"
+spec:
+  parallelism: 4
+  completions: 4
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        kai.scheduler/queue: team-b
+        app: user-workload
+    spec:
+      schedulerName: kai-scheduler
+      priorityClassName: train
+      restartPolicy: Never
+      containers:
+        - name: main
+          image: ubuntu
+          command: ["bash", "-c"]
+          args: ["trap 'exit 0' TERM; sleep infinity & wait"]
+          resources:
+            limits:
+              nvidia.com/gpu: "8"
+            requests:
+              cpu: 500m
+              memory: 512M

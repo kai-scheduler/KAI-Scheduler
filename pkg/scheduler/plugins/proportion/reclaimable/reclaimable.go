@@ -7,24 +7,31 @@ import (
 	"fmt"
 	"maps"
 	"math"
+	"slices"
 	"strings"
 
-	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/reclaimable/strategies"
 	rs "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/utils"
+	commonconstants "github.com/kai-scheduler/api/constants"
 )
 
+// queuePathStackSize is how many queues a hierarchy path holds before it
+// moves to the heap. Queue trees are usually two or three levels deep.
+const queuePathStackSize = 8
+
 type Reclaimable struct {
-	saturationMultiplier float64
+	saturationMultiplier        float64
+	queuePriorityInQuotaReclaim bool
 }
 
-func New(multiplier float64) *Reclaimable {
+func New(multiplier float64, queuePriorityInQuotaReclaim bool) *Reclaimable {
 	return &Reclaimable{
-		saturationMultiplier: multiplier,
+		saturationMultiplier:        multiplier,
+		queuePriorityInQuotaReclaim: queuePriorityInQuotaReclaim,
 	}
 }
 
@@ -88,12 +95,14 @@ func (r *Reclaimable) reclaimResourcesFromReclaimees(
 
 		for _, reclaimeeResources := range reclaimeeQueueReclaimedResources {
 			if !strategies.FitsReclaimStrategy(reclaimer.RequiredResources, reclaimer.VectorMap, reclaimerQueue, reclaimeeQueue,
-				remainingResources) {
-				log.InfraLogger.V(7).Infof("queue <%s>，shouldn't be reclaimed, for %s resources"+
-					" remaining reosurces: <%s>, deserved: <%s>, fairShare: <%s>",
-					reclaimeeQueue.Name, stringVectorArray(reclaimeeQueueReclaimedResources, reclaimer.VectorMap),
-					remainingResources, reclaimeeQueue.GetDeservedShare(),
-					reclaimeeQueue.GetFairShare())
+				remainingResources, r.queuePriorityInQuotaReclaim) {
+				log.InfraLogger.V(7).Do(func() {
+					log.InfraLogger.Infof("queue <%s>，shouldn't be reclaimed, for %s resources"+
+						" remaining reosurces: <%s>, deserved: <%s>, fairShare: <%s>",
+						reclaimeeQueue.Name, stringVectorArray(reclaimeeQueueReclaimedResources, reclaimer.VectorMap),
+						remainingResources, reclaimeeQueue.GetDeservedShare(),
+						reclaimeeQueue.GetFairShare())
+				})
 				return false, nil, nil
 			}
 
@@ -165,9 +174,11 @@ func (r *Reclaimable) reclaimingQueuesRemainWithinBoundaries(
 				remainingResources, reclaimingQueue.GetFairShare(),
 				siblingQueueRemainingResources, sibling.GetFairShare(),
 			) {
-				log.InfraLogger.V(5).Infof("Failed to reclaim resources for job: <%s/%s>. "+
-					"Saturation ratios would not stay lower than sibling queue <%s>",
-					reclaimer.Namespace, reclaimer.Name, sibling.Name)
+				log.InfraLogger.V(5).Do(func() {
+					log.InfraLogger.Infof("Failed to reclaim resources for job: <%s/%s>. "+
+						"Saturation ratios would not stay lower than sibling queue <%s>",
+						reclaimer.Namespace, reclaimer.Name, sibling.Name)
+				})
 				return false
 			}
 		}
@@ -179,11 +190,13 @@ func (r *Reclaimable) reclaimingQueuesRemainWithinBoundaries(
 		allocatedNonPreemptible := reclaimingQueue.GetAllocatedNonPreemptible()
 		allocatedNonPreemptible.Add(requestedQuota)
 		if !allocatedNonPreemptible.LessEqual(reclaimingQueue.GetDeservedShare()) {
-			log.InfraLogger.V(5).Infof("Failed to reclaim resources for: <%s/%s> in queue <%s>. "+
-				"Queue will have nonpreemtible jobs over quota and reclaimer job is an interactive job. "+
-				"Queue quota: %s, queue allocated nonpreemtible resources with task: %s",
-				reclaimer.Namespace, reclaimer.Name, reclaimingQueue.Name, reclaimingQueue.GetDeservedShare(),
-				allocatedNonPreemptible)
+			log.InfraLogger.V(5).Do(func() {
+				log.InfraLogger.Infof("Failed to reclaim resources for: <%s/%s> in queue <%s>. "+
+					"Queue will have nonpreemtible jobs over quota and reclaimer job is an interactive job. "+
+					"Queue quota: %s, queue allocated nonpreemtible resources with task: %s",
+					reclaimer.Namespace, reclaimer.Name, reclaimingQueue.Name, reclaimingQueue.GetDeservedShare(),
+					allocatedNonPreemptible)
+			})
 			return false
 		}
 	}
@@ -239,8 +252,9 @@ func (r *Reclaimable) getLeveledQueues(
 	reclaimerQueueID common_info.QueueID,
 	reclaimeeQueueID common_info.QueueID,
 ) (*rs.QueueAttributes, *rs.QueueAttributes) {
-	reclaimers := r.getHierarchyPath(queues, reclaimerQueueID)
-	reclaimees := r.getHierarchyPath(queues, reclaimeeQueueID)
+	var reclaimersBuf, reclaimeesBuf [queuePathStackSize]*rs.QueueAttributes
+	reclaimers := appendHierarchyPath(reclaimersBuf[:0], queues, reclaimerQueueID)
+	reclaimees := appendHierarchyPath(reclaimeesBuf[:0], queues, reclaimeeQueueID)
 
 	minLength := int(math.Min(float64(len(reclaimers)), float64(len(reclaimees))))
 	var reclaimerQueue, reclaimeeQueue *rs.QueueAttributes
@@ -254,15 +268,16 @@ func (r *Reclaimable) getLeveledQueues(
 	return reclaimerQueue, reclaimeeQueue
 }
 
-func (r *Reclaimable) getHierarchyPath(
+// appendHierarchyPath appends the path from the root queue down to queueId.
+func appendHierarchyPath(path []*rs.QueueAttributes,
 	queues map[common_info.QueueID]*rs.QueueAttributes, queueId common_info.QueueID) []*rs.QueueAttributes {
-	var hierarchyPath []*rs.QueueAttributes
 	queue, found := queues[queueId]
 	for found {
-		hierarchyPath = append([]*rs.QueueAttributes{queue}, hierarchyPath...)
+		path = append(path, queue)
 		queue, found = queues[queue.ParentQueue]
 	}
-	return hierarchyPath
+	slices.Reverse(path)
+	return path
 }
 
 func getInvolvedResourcesNames(resources []resource_info.ResourceVector, vectorMap *resource_info.ResourceVectorMap) map[rs.ResourceName]any {

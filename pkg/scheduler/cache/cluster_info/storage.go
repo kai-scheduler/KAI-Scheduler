@@ -59,8 +59,10 @@ func (c *ClusterInfo) snapshotStorageClasses() (map[common_info.StorageClassID]*
 		}
 
 		if *sc.VolumeBindingMode != storage.VolumeBindingWaitForFirstConsumer {
-			log.InfraLogger.V(7).Info("VolumeBindingMode is %s for storage class %s, ignoring",
-				*sc.VolumeBindingMode, sc.Name)
+			log.InfraLogger.V(7).Do(func() {
+				log.InfraLogger.V(7).Info("VolumeBindingMode is %s for storage class %s, ignoring",
+					*sc.VolumeBindingMode, sc.Name)
+			})
 			continue
 		}
 
@@ -84,9 +86,11 @@ func (c *ClusterInfo) snapshotStorageClaims() (map[storageclaim_info.Key]*storag
 	for _, sc := range storageClaims {
 		podOwner, err := storageclaim_info.GetPodOwner(sc)
 		if err != nil {
-			log.InfraLogger.V(6).Infof(
-				"Error finding pod owner for PVC, treating as un-owned: PVC %s/%s, error: %s",
-				sc.Namespace, sc.Name, err)
+			log.InfraLogger.V(6).Do(func() {
+				log.InfraLogger.Infof(
+					"Error finding pod owner for PVC, treating as un-owned: PVC %s/%s, error: %s",
+					sc.Namespace, sc.Name, err)
+			})
 		}
 		scInfo := storageclaim_info.NewStorageClaimInfo(sc, podOwner)
 		result[scInfo.Key] = scInfo
@@ -174,8 +178,10 @@ func setPodsPvcs(
 				// Generic ephemeral inline volumes also use a PVC, just with a computed name
 				pvcName = ephemeral.VolumeClaimName(pod.Pod, &volume)
 			default:
-				log.InfraLogger.V(6).Infof("Volume %s for pod %s/%s is not a PVC, ignoring for advanced scheduling",
-					volume.Name, pod.Namespace, pod.Name)
+				log.InfraLogger.V(6).Do(func() {
+					log.InfraLogger.Infof("Volume %s for pod %s/%s is not a PVC, ignoring for advanced scheduling",
+						volume.Name, pod.Namespace, pod.Name)
+				})
 				continue
 			}
 			key := storageclaim_info.NewKey(pod.Namespace, pvcName)
@@ -217,11 +223,15 @@ func filterStorageClasses(storageClasses map[common_info.StorageClassID]*storage
 	csiStorageClasses := map[common_info.StorageClassID]*storageclass_info.StorageClassInfo{}
 	for id, sc := range storageClasses {
 		if _, found := csiDrivers[common_info.CSIDriverID(sc.Provisioner)]; found {
-			log.InfraLogger.V(6).Infof("Storage Class %s uses provisioner %s which is a CSI driver", id, sc.Provisioner)
+			log.InfraLogger.V(6).Do(func() {
+				log.InfraLogger.Infof("Storage Class %s uses provisioner %s which is a CSI driver", id, sc.Provisioner)
+			})
 
 			csiStorageClasses[id] = sc
 		} else {
-			log.InfraLogger.V(6).Infof("Storage Class %s uses provisioner %s which is not a CSI driver - ignoring for advanced CSI scheduling", id, sc.Provisioner)
+			log.InfraLogger.V(6).Do(func() {
+				log.InfraLogger.Infof("Storage Class %s uses provisioner %s which is not a CSI driver - ignoring for advanced CSI scheduling", id, sc.Provisioner)
+			})
 		}
 	}
 	return csiStorageClasses
@@ -233,7 +243,9 @@ func filterStorageClaims(storageClaims map[storageclaim_info.Key]*storageclaim_i
 		if _, found := storageClasses[claim.StorageClass]; found {
 			csiStorageClaims[key] = claim
 		} else {
-			log.InfraLogger.V(6).Infof("Storage Claim %s/%s uses storage class %s which is not managed by a CSI driver - ignoring for advanced CSI scheduling", claim.Namespace, claim.Name, claim.StorageClass)
+			log.InfraLogger.V(6).Do(func() {
+				log.InfraLogger.Infof("Storage Claim %s/%s uses storage class %s which is not managed by a CSI driver - ignoring for advanced CSI scheduling", claim.Namespace, claim.Name, claim.StorageClass)
+			})
 		}
 	}
 

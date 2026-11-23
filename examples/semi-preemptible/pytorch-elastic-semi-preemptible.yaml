@@ -1,0 +1,36 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# An elastic PyTorchJob marked semi-preemptible via the kai.scheduler/preemptibility label.
+# minReplicas=1 is the core (non-preemptible, in-quota) shape; the 2 extra workers are elastic
+# (allocated over-quota, reclaimed/preempted first). Requires the training-operator to be installed.
+apiVersion: "kubeflow.org/v1"
+kind: PyTorchJob
+metadata:
+  name: elastic-semi-preemptible
+  labels:
+    kai.scheduler/queue: default-queue
+spec:
+  elasticPolicy:
+    rdzvBackend: c10d
+    minReplicas: 1
+    maxReplicas: 3
+    maxRestarts: 100
+  pytorchReplicaSpecs:
+    Worker:
+      replicas: 3
+      restartPolicy: OnFailure
+      template:
+        metadata:
+          labels:
+            kai.scheduler/queue: default-queue
+            kai.scheduler/preemptibility: "semi-preemptible"
+        spec:
+          schedulerName: kai-scheduler
+          containers:
+            - name: pytorch
+              image: kubeflow/pytorch-elastic-example-imagenet:latest
+              imagePullPolicy: IfNotPresent
+              resources:
+                requests:
+                  cpu: "1"

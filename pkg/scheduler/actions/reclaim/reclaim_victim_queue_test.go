@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 	v1 "k8s.io/api/core/v1"
 
-	schedulingv2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -19,6 +18,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	schedulingv2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
 )
 
 func TestOrderedVictimsQueueCachesFilteredCandidatesPerReclaimer(t *testing.T) {
@@ -164,4 +164,20 @@ func newVictimQueueTestJob(
 	job.Queue = queueID
 	job.Preemptibility = schedulingv2alpha2.Preemptible
 	return job, task
+}
+
+func TestOrderedVictimsQueueOnNodeKeepsOnlyJobsOnTheNode(t *testing.T) {
+	ssn, reclaimer, onNode, otherNode := newVictimQueueTestSession()
+	for _, task := range otherNode.GetAllPodsMap() {
+		task.NodeName = "node-1"
+	}
+	ssn.AddReclaimVictimFilterFn(func(_, _ *podgroup_info.PodGroupInfo) bool { return true })
+
+	queue := getOrderedVictimsQueueOnNode(ssn, reclaimer, "node-0")()
+	require.Same(t, onNode, queue.PopNextJob())
+	require.True(t, queue.IsEmpty(), "same-queue and other-node jobs are not victims")
+
+	queue = getOrderedVictimsQueueOnNode(ssn, reclaimer, "node-1")()
+	require.Same(t, otherNode, queue.PopNextJob())
+	require.True(t, queue.IsEmpty())
 }

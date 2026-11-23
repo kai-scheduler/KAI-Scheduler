@@ -14,6 +14,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/admission/webhook/v1alpha2/deviceaccess"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/admission/webhook/v1alpha2/gpusharing"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/admission/webhook/v1alpha2/hamicore"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/admission/webhook/v1alpha2/nvfractions"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/admission/webhook/v1alpha2/runtimeenforcement"
 )
 
@@ -44,8 +45,16 @@ func main() {
 func registerPlugins(app *app.App) error {
 	admissionPlugins := plugins.New()
 
-	admissionGpuSharingPlugin := gpusharing.New(app.Client, app.Options.GPUSharingEnabled)
-	admissionPlugins.RegisterPlugin(admissionGpuSharingPlugin)
+	// NvFractions mode is mutually exclusive with the standard gpusharing
+	// admission plugin: it owns validation and mutation for fraction pods and
+	// does not use the shared GPU configmap.
+	if app.Options.NvFractionsEnabled {
+		admissionPlugins.RegisterPlugin(nvfractions.New(app.Options.BinderServiceAccountUsername))
+	} else {
+		admissionGpuSharingPlugin := gpusharing.New(
+			app.Client, app.Options.GPUSharingEnabled, app.Options.NRIPluginEnabled)
+		admissionPlugins.RegisterPlugin(admissionGpuSharingPlugin)
+	}
 
 	if app.Options.HamiCoreEnabled {
 		admissionPlugins.RegisterPlugin(hamicore.New())

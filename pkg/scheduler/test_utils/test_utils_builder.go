@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"time"
 
-	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/api/constants"
+	kaiv1alpha1 "github.com/kai-scheduler/api/kai/v1alpha1"
 
 	. "go.uber.org/mock/gomock"
 	"gopkg.in/yaml.v2"
@@ -20,7 +20,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 
-	enginev2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
 	_ "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
@@ -36,8 +35,10 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/numa"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/dra_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
+	enginev2 "github.com/kai-scheduler/api/scheduling/v2"
 )
 
 const (
@@ -69,6 +70,7 @@ func CreateFakeSession(schedulerConfig *TestSessionConfig,
 			Queues:              queueInfoMap,
 			PodGroupInfos:       jobInfoMap,
 			ResourceClaims:      getResourceClaims(testMetadata),
+			ResourceSlices:      getResourceSlices(testMetadata),
 			Topologies:          topologies,
 			MinNodeGPUMemoryMiB: computeMinNodeGPUMemory(nodesInfoMap),
 			MaxNodeGPUMemoryMiB: computeMaxNodeGPUMemory(nodesInfoMap),
@@ -84,13 +86,19 @@ func CreateFakeSession(schedulerConfig *TestSessionConfig,
 	ssn.OverrideMaxNumberConsolidationPreemptees(-1)
 	ssn.OverrideAllowConsolidatingReclaim(true)
 	ssn.OverrideSchedulerName(schedulerName)
+	ssn.OverrideDeferredResizePreemption(testMetadata.DeferredResizePreemption)
 
 	if controller != nil || createCacheMockIfNotExists {
 		ssn.Cache = GetTestCacheMock(controller, testMetadata.Mocks, getDRAObjects(testMetadata), clusterPodAffinityInfo)
 	}
 
 	if schedulerConfig != nil {
-		ssn.Config.ScenarioSearchBudgets = schedulerConfig.ScenarioSearchBudgets
+		if schedulerConfig.Config != nil {
+			ssn.Config = schedulerConfig.Config
+		}
+		if schedulerConfig.ScenarioSearchBudgets != nil {
+			ssn.Config.ScenarioSearchBudgets = schedulerConfig.ScenarioSearchBudgets
+		}
 		addSessionPlugins(&ssn, schedulerConfig.Plugins, createCacheMockIfNotExists, schedulerConfig.CachePlugins)
 	}
 
@@ -248,11 +256,7 @@ func BuildDepartmentInfoMap(testMetadata TestTopologyBasic) map[common_info.Queu
 	return departmentInfoMap
 }
 
-func BuildPlugins(testMetadata TestTopologyBasic) []conf.Tier {
-	return buildSchedulerConfiguration(testMetadata).Tiers
-}
-
-func buildSchedulerConfiguration(testMetadata TestTopologyBasic) *conf.SchedulerConfiguration {
+func BuildSchedulerConfig(testMetadata TestTopologyBasic) *conf.SchedulerConfiguration {
 	plugins.InitDefaultPlugins()
 	confFileName := ""
 
@@ -285,14 +289,19 @@ func buildSchedulerConfiguration(testMetadata TestTopologyBasic) *conf.Scheduler
 	return config
 }
 
+func BuildPlugins(testMetadata TestTopologyBasic) []conf.Tier {
+	return BuildSchedulerConfig(testMetadata).Tiers
+}
+
 func BuildSession(testMetadata TestTopologyBasic, controller *Controller) *framework.Session {
-	config := buildSchedulerConfiguration(testMetadata)
+	schedulerResolvedConfig := BuildSchedulerConfig(testMetadata)
 	schedulerConfig := TestSessionConfig{
-		Plugins: config.Tiers,
+		Config:  schedulerResolvedConfig,
+		Plugins: schedulerResolvedConfig.Tiers,
 		CachePlugins: map[string]bool{
 			"predicates": true,
 		},
-		ScenarioSearchBudgets: config.ScenarioSearchBudgets,
+		ScenarioSearchBudgets: schedulerResolvedConfig.ScenarioSearchBudgets,
 	}
 
 	addDefaultDepartmentIfNeeded(&testMetadata)
@@ -434,15 +443,31 @@ func getResourceClaims(testMetadata TestTopologyBasic) []*resourceapi.ResourceCl
 		if resourceClaim.ClaimStatus != nil {
 			resourceClaimObject.Status = *resourceClaim.ClaimStatus
 		}
+		resourceClaimObject.Finalizers = resourceClaim.Finalizers
+		if resourceClaim.OwnerPodName != "" {
+			resourceClaimObject.OwnerReferences = []metav1.OwnerReference{{
+				APIVersion: "v1",
+				Kind:       "Pod",
+				Name:       resourceClaim.OwnerPodName,
+				UID:        types.UID(resourceClaim.OwnerPodName),
+				Controller: ptr.To(true),
+			}}
+		}
 		objects = append(objects, &resourceClaimObject)
 	}
 	return objects
 }
 
 func getResourceSlices(testMetadata TestTopologyBasic) []*resourceapi.ResourceSlice {
+	poolName := func(resourceSlice *dra_fake.TestResourceSlice) string {
+		if resourceSlice.NodeName != "" {
+			return resourceSlice.NodeName
+		}
+		return resourceSlice.Name
+	}
 	poolSliceCounts := map[string]int64{}
 	for _, resourceSlice := range testMetadata.ResourceSlices {
-		poolSliceCounts[resourceSlice.NodeName]++
+		poolSliceCounts[poolName(resourceSlice)]++
 	}
 
 	var objects []*resourceapi.ResourceSlice
@@ -459,8 +484,8 @@ func getResourceSlices(testMetadata TestTopologyBasic) []*resourceapi.ResourceSl
 			Spec: resourceapi.ResourceSliceSpec{
 				Driver: "nvidia.com/gpu",
 				Pool: resourceapi.ResourcePool{
-					Name:               resourceSlice.NodeName,
-					ResourceSliceCount: poolSliceCounts[resourceSlice.NodeName],
+					Name:               poolName(resourceSlice),
+					ResourceSliceCount: poolSliceCounts[poolName(resourceSlice)],
 				},
 				NodeSelector: resourceSlice.NodeSelector,
 				NodeName:     ptr.To(resourceSlice.NodeName),

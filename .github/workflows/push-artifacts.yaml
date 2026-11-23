@@ -20,6 +20,10 @@ jobs:
   build-and-push:
     name: Build & Push
     runs-on: ubuntu-latest
+    # Job-level permissions replace the workflow's, so packages: write is repeated here.
+    permissions:
+      contents: write
+      packages: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -38,10 +42,21 @@ jobs:
           echo "PACKAGE_VERSION=$PACKAGE_VERSION" >> $GITHUB_ENV
           echo $PACKAGE_VERSION
 
+      # Same key as the PR Build job; PRs can only read caches saved on their own ref or on main.
+      - name: Cache Go build cache (Docker-mounted)
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/go-build-docker-gocache
+            ~/.cache/go-build-docker-gopath
+          key: go-docker-${{ runner.os }}-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            go-docker-${{ runner.os }}-
+
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.26.3'
+          go-version: '1.26.10'
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v4
@@ -59,11 +74,44 @@ jobs:
       - name: Build helm chart
         run: |
           sed -i 's#registry/local/kai-scheduler#${{ env.DOCKER_REGISTRY }}#' deployments/kai-scheduler/values.yaml
+          helm dependency build ./deployments/kai-scheduler
           helm package ./deployments/kai-scheduler -d ./charts --app-version $PACKAGE_VERSION --version $PACKAGE_VERSION
+
+      # Reads the Chart.lock the step above left behind, so it names the sub-chart
+      # versions this chart was actually built with, not a later re-resolution.
+      - name: Generate subcharts.yaml
+        run: make subcharts-manifest
 
       - name: Push Helm Chart
         run: |
           helm push ./charts/kai-scheduler-$PACKAGE_VERSION.tgz oci://${{ env.DOCKER_REGISTRY }}
+
+      - name: Set up ORAS
+        if: startsWith(env.PACKAGE_VERSION, 'v')
+        uses: oras-project/setup-oras@v2
+
+      - name: Tag Helm Chart without v prefix
+        if: startsWith(env.PACKAGE_VERSION, 'v')
+        run: |
+          oras tag ${{ env.DOCKER_REGISTRY }}/kai-scheduler:$PACKAGE_VERSION ${PACKAGE_VERSION#v}
+
+      # The same package already pushed to GHCR, so the two can never disagree. Uploads only
+      # into an existing release: release-publish.yaml owns creating it, and pushes the tag
+      # just before, so wait briefly rather than skip a release that is seconds away.
+      - name: Attach release assets to the GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          for _ in $(seq 12); do
+            if gh release view "$PACKAGE_VERSION" >/dev/null 2>&1; then
+              gh release upload "$PACKAGE_VERSION" ./charts/kai-scheduler-$PACKAGE_VERSION.tgz subcharts.yaml --clobber
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::warning::No GitHub Release for $PACKAGE_VERSION after 2m; assets not attached."
 
   build-and-push-fips:
     name: Build & Push FIPS
@@ -82,7 +130,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.26.3'
+          go-version: '1.26.10'
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v4
@@ -102,3 +150,38 @@ jobs:
           for f in bin/*-amd64 bin/*-arm64; do
             go version -m "$f" | grep -q 'GOFIPS140=v1.0.0' || { echo "$f is not FIPS-enabled"; exit 1; }
           done
+
+  publish-images-manifest:
+    name: Publish images.yaml
+    needs: [build-and-push, build-and-push-fips]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Extract package version from tag
+        run: |
+          PACKAGE_VERSION=${GITHUB_REF_NAME}
+          echo "PACKAGE_VERSION=$PACKAGE_VERSION" >> $GITHUB_ENV
+          echo $PACKAGE_VERSION
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate images.yaml
+        run: make images-manifest VERSION=$PACKAGE_VERSION DOCKER_REPO_BASE=${{ env.DOCKER_REGISTRY }}
+
+      - name: Upload images.yaml as Release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.PACKAGE_VERSION }}
+          files: images.yaml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -7,8 +7,8 @@ import (
 	"flag"
 	"strings"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	controllers "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper"
+	"github.com/kai-scheduler/api/constants"
 )
 
 type Options struct {
@@ -21,6 +21,7 @@ type Options struct {
 	MaxConcurrentReconciles                int
 	SearchForLegacyPodGroups               bool
 	KnativeGangSchedule                    bool
+	DeploymentGangSchedule                 bool
 	GenericKartaFallback                   bool
 	SchedulerName                          string
 	SchedulingQueueLabelKey                string
@@ -40,6 +41,7 @@ func (o *Options) AddFlags(fs *flag.FlagSet) {
 	fs.IntVar(&o.MaxConcurrentReconciles, "max-concurrent-reconciles", 10, "Max concurrent reconciles")
 	fs.BoolVar(&o.SearchForLegacyPodGroups, "search-legacy-pg", true, "If this flag is enabled, try to find pod groups with legacy name format. If they exist, use the found pod groups instead of creating new once with current name format")
 	fs.BoolVar(&o.KnativeGangSchedule, "knative-gang-schedule", true, "Schedule knative revision as a gang. Defaults to true")
+	fs.BoolVar(&o.DeploymentGangSchedule, "deployment-gang-schedule", true, "Schedule all the pods of a deployment as a single gang. Defaults to true")
 	fs.BoolVar(&o.GenericKartaFallback, "generic-karta-fallback", true, "Enable Karta-backed generic pod grouping fallback for workload GVKs without native plugins")
 	fs.StringVar(&o.SchedulerName, "scheduler-name", constants.DefaultSchedulerName, "The name of the scheduler used to schedule pod groups")
 	fs.StringVar(&o.SchedulingQueueLabelKey, "queue-label-key", constants.DefaultQueueLabel, "Scheduling queue label key name")
@@ -55,6 +57,7 @@ func (o *Options) Configs() controllers.Configs {
 		MaxConcurrentReconciles:                o.MaxConcurrentReconciles,
 		SearchForLegacyPodGroups:               o.SearchForLegacyPodGroups,
 		KnativeGangSchedule:                    o.KnativeGangSchedule,
+		DeploymentGangSchedule:                 o.DeploymentGangSchedule,
 		GenericKartaFallback:                   o.GenericKartaFallback,
 		SchedulerName:                          o.SchedulerName,
 		SchedulingQueueLabelKey:                o.SchedulingQueueLabelKey,

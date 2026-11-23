@@ -12,8 +12,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common"
+	kaiv1 "github.com/kai-scheduler/api/kai/v1"
 )
 
 const (
@@ -75,6 +75,9 @@ func buildArgsList(kaiConfig *kaiv1.Config) []string {
 
 	if config.Args.GangScheduleKnative != nil {
 		args = append(args, "--knative-gang-schedule="+strconv.FormatBool(*config.Args.GangScheduleKnative))
+	}
+	if config.Args.GangScheduleDeployment != nil {
+		args = append(args, "--deployment-gang-schedule="+strconv.FormatBool(*config.Args.GangScheduleDeployment))
 	}
 	if config.Args.GenericKartaFallback != nil {
 		args = append(args, "--generic-karta-fallback="+strconv.FormatBool(*config.Args.GenericKartaFallback))

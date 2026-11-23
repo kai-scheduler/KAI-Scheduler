@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/topology_info"
+	"github.com/kai-scheduler/api/scheduling/v2alpha2"
 )
 
 const (

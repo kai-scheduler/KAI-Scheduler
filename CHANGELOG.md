@@ -4,6 +4,128 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v0.19.0] - 2026-11-11
+
+### Added
+- Adds support for gpu-memory.limit and gpu-fraction.limit for fractions when NvFraction mode is used. [davidLif](https://github.com/davidLif)
+- Graph new workload scale test scenarios in the performance dashboard
+- Model Memory Manager NUMA groups in scheduling and export pod-level observed memory ownership [#2013](https://github.com/kai-scheduler/KAI-Scheduler/issues/2013) [itsomri](https://github.com/itsomri)
+- Helm chart OCI tags without v prefix, enabling semver ranges like ~0.18.0 [#2393](https://github.com/kai-scheduler/KAI-Scheduler/issues/2393) [gshaibi](https://github.com/gshaibi)
+- KWOK scale scenarios for inference, elastic reclaim, and topology-constrained hero jobs
+- Opt-in preempt and reclaim on a node to make room for in-place resizes the kubelet deferred [#1872](https://github.com/kai-scheduler/KAI-Scheduler/issues/1872) [gshaibi](https://github.com/gshaibi)
+- Allow configuring ServiceMonitor with Helm and do not set prometheus.io/scrape=true annotation when using a ServiceMonitor [#2340](https://github.com/kai-scheduler/KAI-Scheduler/issues/2340) [treydock](https://github.com/treydock)
+
+### Changed
+- gpu-fractioning chart dependency declared as a ~0.1.0 range, resolved at build time [#2364](https://github.com/kai-scheduler/KAI-Scheduler/issues/2364) [natasharomm](https://github.com/natasharomm)
+- Allow pods that tolerate node.kubernetes.io/unschedulable to schedule on cordoned nodes
+- Bucket pull request E2E tests into balanced parallel jobs with a configurable bucket count [#2277](https://github.com/kai-scheduler/KAI-Scheduler/issues/2277) [SiorMeir](https://github.com/SiorMeir)
+- Updated gpu-fractioning chart dependency to v0.1.5 [#2280](https://github.com/kai-scheduler/KAI-Scheduler/issues/2280) [davidLif](https://github.com/davidLif)
+- Updated gpu-fractioning chart dependency to v0.1.6 [#2290](https://github.com/kai-scheduler/KAI-Scheduler/issues/2290) [danbar2](https://github.com/danbar2)
+- Updated gpu-fractioning chart dependency to v0.1.7 [#2353](https://github.com/kai-scheduler/KAI-Scheduler/issues/2353) [barakle1](https://github.com/barakle1)
+- Replace pod-group eviction metrics with workload labels and an events counter
+- Score and sort nodes for a task without per-worker score maps [#2409](https://github.com/kai-scheduler/KAI-Scheduler/issues/2409) [theminjunchoi](https://github.com/theminjunchoi)
+- Faster Unevict in preempt and reclaim simulation by skipping undo checks for other tasks' operations [#2603](https://github.com/kai-scheduler/KAI-Scheduler/issues/2603) [gshaibi](https://github.com/gshaibi)
+- Bump bundled gpu-fractioning; exact version in the subcharts.yaml release asset
+- Consume CRDs and public facing APIs from standalone kai-scheduler/api module [#1917](https://github.com/kai-scheduler/KAI-Scheduler/issues/1917) [SiorMeir](https://github.com/SiorMeir)
+- Moved the third-party component inventory and source-code offer from NOTICE to COPYRIGHT, so NOTICE carries only attribution notices; images ship both files [#2355](https://github.com/kai-scheduler/KAI-Scheduler/issues/2355)
+
+### Fixed
+- Scheduler no longer writes empty stale/last-start PodGroup annotations that made JSON patches fail repeatedly [#2428](https://github.com/kai-scheduler/KAI-Scheduler/issues/2428) [pujitha24](https://github.com/pujitha24)
+- Scheduler no longer drops Evict events on PodGroups that repeatedly emit Unschedulable, StaleJob or NotReady events [JacobTheJacobs](https://github.com/JacobTheJacobs)
+- Disable fractional GPU RuntimeClass injection when GPU Operator NRI is enabled
+- Accept exact fractional GPU quota matches
+- fipsMode=only now sets GODEBUG on resource-reservation pods, scaling pods and all Helm hook jobs [#2240](https://github.com/kai-scheduler/KAI-Scheduler/issues/2240) [gshaibi](https://github.com/gshaibi)
+- Binder no longer logs a misleading bind-success event after a bind failure on the same reconcile
+- podgrouper strips managedFields from the objects it caches [tiffany-yu-ai](https://github.com/tiffany-yu-ai)
+- Bump go-openapi/swag, golang.org/x/crypto and golang.org/x/mod to fix known CVEs [#2247](https://github.com/kai-scheduler/KAI-Scheduler/issues/2247) [SiorMeir](https://github.com/SiorMeir)
+- Node scale adjuster now accounts for nvFraction annotations when calculating needed GPU devices [#2213](https://github.com/kai-scheduler/KAI-Scheduler/issues/2213) [davidLif](https://github.com/davidLif)
+- Scheduler usage database uses `externalPrometheusUrl` when Prometheus is enabled instead of the missing internal Service [#2551](https://github.com/kai-scheduler/KAI-Scheduler/issues/2551) [ZeXi0308](https://github.com/ZeXi0308)
+- Pipeline past DRA devices, host ports and pod affinity of terminating pods instead of evicting more pods [#2412](https://github.com/kai-scheduler/KAI-Scheduler/issues/2412) [gshaibi](https://github.com/gshaibi)
+- Ray clusters with in-tree autoscaling use minReplicas, including zero or unset, as the worker gang minimum. [#2242](https://github.com/kai-scheduler/KAI-Scheduler/issues/2242) [Pranjulcr7](https://github.com/Pranjulcr7)
+- PodGrouper uses default grouping when a Karta lacks gang scheduling instructions [#2276](https://github.com/kai-scheduler/KAI-Scheduler/issues/2276) [enoodle](https://github.com/enoodle)
+- Fix fair-share distribution of over-quota resources to prioritize higher-priority queues [#2278](https://github.com/kai-scheduler/KAI-Scheduler/issues/2278) [karangupta982](https://github.com/karangupta982)
+- Fix Topology CRD installation on Kubernetes 1.28 and 1.29 while preserving node label immutability [#2293](https://github.com/kai-scheduler/KAI-Scheduler/issues/2293) [enoodle](https://github.com/enoodle)
+- Keep queue metric mappings unchanged when a flag value is invalid [#2503](https://github.com/kai-scheduler/KAI-Scheduler/issues/2503) [jackiectl2](https://github.com/jackiectl2)
+- Keep replacement subgroups in the job's required topology domain [#2318](https://github.com/kai-scheduler/KAI-Scheduler/issues/2318) [1fanwang](https://github.com/1fanwang)
+- Fix background pod displacement by preserving namespaced PodGroup identities in node snapshots. [#2366](https://github.com/kai-scheduler/KAI-Scheduler/issues/2366) [itsomri](https://github.com/itsomri)
+- Scheduler deletes only failed BindRequests; binder skips terminal ones, drops duplicate reconcile events, keeps reservations during retries [#2343](https://github.com/kai-scheduler/KAI-Scheduler/issues/2343) [davidLif](https://github.com/davidLif)
+- Operator adopts objects left from a recreated Config instead of letting them be deleted, avoiding 401 crashloops [#2371](https://github.com/kai-scheduler/KAI-Scheduler/issues/2371) [theminjunchoi](https://github.com/theminjunchoi)
+- Reduce scheduler cache memory by retaining only ConfigMap identity [#2376](https://github.com/kai-scheduler/KAI-Scheduler/issues/2376) [enoodle](https://github.com/enoodle)
+- CRD upgrade now fails early, naming the CRD, when stale storedVersions would break the apply [#2381](https://github.com/kai-scheduler/KAI-Scheduler/issues/2381) [SiorMeir](https://github.com/SiorMeir)
+- Preserve GPU reservations while binding requests remain retryable [#2358](https://github.com/kai-scheduler/KAI-Scheduler/issues/2358) [NVGreg](https://github.com/NVGreg)
+- Find Kartas under the GVK label keys the Karta operator stamps
+- Allow the kai-config-deployer hook job to run on OpenShift [#2441](https://github.com/kai-scheduler/KAI-Scheduler/issues/2441) [gshaibi](https://github.com/gshaibi)
+- Scheduler, pod-group-controller and resize webhook charge pod-level resources (KEP-2837) like kubelet admission, preventing OutOfcpu over-commit [#2456](https://github.com/kai-scheduler/KAI-Scheduler/issues/2456) [liuxu623](https://github.com/liuxu623)
+- PyTorchJob podgrouper rejects a non-positive segment size on the pod instead of dividing by zero [#2468](https://github.com/kai-scheduler/KAI-Scheduler/issues/2468) [blacksoxx](https://github.com/blacksoxx)
+- Scheduler no longer counts unrelated extended resources ending in `gpu` (such as HAMi's `nvidia.com/vgpu`) as GPU capacity; only `nvidia.com/gpu` and `amd.com/gpu` map to the GPU slot [#2194](https://github.com/kai-scheduler/KAI-Scheduler/issues/2194) [Abdelsalam-Abbas](https://github.com/Abdelsalam-Abbas)
+- Avoid duplicate full job solver probes [#1749](https://github.com/kai-scheduler/KAI-Scheduler/issues/1749) [enoodle](https://github.com/enoodle)
+- pass podGrouper args through Helm values [saileshd1402](https://github.com/saileshd1402)
+- Apply global.podSecurityContext to the kai-config-deployer hook Job [dttung2905](https://github.com/dttung2905)
+
+## [v0.18.0] - 2026-09-23
+
+### Added
+- Improve simulation performance by caching equivalent node-affinity constraints
+- Persist fractional GPU compute mode [#1316](https://github.com/kai-scheduler/KAI-Scheduler/issues/1316) [davidLif](https://github.com/davidLif)
+- In-place pod resize accounting (KEP-1287) and queue admission webhook
+- Validate NvFractions GPU memory annotations [#1316](https://github.com/kai-scheduler/KAI-Scheduler/issues/1316) [davidLif](https://github.com/davidLif)
+- Add gpujoborder plugin for configurable GPU-based JobOrderFn tiebreak on priority ties
+- Configurable admission Service name preserves webhook DNS and certificate identity during migrations
+- Default memory limits and CPU/memory requests for the operator and chart hook jobs
+- Background pods plugin: ignore maintenance pods when scheduling, evict them when displaced
+- Semi-preemptible mode (alpha): minimal shape is non-preemptible and in-quota, surplus is elastic; gang staleness now respects minSubGroup
+- Schedule NvFractions GPU memory requests [#1316](https://github.com/kai-scheduler/KAI-Scheduler/issues/1316) [davidLif](https://github.com/davidLif)
+- Bind NvFractions GPU memory devices [#1316](https://github.com/kai-scheduler/KAI-Scheduler/issues/1316) [davidLif](https://github.com/davidLif)
+- Configure NvFractions GPU sharing mode [#1316](https://github.com/kai-scheduler/KAI-Scheduler/issues/1316) [davidLif](https://github.com/davidLif)
+- Gate NvFractions on GPU sharing readiness [#1316](https://github.com/kai-scheduler/KAI-Scheduler/issues/1316) [davidLif](https://github.com/davidLif)
+- Add typed fractional GPU group API [#1316](https://github.com/kai-scheduler/KAI-Scheduler/issues/1316) [davidLif](https://github.com/davidLif)
+- Enforce fractional GPU compute modes [#1316](https://github.com/kai-scheduler/KAI-Scheduler/issues/1316) [davidLif](https://github.com/davidLif)
+- Config to group all pods of a deployment under a single podgroup. From now on, this will be the grouping behavior for deployments by default. [#2109](https://github.com/kai-scheduler/KAI-Scheduler/issues/2109) [davidLif](https://github.com/davidLif)
+- Install gpu-sharing as an OCI subchart [#1316](https://github.com/kai-scheduler/KAI-Scheduler/issues/1316) [davidLif](https://github.com/davidLif)
+- Support kai.scheduler gpu-memory.portion.limit annotation for per-container GPU memory limits [#1316](https://github.com/kai-scheduler/KAI-Scheduler/issues/1316) [davidLif](https://github.com/davidLif)
+- Add fipsMode=only to allow the enforcement of GODEBUG=fips140=only at runtime on all KAI containers
+- Add queuePriorityInQuotaReclaim strategy for reclaim. If it's enabled (off by default) higher priority queues can reclaim in-quota resources from lower priority queues. This is alpha functionality, and the exact behavior of this feature might change in future releases.
+- Publish images.yaml manifest with per-platform image digests as a release asset
+- Skill to diagnose why a pod is pending [#1731](https://github.com/kai-scheduler/KAI-Scheduler/issues/1731) [somanythingstodo](https://github.com/somanythingstodo)
+- Added support for configuring binder Pod Disruption Budget via Helm values (`binder.podDisruptionBudget`) when running multiple replicas [#1477](https://github.com/kai-scheduler/KAI-Scheduler/issues/1477) [dttung2905](https://github.com/dttung2905)
+- Added support for configuring queue-controller Pod Disruption Budget via Helm values (`queuecontroller.podDisruptionBudget`) when running multiple replicas [#1477](https://github.com/kai-scheduler/KAI-Scheduler/issues/1477) [dttung2905](https://github.com/dttung2905)
+
+### Changed
+- Images use scratch as base instead of distroless; resource-reservation stays on distroless for NVML
+- Renamed Helm value global.fips to global.fipsMode with on/off options [#1906](https://github.com/kai-scheduler/KAI-Scheduler/issues/1906)
+- Queue allocated status now includes init-container peak and sidecar requests
+- Renamed gpu-compute-sharing-mode annotation to per-container nvidia.com/container.<name>.gpu-compute.mode with validation [#1316](https://github.com/kai-scheduler/KAI-Scheduler/issues/1316) [davidLif](https://github.com/davidLif)
+- Hook image crd-upgrader replaced by helm-hooks: a Go binary on distroless, no shell or kubectl
+
+### Fixed
+- Allow the post-delete cleanup job to run on OpenShift
+- Allow PodGroup minMember and minSubGroup of 0 for workloads with no gang requirement
+- Propagate Kubernetes client QPS and burst settings to operator-managed controllers
+- Preserve reservation pods during BindRequest cache lag [#1316](https://github.com/kai-scheduler/KAI-Scheduler/issues/1316) [davidLif](https://github.com/davidLif)
+- Scheduler and binder now fail fast when Kubernetes API discovery fails at startup, instead of silently disabling dynamic resource allocation and node resource topology for the lifetime of the process. [#2038](https://github.com/kai-scheduler/KAI-Scheduler/issues/2038) [hcnguyen-ai](https://github.com/hcnguyen-ai)
+- Podgrouper skips WorkloadRunner wrapper so wrapped workloads keep their gang grouping
+- Respect hierarchical gang floors during allocation and stale-gang eviction
+- Isolate same-named PodGroups across Kubernetes namespaces
+- DRA allocator now honors PartitionableDevices/ConsumableCapacity feature gates instead of hardcoded empty Features
+- Add resource-reservation service account to OpenShift SecurityContextConstraints
+- Disable TLS ML-KEM hybrid curve so fipsMode=only containers can complete TLS handshakes. See https://github.com/golang/go/issues/78298, https://github.com/kubernetes/kubernetes/issues/133743
+- Releasing pods no longer block required inter-pod anti-affinity, so reclaim and preempt can place such pods
+- Prevent the scheduler from getting stuck when a pod cannot be marked as pipelined.
+- Bug fix: consistent resourceList parsing for resourceInfo and node vector
+- Do not grant the GPU-sharing node score to pods that request no GPU [#2154](https://github.com/kai-scheduler/KAI-Scheduler/issues/2154) [universome](https://github.com/universome)
+- Binder hamicore plugin fails closed instead of admitting pods uncapped when GPU memory limit calc fails
+- Topology migration hook now creates KAI Topologies with the served v1alpha1 API version
+- Queue quota validation sums sibling GPU and memory against the parent and treats -1 as unlimited
+- Reduce scheduler allocations from disabled verbose logs
+- Scheduler status-updater no longer keeps re-applying a cached PodGroup status update after another writer (e.g. pod-group-assigner clearing scheduling conditions) modified the PodGroup. Previously the stale condition was overlaid on every snapshot, so the PodGroup was skipped as "not assigned to current scheduler" until the scheduler restarted.
+- Improve greedy GPU matching performance by avoiding repeated scans
+- Apply fractional GPU compute-mode compatibility consistently during fit and ordering
+- Count a GPU shared by multiple pods through one DRA ResourceClaim once per node, preventing negative idle GPUs. [#1930](https://github.com/kai-scheduler/KAI-Scheduler/issues/1930) [TensorRaya](https://github.com/TensorRaya)
+- stalegangeviction no longer evicts remaining pods of a gang whose pods complete successfully [#1968](https://github.com/kai-scheduler/KAI-Scheduler/issues/1968) [Thezone-1](https://github.com/Thezone-1)
+- tighten configmap verb for admission, nodescaleadjuster, podgroupcontroller, podgrouper, queuecontroller, scheduler ClusterRole [#2060](https://github.com/kai-scheduler/KAI-Scheduler/issues/2060) [dttung2905](https://github.com/dttung2905)
+- Render global.daemonsetsTolerations into kai-config [dttung2905](https://github.com/dttung2905)
+- Honor postCleanup.serviceAccountName for the post-delete ServiceAccount and ClusterRoleBinding subject [dttung2905](https://github.com/dttung2905)
+
 ## [v0.17.0] - 2026-08-03
 
 ### Added

@@ -66,7 +66,7 @@ func (alloc *allocateAction) Execute(ssn *framework.Session) {
 			if err == nil && !pipelined && !alreadyAllocated {
 				setLastStartTimestamp(job)
 			}
-			if err == nil && podgroup_info.HasTasksToAllocate(job, true) {
+			if err == nil && podgroup_info.HasTasksToAllocate(job, podgroup_info.RealTaskAllocation) {
 				jobsOrderByQueues.PushJob(job)
 				continue
 			}
@@ -79,13 +79,14 @@ func (alloc *allocateAction) Execute(ssn *framework.Session) {
 func attemptToAllocateJob(ssn *framework.Session, stmt *framework.Statement, job *podgroup_info.PodGroupInfo) (allocated, pipelined bool) {
 	queue := ssn.ClusterInfo.Queues[job.Queue]
 
-	resReq := podgroup_info.GetTasksToAllocateInitResourceVector(job, ssn.SubGroupOrderFn, ssn.TaskOrderFn, true,
+	resReq := podgroup_info.GetTasksToAllocateInitResourceVector(job, ssn.SubGroupOrderFn, ssn.TaskOrderFn,
+		podgroup_info.RealTaskAllocation,
 		ssn.ClusterInfo.MinNodeGPUMemoryMiB)
 	log.InfraLogger.V(3).Infof("Attempting to allocate job: <%v/%v> of queue <%v>, resources: <%v>",
 		job.Namespace, job.Name, queue.Name, resReq)
 
 	nodes := maps.Values(ssn.ClusterInfo.Nodes)
-	if !common.AllocateJob(ssn, stmt, nodes, job, false) {
+	if !common.AllocateJob(ssn, stmt, nodes, job, podgroup_info.RealTaskAllocation) {
 		log.InfraLogger.V(3).Infof("Could not allocate resources for job: <%v/%v> of queue <%v>",
 			job.Namespace, job.Name, job.Queue)
 		return false, false

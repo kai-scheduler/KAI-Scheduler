@@ -12,6 +12,9 @@ templates:
   - kai-config.yaml
   - services/operator.yaml
   - hooks/pre/crd-upgrader.yaml
+  - hooks/pre/topology-migration/job.yaml
+  - hooks/post/post-delete-job.yaml
+  - hooks/post/kai-config-deployer/job.yaml
 tests:
   - it: should not suffix image tags by default
     asserts:
@@ -28,7 +31,7 @@ tests:
           value: Deployment
       - equal:
           path: spec.template.spec.containers[0].image
-          value: registry/local/kai-scheduler/crd-upgrader:0.0.0
+          value: registry/local/kai-scheduler/helm-hooks:0.0.0
         template: hooks/pre/crd-upgrader.yaml
 
   - it: should suffix all image tags when global.fipsMode is on
@@ -61,7 +64,7 @@ tests:
           value: Deployment
       - equal:
           path: spec.template.spec.containers[0].image
-          value: registry/local/kai-scheduler/crd-upgrader:0.0.0-fips
+          value: registry/local/kai-scheduler/helm-hooks:0.0.0-fips
         template: hooks/pre/crd-upgrader.yaml
       - notContains:
           path: spec.template.spec.containers[0].env
@@ -121,7 +124,7 @@ tests:
           value: Deployment
       - equal:
           path: spec.template.spec.containers[0].image
-          value: registry/local/kai-scheduler/crd-upgrader:0.0.0-fips
+          value: registry/local/kai-scheduler/helm-hooks:0.0.0-fips
         template: hooks/pre/crd-upgrader.yaml
       - contains:
           path: spec.template.spec.containers[0].env
@@ -129,3 +132,41 @@ tests:
             name: GODEBUG
             value: fips140=only,tlsmlkem=0
         template: hooks/pre/crd-upgrader.yaml
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: GODEBUG
+            value: fips140=only,tlsmlkem=0
+        template: hooks/pre/topology-migration/job.yaml
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: GODEBUG
+            value: fips140=only,tlsmlkem=0
+        template: hooks/post/post-delete-job.yaml
+
+  - it: should set GODEBUG=fips140=only on the kai-config-deployer hook when global.fipsMode is only
+    set:
+      global.fipsMode: "only"
+      kaiConfigDeployer.enabled: true
+      kaiConfig.render: false
+    template: hooks/post/kai-config-deployer/job.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: GODEBUG
+            value: fips140=only,tlsmlkem=0
+
+  - it: should not set env on hook jobs when global.fipsMode is on
+    set:
+      global.fipsMode: "on"
+      kaiConfigDeployer.enabled: true
+      kaiConfig.render: false
+    templates:
+      - hooks/pre/topology-migration/job.yaml
+      - hooks/post/post-delete-job.yaml
+      - hooks/post/kai-config-deployer/job.yaml
+    asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].env

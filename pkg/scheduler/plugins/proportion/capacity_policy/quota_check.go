@@ -4,14 +4,14 @@
 package capacity_policy
 
 import (
-	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	rs "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/utils"
+	commonconstants "github.com/kai-scheduler/api/constants"
+	"github.com/kai-scheduler/api/scheduling/v2alpha2"
 )
 
 var schedulableResult = &api.SchedulableResult{IsSchedulable: true}
@@ -24,8 +24,10 @@ func (cp *CapacityPolicy) resultsWithNonPreemptibleOverQuota(requestedShare rs.R
 	job *podgroup_info.PodGroupInfo) *api.SchedulableResult {
 
 	if job.IsPreemptibleJob() {
-		log.InfraLogger.V(7).Infof("resultsWithNonPreemptibleOverQuota. Job: <%v/%v> is preemptable",
-			job.Namespace, job.Name)
+		log.InfraLogger.V(7).Do(func() {
+			log.InfraLogger.Infof("resultsWithNonPreemptibleOverQuota. Job: <%v/%v> is preemptable",
+				job.Namespace, job.Name)
+		})
 		return Schedulable()
 	}
 
@@ -67,7 +69,8 @@ func isAllocatedNonPreemptibleOverQuota(
 		if !found || requestedQty == 0 {
 			continue
 		}
-		if resourceShare.Deserved < resourceShare.AllocatedNotPreemptible+requestedQty {
+		if !resource_info.LessOrEqualWithTolerance(resourceShare.AllocatedNotPreemptible+requestedQty,
+			resourceShare.Deserved) {
 			return true, resource
 		}
 	}

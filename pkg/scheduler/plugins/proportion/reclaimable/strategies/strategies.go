@@ -11,8 +11,10 @@ import (
 
 type MaintainFairShareStrategy struct{}
 type GuaranteeDeservedQuotaStrategy struct{}
+type InQuotaQueuePriorityStrategy struct{}
 
 var strategies = []ReclaimStrategy{&MaintainFairShareStrategy{}, &GuaranteeDeservedQuotaStrategy{}}
+var priorityLeadStrategies = append(append([]ReclaimStrategy{}, strategies...), &InQuotaQueuePriorityStrategy{})
 
 func FitsReclaimStrategy(
 	reclaimerResources resource_info.ResourceVector,
@@ -20,8 +22,14 @@ func FitsReclaimStrategy(
 	reclaimerQueue *rs.QueueAttributes,
 	reclaimeeQueue *rs.QueueAttributes,
 	reclaimeeRemainingShare rs.ResourceQuantities,
+	queuePriorityInQuotaReclaim bool,
 ) bool {
-	for _, strategy := range strategies {
+	applicableStrategies := strategies
+	if queuePriorityInQuotaReclaim {
+		applicableStrategies = priorityLeadStrategies
+	}
+
+	for _, strategy := range applicableStrategies {
 		if strategy.Reclaimable(
 			reclaimerResources, vectorMap, reclaimerQueue, reclaimeeQueue,
 			reclaimeeRemainingShare,
@@ -49,7 +57,7 @@ func (mfss *MaintainFairShareStrategy) Reclaimable(
 	// This strategy allows to reclaim if reclaimee is currently over allowed fair share
 
 	log.InfraLogger.V(6).Do(func() {
-		log.InfraLogger.V(6).Infof("Checking if reclaim is possible for reclaimer <%s> and reclaimee <%s> in order "+
+		log.InfraLogger.Infof("Checking if reclaim is possible for reclaimer <%s> and reclaimee <%s> in order "+
 			"to maintain fair share. Reclaimee requested: <%s>, deserved: <%s>, fairShare: <%s>, "+
 			"reclaimeeRemainingShare: <%s>",
 			reclaimerQueue.Name, reclaimeeQueue.Name, reclaimeeQueue.GetRequestableShare(), reclaimeeQueue.GetDeservedShare(),
@@ -68,7 +76,7 @@ func (gdqs *GuaranteeDeservedQuotaStrategy) Reclaimable(
 	// This strategy allows to reclaim if reclaimer is under deserved quota ("starved") and reclaimer is above quota
 
 	log.InfraLogger.V(6).Do(func() {
-		log.InfraLogger.V(6).Infof("Checking if reclaim is possible for reclaimer <%s> and reclaimee <%s> in order to "+
+		log.InfraLogger.Infof("Checking if reclaim is possible for reclaimer <%s> and reclaimee <%s> in order to "+
 			"Guarantee deserved quota. "+
 			"Reclaimee requested: <%s>, deserved: <%s>, fairShare: <%s>, reclaimeeRemainingShare: <%s> "+
 			"Reclaimer requested: <%s>, deserved: <%s>, fairShare: <%s>",
@@ -88,6 +96,28 @@ func (gdqs *GuaranteeDeservedQuotaStrategy) Reclaimable(
 	}
 
 	return true
+}
+
+func (iqps *InQuotaQueuePriorityStrategy) Reclaimable(
+	reclaimerResources resource_info.ResourceVector,
+	vectorMap *resource_info.ResourceVectorMap,
+	reclaimerQueue *rs.QueueAttributes,
+	reclaimeeQueue *rs.QueueAttributes,
+	_ rs.ResourceQuantities) bool {
+	// This strategy allows a strictly higher priority reclaimer to reclaim from an in-quota
+	// reclaimee, as long as the reclaimer stays within its own deserved quota.
+
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("Checking if reclaim is possible for reclaimer <%s> (priority %d) and "+
+			"reclaimee <%s> (priority %d) based on queue priority",
+			reclaimerQueue.Name, reclaimerQueue.Priority, reclaimeeQueue.Name, reclaimeeQueue.Priority)
+	})
+
+	if reclaimerQueue.Priority <= reclaimeeQueue.Priority {
+		return false
+	}
+
+	return ReclaimerFitsDeservedQuota(reclaimerResources, vectorMap, reclaimerQueue)
 }
 
 // FitsMaintainFairShare returns true when the reclaimee remains over its allocatable share.
@@ -110,4 +140,12 @@ func ReclaimeeExceedsDeservedQuota(
 	reclaimeeRemainingShare rs.ResourceQuantities,
 ) bool {
 	return !reclaimeeRemainingShare.LessEqual(reclaimeeQueue.GetDeservedShare())
+}
+
+func ReclaimerFitsReclaimByQueuePriority(
+	queuePriorityInQuotaReclaimEnabled bool,
+	reclaimerQueue *rs.QueueAttributes,
+	reclaimeeQueue *rs.QueueAttributes,
+) bool {
+	return queuePriorityInQuotaReclaimEnabled && reclaimerQueue.Priority > reclaimeeQueue.Priority
 }

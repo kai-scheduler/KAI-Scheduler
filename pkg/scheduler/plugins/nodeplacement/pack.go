@@ -25,9 +25,11 @@ func (pp *nodePlacementPlugin) nodeResourcePack(resourceName v1.ResourceName) ap
 		nodeOverall := node.AllocatableVector.Get(node.VectorMap.GetIndex(resourceName))
 		score := getScoreOfCurrentNode(podAllocationRange.minAllocatable, podAllocationRange.maxAllocatable,
 			currentNodeNonAllocated, nodeOverall)
-		log.InfraLogger.V(7).Infof("Estimating Task: <%v/%v> Job: <%v> for node: <%s> "+
-			"that has <%f> non allocated %v. Score: %f",
-			task.Namespace, task.Name, task.Job, node.Name, currentNodeNonAllocated, resourceName, score)
+		log.InfraLogger.V(7).Do(func() {
+			log.InfraLogger.Infof("Estimating Task: <%v/%v> Job: <%v> for node: <%s> "+
+				"that has <%f> non allocated %v. Score: %f",
+				task.Namespace, task.Name, task.Job, node.Name, currentNodeNonAllocated, resourceName, score)
+		})
 		return score, nil
 	}
 }

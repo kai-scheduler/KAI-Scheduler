@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -15,25 +16,30 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding/resourcereservation"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/common"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/state"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/api/constants"
+	"github.com/kai-scheduler/api/scheduling/v1alpha2"
 )
 
 var InvalidCrdWarning = errors.New("invalid binding request")
 
+// Keep confirmation from extending a failed binding request indefinitely.
+const bindingConfirmationTimeout = 5 * time.Second
+
 type Binder struct {
 	kubeClient                 client.Client
+	apiReader                  client.Reader
 	resourceReservationService resourcereservation.Interface
 	plugins                    *plugins.BinderPlugins
 }
 
-func NewBinder(kubeClient client.Client, rrs resourcereservation.Interface, plugins *plugins.BinderPlugins) *Binder {
+func NewBinder(kubeClient client.Client, apiReader client.Reader, rrs resourcereservation.Interface, plugins *plugins.BinderPlugins) *Binder {
 	return &Binder{
 		kubeClient:                 kubeClient,
+		apiReader:                  apiReader,
 		resourceReservationService: rrs,
 		plugins:                    plugins,
 	}
@@ -54,7 +60,24 @@ func (b *Binder) Bind(ctx context.Context, pod *v1.Pod, node *v1.Node, bindReque
 		}
 	}
 	bindingState := &state.BindingState{
+		BindingPodAnnotations: map[string]string{
+			constants.ReceivedResourceType: bindRequest.Spec.ReceivedResourceType,
+		},
 		ReservedGPUIds: reservedGPUIds,
+	}
+	if len(bindRequest.Spec.PredictedNUMAZones) > 0 {
+		placement, err := json.Marshal(bindRequest.Spec.PredictedNUMAZones)
+		if err != nil {
+			return err
+		}
+		bindingState.BindingPodAnnotations[constants.NumaPlacementPredicted] = string(placement)
+	}
+	if bindRequest.Spec.PredictedNUMAMemoryGroups != nil {
+		groups, err := json.Marshal(bindRequest.Spec.PredictedNUMAMemoryGroups)
+		if err != nil {
+			return err
+		}
+		bindingState.BindingPodAnnotations[constants.NumaMemoryGroupsPredicted] = string(groups)
 	}
 
 	err = b.plugins.PreBind(ctx, pod, node, bindRequest, bindingState)
@@ -62,7 +85,7 @@ func (b *Binder) Bind(ctx context.Context, pod *v1.Pod, node *v1.Node, bindReque
 		return err
 	}
 
-	err = b.patchBindAnnotations(ctx, pod, bindRequest)
+	err = b.patchPodBindingAnnotations(ctx, pod, bindingState)
 	if err != nil {
 		return fmt.Errorf("failed to patch pod <%s/%s> with bind annotations: %w", pod.Namespace, pod.Name, err)
 	}
@@ -76,11 +99,30 @@ func (b *Binder) Bind(ctx context.Context, pod *v1.Pod, node *v1.Node, bindReque
 		},
 	}
 	if err = b.kubeClient.SubResource("binding").Create(ctx, pod, binding); err != nil {
-		return fmt.Errorf("failed to bind pod <%s/%s> to node <%s>: %w", pod.Namespace, pod.Name, node.Name, err)
+		// A lost response can follow a committed bind. Only an uncached read of the
+		// same Pod on the requested node can confirm that this binding succeeded.
+		if !b.isBindingConfirmed(ctx, pod, node.Name) {
+			return fmt.Errorf("failed to bind pod <%s/%s> to node <%s>: %w", pod.Namespace, pod.Name, node.Name, err)
+		}
+		logger.Info("Pod binding confirmed after API request returned an error",
+			"namespace", pod.Namespace, "name", pod.Name, "hostname", node.Name, "error", err)
 	}
 
 	b.plugins.PostBind(ctx, pod, node, bindRequest, bindingState)
 	return nil
+}
+
+func (b *Binder) isBindingConfirmed(ctx context.Context, pod *v1.Pod, nodeName string) bool {
+	if b.apiReader == nil || pod.UID == "" || nodeName == "" {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(ctx, bindingConfirmationTimeout)
+	defer cancel()
+	boundPod := &v1.Pod{}
+	if err := b.apiReader.Get(ctx, client.ObjectKeyFromObject(pod), boundPod); err != nil {
+		return false
+	}
+	return boundPod.UID == pod.UID && boundPod.Spec.NodeName == nodeName
 }
 
 func (b *Binder) Rollback(ctx context.Context, pod *v1.Pod, node *v1.Node, bindRequest *v1alpha2.BindRequest) error {
@@ -109,40 +151,32 @@ func (b *Binder) Rollback(ctx context.Context, pod *v1.Pod, node *v1.Node, bindR
 }
 
 func (b *Binder) reserveGPUs(ctx context.Context, pod *v1.Pod, bindRequest *v1alpha2.BindRequest) ([]string, error) {
-	if len(bindRequest.Spec.SelectedGPUGroups) == 0 {
+	fractionalGpuGroups := bindRequest.Spec.SelectedFractionalGpuGroupsOrDefault()
+	if len(fractionalGpuGroups) == 0 {
 		// Old bindingRequest bad conversion. delete the binding request.
-		return nil, fmt.Errorf("no SelectedGPUGroups for fractional pod: %w", InvalidCrdWarning)
+		return nil, fmt.Errorf("no selected GPU groups for fractional pod: %w", InvalidCrdWarning)
 	}
 
 	var gpuIndexes []string
-	for _, gpuGroup := range bindRequest.Spec.SelectedGPUGroups {
-		gpuIndex, err := b.resourceReservationService.ReserveGpuDevice(ctx, pod, bindRequest.Spec.SelectedNode, gpuGroup)
+	for _, fractionalGpuGroup := range fractionalGpuGroups {
+		gpuIndex, err := b.resourceReservationService.ReserveGpuDevice(
+			ctx, pod, bindRequest.Spec.SelectedNode, fractionalGpuGroup)
 		if err != nil {
 			// Cleanup will be handled by the rollback function
 
-			return nil, fmt.Errorf("failed to reserve GPUs for pod <%s/%s> in gpu group <%s>: %w", pod.Namespace, pod.Name, gpuGroup, err)
+			return nil, fmt.Errorf(
+				"failed to reserve GPUs for pod <%s/%s> in gpu group <%s>: %w",
+				pod.Namespace, pod.Name, fractionalGpuGroup.ID, err)
 		}
 		gpuIndexes = append(gpuIndexes, gpuIndex)
 	}
 	return gpuIndexes, nil
 }
 
-func (b *Binder) patchBindAnnotations(ctx context.Context, pod *v1.Pod, bindRequest *v1alpha2.BindRequest) error {
-	annotations := map[string]string{
-		constants.ReceivedResourceType: bindRequest.Spec.ReceivedResourceType,
-	}
-
-	if len(bindRequest.Spec.PredictedNUMAZones) > 0 {
-		placement, err := json.Marshal(bindRequest.Spec.PredictedNUMAZones)
-		if err != nil {
-			return err
-		}
-		annotations[constants.NumaPlacementPredicted] = string(placement)
-	}
-
+func (b *Binder) patchPodBindingAnnotations(ctx context.Context, pod *v1.Pod, bindingState *state.BindingState) error {
 	patchBytes, err := json.Marshal(map[string]interface{}{
 		"metadata": map[string]interface{}{
-			"annotations": annotations,
+			"annotations": bindingState.BindingPodAnnotations,
 		},
 	})
 	if err != nil {

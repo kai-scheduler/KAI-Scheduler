@@ -17,15 +17,16 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
-	kaiv1admission "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/admission"
-	kaiv1binder "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/binder"
 	generate "github.com/kai-scheduler/KAI-scheduler/pkg/operator/cert-utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common"
+	kaiv1 "github.com/kai-scheduler/api/kai/v1"
+	kaiv1admission "github.com/kai-scheduler/api/kai/v1/admission"
+	kaiv1binder "github.com/kai-scheduler/api/kai/v1/binder"
 )
 
 const (
 	defaultResourceName           = "admission"
+	defaultBinderServiceAccount   = "binder"
 	kaiAdmissionWebhookSecretName = "kai-admission-webhook-tls-secret"
 	certKey                       = "tls.crt"
 	keyKey                        = "tls.key"
@@ -41,10 +42,20 @@ func (a *Admission) deploymentForKAIConfig(
 		return nil, err
 	}
 
-	deployment.Spec.Strategy.Type = appsv1.RecreateDeploymentStrategyType
-	deployment.Spec.Strategy.RollingUpdate = nil
+	// The pod webhooks fail closed, so a new pod must be serving before an old one stops.
+	deployment.Spec.Strategy = appsv1.DeploymentStrategy{
+		Type: appsv1.RollingUpdateDeploymentStrategyType,
+		RollingUpdate: &appsv1.RollingUpdateDeployment{
+			MaxUnavailable: ptr.To(intstr.FromInt32(0)),
+			MaxSurge:       ptr.To(intstr.FromInt32(1)),
+		},
+	}
 	deployment.Spec.Replicas = config.Replicas
-	deployment.Spec.Template.Spec.Containers[0].Args = buildArgsList(kaiConfig, config)
+	nriPluginEnabled, err := common.IsGPUOperatorNRIPluginEnabled(ctx, runtimeClient)
+	if err != nil {
+		return nil, err
+	}
+	deployment.Spec.Template.Spec.Containers[0].Args = buildArgsList(kaiConfig, config, nriPluginEnabled)
 	deployment.Spec.Template.Spec.Containers[0].VolumeMounts = []v1.VolumeMount{
 		{
 			Name:      "cert",
@@ -103,7 +114,7 @@ func (a *Admission) serviceAccountForKAIConfig(
 func (a *Admission) serviceForKAIConfig(
 	ctx context.Context, runtimeClient client.Reader, kaiConfig *kaiv1.Config,
 ) ([]client.Object, error) {
-	serviceObj, err := common.ObjectForKAIConfig(ctx, runtimeClient, &v1.Service{}, a.BaseResourceName,
+	serviceObj, err := common.ObjectForKAIConfig(ctx, runtimeClient, &v1.Service{}, a.serviceName(kaiConfig),
 		kaiConfig.Spec.Namespace)
 	if err != nil {
 		return nil, err
@@ -218,7 +229,7 @@ func (a *Admission) buildWebhookClientConfig(kaiConfig *kaiv1.Config, secret *v1
 	return admissionv1.WebhookClientConfig{
 		Service: &admissionv1.ServiceReference{
 			Namespace: kaiConfig.Spec.Namespace,
-			Name:      a.BaseResourceName,
+			Name:      a.serviceName(kaiConfig),
 			Path:      ptr.To(webhookPath),
 		},
 		CABundle: secret.Data[certKey],
@@ -377,7 +388,7 @@ func (a *Admission) upsertKAIAdmissionCertSecret(ctx context.Context, runtimeCli
 		Kind:       "Secret",
 		APIVersion: "v1",
 	}
-	webhookName := calculateServiceUrl(a.BaseResourceName, kaiConfig.Spec.Namespace)
+	webhookName := calculateServiceUrl(a.serviceName(kaiConfig), kaiConfig.Spec.Namespace)
 	if err = updateSelfSigned(secret, webhookName); err != nil {
 		return err, nil, ""
 	}
@@ -399,11 +410,15 @@ func updateSelfSigned(secret *v1.Secret, serviceUrl string) error {
 	return nil
 }
 
+func (a *Admission) serviceName(kaiConfig *kaiv1.Config) string {
+	return ptr.Deref(kaiConfig.Spec.Admission.ServiceName, a.BaseResourceName)
+}
+
 func calculateServiceUrl(serviceName, namespace string) string {
 	return fmt.Sprintf("%s.%s.svc", serviceName, namespace)
 }
 
-func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1admission.Admission) []string {
+func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1admission.Admission, nriPluginEnabled bool) []string {
 	args := []string{
 		"--scheduler-name",
 		*kaiConfig.Spec.Global.SchedulerName,
@@ -418,9 +433,20 @@ func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1admission.Admission) []
 	if config.GPUSharing != nil && *config.GPUSharing {
 		args = append(args, "--gpu-sharing-enabled=true")
 	}
+	if nriPluginEnabled {
+		args = append(args, "--nri-plugin-enabled=true")
+	}
 
 	if isHamiCoreEnabled(kaiConfig) {
 		args = append(args, "--hami-core-enabled=true")
+	}
+
+	if isNvFractionsEnabled(kaiConfig) {
+		args = append(args,
+			"--nv-fractions-enabled=true",
+			"--binder-service-account-username",
+			binderServiceAccountUsername(kaiConfig.Spec.Namespace),
+		)
 	}
 
 	if config.BlockNvidiaVisibleDevices != nil && *config.BlockNvidiaVisibleDevices {
@@ -431,7 +457,9 @@ func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1admission.Admission) []
 		args = append(args, "--leader-elect")
 	}
 
-	if config.GPUFractionRuntimeClassName != nil {
+	if nriPluginEnabled {
+		args = append(args, "--gpu-fraction-runtime-class-name", "")
+	} else if config.GPUFractionRuntimeClassName != nil {
 		args = append(args, "--gpu-fraction-runtime-class-name", *config.GPUFractionRuntimeClassName)
 	}
 	if config.GPUPodRuntimeClassName != nil {
@@ -451,11 +479,26 @@ func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1admission.Admission) []
 	return common.AddControllerRuntimeJSONLogArg(kaiConfig.Spec.Global.JSONLog, args)
 }
 
+func binderServiceAccountUsername(namespace string) string {
+	return fmt.Sprintf("system:serviceaccount:%s:%s", namespace, defaultBinderServiceAccount)
+}
+
 func isHamiCoreEnabled(kaiConfig *kaiv1.Config) bool {
 	if kaiConfig.Spec.Binder == nil {
 		return false
 	}
 	pluginCfg, found := kaiConfig.Spec.Binder.Plugins[kaiv1binder.HamiCorePluginName]
+	if !found {
+		return false
+	}
+	return ptr.Deref(pluginCfg.Enabled, false)
+}
+
+func isNvFractionsEnabled(kaiConfig *kaiv1.Config) bool {
+	if kaiConfig.Spec.Binder == nil {
+		return false
+	}
+	pluginCfg, found := kaiConfig.Spec.Binder.Plugins[kaiv1binder.NvFractionsPluginName]
 	if !found {
 		return false
 	}

@@ -22,10 +22,6 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/ptr"
 
-	kubeaischedfake "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/fake"
-	fakeschedulingv2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/typed/scheduling/v2alpha2/fake"
-	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -36,6 +32,10 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
+	kubeaischedfake "github.com/kai-scheduler/api/client/clientset/versioned/fake"
+	fakeschedulingv2alpha2 "github.com/kai-scheduler/api/client/clientset/versioned/typed/scheduling/v2alpha2/fake"
+	commonconstants "github.com/kai-scheduler/api/constants"
+	enginev2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
 )
 
 type UpdatePodGroupConditionTest struct {
@@ -755,7 +755,7 @@ func TestDefaultStatusUpdater_RecordJobStatusEvent(t *testing.T) {
 			stopCh := make(chan struct{})
 			statusUpdater.Run(stopCh)
 
-			statusUpdater.RecordJobStatusEvent(jobInfos["test-job"], nil)
+			statusUpdater.RecordJobStatusEvent(jobInfos[common_info.NewPodGroupID(test.job.Namespace, test.job.Name)], nil)
 
 			events := []string{}
 			close(recorder.Events)
@@ -827,6 +827,36 @@ func TestDefaultStatusUpdater_RecordStaleJobEvent(t *testing.T) {
 				},
 			},
 			expectedEvent: "Normal StaleJob Job is stale. 2 pods are active, minMember is 3, subGroup sub-group-1 minMember is 2 and 1 pods are active",
+		},
+		{
+			// A minSubGroup job never had to reach the sum of every leaf's minMember, so the message
+			// names the requirement it does have.
+			name: "stale pod group with minSubGroup",
+			job: func() *podgroup_info.PodGroupInfo {
+				root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+				root.SetMinSubGroup(ptr.To(int32(3)))
+				for _, spec := range []struct {
+					name    string
+					running int
+				}{{"sub-group-0", 2}, {"sub-group-1", 2}, {"sub-group-2", 1}} {
+					podSet := subgroup_info.NewPodSet(spec.name, 2, nil)
+					for i := 0; i < spec.running; i++ {
+						podSet.AssignTask(&pod_info.PodInfo{
+							UID:    common_info.PodID(fmt.Sprintf("%s-%d", spec.name, i)),
+							Status: pod_status.Running,
+						})
+					}
+					root.AddPodSet(podSet)
+				}
+				return &podgroup_info.PodGroupInfo{
+					Name:            "job-pg",
+					Namespace:       "job-ns",
+					UID:             "job-uid",
+					RootSubGroupSet: root,
+					PodSets:         root.GetDescendantPodSets(),
+				}
+			}(),
+			expectedEvent: "Normal StaleJob Job is stale. 5 pods are active, 2 of 3 required subGroups are satisfied, subGroup sub-group-2 minMember is 2 and 1 pods are active",
 		},
 	}
 
@@ -1086,7 +1116,7 @@ func makeEvictionPodGroup(t *testing.T, suffix string) *enginev2alpha2.PodGroup 
 	}
 }
 
-func getEvictedPodsCounterValue(t *testing.T, name, namespace, uid, nodepool, action string) (float64, bool) {
+func getEvictedPodsCounterValue(t *testing.T, expectedLabels map[string]string) (float64, bool) {
 	families, err := prometheus.DefaultGatherer.Gather()
 	require.NoError(t, err)
 	for _, family := range families {
@@ -1098,8 +1128,7 @@ func getEvictedPodsCounterValue(t *testing.T, name, namespace, uid, nodepool, ac
 			for _, lp := range m.GetLabel() {
 				labels[lp.GetName()] = lp.GetValue()
 			}
-			if labels["podgroup"] == name && labels["namespace"] == namespace &&
-				labels["uid"] == uid && labels["nodepool"] == nodepool && labels["action"] == action {
+			if assert.ObjectsAreEqualValues(expectedLabels, labels) {
 				return m.GetCounter().GetValue(), true
 			}
 		}
@@ -1122,20 +1151,57 @@ func TestEvicted_IncrementsCounterByOnePerCall(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			pg := makeEvictionPodGroup(t, tc.name)
+			pg.Annotations = map[string]string{
+				commonconstants.TopOwnerMetadataKey: "group: jobset.x-k8s.io\nkind: JobSet\nname: train-x\nuid: owner-uid\n",
+			}
+			pod := &v1.Pod{ObjectMeta: metav1.ObjectMeta{
+				Labels: map[string]string{commonconstants.SubGroupLabelKey: "workers"},
+			}}
 			statusUpdater := newEvictionTestStatusUpdater()
 
 			for i := 0; i < tc.callCount; i++ {
-				statusUpdater.Evicted(pg, eviction_info.EvictionMetadata{
+				statusUpdater.Evicted(pod, pg, eviction_info.EvictionMetadata{
 					Action:           "preempt",
 					EvictionGangSize: tc.evictionGangSize,
 				}, "evicted")
 			}
 
-			value, found := getEvictedPodsCounterValue(t, pg.Name, pg.Namespace, string(pg.UID), "default", "preempt")
+			value, found := getEvictedPodsCounterValue(t, map[string]string{
+				"action":      "preempt",
+				"namespace":   pg.Namespace,
+				"nodepool":    "default",
+				"owner_group": "jobset.x-k8s.io",
+				"owner_kind":  "JobSet",
+				"owner_name":  "train-x",
+				"owner_uid":   "owner-uid",
+				"podgroup":    pg.Name,
+				"subgroup":    "workers",
+			})
 			require.True(t, found, "counter sample was not emitted")
 			assert.Equal(t, float64(tc.callCount), value)
 		})
 	}
+}
+
+func TestEvicted_UsesEmptyWorkloadLabelsWhenOwnerMetadataIsMissing(t *testing.T) {
+	pg := makeEvictionPodGroup(t, "no-owner")
+	statusUpdater := newEvictionTestStatusUpdater()
+
+	statusUpdater.Evicted(&v1.Pod{}, pg, eviction_info.EvictionMetadata{Action: "reclaim"}, "evicted")
+
+	value, found := getEvictedPodsCounterValue(t, map[string]string{
+		"action":      "reclaim",
+		"namespace":   pg.Namespace,
+		"nodepool":    "default",
+		"owner_group": "",
+		"owner_kind":  "",
+		"owner_name":  "",
+		"owner_uid":   "",
+		"podgroup":    pg.Name,
+		"subgroup":    "",
+	})
+	require.True(t, found, "counter sample was not emitted")
+	assert.Equal(t, float64(1), value)
 }
 
 func TestEvicted_EmitsAnnotatedEventWithMetadata(t *testing.T) {
@@ -1145,7 +1211,7 @@ func TestEvicted_EmitsAnnotatedEventWithMetadata(t *testing.T) {
 	kubeAiSchedClient := kubeaischedfake.NewSimpleClientset()
 	statusUpdater := New(kubeClient, kubeAiSchedClient, recorder, 1, false, nodePoolLabelKey)
 
-	statusUpdater.Evicted(pg, eviction_info.EvictionMetadata{
+	statusUpdater.Evicted(&v1.Pod{}, pg, eviction_info.EvictionMetadata{
 		Action:           "preempt",
 		EvictionGangSize: 5,
 		Preemptor:        &types.NamespacedName{Namespace: "preemptor-ns", Name: "preemptor"},
@@ -1236,4 +1302,44 @@ func TestUpdatePodGroupLastEvictionTimeStamp(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestUpdateCorePods(t *testing.T) {
+	semiPreemptibleJob := func(published, current []string) *podgroup_info.PodGroupInfo {
+		podGroup := &enginev2alpha2.PodGroup{}
+		if published != nil {
+			podGroup.Status.SchedulingState = &enginev2alpha2.PodGroupSchedulingState{CorePods: published}
+		}
+		return &podgroup_info.PodGroupInfo{
+			Preemptibility: enginev2alpha2.SemiPreemptible,
+			PodGroup:       podGroup,
+			CorePodNames:   current,
+		}
+	}
+
+	t.Run("publishes the core set on first sight", func(t *testing.T) {
+		job := semiPreemptibleJob(nil, []string{"pod-a", "pod-b"})
+		assert.True(t, updateCorePods(job))
+		assert.Equal(t, []string{"pod-a", "pod-b"}, job.PodGroup.Status.SchedulingState.CorePods)
+	})
+
+	t.Run("does not republish an unchanged core set", func(t *testing.T) {
+		job := semiPreemptibleJob([]string{"pod-a", "pod-b"}, []string{"pod-a", "pod-b"})
+		assert.False(t, updateCorePods(job))
+	})
+
+	t.Run("republishes when core membership changes", func(t *testing.T) {
+		job := semiPreemptibleJob([]string{"pod-a", "pod-b"}, []string{"pod-a", "pod-c"})
+		assert.True(t, updateCorePods(job))
+		assert.Equal(t, []string{"pod-a", "pod-c"}, job.PodGroup.Status.SchedulingState.CorePods)
+	})
+
+	t.Run("ignores non semi-preemptible jobs", func(t *testing.T) {
+		job := &podgroup_info.PodGroupInfo{
+			Preemptibility: enginev2alpha2.NonPreemptible,
+			PodGroup:       &enginev2alpha2.PodGroup{},
+		}
+		assert.False(t, updateCorePods(job))
+		assert.Nil(t, job.PodGroup.Status.SchedulingState)
+	})
 }

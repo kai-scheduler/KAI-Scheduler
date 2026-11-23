@@ -66,8 +66,10 @@ func handleStaleJob(ssn *framework.Session, job *podgroup_info.PodGroupInfo) {
 		if pod_status.IsActiveAllocatedStatus(task.Status) {
 			tasksToEvict = append(tasksToEvict, task)
 		} else {
-			log.InfraLogger.V(6).Infof("Not evicting task: <%v/%v> its status: <%v>",
-				task.Namespace, task.Name, task.Status)
+			log.InfraLogger.V(6).Do(func() {
+				log.InfraLogger.Infof("Not evicting task: <%v/%v> its status: <%v>",
+					task.Namespace, task.Name, task.Status)
+			})
 		}
 	}
 	evictionMetadata := eviction_info.EvictionMetadata{
@@ -75,6 +77,7 @@ func handleStaleJob(ssn *framework.Session, job *podgroup_info.PodGroupInfo) {
 		Action:           string(framework.StaleGangEviction),
 		Preemptor:        nil,
 	}
+	evicted := false
 	for _, task := range tasksToEvict {
 		reason := api.GetGangEvictionMessage(task, job)
 		if err := ssn.Evict(task, reason, evictionMetadata); err != nil {
@@ -82,8 +85,12 @@ func handleStaleJob(ssn *framework.Session, job *podgroup_info.PodGroupInfo) {
 				task.Namespace, task.Name, job.Name, err)
 			continue
 		}
+		evicted = true
 		log.InfraLogger.V(3).Infof("Evicted task: <%v/%v> due its job being a stale job, its status: <%v>",
 			task.Namespace, task.Name, task.Status)
+	}
+	if evicted {
+		ssn.Cache.RecordPodGroupEvictionEvent(job, evictionMetadata.Action)
 	}
 }
 

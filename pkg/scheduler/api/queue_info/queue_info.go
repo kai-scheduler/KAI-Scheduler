@@ -24,9 +24,9 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	enginev2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
-	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	commonconstants "github.com/kai-scheduler/api/constants"
+	enginev2 "github.com/kai-scheduler/api/scheduling/v2"
 )
 
 type QueueInfo struct {
