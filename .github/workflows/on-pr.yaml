@@ -277,11 +277,11 @@ jobs:
           helm upgrade -i kai-scheduler "/mnt/images/kai-scheduler-$PACKAGE_VERSION.tgz" \
             -n kai-scheduler --create-namespace --set global.registry=localhost:30100 \
             --set global.gpuSharingMode=NonMemoryEnforced --set prometheus.enabled=true --wait
-      - name: Check out the Mokka KWOK PoC
+      - name: Check out the Mokka M1 stack
         uses: actions/checkout@v7
         with:
-          repository: JRosenboimNVIDIA/mokka
-          ref: 951a23001b64382a4f7152690d901e3ebaeaf690
+          repository: NVIDIA/k8s-test-infra
+          ref: 7f6e6eb1bbd8fd589797ea129c08fdda46b313e1 # KWOK M1, NVIDIA/k8s-test-infra#1305
           path: .mokka
           persist-credentials: false
       - name: Install KWOK, its node pool operator and Mokka
@@ -308,9 +308,9 @@ jobs:
           kubectl -n kai-scheduler get events --field-selector type=Warning --sort-by=.lastTimestamp | tail -50
           kubectl get nodepools.kwok.sigs.run-ai.com
           kubectl get nodes -l type=kwok -o 'custom-columns=NAME:.metadata.name,GPUs:.status.allocatable.nvidia\.com/gpu'
-          kubectl -n mokka-kwok-poc get pods -o wide
-          kubectl -n mokka-kwok-poc logs -l app.kubernetes.io/component=control-plane --tail=100
-          kubectl -n mokka-kwok-poc logs deployment/kwok-gpu --tail=100
+          kubectl -n mokka get pods -o wide
+          kubectl -n mokka logs -l app.kubernetes.io/component=control-plane --tail=100
+          kubectl -n mokka logs statefulset/mokka-kwok-data-plane --tail=100
       - uses: actions/upload-artifact@v7
         if: always()
         with:
