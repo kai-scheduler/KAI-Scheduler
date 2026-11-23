@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v0.18.9] - 2026-11-23
+
+### Fixed
+- Add delete-protection finalizer to standalone DRA ResourceClaims so preempted devices are released [#2582](https://github.com/kai-scheduler/KAI-Scheduler/issues/2582) [gaoyk19](https://github.com/gaoyk19)
+- Scope operator informer cache for owned namespaced resources to KAI namespace [#2675](https://github.com/kai-scheduler/KAI-Scheduler/issues/2675) [NVGreg](https://github.com/NVGreg)
+- Allow PodGroup and Queue controllers to record leader-election events. [#2697](https://github.com/kai-scheduler/KAI-Scheduler/issues/2697) [cr7258](https://github.com/cr7258)
+- Pod-grouper logs pod and owner references instead of full objects, keeping env values out of its logs [#2715](https://github.com/kai-scheduler/KAI-Scheduler/issues/2715) [vrv3814](https://github.com/vrv3814)
+
 ## [v0.18.8] - 2026-11-12
 
 ### Changed
