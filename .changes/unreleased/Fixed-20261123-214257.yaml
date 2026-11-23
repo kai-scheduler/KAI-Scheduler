@@ -1,0 +1,6 @@
+kind: Fixed
+body: 'Scheduler metrics listen-address and HA leader EndpointSlice use Service targetPort; Helm kai-config sets schedulerService targetPort from metricsPort'
+time: 2026-11-23T21:42:57.077081877Z
+custom:
+    Author: dttung2905
+    Issue: "2758"
