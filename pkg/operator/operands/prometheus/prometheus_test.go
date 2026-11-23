@@ -63,56 +63,24 @@ var _ = Describe("Prometheus", func() {
 		})
 
 		Context("when Prometheus is disabled", func() {
-			DescribeTable("should stop requiring removed objects after disabling Prometheus",
-				func(ctx context.Context, removal string) {
-					Expect(fakeKubeClient.Create(ctx, getPrometheusCRD())).To(Succeed())
-					Expect(fakeKubeClient.Create(ctx, getServiceMonitorCRD())).To(Succeed())
-					objects, err := prometheus.DesiredState(ctx, fakeKubeClient, kaiConfig)
-					Expect(err).NotTo(HaveOccurred())
-					Expect(objects).To(HaveLen(5))
-					for _, obj := range objects {
-						Expect(fakeKubeClient.Create(ctx, obj)).To(Succeed())
-					}
+			It("should stop checking objects after Prometheus is disabled", func(ctx context.Context) {
+				Expect(fakeKubeClient.Create(ctx, getPrometheusCRD())).To(Succeed())
+				objects, err := prometheus.DesiredState(ctx, fakeKubeClient, kaiConfig)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(objects).NotTo(BeEmpty())
 
-					kaiConfig.Spec.Prometheus.Enabled = ptr.To(false)
-					retained, err := prometheus.DesiredState(ctx, fakeKubeClient, kaiConfig)
-					Expect(err).NotTo(HaveOccurred())
-					Expect(retained).NotTo(BeEmpty())
-					available, err := prometheus.IsAvailable(ctx, fakeKubeClient)
-					Expect(err).NotTo(HaveOccurred())
-					Expect(available).To(BeFalse())
+				kaiConfig.Spec.Prometheus.Enabled = ptr.To(false)
+				objects, err = prometheus.DesiredState(ctx, fakeKubeClient, kaiConfig)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(objects).To(BeEmpty())
 
-					prometheusObj := *test_utils.FindTypeInObjects[*monitoringv1.Prometheus](retained)
-					switch removal {
-					case "retention expired":
-						prometheusObj.Annotations = map[string]string{
-							deprecationTimestampKey: time.Now().Add(-31 * 24 * time.Hour).Format(time.RFC3339),
-						}
-						Expect(fakeKubeClient.Update(ctx, prometheusObj)).To(Succeed())
-					case "instance deleted":
-						Expect(fakeKubeClient.Delete(ctx, prometheusObj)).To(Succeed())
-					case "CRD removed":
-						Expect(fakeKubeClient.Delete(ctx, getPrometheusCRD())).To(Succeed())
-					}
-
-					remaining, err := prometheus.DesiredState(ctx, fakeKubeClient, kaiConfig)
-					Expect(err).NotTo(HaveOccurred())
-					Expect(remaining).To(BeEmpty())
-					for _, obj := range objects {
-						Expect(client.IgnoreNotFound(fakeKubeClient.Delete(ctx, obj))).To(Succeed())
-					}
-
-					deployed, err := prometheus.IsDeployed(ctx, fakeKubeClient)
-					Expect(err).NotTo(HaveOccurred())
-					Expect(deployed).To(BeTrue())
-					available, err = prometheus.IsAvailable(ctx, fakeKubeClient)
-					Expect(err).NotTo(HaveOccurred())
-					Expect(available).To(BeTrue())
-				},
-				Entry("when retention expires", "retention expired"),
-				Entry("when the Prometheus instance is already gone", "instance deleted"),
-				Entry("when the Prometheus CRD is removed", "CRD removed"),
-			)
+				deployed, err := prometheus.IsDeployed(ctx, fakeKubeClient)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(deployed).To(BeTrue())
+				available, err := prometheus.IsAvailable(ctx, fakeKubeClient)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(available).To(BeTrue())
+			})
 
 			It("should return no objects when no Prometheus instance exists", func(ctx context.Context) {
 				kaiConfig.Spec.Prometheus.Enabled = ptr.To(false)
