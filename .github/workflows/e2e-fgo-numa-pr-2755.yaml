@@ -1,0 +1,146 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+name: KAI PR 2755 - Full NUMA e2e
+run-name: KAI PR 2755 - Full NUMA e2e on FGO
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  numa:
+    if: github.event.pull_request.head.repo.full_name == 'JRosenboimNVIDIA/KAI-Scheduler' && github.head_ref == 'testing/kai-2755-fgo-numa-ci'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      KAI_REVISION: b2a7d318fca8abbe5db8eb0aae5968f9d01f99b2
+      CLUSTER_NAME: kai-2755-numa
+      DOCKER_BUILDX_ADDITIONAL_ARGS: --load
+      PACKAGE_VERSION: 0.0.0-numa-2755-${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ env.KAI_REVISION }}
+          persist-credentials: false
+      - name: Record the tested PR commit
+        run: |
+          mkdir -p numa-results
+          git rev-parse HEAD | tee numa-results/revision.txt
+          test "$(cat numa-results/revision.txt)" = "$KAI_REVISION"
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.19.0
+      - uses: helm/kind-action@v1.14.0
+        with:
+          install_only: true
+          version: v0.32.0
+      - name: Prepare runner
+        run: |
+          sudo sysctl -w fs.inotify.max_user_instances=1280 fs.inotify.max_user_watches=655360
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+      - name: Build this PR and install KAI and FGO in Kind
+        run: |
+          ./hack/setup-e2e-cluster.sh --local-images-build --feature-config numa-full
+          helm upgrade kai-scheduler ./deployments/kai-scheduler \
+            --namespace kai-scheduler --reuse-values \
+            --set global.tag="$PACKAGE_VERSION" \
+            --set scheduler.plugins.numa.enabled=true --wait --timeout 10m
+          kubectl -n kai-scheduler wait --for=create daemonset/numa-placement-exporter --timeout=3m
+          kubectl -n kai-scheduler rollout status daemonset/numa-placement-exporter --timeout=5m
+      - name: Check FGO topology
+        run: |
+          python3 - <<'PY'
+          import json
+          import subprocess
+          import time
+
+          def items(*args):
+              return json.loads(subprocess.check_output(["kubectl", "get", *args, "-o", "json"]))["items"]
+
+          policies = {"numa-single": "single-numa-node", "default": "restricted", "numa-besteffort": "best-effort"}
+          for attempt in range(60):
+              try:
+                  nodes = items("nodes", "-l", "run.ai/simulated-gpu-node-pool")
+                  reports = {r["metadata"]["name"]: r for r in items("noderesourcetopologies")}
+                  assert len(nodes) == 4, f"expected four GPU workers, got {len(nodes)}"
+                  observed = []
+                  for node in nodes:
+                      name = node["metadata"]["name"]
+                      pool = node["metadata"]["labels"]["run.ai/simulated-gpu-node-pool"]
+                      report = reports[name]
+                      attrs = {a["name"]: a["value"] for a in report.get("attributes", [])}
+                      zones = sorted(int(r["allocatable"]) for z in report["zones"]
+                                     for r in z["resources"] if r["name"] == "nvidia.com/gpu")
+                      assert node["status"]["allocatable"].get("nvidia.com/gpu") == "8", name
+                      assert attrs.get("topologyManagerPolicy") == policies[pool], (name, attrs)
+                      assert zones == [4, 4], (name, zones)
+                      observed.append(f"{name}: policy={policies[pool]}, GPUs={zones}")
+                  print("\n".join(observed), flush=True)
+                  break
+              except (AssertionError, KeyError, subprocess.CalledProcessError) as error:
+                  if attempt == 59:
+                      raise
+                  print(f"Waiting for FGO topology: {error}", flush=True)
+                  time.sleep(5)
+          PY
+      - name: Run the full NUMA e2e suite
+        id: suite
+        run: |
+          go tool ginkgo --keep-going --trace -vv --label-filter numa --timeout 45m \
+            --output-dir=numa-results --json-report=report.json --junit-report=junit.xml \
+            ./test/e2e/suites/numa
+      - name: Check that both Burstable cases ran and passed
+        if: ${{ !cancelled() && steps.suite.outcome != 'skipped' }}
+        run: |
+          python3 - <<'PY'
+          import collections
+          import json
+          import os
+          from pathlib import Path
+
+          reports = json.loads(Path("numa-results/report.json").read_text())
+          specs = [spec for report in reports for spec in report["SpecReports"] if spec["LeafNodeType"] == "It"]
+          states = collections.Counter(spec["State"] for spec in specs)
+          burstable = {
+              spec["LeafNodeText"]: spec["State"]
+              for spec in specs if spec["LeafNodeText"].startswith("Burstable ")
+          }
+          expected = {
+              "Burstable cross-zone GPU request is filtered": "passed",
+              "Burstable pod can use CPU and memory beyond its GPU zone": "passed",
+          }
+          summary = (
+              f"KAI PR 2755 at `{os.environ['KAI_REVISION']}` with FGO\n\n"
+              f"NUMA cases: {dict(states)}\n\n"
+              f"Burstable cases: {burstable}\n"
+          )
+          print(summary)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as output:
+              output.write(summary)
+          assert burstable == expected, f"expected both Burstable cases to pass: {burstable}"
+          PY
+      - name: Collect cluster state and logs
+        if: always()
+        run: |
+          mkdir -p numa-results
+          kubectl get nodes -o yaml > numa-results/nodes.yaml 2>&1 || true
+          kubectl get noderesourcetopologies -o yaml > numa-results/nrt.yaml 2>&1 || true
+          kubectl get pods -A -o yaml > numa-results/pods.yaml 2>&1 || true
+          kubectl get events -A --sort-by=.lastTimestamp > numa-results/events.txt 2>&1 || true
+          helm list -A > numa-results/helm.txt 2>&1 || true
+          kind export logs numa-results/kind --name "$CLUSTER_NAME" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kai-2755-numa-results
+          path: numa-results
+      - name: Delete test cluster
+        if: always()
+        run: kind delete cluster --name "$CLUSTER_NAME"
