@@ -1,6 +1,0 @@
-kind: Added
-body: |-
-  Helm chart OCI tags without v prefix, enabling semver ranges like ~0.18.0
-custom:
-  Author: "gshaibi"
-  Issue: "2393"

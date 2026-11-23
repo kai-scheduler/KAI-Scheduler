@@ -1,0 +1,5 @@
+kind: Fixed
+body: |-
+  Admission webhook upgrades no longer reject pod creation: the operator rolls the admission deployment with a new pod serving before the old one stops, instead of recreating it
+custom:
+  Author: "amitaekbote"

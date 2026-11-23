@@ -49,6 +49,7 @@ func init() {
 }
 
 // +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
 func Run(options *Options, config *rest.Config, ctx context.Context) error {
 	config.QPS = float32(options.Qps)

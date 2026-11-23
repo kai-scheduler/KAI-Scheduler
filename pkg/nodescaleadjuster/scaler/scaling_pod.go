@@ -16,6 +16,12 @@ import (
 )
 
 func scalingPodName(unschedulablePodNamespace string, unschedulablePodName string) string {
+	// Namespaces cannot contain dots; the prefix also avoids names created with the old hyphen separator.
+	return fmt.Sprintf("scaling.%s.%s", unschedulablePodNamespace, unschedulablePodName)
+}
+
+// legacyScalingPodName is the name format used before scalingPodName added the dot separator.
+func legacyScalingPodName(unschedulablePodNamespace string, unschedulablePodName string) string {
 	return fmt.Sprintf("%s-%s", unschedulablePodNamespace, unschedulablePodName)
 }
 

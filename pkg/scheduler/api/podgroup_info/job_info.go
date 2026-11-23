@@ -477,6 +477,16 @@ func (pgi *PodGroupInfo) GetNumPendingTasks() int {
 	return len(pgi.PodStatusIndex[pod_status.Pending])
 }
 
+func (pgi *PodGroupInfo) IsResizeStandIn() bool {
+	pending := pgi.PodStatusIndex[pod_status.Pending]
+	for _, task := range pending {
+		if !task.IsResizeStandIn {
+			return false
+		}
+	}
+	return len(pending) > 0
+}
+
 func (pgi *PodGroupInfo) GetNumGatedTasks() int {
 	return len(pgi.PodStatusIndex[pod_status.Gated])
 }

@@ -38,7 +38,8 @@ func TestFittingNodeAggregatesCompactReasonCounts(t *testing.T) {
 	})
 
 	for _, nodeName := range []string{"node-a", "node-b"} {
-		require.False(t, ssn.FittingNode(task, ssn.ClusterInfo.Nodes[nodeName], true))
+		fits, _ := ssn.FittingNode(task, ssn.ClusterInfo.Nodes[nodeName], false)
+		require.False(t, fits)
 	}
 
 	fitErrors := job.TasksFitErrors[task.UID]
@@ -99,7 +100,8 @@ func TestRecomputeDetailedFitErrorsBuildsCurrentResourceDetails(t *testing.T) {
 	for _, node := range ssn.ClusterInfo.Nodes {
 		node.IdleVector.Set(resource_info.GPUIndex, 0)
 		node.UsedVector.Set(resource_info.GPUIndex, 1)
-		require.False(t, ssn.FittingNode(task, node, true))
+		fits, _ := ssn.FittingNode(task, node, false)
+		require.False(t, fits)
 
 		node.IdleVector.Set(resource_info.GPUIndex, 0.5)
 		node.UsedVector.Set(resource_info.GPUIndex, 0.5)
