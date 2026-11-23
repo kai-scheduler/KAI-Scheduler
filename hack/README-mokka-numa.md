@@ -9,7 +9,7 @@ The `numa-full` kind layout has four GPU workers, with eight A100 GPUs each,
 split 4+4 between two zones. Two workers use `single-numa-node`; one uses
 `restricted`; one uses `best-effort`. A CPU worker runs the control services.
 
-Mokka is pinned to `4c5978a05a57c15fd00aa6511517afcf04354fab` in the public
+Mokka is pinned to `9489ec15a576e55d073b82e6265c6255c1a6ba53` in the public
 `JRosenboimNVIDIA/mokka` fork. This is main-based NUMA PR #1148, without
 Roman's kernel-driver or GPUCluster branches. It includes bidirectional
 host mounts, the PodResources socket health check, and a shared NUMA layout

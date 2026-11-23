@@ -20,7 +20,7 @@ fi
 GPU_OPERATOR_IMAGE="$GPU_OPERATOR_IMAGE_REPOSITORY:$GPU_OPERATOR_IMAGE_TAG"
 # Main-based NUMA PR 1148; no simulated kernel-driver or GPUCluster changes.
 : "${MOKKA_REPOSITORY:=https://github.com/JRosenboimNVIDIA/mokka.git}"
-: "${MOKKA_REF:=4c5978a05a57c15fd00aa6511517afcf04354fab}"
+: "${MOKKA_REF:=9489ec15a576e55d073b82e6265c6255c1a6ba53}"
 : "${MOKKA_IMAGE_REPOSITORY:=mokka-e2e}"
 : "${MOKKA_IMAGE_TAG:=${MOKKA_REF:0:12}}"
 

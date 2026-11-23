@@ -2,7 +2,7 @@
 
 The default local runner and the PR, upgrade and GitOps jobs install NVIDIA GPU Operator v26.7.2 with the upstream #2959 operand manifests and Mokka instead of FGO. Production charts are unchanged. GPU sharing remains `NonMemoryEnforced`; this PR does not switch the Scheduler tests to NvFractions.
 
-`install-mokka-gpu-operator.sh` builds public Mokka commit `4c5978a05a57c15fd00aa6511517afcf04354fab` from the `JRosenboimNVIDIA/mokka` fork. This is main-based NUMA PR #1148; it does not include Roman's kernel-driver or GPUCluster branches. It builds the unmodified Mokka Dockerfile and loads the image into kind. The dedicated NUMA workflow uses the setup in `README-mokka-numa.md`; standard suites keep NUMA simulation disabled.
+`install-mokka-gpu-operator.sh` builds public Mokka commit `9489ec15a576e55d073b82e6265c6255c1a6ba53` from the `JRosenboimNVIDIA/mokka` fork. This is main-based NUMA PR #1148; it does not include Roman's kernel-driver or GPUCluster branches. It builds the unmodified Mokka Dockerfile and loads the image into kind. The dedicated NUMA workflow uses the setup in `README-mokka-numa.md`; standard suites keep NUMA simulation disabled.
 
 The installer builds a small GPU Operator image from the official v26.7.2 image and upstream assets at `158ec57fa19eb71ad484d5e337f05a2b612ca170`, the release-26.7 backport of #2959. This commit changes six operand manifests and their unit test; the release binaries stay unchanged. The startup check reads `/sys/module/nvidia/initstate`, which Mokka supplies through its simulated module tree. Setup checks the deployed gate before waiting for readiness.
 
