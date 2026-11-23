@@ -1,0 +1,226 @@
+<!--
+ Copyright 2026 NVIDIA CORPORATION
+ SPDX-License-Identifier: Apache-2.0
+-->
+
+<div id="kai-cluster-map">
+<style>
+#kai-cluster-map{color:var(--foreground);display:grid;gap:calc(var(--font-size-base)*1);--ok:var(--viz-series-1);--cordon:var(--viz-series-2);--unknown:var(--viz-series-3)}
+#kai-cluster-map .intro{padding-right:90px;display:grid;gap:4px}
+#kai-cluster-map .metrics{display:flex;flex-wrap:wrap;gap:8px 24px}
+#kai-cluster-map .map{display:grid;gap:9px}
+#kai-cluster-map .clique{display:grid;grid-template-columns:96px minmax(0,1fr);align-items:start;gap:10px}
+#kai-cluster-map .clique-label{padding-top:6px;overflow-wrap:anywhere}
+#kai-cluster-map .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(40px,1fr));gap:3px}
+#kai-cluster-map .node-cell{display:grid;gap:2px;min-width:0;text-align:center}
+#kai-cluster-map .free-total{margin:8px 0;display:flex;flex-wrap:wrap;gap:6px 18px}
+#kai-cluster-map .node-ready{--viz-tile-fill:color-mix(in srgb,var(--ok) 16%,var(--background));background:var(--viz-tile-fill)}
+#kai-cluster-map .node-cordon{--viz-tile-fill:color-mix(in srgb,var(--cordon) 24%,var(--background));background:var(--viz-tile-fill)}
+#kai-cluster-map .node-unknown{--viz-tile-fill:color-mix(in srgb,var(--unknown) 30%,var(--background));background:var(--viz-tile-fill)}
+#kai-cluster-map .legend{display:flex;gap:8px 20px;flex-wrap:wrap}
+#kai-cluster-map .dot{display:inline-block;width:10px;height:10px;margin-right:5px;background:var(--ok)}
+#kai-cluster-map .dot.cordon{background:var(--cordon)}
+#kai-cluster-map .dot.unknown{background:var(--unknown)}
+#kai-cluster-map .detail{display:grid;gap:8px;overflow-wrap:anywhere}
+#kai-cluster-map details{margin-top:8px}
+#kai-cluster-map summary{overflow-wrap:anywhere}
+#kai-cluster-map .tree{margin:6px 0 0 10px;padding-left:14px;border-left:1px solid var(--border)}
+#kai-cluster-map .queue-facts{margin:6px 0 8px 0;display:flex;gap:6px 18px;flex-wrap:wrap}
+#kai-cluster-map .qname{font-weight:500}
+#kai-cluster-map .ns{display:grid;gap:10px}
+#kai-cluster-map .ns-row{padding:6px 0;border-bottom:1px solid var(--border)}
+#kai-cluster-map .phases{display:flex;flex-wrap:wrap;gap:8px 18px}
+#kai-cluster-map .aux{display:grid;gap:8px;margin-top:16px}
+#kai-cluster-map [hidden]{display:none}
+@media(max-width:480px){#kai-cluster-map .clique{grid-template-columns:58px minmax(0,1fr);gap:6px}#kai-cluster-map .tree{margin-left:3px;padding-left:8px}#kai-cluster-map .intro{padding-right:0}}
+
+#kai-cluster-map .pipeline-target{background:color-mix(in srgb,var(--viz-series-4) 22%,var(--background))}
+#kai-cluster-map .pipeline-origin{background:color-mix(in srgb,var(--viz-series-5) 22%,var(--background))}
+#kai-cluster-map .pipeline-both{background:color-mix(in srgb,var(--viz-series-6) 26%,var(--background))}
+#kai-cluster-map .pipeline-other{background:var(--muted)}
+
+#kai-cluster-map .order-ranked{background:var(--order-fill)}
+#kai-cluster-map .order-empty{background:var(--muted)}
+#kai-cluster-map #km-order-list{overflow-wrap:anywhere}
+
+#kai-cluster-map .victim-root{list-style:none;margin:0;padding:0;min-width:0}
+#kai-cluster-map .victim-branches{list-style:none;margin:4px 0 8px 8px;padding-left:16px;border-left:1px solid var(--border);min-width:0}
+#kai-cluster-map .tree-entry{min-width:0;position:relative;margin:6px 0;overflow-wrap:anywhere}
+#kai-cluster-map .victim-branches>.tree-entry::before{content:"";position:absolute;top:16px;left:-16px;width:12px;border-top:1px solid var(--border)}
+#kai-cluster-map .tree-entry-facts{margin:0 0 4px 20px;overflow-wrap:anywhere}
+@media(max-width:560px){#kai-cluster-map .victim-branches{margin-left:2px;padding-left:8px}#kai-cluster-map .victim-branches>.tree-entry::before{left:-8px;width:5px}#kai-cluster-map .tree-entry-facts{margin-left:8px}}
+</style>
+<div class="intro"><h2>Cluster map</h2><div class="text-small text-muted">__CAPTURE__</div></div>
+<div class="metrics tabular-nums">__METRICS__</div>
+<div class="nav nav-pills" role="tablist" aria-label="Cluster views">
+<button id="km-topology-tab" class="nav-link active" role="tab" aria-selected="true" aria-controls="km-topology" type="button">Node topology</button>
+<!--RECLAIM_BEGIN--><button id="km-pipeline-tab" class="nav-link" role="tab" aria-selected="false" aria-controls="km-pipeline" type="button">Pipeline & victims</button><!--RECLAIM_END-->
+<!--RECLAIM_BEGIN--><button id="km-order-tab" class="nav-link" role="tab" aria-selected="false" aria-controls="km-order" type="button">Victim priority order</button><!--RECLAIM_END-->
+<!--RECLAIM_BEGIN--><button id="km-victim-tree-tab" class="nav-link" role="tab" aria-selected="false" aria-controls="km-victim-tree" type="button">Victim tree</button><!--RECLAIM_END-->
+<button id="km-queues-tab" class="nav-link" role="tab" aria-selected="false" aria-controls="km-queues" type="button">Queue hierarchy</button>
+<button id="km-workloads-tab" class="nav-link" role="tab" aria-selected="false" aria-controls="km-workloads" type="button">Workloads & storage</button>
+</div>
+<div id="km-topology" role="tabpanel" aria-labelledby="km-topology-tab">
+<div class="detail card" id="km-selection" aria-live="polite"></div>
+<div id="km-free-total" class="free-total tabular-nums"></div>
+<div class="legend text-small" style="margin:12px 0"><span><i class="dot"></i>Ready, uncordoned</span><span><i class="dot cordon"></i>Ready, cordoned</span><span><i class="dot unknown"></i>Readiness unknown</span></div>
+<div id="km-node-map" class="map" aria-label="Nodes grouped by GPU clique"></div>
+</div>
+<div id="km-queues" role="tabpanel" aria-labelledby="km-queues-tab" hidden><div class="text-small text-muted">GPU allocation / requested demand · captured queue status</div><div id="km-queue-tree"></div></div>
+<div id="km-workloads" role="tabpanel" aria-labelledby="km-workloads-tab" hidden><div class="phases tabular-nums">__PHASES__</div><div class="text-small text-muted" style="margin:8px 0 16px">__PENDING__</div><div id="km-namespace-list" class="ns"></div><div id="km-storage" class="aux"></div></div>
+<!--RECLAIM_BEGIN--><div id="km-pipeline" role="tabpanel" aria-labelledby="km-pipeline-tab" hidden>
+<div id="km-pipeline-summary" class="detail"></div>
+<div id="km-pipeline-selection" class="detail card" aria-live="polite" style="margin-top:12px"></div>
+<div class="legend text-small" style="margin:12px 0"><span><i class="dot" style="background:var(--viz-series-4)"></i>P · target pipeline</span><span><i class="dot" style="background:var(--viz-series-5)"></i><span id="km-victim-legend">V · victim origin</span></span><span><i class="dot" style="background:var(--viz-series-6)"></i>Target + victim</span><span>— · unaffected</span></div>
+<div class="viz-controls" style="margin-bottom:12px"><label class="form-label">Victim locations<select id="km-pipeline-layer" class="form-select"><option value="origins">All eviction origins</option><option value="releasing">Releasing victims only</option><option value="destinations">New pipeline reservations</option></select></label></div>
+<div id="km-pipeline-map" class="map" aria-label="Target pipeline destinations and victim source nodes grouped by GPU clique"></div>
+<details style="margin-top:16px"><summary class="cursor-interaction">Victim groups & replay evidence</summary><div id="km-pipeline-groups"></div><div id="km-pipeline-evidence" class="text-small" style="margin-top:12px;overflow-wrap:anywhere"></div></details>
+</div><!--RECLAIM_END-->
+
+<!--RECLAIM_BEGIN--><div id="km-order" role="tabpanel" aria-labelledby="km-order-tab" hidden>
+<div class="detail"><strong>Reclaim victim priority order</strong><div class="text-small" id="km-order-basis"></div></div>
+<div class="viz-controls" style="margin:12px 0"><label class="form-label">Jobs shown<select id="km-order-scope" class="form-select"><option value="all">All eligible victim candidates</option><option value="evicted">Actually evicted pods only</option></select></label></div>
+<div id="km-order-selection" class="detail card" aria-live="polite"></div>
+<div class="legend text-small" style="margin:12px 0"><span><i class="dot" style="background:color-mix(in srgb,var(--viz-series-1) 40%,var(--background))"></i>Earlier victim rank</span><span><i class="dot" style="background:color-mix(in srgb,var(--viz-series-1) 10%,var(--background))"></i>Later victim rank</span><span>— · no matching job</span></div>
+<div id="km-order-map" class="map" aria-label="Minimum and maximum reclaim victim queue ranks per node and GPU clique"></div>
+<details style="margin-top:16px"><summary class="cursor-interaction">Ordered job list & evidence</summary><div id="km-order-list"></div><div id="km-order-evidence" class="text-small" style="margin-top:12px;overflow-wrap:anywhere"></div></details>
+</div><!--RECLAIM_END-->
+
+<!--RECLAIM_BEGIN--><div id="km-victim-tree" role="tabpanel" aria-labelledby="km-victim-tree-tab" hidden>
+<div class="detail"><h3>Victim tree</h3><div class="text-small" id="km-victim-tree-summary"></div></div>
+<div id="km-victim-tree-selection" class="detail card" aria-live="polite" style="margin:12px 0"></div>
+<div id="km-victim-tree-content" aria-label="Job dependency tree rooted at the reclaimer"></div>
+<details style="margin-top:16px"><summary class="cursor-interaction">Outside the rooted tree</summary><div id="km-victim-tree-outside"></div></details>
+<details style="margin-top:12px"><summary class="cursor-interaction">Dependency rule & evidence</summary><div id="km-victim-tree-evidence" class="text-small" style="margin-top:8px;overflow-wrap:anywhere"></div></details>
+</div><!--RECLAIM_END-->
+
+<script type="application/json" id="km-data">__CLUSTER_DATA__</script>
+<!--RECLAIM_BEGIN--><script type="application/json" id="km-replay-data">__REPLAY_DATA__</script>
+<script type="application/json" id="km-order-data">__ORDER_DATA__</script>
+<script type="application/json" id="km-victim-tree-data">__TREE_DATA__</script><!--RECLAIM_END-->
+<script>
+
+(function(){
+const root=document.getElementById('kai-cluster-map');const data=JSON.parse(root.querySelector('#km-data').textContent);const $=s=>root.querySelector(s);const fmt=n=>Number(n).toLocaleString(undefined,{maximumFractionDigits:2});const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let selected=null;let tab='km-topology';
+let selectedPipeline=null,pipelineLayer='origins',selectedOrderNode=null,orderScope='all',selectedTreeEdge=null,selectedTreeJob=null;const treeOpen=new Set();let restoreReplay=null;
+const free=n=>Math.max(0,n.alloc-n.requested);
+const classify=n=>n.ready!=='True'?'unknown':n.cordoned?'cordon':'ready';
+function save(){if(window.openai?.setWidgetState)window.openai.setWidgetState({modelContent:{selectedNode:selected,view:tab,viewRevision:1,selectedPipelineNode:selectedPipeline,pipelineLayer:pipelineLayer,selectedOrderNode:selectedOrderNode,orderScope:orderScope,selectedTreeJob:selectedTreeJob,selectedTreeEdge:selectedTreeEdge},privateContent:{openVictimTreeJobs:[...treeOpen]}}).catch(()=>{});}
+function showNode(name,persist){const n=data.nodes.find(n=>n.name===name);if(!n)return;selected=n.name;
+root.querySelectorAll('[data-node]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.node===name)));
+const conditions=[n.ready==='True'?'Ready':'Readiness '+n.ready,n.cordoned?'cordoned':'uncordoned',n.role];
+$('#km-selection').innerHTML=`<div><strong>${esc(n.name)}</strong></div><div class="text-small">${esc(conditions.join(' · '))} · ${esc(n.product)} · ${fmt(n.cpu)} CPU cores · ${fmt(n.memory)} GiB allocatable memory</div><div class="tabular-nums"><strong>${fmt(free(n))} GPUs free</strong> · ${fmt(n.requested)} GPU requests / ${fmt(n.alloc)} allocatable / ${fmt(n.gpu)} capacity${n.requested>n.alloc?' · '+fmt(n.requested-n.alloc)+' GPUs over-requested':''} · ${fmt(n.pods)} active assigned pods${n.pending?' · '+n.pending+' Pending':''}</div><details><summary class="cursor-interaction">Node workloads & restrictions</summary><div class="text-small" style="margin:8px 0">Clique: ${esc(n.clique)}<br>Taints: ${n.taints.length?n.taints.map(t=>esc(t.key+(t.value?'='+t.value:'')+':'+t.effect)).join('; '):'none'}</div><table class="table table-sm"><thead><tr><th>Namespace / queue</th><th class="text-end">Pods</th><th class="text-end">GPU requests</th></tr></thead><tbody>${n.workloads.map(w=>`<tr><td>${esc(w.name)}</td><td class="text-end tabular-nums">${fmt(w.pods)}</td><td class="text-end tabular-nums">${fmt(w.gpu)}</td></tr>`).join('')}</tbody></table></details>`;
+if(persist)save();}
+$('#km-free-total').innerHTML=`<span><strong>${fmt(data.nodes.reduce((s,n)=>s+free(n),0))} GPUs free</strong> across all nodes</span><span>${fmt(data.nodes.filter(n=>n.ready==='True'&&!n.cordoned).reduce((s,n)=>s+free(n),0))} on Ready, uncordoned nodes</span>`;
+$('#km-node-map').innerHTML=data.groups.map(g=>{
+const totalFree=g.nodes.reduce((s,i)=>s+free(data.nodes[i]),0);
+const totalAlloc=g.nodes.reduce((s,i)=>s+data.nodes[i].alloc,0);
+const readyFree=g.nodes.reduce((s,i)=>{const n=data.nodes[i];return s+(n.ready==='True'&&!n.cordoned?free(n):0);},0);
+return `<div class="clique"><div class="clique-label text-small" data-tooltip="${esc(g.id)} · ${fmt(totalFree)} GPUs free of ${fmt(totalAlloc)} allocatable · ${fmt(readyFree)} free on Ready, uncordoned nodes">${esc(g.label)}<div class="tabular-nums"><strong>${fmt(totalFree)} GPUs free</strong></div><div class="text-muted">${g.nodes.length} nodes</div></div><div class="tiles">${g.nodes.map(i=>{
+const n=data.nodes[i];const label=n.id.startsWith('r')?n.id.slice(1).replace('-','·'):n.id.split('-').pop().replace(/^cpu00/,'CPU').replace(/^hn0/,'HN');
+return `<div class="node-cell"><button type="button" class="btn viz-tile node-${classify(n)} text-small" data-node="${esc(n.name)}" aria-pressed="false" aria-label="${esc(n.name)}, ${n.ready==='True'?'Ready':'readiness unknown'}, ${n.cordoned?'cordoned':'uncordoned'}, ${fmt(free(n))} GPUs free of ${fmt(n.alloc)} allocatable" data-tooltip="${esc(n.name)} · ${fmt(free(n))} GPUs free · ${fmt(n.requested)}/${fmt(n.alloc)} GPU requests">${esc(label)}</button><span class="text-small tabular-nums">${fmt(free(n))} free</span></div>`;
+}).join('')}</div></div>`;
+}).join('');
+root.querySelectorAll('[data-node]').forEach(b=>b.addEventListener('click',()=>showNode(b.dataset.node,true)));
+function queueTree(q){const children=data.queues.filter(c=>c.parent===q.name);return `<details ${!q.parent?'open':''}><summary class="cursor-interaction"><span class="qname">${esc(q.name)}</span> <span class="text-small tabular-nums">${fmt(q.allocated)} / ${fmt(q.requested)} GPUs${children.length?' · '+children.length+' child queues':''}</span></summary><div class="queue-facts text-small tabular-nums"><span>Quota ${fmt(q.quota)}</span><span>Limit ${q.limit<0?'unlimited':fmt(q.limit)}</span><span>Priority ${fmt(q.priority)}</span><span>${fmt(q.pending)} unassigned Pending pods</span><span>${fmt(q.podGroups)} direct PodGroups</span></div>${children.length?'<div class="tree">'+children.map(queueTree).join('')+'</div>':''}</details>`;}
+$('#km-queue-tree').innerHTML=data.queues.filter(q=>!q.parent||!data.queues.some(p=>p.name===q.parent)).map(queueTree).join('');
+$('#km-namespace-list').innerHTML=Object.entries(data.namespaces).sort((a,b)=>(b[1].phases.Pending||0)-(a[1].phases.Pending||0)||Object.values(b[1].phases).reduce((s,x)=>s+x,0)-Object.values(a[1].phases).reduce((s,x)=>s+x,0)).map(([name,v])=>`<details class="ns-row"><summary class="cursor-interaction"><strong>${esc(name)}</strong> <span class="text-small">${Object.entries(v.phases).map(([p,n])=>fmt(n)+' '+p).join(' · ')}</span></summary><div class="text-small" style="margin-top:8px">${fmt(v.gpu)} active-pod GPU requests · Queues: ${v.queues.map(esc).join(', ')}</div></details>`).join('');
+$('#km-storage').innerHTML=`<h3>Storage & dynamic resources</h3><div>${data.counts.persistentVolumes} PVs · ${data.counts.persistentVolumeClaims} PVCs · ${data.counts.storageClasses} storage classes</div><div class="text-small">${data.storage.map(s=>esc(s.name)+' · '+esc(s.provisioner)).join('<br>')}</div><div>${data.counts.resourceClaims} ResourceClaims · ${data.counts.resourceSlices} ResourceSlices · ${data.counts.deviceClasses} DeviceClasses</div><div class="text-small">${Object.entries(data.drivers).map(([k,v])=>esc(k)+' · '+v+' slices').join('<br>')}</div>`;
+
+<!--OPTIONAL_JS_BEGIN-->
+if(true){
+const replay=JSON.parse($('#km-replay-data').textContent);
+
+const targetAt=name=>replay.targets.filter(t=>t.node===name);
+const victimsAt=name=>replay.victims.filter(v=>v.source===name);
+const relocatedAt=name=>replay.victims.filter(v=>v.destination===name);
+const shortNode=name=>{const n=data.nodes.find(n=>n.name===name);return n?n.id:name||'none';};
+const groupFor=name=>data.groups.find(g=>g.nodes.some(i=>data.nodes[i].name===name));
+const targetGroups=[...new Set(replay.targets.map(t=>groupFor(t.node)?.label||'Unknown'))];
+$('#km-pipeline-summary').innerHTML=`<div><strong>${esc(replay.workload)}</strong></div><div class="text-small">${esc(replay.namespace)} · queue ${esc(replay.queue)} · ${esc(replay.action)} · ${esc(targetGroups.join(', '))}</div><div class="metrics tabular-nums"><span><strong>${replay.targets.length} pods / ${fmt(replay.targets.reduce((s,t)=>s+t.gpu,0))} GPUs</strong> pipelined</span><span><strong>${replay.victims.length} eviction victims</strong> / ${fmt(replay.victims.reduce((s,v)=>s+v.gpu,0))} GPUs</span><span>${replay.victims.filter(v=>v.destination).length} re-pipelined · ${replay.victims.filter(v=>!v.destination).length} releasing</span></div>`;
+function showPipelineNode(name,persist){const n=data.nodes.find(n=>n.name===name);if(!n)return;selectedPipeline=name;
+root.querySelectorAll('[data-pipeline-node]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.pipelineNode===name)));
+const targets=targetAt(name),victims=victimsAt(name),relocated=relocatedAt(name);const clique=groupFor(name);
+const row=(p,role,destination)=>`<tr><td>${esc(role)}</td><td>${esc(p.namespace+'/'+p.name)}<div class="text-small">${esc(p.queue||replay.queue)}</div></td><td class="text-end tabular-nums">${fmt(p.gpu)}</td><td>${esc(destination)}</td></tr>`;
+$('#km-pipeline-selection').innerHTML=`<div><strong>${esc(n.name)}</strong> · ${esc(clique?.label||'No clique')}</div><div class="tabular-nums">${targets.length} target pods pipelined here · ${victims.length} victim origins · ${relocated.length} victim re-pipeline destinations</div><div class="text-small">${fmt(free(n))} GPUs free in snapshot · ${n.ready==='True'?'Ready':'Readiness '+esc(n.ready)} · ${n.cordoned?'cordoned':'uncordoned'}</div><details ${targets.length||victims.length?'open':''}><summary class="cursor-interaction">Pods & planned placement</summary><table class="table table-sm"><thead><tr><th>Role</th><th>Pod / queue</th><th class="text-end">GPUs</th><th>Placement</th></tr></thead><tbody>${targets.map(t=>row(t,'Target','Pipeline → '+shortNode(t.node))).join('')}${victims.map(v=>row(v,v.destination?'Relocated victim':'Releasing victim',v.destination?'Re-pipeline → '+shortNode(v.destination):'No new pipeline reservation')).join('')}${relocated.filter(v=>v.source!==name).map(v=>row(v,'Incoming victim','From '+shortNode(v.source))).join('')}${!targets.length&&!victims.length&&!relocated.length?'<tr><td colspan="4">No target or victim placement on this node.</td></tr>':''}</tbody></table></details>`;
+if(persist)save();}
+function renderPipelineMap(){
+const shown=replay.victims.filter(v=>pipelineLayer==='releasing'?!v.destination:pipelineLayer==='destinations'?!!v.destination:true);
+const location=v=>pipelineLayer==='destinations'?v.destination:v.source;
+const marker=pipelineLayer==='destinations'?'R':'V';
+$('#km-victim-legend').textContent=pipelineLayer==='destinations'?'R · victim re-pipeline destination':pipelineLayer==='releasing'?'V · releasing victim origin':'V · eviction origin';
+$('#km-pipeline-map').innerHTML=data.groups.map(g=>{
+const members=g.nodes.map(i=>data.nodes[i]);const names=new Set(members.map(n=>n.name));const targets=replay.targets.filter(t=>names.has(t.node));const victims=shown.filter(v=>names.has(location(v)));
+return `<div class="clique"><div class="clique-label text-small" data-tooltip="${esc(g.id)}">${esc(g.label)}<div class="tabular-nums">P ${targets.length} · ${marker} ${victims.length}</div><div class="text-muted">${fmt(members.reduce((s,n)=>s+free(n),0))} GPUs free</div></div><div class="tiles">${members.map(n=>{const p=targetAt(n.name).length,v=shown.filter(v=>location(v)===n.name).length;const role=p&&v?'both':p?'target':v?'origin':'other';const label=n.id.startsWith('r')?n.id.slice(1).replace('-','·'):n.id.split('-').pop().replace(/^cpu00/,'CPU').replace(/^hn0/,'HN');return `<div class="node-cell"><button type="button" class="btn viz-tile pipeline-${role} text-small" data-pipeline-node="${esc(n.name)}" aria-pressed="false" aria-label="${esc(n.name)}, ${p} target pipeline pods, ${v} ${marker} victim locations" data-tooltip="${esc(n.name)} · P ${p} · ${marker} ${v} · ${fmt(free(n))} GPUs free in snapshot">${esc(label)}</button><span class="text-small tabular-nums">${p||v?'P'+p+' '+marker+v:'—'}</span></div>`;}).join('')}</div></div>`;}).join('');
+root.querySelectorAll('[data-pipeline-node]').forEach(b=>b.addEventListener('click',()=>showPipelineNode(b.dataset.pipelineNode,true)));
+if(selectedPipeline)showPipelineNode(selectedPipeline,false);
+}
+$('#km-pipeline-layer').addEventListener('change',()=>{pipelineLayer=$('#km-pipeline-layer').value;renderPipelineMap();save();});
+const victimQueues=[...new Set(replay.victims.map(v=>v.queue))].map(name=>{const vs=replay.victims.filter(v=>v.queue===name);return {name,pods:vs.length,gpu:vs.reduce((s,v)=>s+v.gpu,0),repipelined:vs.filter(v=>v.destination).length};}).sort((a,b)=>b.gpu-a.gpu);
+$('#km-pipeline-groups').innerHTML=`<table class="table table-sm"><thead><tr><th>Victim queue</th><th class="text-end">Pods</th><th class="text-end">GPUs</th><th class="text-end">Re-pipelined</th></tr></thead><tbody>${victimQueues.map(q=>`<tr><td>${esc(q.name)}</td><td class="text-end tabular-nums">${q.pods}</td><td class="text-end tabular-nums">${fmt(q.gpu)}</td><td class="text-end tabular-nums">${q.repipelined}</td></tr>`).join('')}</tbody></table>`;
+$('#km-pipeline-evidence').innerHTML=`<div>Replay source: ${esc(replay.ref)} · one scheduling cycle · original snapshot unchanged</div><div>Actions: ${Object.entries(replay.timings).map(([k,v])=>esc(k)+' '+fmt(v)+' ms').join(' · ')}</div><div>${esc(replay.note)}</div><div>Placements are from the target reclaim commit, before later reclaim attempts. Snapshot GPU free counts precede replay decisions.</div><div>${esc(replay.instrumentation)}</div><div><code>${esc(replay.command)}</code></div>`;
+
+const orderData=JSON.parse($('#km-order-data').textContent);
+
+const memberships=orderData.jobs.flatMap(j=>j.pods.map(p=>({...p,rank:j.rank,job:j.name,jobNamespace:j.namespace,queue:j.queue,jobPriority:j.jobPriority,queuePriority:j.queuePriority})));
+const scopedMemberships=()=>orderScope==='evicted'?memberships.filter(p=>p.evicted):memberships;
+function rankRange(ps){return ps.length?{min:Math.min(...ps.map(p=>p.rank)),max:Math.max(...ps.map(p=>p.rank)),jobs:new Set(ps.map(p=>p.rank)).size}:null;}
+const rankText=r=>r?'min '+r.min+' · max '+r.max:'—';
+function showOrderNode(name,persist){const n=data.nodes.find(n=>n.name===name);if(!n)return;selectedOrderNode=name;
+root.querySelectorAll('[data-order-node]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.orderNode===name)));
+const all=scopedMemberships(),ps=all.filter(p=>p.node===name).sort((a,b)=>a.rank-b.rank||a.name.localeCompare(b.name));const range=rankRange(ps);const group=groupFor(name);const nodeNames=new Set(group.nodes.map(i=>data.nodes[i].name));const cliqueRange=rankRange(all.filter(p=>nodeNames.has(p.node)));
+$('#km-order-selection').innerHTML=`<div><strong>${esc(n.name)}</strong> · ${esc(group.label)}</div><div class="tabular-nums">Node: <strong>${rankText(range)}</strong> · Clique: <strong>${rankText(cliqueRange)}</strong></div><div class="text-small">${range?range.jobs:0} matching jobs · ${ps.length} active pod placements · ${ps.filter(p=>p.evicted).length} evicted pods</div><details><summary class="cursor-interaction">Jobs on this node, in victim order</summary><table class="table table-sm"><thead><tr><th>Rank</th><th>Job / queue</th><th class="text-end">Queue priority</th><th class="text-end">Job priority</th><th>Pods / outcome</th></tr></thead><tbody>${[...new Set(ps.map(p=>p.rank))].map(rank=>{const pods=ps.filter(p=>p.rank===rank),p=pods[0];return `<tr><td class="tabular-nums">${rank}</td><td>${esc(p.jobNamespace+'/'+p.job)}<div class="text-small">${esc(p.queue)}</div></td><td class="text-end tabular-nums">${p.queuePriority}</td><td class="text-end tabular-nums">${p.jobPriority}</td><td>${pods.map(p=>esc(p.name)+'<div class="text-small">'+esc(p.outcome)+'</div>').join('<br>')}</td></tr>`;}).join('')}${!ps.length?'<tr><td colspan="5">No jobs in this victim list on this node.</td></tr>':''}</tbody></table></details>`;
+if(persist)save();}
+function renderOrderMap(){const ps=scopedMemberships();const rankCount=new Set(ps.map(p=>p.rank)).size;
+$('#km-order-basis').textContent=`${rankCount} jobs · ${ps.length} pod placements · global queue positions 1–${orderData.jobs.length} · 1 = first victim candidate`;
+$('#km-order-map').innerHTML=data.groups.map(g=>{const names=new Set(g.nodes.map(i=>data.nodes[i].name));const groupPs=ps.filter(p=>names.has(p.node));const range=rankRange(groupPs);return `<div class="clique"><div class="clique-label text-small" data-tooltip="${esc(g.id)} · ${rankText(range)}">${esc(g.label)}<div class="tabular-nums">${range?'min '+range.min+'<br>max '+range.max:'—'}</div><div class="text-muted">${range?range.jobs:0} jobs</div></div><div class="tiles">${g.nodes.map(i=>{const n=data.nodes[i];const nodePs=ps.filter(p=>p.node===n.name);const r=rankRange(nodePs);const intensity=r?Math.round(40-30*(r.min-1)/Math.max(1,orderData.jobs.length-1)):0;const label=n.id.startsWith('r')?n.id.slice(1).replace('-','·'):n.id.split('-').pop().replace(/^cpu00/,'CPU').replace(/^hn0/,'HN');return `<div class="node-cell"><button type="button" class="btn viz-tile text-small ${r?'order-ranked':'order-empty'}" style="--order-fill:color-mix(in srgb,var(--viz-series-1) ${intensity}%,var(--background))" data-order-node="${esc(n.name)}" aria-pressed="false" aria-label="${esc(n.name)}, victim rank ${rankText(r)}" data-tooltip="${esc(n.name)} · ${rankText(r)} · ${r?r.jobs:0} jobs">${esc(label)}</button><span class="text-small tabular-nums">${r?'min '+r.min:'—'}</span><span class="text-small tabular-nums">${r?'max '+r.max:'—'}</span></div>`;}).join('')}</div></div>`;}).join('');
+root.querySelectorAll('[data-order-node]').forEach(b=>b.addEventListener('click',()=>showOrderNode(b.dataset.orderNode,true)));
+$('#km-order-list').innerHTML=`<table class="table table-sm"><thead><tr><th>Rank</th><th>Job / queue</th><th class="text-end">Queue priority</th><th class="text-end">Job priority</th><th class="text-end">Evicted pods</th></tr></thead><tbody>${orderData.jobs.filter(j=>orderScope==='all'||j.pods.some(p=>p.evicted)).map(j=>`<tr><td class="tabular-nums">${j.rank}</td><td>${esc(j.namespace+'/'+j.name)}<div class="text-small">${esc(j.queue)}</div></td><td class="text-end tabular-nums">${j.queuePriority}</td><td class="text-end tabular-nums">${j.jobPriority}</td><td class="text-end tabular-nums">${j.pods.filter(p=>p.evicted).length}</td></tr>`).join('')}</tbody></table>`;
+if(selectedOrderNode)showOrderNode(selectedOrderNode,false);}
+$('#km-order-scope').addEventListener('change',()=>{orderScope=$('#km-order-scope').value;renderOrderMap();save();});
+$('#km-order-evidence').innerHTML=`<div>${esc(orderData.basis)}</div><div>${esc(orderData.method)}</div><div>${esc(orderData.validation)}</div><div>Replay checkout ${esc(orderData.ref)}</div><div><code>${esc(orderData.command)}</code></div><div>${esc(orderData.note)}</div>`;
+
+const treeData=JSON.parse($('#km-victim-tree-data').textContent);
+const treeJobs=new Map(treeData.jobs.map(j=>[j.id,j]));
+selectedTreeJob=treeData.root;
+treeOpen.add(treeData.root);
+const treeLabel=j=>j.name.replace(/^pg-/,'').replace(/-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,'');
+const treeDisplay=j=>{const s=treeLabel(j);return s.length>32?s.slice(0,29)+'…':s;};
+function selectTreeJob(jobID,edgeID,persist){const j=treeJobs.get(jobID);if(!j)return;selectedTreeJob=jobID;selectedTreeEdge=edgeID===null?null:Number(edgeID);let edge=selectedTreeEdge===null?null:treeData.edges[selectedTreeEdge];if(!edge||edge.child!==jobID){selectedTreeEdge=null;edge=null;}const links=treeData.children[j.id]||[];
+root.querySelectorAll('[data-tree-job]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.treeJob===jobID&&b.dataset.treeEdge===(edge?String(edge.id):''))));
+const summary=j.id===treeData.root?`${j.placements.length} target pods pipelined · ${links.length} direct child jobs`:`${j.victims.length} victim pods · ${j.placements.length} re-pipelined · ${j.victims.filter(p=>!p.destination).length} releasing · ${links.length} child jobs`;
+const edgeSummary=edge?`<div class="text-small">Parent: ${esc(treeJobs.get(edge.parent).namespace+'/'+treeLabel(treeJobs.get(edge.parent)))} · ${edge.pods.length} child victim pods on ${edge.nodes.length} shared nodes</div>`:'';
+const table=edge?`<details open><summary class="cursor-interaction">Shared-node evidence</summary><table class="table table-sm"><thead><tr><th>Node</th><th>Parent’s incoming pods</th><th>Child’s victim pods</th></tr></thead><tbody>${edge.nodes.map(n=>`<tr><td>${esc(shortNode(n.name))}</td><td>${n.parentPods.map(p=>esc(p.name)).join('<br>')}</td><td>${n.victimPods.map(p=>esc(p.name)+'<div class="text-small">'+(p.destination?'Re-pipeline → '+esc(shortNode(p.destination)):'Releasing')+'</div>').join('<br>')}</td></tr>`).join('')}</tbody></table></details>`:`<details><summary class="cursor-interaction">${j.id===treeData.root?'Target':'Job'} pipeline destinations</summary><table class="table table-sm"><thead><tr><th>Pod</th><th>Node</th><th class="text-end">GPUs</th></tr></thead><tbody>${j.placements.map(p=>`<tr><td>${esc(p.name)}</td><td>${esc(shortNode(p.node))}</td><td class="text-end tabular-nums">${fmt(p.gpu)}</td></tr>`).join('')}${!j.placements.length?'<tr><td colspan="3">No new pipeline reservations.</td></tr>':''}</tbody></table></details>`;
+$('#km-victim-tree-selection').innerHTML=`<div><strong>${esc(j.id)}</strong></div><div class="text-small">Queue ${esc(j.queue)}${j.rank?' · victim rank '+j.rank:''}</div><div class="tabular-nums">${summary}</div>${edgeSummary}${table}`;
+if(persist)save();}
+function renderVictimTree(){
+function entry(id,edgeID,isReference){const j=treeJobs.get(id),edge=edgeID===null?null:treeData.edges[edgeID];const kids=treeData.children[id]||[];const button=`<button type="button" class="btn btn-ghost text-small" data-tree-job="${esc(id)}" data-tree-edge="${edge?edge.id:''}" aria-pressed="false" aria-label="${esc(j.id)}${isReference?', shared child reference':''}" data-tooltip="${esc(j.id)}${isReference?' · shared child; full branch is under '+esc(treeLabel(treeJobs.get(treeData.edges[treeData.canonical[id]]?.parent||treeData.root))):''}">${isReference?'↗ ':''}${esc(treeDisplay(j))}</button>`;const facts=`<div class="text-small tree-entry-facts">${esc(j.queue)}${edge?' · '+edge.pods.length+' victim pod'+(edge.pods.length===1?'':'s')+' on '+edge.nodes.map(n=>esc(shortNode(n.name))).join(', '):j.id===treeData.root?' · reclaimer':' · outside root dependency chain'}${isReference?' · shared child reference':kids.length?' · '+kids.length+' children':' · leaf'}</div>`;
+if(isReference||!kids.length)return `<li class="tree-entry">${button}${facts}</li>`;
+return `<li class="tree-entry"><details data-tree-branch="${esc(id)}" ${treeOpen.has(id)?'open':''}><summary class="cursor-interaction">${button}</summary>${facts}<ul class="victim-branches">${kids.map(ei=>{const e=treeData.edges[ei];return entry(e.child,ei,treeData.canonical[e.child]!==ei);}).join('')}</ul></details></li>`;}
+$('#km-victim-tree-content').innerHTML=`<ul class="victim-root">${entry(treeData.root,null,false)}</ul>`;
+$('#km-victim-tree-outside').innerHTML=treeData.unreachable.length?`<ul class="victim-root">${treeData.unreachable.map(id=>'<div class="text-small"><button type="button" class="btn btn-ghost" data-tree-job="'+esc(id)+'" data-tree-edge="" aria-pressed="false">'+esc(treeDisplay(treeJobs.get(id)))+'</button></div>').join('')}</ul>`:'<div class="text-small">All victims are reachable from the root.</div>';
+root.querySelectorAll('[data-tree-job]').forEach(b=>b.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();selectTreeJob(b.dataset.treeJob,b.dataset.treeEdge===''?null:Number(b.dataset.treeEdge),true);}));
+root.querySelectorAll('[data-tree-branch]').forEach(d=>d.addEventListener('toggle',()=>{if(d.open===treeOpen.has(d.dataset.treeBranch))return;if(d.open)treeOpen.add(d.dataset.treeBranch);else treeOpen.delete(d.dataset.treeBranch);save();}));
+}
+$('#km-victim-tree-summary').textContent=`${treeData.stats.directChildren} direct children · ${treeData.stats.reachableVictimJobs} reachable victim jobs · ${treeData.stats.maxDepth} levels below the root · ↗ shared child`;
+$('#km-victim-tree-evidence').innerHTML=`<div>${esc(treeData.rule)}</div><div>${esc(treeData.note)}</div><div>${treeData.stats.edges} parent-child links · ${treeData.stats.referenceEdges} shared-child references · ${treeData.unreachable.length} disconnected victim job</div><div>Replay checkout ${esc(treeData.ref)}</div>`;
+
+
+restoreReplay=(m,state)=>{
+ const fallback=replay.targets[0]?.node||data.nodes[0]?.name;
+ orderScope=m.orderScope==='evicted'?'evicted':'all';$('#km-order-scope').value=orderScope;renderOrderMap();showOrderNode(m.selectedOrderNode||fallback,false);
+ pipelineLayer=['origins','releasing','destinations'].includes(m.pipelineLayer)?m.pipelineLayer:'origins';$('#km-pipeline-layer').value=pipelineLayer;renderPipelineMap();showPipelineNode(m.selectedPipelineNode||fallback,false);
+ treeOpen.clear();treeOpen.add(treeData.root);for(const id of state?.privateContent?.openVictimTreeJobs||[])if(treeJobs.has(id))treeOpen.add(id);renderVictimTree();selectTreeJob(treeJobs.has(m.selectedTreeJob)?m.selectedTreeJob:treeData.root,m.selectedTreeEdge??null,false);
+};
+
+}
+<!--OPTIONAL_JS_END-->
+
+function selectTab(id){const tabs=[...root.querySelectorAll('[role="tab"]')];if(!tabs.some(b=>b.getAttribute('aria-controls')===id))return;tab=id;tabs.forEach(b=>{const active=b.getAttribute('aria-controls')===id;b.classList.toggle('active',active);b.setAttribute('aria-selected',String(active));});root.querySelectorAll('[role="tabpanel"]').forEach(p=>p.hidden=p.id!==id);}
+root.querySelectorAll('[role="tab"]').forEach(b=>b.addEventListener('click',()=>{selectTab(b.getAttribute('aria-controls'));save();}));
+function restore(state){const m=state?.modelContent||state||{};selectTab(m.viewRevision===1?(m.view||'km-topology'):(restoreReplay?'km-pipeline':'km-topology'));if(restoreReplay)restoreReplay(m,state);if(data.nodes.length)showNode(m.selectedNode||data.nodes.find(n=>n.gpu>0)?.name||data.nodes[0].name,false);else $('#km-selection').textContent='No nodes in capture.';}
+restore(window.openai?.widgetState);window.addEventListener('openai:set_globals',e=>{if(e.detail?.globals?.widgetState)restore(e.detail.globals.widgetState);});
+})();
+</script>
+</div>

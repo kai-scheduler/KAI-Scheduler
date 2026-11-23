@@ -1,0 +1,47 @@
+// Copyright 2026 NVIDIA CORPORATION
+// SPDX-License-Identifier: Apache-2.0
+
+// Read-only tracing helpers appended to a temporary Go overlay, never to the checkout.
+func mapTraceMatches(job *podgroup_info.PodGroupInfo) bool {
+ return job.Namespace+"/"+job.Name == os.Getenv("KAI_MAP_TARGET")
+}
+func mapTraceWrite(name string, value interface{}) {
+ body, err := json.MarshalIndent(value,"","  ")
+ if err != nil { panic(err) }
+ if err = os.WriteFile(os.Getenv("KAI_MAP_OUTPUT")+string(os.PathSeparator)+name+".json",body,0600); err != nil { panic(err) }
+}
+func mapTraceSession(ssn *framework.Session, target *podgroup_info.PodGroupInfo, label string) {
+ if !mapTraceMatches(target) { return }
+ rows := []map[string]interface{}{}
+ for _, job := range ssn.ClusterInfo.PodGroupInfos {
+  for _, p := range job.GetAllPodsMap() {
+   rows = append(rows,map[string]interface{}{"namespace":p.Namespace,"name":p.Name,"job":job.Name,"node":p.NodeName,"status":p.Status.String()})
+  }
+ }
+ mapTraceWrite(label,rows)
+}
+func getOrderedVictimsQueue(ssn *framework.Session, reclaimer *podgroup_info.PodGroupInfo) solvers.GenerateVictimsQueue {
+ generator := baseMapOrderedVictimsQueue(ssn,reclaimer)
+ captured := false
+ return func() *utils.JobsOrderByQueues {
+  q := generator()
+  if mapTraceMatches(reclaimer) && !captured {
+   captured = true
+   copyQueue := generator()
+   ordered := []map[string]interface{}{}
+   for !copyQueue.IsEmpty() {
+    job := copyQueue.PopNextJob()
+    if job == nil { break }
+    pods := []map[string]interface{}{}
+    for _, p := range job.GetAllPodsMap() {
+     if !pod_status.IsActiveAllocatedStatus(p.Status) || p.NodeName == "" { continue }
+     pods = append(pods,map[string]interface{}{"namespace":p.Namespace,"name":p.Name,"node":p.NodeName,"status":p.Status.String()})
+    }
+    queue := ssn.ClusterInfo.Queues[job.Queue]
+    ordered = append(ordered,map[string]interface{}{"rank":len(ordered)+1,"namespace":job.Namespace,"name":job.Name,"queue":job.Queue,"jobPriority":job.Priority,"queuePriority":queue.Priority,"pods":pods})
+   }
+   mapTraceWrite("victim-order",ordered)
+  }
+  return q
+ }
+}

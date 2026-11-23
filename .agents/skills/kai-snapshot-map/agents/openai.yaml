@@ -1,0 +1,6 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+interface:
+  display_name: "KAI Snapshot Map"
+  short_description: "Map KAI snapshots and reclaim victim dependencies"
