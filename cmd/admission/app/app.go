@@ -35,6 +35,7 @@ import (
 
 	admissionplugins "github.com/kai-scheduler/KAI-scheduler/pkg/admission/plugins"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/admission/webhook/topologyhooks"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/version"
 )
 
 var (
@@ -76,6 +77,7 @@ func New() (*App, error) {
 
 	pflag.Parse()
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+	ctrl.Log.Info(version.StartupMessage("admission"))
 
 	config := ctrl.GetConfigOrDie()
 	config.QPS = float32(options.QPS)

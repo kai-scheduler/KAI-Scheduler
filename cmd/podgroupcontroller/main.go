@@ -11,11 +11,15 @@ import (
 	"go.uber.org/zap/zapcore"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 
 	"github.com/kai-scheduler/KAI-scheduler/cmd/podgroupcontroller/app"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/version"
 )
 
 func main() {
+	version.RegisterMetrics(metrics.Registry, "pod-group-controller")
+
 	options := app.InitOptions(nil)
 	config := ctrl.GetConfigOrDie()
 
@@ -27,6 +31,7 @@ func main() {
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+	ctrl.Log.Info(version.StartupMessage("pod-group-controller"))
 
 	ctx := ctrl.SetupSignalHandler()
 	if err := app.Run(options, config, ctx); err != nil {

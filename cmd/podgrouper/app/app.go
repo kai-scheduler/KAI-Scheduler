@@ -25,6 +25,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/version"
 	controllers "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper"
 	pluginshub "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/hub"
 	v2 "github.com/kai-scheduler/api/scheduling/v2"
@@ -75,6 +76,7 @@ func NewWithScheme(mgrScheme *runtime.Scheme) (*App, error) {
 	opts.AddFlags(flag.CommandLine)
 
 	initLogger()
+	ctrl.Log.Info(version.StartupMessage("podgrouper"))
 
 	if mgrScheme == nil {
 		mgrScheme = newScheme()

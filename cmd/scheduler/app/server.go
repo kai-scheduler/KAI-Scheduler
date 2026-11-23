@@ -47,6 +47,7 @@ import (
 
 	"github.com/kai-scheduler/KAI-scheduler/cmd/scheduler/app/options"
 	"github.com/kai-scheduler/KAI-scheduler/cmd/scheduler/profiling"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/version"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
@@ -54,7 +55,6 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/version"
 	kaiv1common "github.com/kai-scheduler/api/kai/v1/common"
 )
 
@@ -141,6 +141,8 @@ func RunApp() error {
 	} else {
 		defer flushLogs()
 	}
+	log.InfraLogger.Infof("%s", version.StartupMessage("scheduler"))
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	if err := startMemoryLimitManager(ctx); err != nil {

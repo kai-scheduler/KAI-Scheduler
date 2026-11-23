@@ -19,6 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/version"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/helmhooks"
 	kaiv1 "github.com/kai-scheduler/api/kai/v1"
 	kaiv1alpha1 "github.com/kai-scheduler/api/kai/v1alpha1"
@@ -52,6 +53,7 @@ func Run(args []string) error {
 	command, flags := args[0], args[1:]
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&zap.Options{TimeEncoder: zapcore.ISO8601TimeEncoder})))
+	ctrl.Log.Info(version.StartupMessage("helm-hooks"))
 	ctx := ctrl.SetupSignalHandler()
 
 	switch command {

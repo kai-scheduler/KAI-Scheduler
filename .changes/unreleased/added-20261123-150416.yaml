@@ -1,0 +1,6 @@
+kind: Added
+body: |-
+  Log component build information and expose it on existing Prometheus endpoints
+custom:
+  Author: "kanishksingh01"
+  Issue: "2618"

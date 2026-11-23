@@ -13,6 +13,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/version"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/npe"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/npe/cputopology"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/npe/podresources"
@@ -31,6 +32,7 @@ func Run() error {
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+	ctrl.Log.Info(version.StartupMessage("numa-placement-exporter"))
 
 	if options.NodeName == "" {
 		options.NodeName = os.Getenv("NODE_NAME")

@@ -11,6 +11,7 @@ import (
 	vpav1 "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
 
 	"github.com/kai-scheduler/KAI-scheduler/cmd/operator/config"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/version"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/controller"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands"
 	"github.com/kai-scheduler/api/constants"
@@ -68,6 +69,7 @@ func New() (*App, error) {
 	}
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts.ZapOptions)))
+	ctrl.Log.Info(version.StartupMessage("operator"))
 
 	clientConfig := ctrl.GetConfigOrDie()
 	clientConfig.QPS = float32(opts.Qps)

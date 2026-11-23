@@ -4,6 +4,18 @@ This document provides a reference for all Prometheus metrics exposed by the KAI
 
 ---
 
+## Component build information
+
+| Metric Name | Type | Labels | Description |
+|---|---|---|---|
+| `kai_build_info` | Gauge | `component`, `version`, `git_commit`, `go_version` | One sample per running component, with a value of 1. The labels identify the component, its build version and Git commit, and the Go toolchain used to build it. |
+
+The scheduler, admission, binder, node scale adjuster, operator, PodGroup controller, podgrouper, queue controller, and resource reservation publish the gauge through their existing metrics servers when enabled. They also log the build information at startup, as do Helm hooks and the NUMA placement exporter.
+
+Builds that omit the linker flags report `Not provided.` for `version` and `git_commit`.
+
+---
+
 ## Queue Controller Metrics
 
 Metrics related to Queue resource management and resource quota tracking.

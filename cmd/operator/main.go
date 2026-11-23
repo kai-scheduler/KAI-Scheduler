@@ -7,8 +7,10 @@ import (
 	"os"
 
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 
 	"github.com/kai-scheduler/KAI-scheduler/cmd/operator/app"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/version"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/controller"
 )
 
@@ -17,6 +19,8 @@ var (
 )
 
 func main() {
+	version.RegisterMetrics(metrics.Registry, "operator")
+
 	app, err := app.New()
 	if err != nil {
 		setupLog.Error(err, "failed to create app")
