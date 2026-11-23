@@ -415,3 +415,28 @@ func TestGetPodOwners_FetchesTopOwnerWithoutCache(t *testing.T) {
 	assert.Equal(t, "job", topOwner.GetName())
 	assert.Len(t, owners, 1)
 }
+
+func TestGetPodOwners_PodWithoutOwnersIsNotFetched(t *testing.T) {
+	scheme := runtime.NewScheme()
+	assert.Nil(t, v1.AddToScheme(scheme))
+
+	barePod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "bare-pod", Namespace: "namespace", Labels: map[string]string{"app": "x"}},
+	}
+
+	emptyClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+	pluginsHub := pluginshub.NewDefaultPluginsHub(emptyClient, false, true, false, false,
+		queueLabelKey, nodePoolLabelKey, "", "")
+	grouper := podgrouper.NewPodgrouper(emptyClient, emptyClient, pluginsHub)
+
+	topOwner, owners, err := grouper.GetPodOwners(context.Background(), barePod)
+	assert.Nil(t, err)
+	assert.Equal(t, "Pod", topOwner.GetKind())
+	assert.Equal(t, "v1", topOwner.GetAPIVersion())
+	assert.Equal(t, "bare-pod", topOwner.GetName())
+	assert.Equal(t, "x", topOwner.GetLabels()["app"])
+	assert.Empty(t, owners)
+
+	_, err = grouper.GetPGMetadata(context.Background(), barePod, topOwner, owners)
+	assert.Nil(t, err)
+}
