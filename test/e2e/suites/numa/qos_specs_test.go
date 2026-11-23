@@ -22,8 +22,8 @@ import (
 	v2 "github.com/kai-scheduler/api/scheduling/v2"
 )
 
-// DescribeNUMAQoSSpecs checks GPU alignment across QoS classes and confirms that
-// a BestEffort pod with no device request can still schedule.
+// DescribeNUMAQoSSpecs checks that device alignment applies across QoS classes
+// while CPU and memory alignment does not apply to Burstable pods.
 func DescribeNUMAQoSSpecs() bool {
 	return Describe("NUMA QoS gating", Ordered, Serial, Label("numa", "nightly"), func() {
 		var testCtx *testcontext.TestContext
@@ -78,6 +78,34 @@ func DescribeNUMAQoSSpecs() bool {
 					HaveField("Message", ContainSubstring("no preferred NUMA affinity for single-numa-node")),
 				)))
 			}, placementTimeout, time.Second).Should(Succeed())
+		})
+
+		It("Burstable pod can use CPU and memory beyond its GPU zone", func(ctx context.Context) {
+			nodes := numautil.RequireNodes(ctx, testCtx.ControllerClient, numautil.Requirement{
+				Policy: numautil.PolicySingleNUMANode, MinZones: 2, ZoneGPUs: 1,
+			})
+			for _, node := range nodes {
+				cpu, cpuOK := node.TwoZoneCPU()
+				memory, memoryOK := node.TwoZoneMemory()
+				if !cpuOK || !memoryOK {
+					continue
+				}
+				worker, err := testCtx.KubeClientset.CoreV1().Nodes().Get(ctx, node.Name, metav1.GetOptions{})
+				Expect(err).To(Succeed())
+				if cpu.Cmp(worker.Status.Allocatable[v1.ResourceCPU]) > 0 ||
+					memory.Cmp(worker.Status.Allocatable[v1.ResourceMemory]) > 0 {
+					continue
+				}
+
+				pod := createPod(ctx, testCtx, node.Pin(rd.CreatePodObject(childQueue(testCtx), v1.ResourceRequirements{
+					Requests: v1.ResourceList{v1.ResourceCPU: cpu, v1.ResourceMemory: memory},
+					Limits:   v1.ResourceList{constants.NvidiaGpuResource: *resource.NewQuantity(1, resource.DecimalSI)},
+				})))
+				expectQoS(ctx, testCtx, pod, v1.PodQOSBurstable)
+				wait.ForPodScheduled(ctx, testCtx.ControllerClient, pod)
+				return
+			}
+			Skip("need a single-numa-node worker with node capacity for CPU and memory requests larger than one zone")
 		})
 
 		It("BestEffort pod passes through", func(ctx context.Context) {
