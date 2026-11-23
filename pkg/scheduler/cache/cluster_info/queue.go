@@ -93,16 +93,11 @@ func UpdateQueueHierarchy(queues map[common_info.QueueID]*queue_info.QueueInfo) 
 	cleanQueueOrphans(queues)
 }
 
-// removeQueueParentCycles deletes queues whose chain of parent queues never reaches a root queue, because it loops
-// back on itself (for example a queue that is its own parent, or two queues that are each other's parent). Code that
-// walks from a queue up to its root would otherwise never finish. Queues below a removed queue lose their parent and
-// are then removed as orphans.
 func removeQueueParentCycles(queues map[common_info.QueueID]*queue_info.QueueInfo) {
+	checked := map[common_info.QueueID]struct{}{}
 	var cyclic []common_info.QueueID
 	for queueId := range queues {
-		if parentChainHasCycle(queues, queueId) {
-			cyclic = append(cyclic, queueId)
-		}
+		cyclic = append(cyclic, findParentCycle(queues, queueId, checked)...)
 	}
 	for _, queueId := range cyclic {
 		log.InfraLogger.V(2).Warnf("Found queue %s in a parent queue cycle, deleting it", queueId)
@@ -110,21 +105,34 @@ func removeQueueParentCycles(queues map[common_info.QueueID]*queue_info.QueueInf
 	}
 }
 
-func parentChainHasCycle(queues map[common_info.QueueID]*queue_info.QueueInfo, queueId common_info.QueueID) bool {
-	visited := map[common_info.QueueID]struct{}{}
-	for current := queueId; current != ""; {
-		if _, seen := visited[current]; seen {
-			return true
+// findParentCycle walks up the parent chain of queueId and returns the queues that form a cycle, or nil if the chain
+// reaches a root or a queue that was already checked. Every queue it walks through is added to checked.
+func findParentCycle(queues map[common_info.QueueID]*queue_info.QueueInfo, queueId common_info.QueueID,
+	checked map[common_info.QueueID]struct{}) []common_info.QueueID {
+	var chain []common_info.QueueID
+	positionInChain := map[common_info.QueueID]int{}
+	defer func() {
+		for _, id := range chain {
+			checked[id] = struct{}{}
 		}
-		visited[current] = struct{}{}
+	}()
 
+	for current := queueId; current != ""; {
+		if _, alreadyChecked := checked[current]; alreadyChecked {
+			return nil
+		}
+		if position, seen := positionInChain[current]; seen {
+			return chain[position:]
+		}
 		queue, found := queues[current]
 		if !found {
-			return false
+			return nil
 		}
+		positionInChain[current] = len(chain)
+		chain = append(chain, current)
 		current = queue.ParentQueue
 	}
-	return false
+	return nil
 }
 
 func updateQueueChildren(queues map[common_info.QueueID]*queue_info.QueueInfo) {
