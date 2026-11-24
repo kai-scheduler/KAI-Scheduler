@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Allow regular pods to pass node-fit checks for DRA-backed extended resources
+custom:
+  Author: "gaoyk19"
+  Issue: "2762"
