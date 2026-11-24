@@ -20,6 +20,7 @@ limitations under the License.
 package conf
 
 import (
+	"strings"
 	"time"
 
 	"k8s.io/apimachinery/pkg/labels"
@@ -52,8 +53,11 @@ type SchedulerParams struct {
 
 // SchedulerConfiguration defines the configuration of scheduler.
 type SchedulerConfiguration struct {
-	// Actions defines the actions list of scheduler in order
-	Actions string `yaml:"actions" json:"actions"`
+	// Actions defines the actions list of the scheduler, in order.
+	// Nil means the field was unset and the default actions are used.
+	// An empty string runs no actions: the scheduler still opens sessions
+	// and serves /get-snapshot, and it does not write scheduling updates.
+	Actions *string `yaml:"actions" json:"actions"`
 
 	// Tiers defines plugins in different tiers
 	Tiers []Tier `yaml:"tiers,omitempty" json:"tiers,omitempty"`
@@ -97,6 +101,29 @@ type PluginOption struct {
 type SchedulingNodePoolParams struct {
 	NodePoolLabelKey   string
 	NodePoolLabelValue string
+}
+
+// ActionNames returns configured action names with surrounding space removed
+// and blank tokens dropped. A nil Actions pointer yields nil.
+func (c *SchedulerConfiguration) ActionNames() []string {
+	if c == nil || c.Actions == nil {
+		return nil
+	}
+	var names []string
+	for _, actionName := range strings.Split(*c.Actions, ",") {
+		name := strings.TrimSpace(actionName)
+		if name == "" {
+			continue
+		}
+		names = append(names, name)
+	}
+	return names
+}
+
+// ExplicitlyEmptyActions reports that the action list was set and names no actions.
+// A nil list is unset, so callers can still apply the default actions.
+func (c *SchedulerConfiguration) ExplicitlyEmptyActions() bool {
+	return c != nil && c.Actions != nil && len(c.ActionNames()) == 0
 }
 
 func (s *SchedulingNodePoolParams) GetLabelSelector() (labels.Selector, error) {

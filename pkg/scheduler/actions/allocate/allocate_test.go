@@ -24,6 +24,7 @@ import (
 	"testing"
 
 	. "go.uber.org/mock/gomock"
+	"k8s.io/utils/ptr"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/allocate"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/integration_tests_utils"
@@ -1304,7 +1305,7 @@ func getTestsMetadata() []integration_tests_utils.TestTopologyMetadata {
 						NumberOfCacheBinds: 1,
 					},
 					SchedulerConf: &conf.SchedulerConfiguration{
-						Actions: "allocate",
+						Actions: ptr.To("allocate"),
 						Tiers: []conf.Tier{
 							{
 								Plugins: []conf.PluginOption{

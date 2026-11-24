@@ -22,7 +22,6 @@ package conf_util
 import (
 	"fmt"
 	"io/ioutil"
-	"strings"
 
 	"sigs.k8s.io/yaml"
 
@@ -84,7 +83,8 @@ func ResolveConfigurationFromFile(confPath string) (*conf.SchedulerConfiguration
 		return nil, err
 	}
 
-	if len(schedulerConfigFromCM.Actions) == 0 {
+	// Unset keeps the defaults. An explicit empty list runs no actions.
+	if schedulerConfigFromCM.Actions == nil {
 		schedulerConfigFromCM.Actions = defaultConfig.Actions
 	}
 	if len(schedulerConfigFromCM.Tiers) == 0 {
@@ -97,15 +97,17 @@ func ResolveConfigurationFromFile(confPath string) (*conf.SchedulerConfiguration
 	return schedulerConfigFromCM, nil
 }
 
-func GetActionsFromConfig(conf *conf.SchedulerConfiguration) ([]framework.Action, error) {
+func GetActionsFromConfig(schedulerConf *conf.SchedulerConfiguration) ([]framework.Action, error) {
+	if schedulerConf == nil {
+		return nil, nil
+	}
 	var actions []framework.Action
-	actionNames := strings.Split(conf.Actions, ",")
-	for _, actionName := range actionNames {
-		if action, found := framework.GetAction(strings.TrimSpace(actionName)); found {
-			actions = append(actions, action)
-		} else {
+	for _, actionName := range schedulerConf.ActionNames() {
+		action, found := framework.GetAction(actionName)
+		if !found {
 			return nil, fmt.Errorf("failed to find Action %s as given in the config, ignore it", actionName)
 		}
+		actions = append(actions, action)
 	}
 	return actions, nil
 }

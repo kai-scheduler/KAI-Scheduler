@@ -176,6 +176,9 @@ type SchedulerCacheParams struct {
 	StuckInReleasingThreshold   time.Duration
 	DiscoveryClient             discovery.DiscoveryInterface
 	EvictionActionNames         []string
+	// SkipStaleBindRequestCleanup leaves BindRequests in place during Snapshot.
+	// Set when the action list is explicitly empty, so a listen-only scheduler does not write.
+	SkipStaleBindRequestCleanup bool
 }
 
 type SchedulerCache struct {
@@ -195,11 +198,12 @@ type SchedulerCache struct {
 	Evictor       evictor.Interface
 	StatusUpdater status_updater.Interface
 
-	detailedFitErrors         bool
-	restrictNodeScheduling    bool
-	scheduleCSIStorage        bool
-	fullHierarchyFairness     bool
-	stuckInReleasingThreshold time.Duration
+	detailedFitErrors           bool
+	restrictNodeScheduling      bool
+	skipStaleBindRequestCleanup bool
+	scheduleCSIStorage          bool
+	fullHierarchyFairness       bool
+	stuckInReleasingThreshold   time.Duration
 
 	internalPlugins *k8splugins.K8sPlugins
 
@@ -208,14 +212,15 @@ type SchedulerCache struct {
 
 func newSchedulerCache(schedulerCacheParams *SchedulerCacheParams) (*SchedulerCache, error) {
 	sc := &SchedulerCache{
-		schedulingNodePoolParams:  schedulerCacheParams.NodePoolParams,
-		restrictNodeScheduling:    schedulerCacheParams.RestrictNodeScheduling,
-		detailedFitErrors:         schedulerCacheParams.DetailedFitErrors,
-		scheduleCSIStorage:        schedulerCacheParams.ScheduleCSIStorage,
-		fullHierarchyFairness:     schedulerCacheParams.FullHierarchyFairness,
-		stuckInReleasingThreshold: schedulerCacheParams.StuckInReleasingThreshold,
-		kubeClient:                draversionawareclient.NewDRAAwareClient(schedulerCacheParams.KubeClient),
-		kubeAiSchedulerClient:     schedulerCacheParams.KAISchedulerClient,
+		schedulingNodePoolParams:    schedulerCacheParams.NodePoolParams,
+		restrictNodeScheduling:      schedulerCacheParams.RestrictNodeScheduling,
+		detailedFitErrors:           schedulerCacheParams.DetailedFitErrors,
+		skipStaleBindRequestCleanup: schedulerCacheParams.SkipStaleBindRequestCleanup,
+		scheduleCSIStorage:          schedulerCacheParams.ScheduleCSIStorage,
+		fullHierarchyFairness:       schedulerCacheParams.FullHierarchyFairness,
+		stuckInReleasingThreshold:   schedulerCacheParams.StuckInReleasingThreshold,
+		kubeClient:                  draversionawareclient.NewDRAAwareClient(schedulerCacheParams.KubeClient),
+		kubeAiSchedulerClient:       schedulerCacheParams.KAISchedulerClient,
 	}
 
 	schedulerName := schedulerCacheParams.SchedulerName
@@ -298,9 +303,11 @@ func (sc *SchedulerCache) Snapshot() (*api.ClusterInfo, error) {
 		return nil, err
 	}
 
-	if cleanErr := sc.cleanStaleBindRequest(snapshot.BindRequests, snapshot.FailedBindRequestsForShard); cleanErr != nil {
-		log.InfraLogger.V(2).Warnf("Failed to clean stale bind requests: %v", cleanErr)
-		err = multierr.Append(err, cleanErr)
+	if !sc.skipStaleBindRequestCleanup {
+		if cleanErr := sc.cleanStaleBindRequest(snapshot.BindRequests, snapshot.FailedBindRequestsForShard); cleanErr != nil {
+			log.InfraLogger.V(2).Warnf("Failed to clean stale bind requests: %v", cleanErr)
+			err = multierr.Append(err, cleanErr)
+		}
 	}
 
 	return snapshot, err

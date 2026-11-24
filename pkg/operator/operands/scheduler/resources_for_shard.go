@@ -154,7 +154,8 @@ func (s *SchedulerForShard) configMapForShard(
 
 	innerConfig.Tiers = []conf.Tier{{Plugins: resolvePlugins(shard.Spec.Plugins)}}
 	actions := resolveActions(shard.Spec.Actions)
-	innerConfig.Actions = strings.Join(actions, ", ")
+	// An empty join is an explicit empty action list, including when every shard action is disabled.
+	innerConfig.Actions = ptr.To(strings.Join(actions, ", "))
 	if err = validateScenarioSearchBudgets(shard.Spec.ScenarioSearchBudgets); err != nil {
 		return nil, err
 	}
@@ -190,7 +191,11 @@ func (s *SchedulerForShard) configMapForShard(
 func validateJobDepthMap(shard *kaiv1.SchedulingShard, innerConfig conf.SchedulerConfiguration, actions []string) error {
 	for actionToConfigure := range shard.Spec.QueueDepthPerAction {
 		if !slices.Contains(actions, actionToConfigure) {
-			return fmt.Errorf(invalidJobDepthMapError, innerConfig.Actions, actionToConfigure)
+			actionList := ""
+			if innerConfig.Actions != nil {
+				actionList = *innerConfig.Actions
+			}
+			return fmt.Errorf(invalidJobDepthMapError, actionList, actionToConfigure)
 		}
 	}
 	return nil

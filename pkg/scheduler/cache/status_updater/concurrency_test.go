@@ -33,6 +33,29 @@ const (
 	nodePoolLabelKey = "kai.scheduler/node-pool"
 )
 
+func TestIsTerminalUpdateError(t *testing.T) {
+	groupResource := schema.GroupResource{Group: "scheduling.run.ai", Resource: "podgroups"}
+	terminal := []error{
+		apierrors.NewNotFound(groupResource, "pg"),
+		apierrors.NewConflict(groupResource, "pg", errors.New("modified")),
+		apierrors.NewForbidden(groupResource, "pg", errors.New("denied")),
+	}
+	for _, err := range terminal {
+		if !isTerminalUpdateError(err) {
+			t.Fatalf("expected terminal error, got %v", err)
+		}
+	}
+	retryable := []error{
+		errors.New("temporary"),
+		apierrors.NewTimeoutError("slow", 1),
+	}
+	for _, err := range retryable {
+		if isTerminalUpdateError(err) {
+			t.Fatalf("expected retryable error, got %v", err)
+		}
+	}
+}
+
 func TestConcurrency(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Status Updater Concurrency Suite")
@@ -221,6 +244,53 @@ var _ = Describe("Status Updater Concurrency - large scale: increase queue size"
 			Fail("Update queue should be empty - no retry should be queued for NotFound errors")
 		case <-time.After(100 * time.Millisecond):
 			// Expected - queue is empty, meaning no retry was scheduled
+		}
+	})
+
+	It("updatePodGroup - No retry after Forbidden error", func() {
+		updateStatusCalls := 0
+
+		kubeAiSchedClient.SchedulingV2alpha2().(*fakeschedulingv2alpha2.FakeSchedulingV2alpha2).PrependReactor(
+			"update", "podgroups", func(action faketesting.Action) (handled bool, ret runtime.Object, err error) {
+				if updateAction, ok := action.(faketesting.UpdateAction); ok && updateAction.GetSubresource() == "status" {
+					updateStatusCalls++
+					return true, nil, apierrors.NewForbidden(
+						schema.GroupResource{Group: "scheduling.run.ai", Resource: "podgroups"},
+						"test-pg",
+						errors.New("podgroups is forbidden"),
+					)
+				}
+				return false, nil, nil
+			},
+		)
+
+		job := &enginev2alpha2.PodGroup{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-pg",
+				Namespace: "test-ns",
+				UID:       "test-uid",
+			},
+		}
+		key := statusUpdater.keyForPodGroupPayload(job.Name, job.Namespace, job.UID)
+		updateData := &inflightUpdate{
+			object:       job,
+			updateStatus: true,
+		}
+		statusUpdater.inFlightPodGroups.Store(key, updateData)
+		statusUpdater.Run(make(chan struct{}))
+
+		statusUpdater.updatePodGroup(context.Background(), key, updateData)
+
+		Expect(updateStatusCalls).To(Equal(1), "UpdateStatus should be called once")
+		_, inFlightExists := statusUpdater.inFlightPodGroups.Load(key)
+		Expect(inFlightExists).To(BeFalse(), "In-flight update should be dropped after Forbidden error")
+		_, appliedExists := statusUpdater.appliedPodGroupUpdates.Load(key)
+		Expect(appliedExists).To(BeFalse(), "Update should not be in applied cache after Forbidden error")
+
+		select {
+		case <-statusUpdater.updateQueueOut:
+			Fail("Update queue should be empty - no retry should be queued for Forbidden errors")
+		case <-time.After(100 * time.Millisecond):
 		}
 	})
 

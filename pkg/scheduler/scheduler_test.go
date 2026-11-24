@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"k8s.io/utils/ptr"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
@@ -16,7 +17,7 @@ import (
 func TestGetEvictionActionNames(t *testing.T) {
 	actions.InitDefaultActions()
 	configuredActions, err := conf_util.GetActionsFromConfig(&conf.SchedulerConfiguration{
-		Actions: "allocate, reclaim, stalegangeviction",
+		Actions: ptr.To("allocate, reclaim, stalegangeviction"),
 	})
 	require.NoError(t, err)
 

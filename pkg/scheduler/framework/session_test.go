@@ -12,12 +12,14 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
+	"k8s.io/utils/ptr"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	scheduler_cache "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
 	schedulingv1alpha2 "github.com/kai-scheduler/api/scheduling/v1alpha2"
@@ -87,6 +89,44 @@ func TestCloseSessionReleasesSnapshotReferencesWhileSessionIsLive(t *testing.T) 
 	closeSession(ssn)
 
 	requireFinalized(t, finalized, ssn)
+}
+
+func TestCloseSessionSkipsStatusWritesWhenActionsAreEmpty(t *testing.T) {
+	for _, actions := range []*string{ptr.To(""), ptr.To(" , "), ptr.To("   ")} {
+		cacheMock := scheduler_cache.NewMockCache(gomock.NewController(t))
+		cacheMock.EXPECT().WaitForWorkers(gomock.Any()).Times(1)
+		closeSession(sessionWithOneJob(cacheMock, &conf.SchedulerConfiguration{Actions: actions}))
+	}
+}
+
+func TestCloseSessionRecordsStatusWhenActionsAreConfiguredOrUnset(t *testing.T) {
+	for _, schedulerConf := range []*conf.SchedulerConfiguration{
+		{},
+		{Actions: ptr.To("allocate")},
+		{Actions: ptr.To("allocate, , reclaim")},
+	} {
+		cacheMock := scheduler_cache.NewMockCache(gomock.NewController(t))
+		cacheMock.EXPECT().RecordJobStatusEvent(gomock.Any(), gomock.Any()).Return(nil).Times(1)
+		cacheMock.EXPECT().WaitForWorkers(gomock.Any()).Times(1)
+		closeSession(sessionWithOneJob(cacheMock, schedulerConf))
+	}
+
+	cacheMock := scheduler_cache.NewMockCache(gomock.NewController(t))
+	cacheMock.EXPECT().RecordJobStatusEvent(gomock.Any(), gomock.Any()).Return(nil).Times(1)
+	cacheMock.EXPECT().WaitForWorkers(gomock.Any()).Times(1)
+	closeSession(sessionWithOneJob(cacheMock, nil))
+}
+
+func sessionWithOneJob(cache scheduler_cache.Cache, schedulerConf *conf.SchedulerConfiguration) *Session {
+	return &Session{
+		Cache:  cache,
+		Config: schedulerConf,
+		ClusterInfo: &api.ClusterInfo{
+			PodGroupInfos: map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{
+				"job": {Name: "job"},
+			},
+		},
+	}
 }
 
 func BenchmarkOpenCloseSessionWithLargeSnapshot(b *testing.B) {

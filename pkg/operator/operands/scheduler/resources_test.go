@@ -229,7 +229,7 @@ func TestValidateJobDepthMap(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			innerConfig := conf.SchedulerConfiguration{
-				Actions: strings.Join(tt.actions, ", "),
+				Actions: ptr.To(strings.Join(tt.actions, ", ")),
 			}
 
 			err := validateJobDepthMap(tt.shard, innerConfig, tt.actions)
@@ -1077,21 +1077,27 @@ usageDBConfig:
 					assert.Equal(t, expectedConfig.ScenarioSearchBudgets, actualConfig.ScenarioSearchBudgets, "ConfigMap ScenarioSearchBudgets content mismatch")
 				}
 				// Trim and split actions
-				expectedActions := make([]string, 0, len(expectedConfig.Actions))
-				for _, action := range strings.Split(expectedConfig.Actions, ",") {
-					expectedActions = append(expectedActions, strings.TrimSpace(action))
-				}
-
-				actualActions := make([]string, 0, len(actualConfig.Actions))
-				for _, action := range strings.Split(actualConfig.Actions, ",") {
-					actualActions = append(actualActions, strings.TrimSpace(action))
-				}
+				expectedActions := splitConfiguredActions(expectedConfig.Actions)
+				actualActions := splitConfiguredActions(actualConfig.Actions)
+				assert.Equal(t, expectedActions, actualActions, "ConfigMap actions content mismatch")
 
 			} else {
 				require.Error(t, err)
 			}
 		})
 	}
+}
+
+func splitConfiguredActions(actions *string) []string {
+	if actions == nil {
+		return nil
+	}
+	parts := strings.Split(*actions, ",")
+	names := make([]string, 0, len(parts))
+	for _, action := range parts {
+		names = append(names, strings.TrimSpace(action))
+	}
+	return names
 }
 
 func scenarioSearchDuration(value string) metav1.Duration {

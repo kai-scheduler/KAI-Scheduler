@@ -102,6 +102,7 @@ func NewScheduler(
 		StuckInReleasingThreshold:   schedulerParams.StuckInReleasingThreshold,
 		DiscoveryClient:             discoveryClient,
 		EvictionActionNames:         evictionActionNames,
+		SkipStaleBindRequestCleanup: schedulerConf.ExplicitlyEmptyActions(),
 	}
 
 	schedulerCache, err := schedcache.New(schedulerCacheParams)

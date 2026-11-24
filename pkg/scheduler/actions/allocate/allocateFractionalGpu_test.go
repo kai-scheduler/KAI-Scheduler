@@ -230,7 +230,7 @@ func TestFractionalGPUAllocationUsesNodeConditionOverride(t *testing.T) {
 		},
 		Mocks: &test_utils.TestMock{
 			SchedulerConf: &conf.SchedulerConfiguration{
-				Actions: "allocate, consolidation, reclaim, preempt, stalegangeviction",
+				Actions: ptr.To("allocate, consolidation, reclaim, preempt, stalegangeviction"),
 			},
 			CacheRequirements: &test_utils.CacheMocking{
 				NumberOfCacheBinds: 0,
@@ -1320,7 +1320,7 @@ func getFractionalGPUTestsMetadata() []integration_tests_utils.TestTopologyMetad
 						NumberOfCacheBinds: 1,
 					},
 					SchedulerConf: &conf.SchedulerConfiguration{
-						Actions: "allocate",
+						Actions: ptr.To("allocate"),
 						Tiers: []conf.Tier{
 							{
 								Plugins: []conf.PluginOption{
@@ -1495,7 +1495,7 @@ func getFractionalGPUTestsMetadata() []integration_tests_utils.TestTopologyMetad
 						NumberOfCacheBinds: 1,
 					},
 					SchedulerConf: &conf.SchedulerConfiguration{
-						Actions: "allocate",
+						Actions: ptr.To("allocate"),
 						Tiers: []conf.Tier{
 							{
 								Plugins: []conf.PluginOption{
@@ -1587,7 +1587,7 @@ func getFractionalGPUTestsMetadata() []integration_tests_utils.TestTopologyMetad
 						NumberOfCacheBinds: 1,
 					},
 					SchedulerConf: &conf.SchedulerConfiguration{
-						Actions: "allocate",
+						Actions: ptr.To("allocate"),
 						Tiers: []conf.Tier{
 							{
 								Plugins: []conf.PluginOption{
@@ -1679,7 +1679,7 @@ func getFractionalGPUTestsMetadata() []integration_tests_utils.TestTopologyMetad
 						NumberOfCacheBinds: 1,
 					},
 					SchedulerConf: &conf.SchedulerConfiguration{
-						Actions: "allocate",
+						Actions: ptr.To("allocate"),
 						Tiers: []conf.Tier{
 							{
 								Plugins: []conf.PluginOption{
@@ -1755,7 +1755,7 @@ func getFractionalGPUTestsMetadata() []integration_tests_utils.TestTopologyMetad
 						NumberOfCacheBinds: 2,
 					},
 					SchedulerConf: &conf.SchedulerConfiguration{
-						Actions: "allocate",
+						Actions: ptr.To("allocate"),
 						Tiers: []conf.Tier{
 							{
 								Plugins: []conf.PluginOption{
@@ -1855,7 +1855,7 @@ func getFractionalGPUTestsMetadata() []integration_tests_utils.TestTopologyMetad
 						NumberOfCacheBinds: 2,
 					},
 					SchedulerConf: &conf.SchedulerConfiguration{
-						Actions: "allocate",
+						Actions: ptr.To("allocate"),
 						Tiers: []conf.Tier{
 							{
 								Plugins: []conf.PluginOption{

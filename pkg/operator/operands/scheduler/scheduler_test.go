@@ -13,6 +13,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	policyv1 "k8s.io/api/policy/v1"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
 	kaiv1 "github.com/kai-scheduler/api/kai/v1"
 	"github.com/kai-scheduler/api/kai/v1/common"
 
@@ -21,6 +22,7 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/yaml"
 )
 
 func TestScheduler(t *testing.T) {
@@ -308,6 +310,22 @@ tiers:
             gpu: spread
         - name: backgroundpods
 `))
+		})
+
+		It("renders an empty action list when every action is disabled", func(ctx context.Context) {
+			for name, action := range shard.Spec.Actions {
+				disabled := action
+				disabled.Enabled = ptr.To(false)
+				shard.Spec.Actions[name] = disabled
+			}
+
+			s := NewSchedulerForShard(shard)
+			cmObj, err := s.configMapForShard(ctx, fakeClient, kaiConfig, shard)
+			Expect(err).NotTo(HaveOccurred())
+
+			var parsed conf.SchedulerConfiguration
+			Expect(yaml.Unmarshal([]byte(cmObj.(*v1.ConfigMap).Data["config.yaml"]), &parsed)).To(Succeed())
+			Expect(parsed.ExplicitlyEmptyActions()).To(BeTrue())
 		})
 	})
 

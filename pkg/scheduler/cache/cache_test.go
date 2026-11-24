@@ -474,6 +474,47 @@ var _ = Describe("Cache", func() {
 			Expect(bindRequestsAfterCleanup.Items).To(HaveLen(1))
 		})
 
+		It("Leaves stale bind requests when the scheduler runs no actions", func() {
+			bindRequest := &schedulingv1alpha2.BindRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "bind-request-1",
+					Namespace: "namespace-1",
+				},
+				Spec: schedulingv1alpha2.BindRequestSpec{
+					PodName:      "pod-1",
+					SelectedNode: "node-1",
+					BackoffLimit: ptr.To(int32(1)),
+				},
+				Status: schedulingv1alpha2.BindRequestStatus{
+					Phase:          schedulingv1alpha2.BindRequestPhaseFailed,
+					FailedAttempts: 1,
+				},
+			}
+			kubeClient := fake.NewSimpleClientset()
+			kubeAiSchedulerClient := kubeaischedulerfake.NewSimpleClientset(bindRequest)
+			cache, err := New(&SchedulerCacheParams{
+				KubeClient:                  kubeClient,
+				KAISchedulerClient:          kubeAiSchedulerClient,
+				NodePoolParams:              &conf.SchedulingNodePoolParams{},
+				FullHierarchyFairness:       true,
+				DiscoveryClient:             kubeClient.Discovery(),
+				SkipStaleBindRequestCleanup: true,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			stopCh := make(chan struct{})
+			defer close(stopCh)
+			cache.Run(stopCh)
+			cache.WaitForCacheSync(stopCh)
+
+			_, err = cache.Snapshot()
+			Expect(err).NotTo(HaveOccurred())
+
+			bindRequestsAfterCleanup, err := kubeAiSchedulerClient.SchedulingV1alpha2().BindRequests("namespace-1").List(context.TODO(), metav1.ListOptions{})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(bindRequestsAfterCleanup.Items).To(HaveLen(1))
+		})
+
 		It("Reports all failed deletions", func() {
 			cache, stopCh := setupCacheWithObjects(
 				false,

@@ -22,6 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
+	"k8s.io/utils/ptr"
 
 	kaiv1alpha1 "github.com/kai-scheduler/api/kai/v1alpha1"
 )
@@ -104,7 +105,7 @@ func TestTopologyPlugin_initializeTopologyTree(t *testing.T) {
 	}
 
 	schedulerConfig := &conf.SchedulerConfiguration{
-		Actions: "allocate",
+		Actions: ptr.To("allocate"),
 		Tiers: []conf.Tier{
 			{
 				Plugins: []conf.PluginOption{

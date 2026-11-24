@@ -552,14 +552,17 @@ func closeSession(ssn *Session) {
 			ssn.ID, len(ssn.ClusterInfo.PodGroupInfos), len(ssn.ClusterInfo.Queues))
 	})
 
-	// Push all jobs for status update into the channel
-	resolveDetailedFitErrors := ssn.RecomputeDetailedFitErrors
-	for _, job := range ssn.ClusterInfo.PodGroupInfos {
-		if job.IsSemiPreemptibleJob() {
-			job.CorePodNames = podgroup_info.GetCorePodNames(job, ssn.TaskOrderFn)
-		}
-		if err := ssn.Cache.RecordJobStatusEvent(job, resolveDetailedFitErrors); err != nil {
-			log.InfraLogger.Errorf("Failed to record job status event for job <%s>: %v", job.Name, err)
+	// An explicit empty action list is listen-only. The session still opens so plugins
+	// such as snapshot can register, and PodGroup status is left untouched.
+	if !ssn.Config.ExplicitlyEmptyActions() {
+		resolveDetailedFitErrors := ssn.RecomputeDetailedFitErrors
+		for _, job := range ssn.ClusterInfo.PodGroupInfos {
+			if job.IsSemiPreemptibleJob() {
+				job.CorePodNames = podgroup_info.GetCorePodNames(job, ssn.TaskOrderFn)
+			}
+			if err := ssn.Cache.RecordJobStatusEvent(job, resolveDetailedFitErrors); err != nil {
+				log.InfraLogger.Errorf("Failed to record job status event for job <%s>: %v", job.Name, err)
+			}
 		}
 	}
 
