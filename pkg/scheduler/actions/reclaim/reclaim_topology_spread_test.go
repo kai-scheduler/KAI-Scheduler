@@ -84,7 +84,7 @@ func getReclaimTopologySpreadTestsMetadata() []integration_tests_utils.TestTopol
 	return []integration_tests_utils.TestTopologyMetadata{
 		{
 			TestTopologyBasic: test_utils.TestTopologyBasic{
-				Name: "DoNotSchedule spread over hosts: reclaim the victim on the host that keeps the skew",
+				Name: "Control, non-preemptible matching pod: DoNotSchedule spread over hosts reclaims the victim on the host that keeps the skew",
 				Jobs: []*jobs_fake.TestJobBasic{
 					nonPreemptibleJob(runningJob("running_job0", "queue2", "node0", spreadLabels)),
 					runningJob("running_job1", "queue0", "node0", nil),
@@ -109,7 +109,7 @@ func getReclaimTopologySpreadTestsMetadata() []integration_tests_utils.TestTopol
 		},
 		{
 			TestTopologyBasic: test_utils.TestTopologyBasic{
-				Name: "DoNotSchedule spread over hosts: do not reclaim when the only freed host breaks the skew",
+				Name: "Non-preemptible matching pod: DoNotSchedule spread over hosts does not reclaim when the only freed host breaks the skew",
 				Jobs: []*jobs_fake.TestJobBasic{
 					nonPreemptibleJob(runningJob("running_job0", "queue2", "node0", spreadLabels)),
 					runningJob("running_job1", "queue0", "node0", nil),

@@ -11,6 +11,7 @@ import (
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/utils/ptr"
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -54,6 +55,9 @@ func DescribeTopologySpreadSpecs() bool {
 		It("spreads two replicas over different nodes with DoNotSchedule on hostname", func(ctx context.Context) {
 			deployment := rd.CreateDeploymentObject(namespace, testCtx.Queues[0].Name)
 			deployment.Spec.Replicas = ptr.To(int32(2))
+			deployment.Spec.Template.Spec.Containers[0].Resources = v1.ResourceRequirements{
+				Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("100m")},
+			}
 			deployment.Spec.Template.Spec.TopologySpreadConstraints = []v1.TopologySpreadConstraint{{
 				MaxSkew:           1,
 				TopologyKey:       constant.NodeNamePodLabelName,
