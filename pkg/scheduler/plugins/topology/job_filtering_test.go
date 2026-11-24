@@ -2191,10 +2191,12 @@ func TestTopologyPlugin_getJobAllocatableDomains(t *testing.T) {
 			}
 			tasksCount := len(tasks)
 
-			lowestCommonDomain := NewDomainInfo(rootDomainId, rootLevel)
-
-			result, err := plugin.getJobAllocatableDomains(job, &job.RootSubGroupSet.SubGroupInfo,
-				tasksResources.ToVector(testVectorMap), tasksCount, tt.topologyTree, lowestCommonDomain, nil)
+			relevantLevels, err := plugin.calculateRelevantDomainLevels(&job.RootSubGroupSet.SubGroupInfo, tt.topologyTree, rootLevel)
+			var result []*DomainInfo
+			if err == nil {
+				result, err = plugin.getJobAllocatableDomains(job, &job.RootSubGroupSet.SubGroupInfo,
+					tasksResources.ToVector(testVectorMap), tasksCount, tt.topologyTree, relevantLevels, nil)
+			}
 
 			// Check error
 			if tt.expectedError != "" {
@@ -2328,6 +2330,16 @@ func TestTopologyPlugin_subsetNodesFnSearchBoundary(t *testing.T) {
 			if tc.preferred == "root" || (tc.required == "root" && tc.preferred == "") {
 				assert.Len(t, subsets, 1)
 				assert.Len(t, subsets[0], 2)
+			}
+			if tc.preferred != "" {
+				nodeScores := plugin.subGroupNodeScores[job.RootSubGroupSet.GetName()]
+				for _, node := range nodeSet {
+					_, exists := nodeScores[node.Name]
+					assert.True(t, exists, "missing topology score for %s", node.Name)
+				}
+				if tc.preferred == "root" {
+					assert.Equal(t, nodeScores[nodeSet[0].Name], nodeScores[nodeSet[len(nodeSet)-1].Name])
+				}
 			}
 			root := plugin.TopologyTrees["test-topology"].DomainsByLevel[rootLevel][rootDomainId]
 			assert.Zero(t, root.IdleOrReleasingVector.Get(resource_info.CPUIndex))

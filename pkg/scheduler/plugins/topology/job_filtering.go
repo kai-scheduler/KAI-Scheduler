@@ -52,6 +52,11 @@ func (t *topologyPlugin) subSetNodesFn(
 		return nil, fmt.Errorf("domain not found for node set in topology %s", topologyTree.Name)
 	}
 
+	relevantLevels, err := t.calculateRelevantDomainLevels(subGroup, topologyTree, domain.Level)
+	if err != nil {
+		return nil, err
+	}
+
 	t.treeAllocatableCleanup(topologyTree)
 	calcSubTreeFreeResources(domain)
 	if useRepresentorPodsAccounting(tasks) {
@@ -82,18 +87,13 @@ func (t *topologyPlugin) subSetNodesFn(
 	}
 
 	// Sorting the tree for both packing and closest preferred level domain scoring
-	preferredLevel := DomainLevel(subGroup.GetTopologyConstraint().PreferredLevel)
-	requiredLevel := DomainLevel(subGroup.GetTopologyConstraint().RequiredLevel)
-	maxDepthLevel := preferredLevel
-	if maxDepthLevel == "" {
-		maxDepthLevel = requiredLevel
-	}
-	sortTreeFromRoot(tasks, domain, maxDepthLevel, topologyTree.VectorMap, dbc)
-	if preferredLevel != "" {
-		t.subGroupNodeScores[subGroup.GetName()] = calculateNodeScores(domain, preferredLevel)
+	effectivePreferredLevel := relevantLevels[0]
+	sortTreeFromRoot(tasks, domain, effectivePreferredLevel, topologyTree.VectorMap, dbc)
+	if subGroup.GetTopologyConstraint().PreferredLevel != "" {
+		t.subGroupNodeScores[subGroup.GetName()] = calculateNodeScores(domain, effectivePreferredLevel)
 	}
 
-	jobAllocatableDomains, err := t.getJobAllocatableDomains(job, subGroup, tasksResources, tasksCount, topologyTree, domain, dbc)
+	jobAllocatableDomains, err := t.getJobAllocatableDomains(job, subGroup, tasksResources, tasksCount, topologyTree, relevantLevels, dbc)
 	if err != nil {
 		return nil, err
 	}
@@ -270,14 +270,9 @@ func calcNodeAccommodation(jobAllocationMetaData *jobAllocationMetaData, node *n
 
 func (t *topologyPlugin) getJobAllocatableDomains(
 	job *podgroup_info.PodGroupInfo, subGroup *subgroup_info.SubGroupInfo, tasksResources resource_info.ResourceVector,
-	tasksCount int, topologyTree *Info, lowestCommonDomain *DomainInfo,
+	tasksCount int, topologyTree *Info, relevantLevels []DomainLevel,
 	dbc *extendedresourcecache.ExtendedResourceCache,
 ) ([]*DomainInfo, error) {
-	relevantLevels, err := t.calculateRelevantDomainLevels(subGroup, topologyTree, lowestCommonDomain.Level)
-	if err != nil {
-		return nil, err
-	}
-
 	// Validate that the domains do not clash with the chosen domain for active pods of the job
 	var relevantDomainsByLevel domainsByLevel
 	podSetsForAllocatedPodDomains, err := getPodSetsForAllocatedPodDomains(job, subGroup)
