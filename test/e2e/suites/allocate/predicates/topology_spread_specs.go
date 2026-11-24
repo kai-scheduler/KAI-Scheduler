@@ -61,9 +61,9 @@ func DescribeTopologySpreadSpecs() bool {
 				LabelSelector:     deployment.Spec.Selector,
 			}}
 			Expect(testCtx.ControllerClient.Create(ctx, deployment)).To(Succeed())
-			DeferCleanup(func(ctx context.Context) {
+			defer func() {
 				Expect(runtimeClient.IgnoreNotFound(testCtx.ControllerClient.Delete(ctx, deployment))).To(Succeed())
-			})
+			}()
 
 			wait.ForAtLeastNPodCreation(ctx, testCtx.ControllerClient, *deployment.Spec.Selector, 2)
 			pods := listDeploymentPods(ctx, testCtx.ControllerClient, deployment)
