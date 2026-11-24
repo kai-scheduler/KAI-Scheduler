@@ -177,7 +177,7 @@ type SchedulerCacheParams struct {
 	DiscoveryClient             discovery.DiscoveryInterface
 	EvictionActionNames         []string
 
-	SkipDeleteStaleBindRequests bool
+	NoActions bool
 }
 
 type SchedulerCache struct {
@@ -203,7 +203,7 @@ type SchedulerCache struct {
 	fullHierarchyFairness     bool
 	stuckInReleasingThreshold time.Duration
 
-	skipDeleteStaleBindRequests bool
+	noActions bool
 
 	internalPlugins *k8splugins.K8sPlugins
 
@@ -221,26 +221,28 @@ func newSchedulerCache(schedulerCacheParams *SchedulerCacheParams) (*SchedulerCa
 		kubeClient:                draversionawareclient.NewDRAAwareClient(schedulerCacheParams.KubeClient),
 		kubeAiSchedulerClient:     schedulerCacheParams.KAISchedulerClient,
 	}
-	sc.skipDeleteStaleBindRequests = schedulerCacheParams.SkipDeleteStaleBindRequests
+	sc.noActions = schedulerCacheParams.NoActions
 
 	schedulerName := schedulerCacheParams.SchedulerName
 
+	// Prepare event clients.
+	broadcaster := newEventBroadcaster()
+	// The new broadcaster objects uses watch.NewLongQueueBroadcaster(maxQueuedEvents, watch.DropIfChannelFull) under the hood.
+	// This means that we need to be careful when writing events using the recorder.
+	// If the broadcaster will have more then maxQueuedEvents waiting to be published, he will drop all incoming recording requests.
+	if !schedulerCacheParams.NoActions {
+		broadcaster.StartRecordingToSink(&corev1.EventSinkImpl{Interface: sc.kubeClient.CoreV1().Events("")})
+	}
+	recorder := broadcaster.NewRecorder(kubeaischedulerschema.Scheme, v1.EventSource{Component: schedulerName})
+
 	sc.Evictor = evictor.New(sc.kubeClient, schedulerCacheParams.UpdatePodEvictionCondition)
 
-	if schedulerCacheParams.SkipDeleteStaleBindRequests {
+	sc.StatusUpdater = status_updater.New(
+		sc.kubeClient, sc.kubeAiSchedulerClient, recorder, schedulerCacheParams.NumOfStatusRecordingWorkers,
+		sc.detailedFitErrors, sc.schedulingNodePoolParams.NodePoolLabelKey,
+	)
+	if schedulerCacheParams.NoActions {
 		sc.StatusUpdater = status_updater.NewNoop()
-	} else {
-		// Prepare event clients.
-		broadcaster := newEventBroadcaster()
-		// The new broadcaster objects uses watch.NewLongQueueBroadcaster(maxQueuedEvents, watch.DropIfChannelFull) under the hood.
-		// This means that we need to be careful when writing events using the recorder.
-		// If the broadcaster will have more then maxQueuedEvents waiting to be published, he will drop all incoming recording requests.
-		broadcaster.StartRecordingToSink(&corev1.EventSinkImpl{Interface: sc.kubeClient.CoreV1().Events("")})
-		recorder := broadcaster.NewRecorder(kubeaischedulerschema.Scheme, v1.EventSource{Component: schedulerName})
-		sc.StatusUpdater = status_updater.New(
-			sc.kubeClient, sc.kubeAiSchedulerClient, recorder, schedulerCacheParams.NumOfStatusRecordingWorkers,
-			sc.detailedFitErrors, sc.schedulingNodePoolParams.NodePoolLabelKey,
-		)
 	}
 
 	sc.informerFactory = informers.NewSharedInformerFactory(sc.kubeClient, 0)
@@ -306,7 +308,7 @@ func (sc *SchedulerCache) Snapshot() (*api.ClusterInfo, error) {
 		return nil, err
 	}
 
-	if !sc.skipDeleteStaleBindRequests {
+	if !sc.noActions {
 		if cleanErr := sc.cleanStaleBindRequest(snapshot.BindRequests, snapshot.FailedBindRequestsForShard); cleanErr != nil {
 			log.InfraLogger.V(2).Warnf("Failed to clean stale bind requests: %v", cleanErr)
 			err = multierr.Append(err, cleanErr)
