@@ -493,12 +493,12 @@ var _ = Describe("Cache", func() {
 			kubeClient := fake.NewSimpleClientset()
 			kubeAiSchedulerClient := kubeaischedulerfake.NewSimpleClientset(bindRequest)
 			cache, err := New(&SchedulerCacheParams{
-				KubeClient:            kubeClient,
-				KAISchedulerClient:    kubeAiSchedulerClient,
-				NodePoolParams:        &conf.SchedulingNodePoolParams{},
-				FullHierarchyFairness: true,
-				DiscoveryClient:       kubeClient.Discovery(),
-				NoActions:             true,
+				KubeClient:                  kubeClient,
+				KAISchedulerClient:          kubeAiSchedulerClient,
+				NodePoolParams:              &conf.SchedulingNodePoolParams{},
+				FullHierarchyFairness:       true,
+				DiscoveryClient:             kubeClient.Discovery(),
+				SkipDeleteStaleBindRequests: true,
 			})
 			Expect(err).NotTo(HaveOccurred())
 

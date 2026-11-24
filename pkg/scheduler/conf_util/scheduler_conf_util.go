@@ -22,6 +22,7 @@ package conf_util
 import (
 	"fmt"
 	"io/ioutil"
+	"strings"
 
 	"sigs.k8s.io/yaml"
 
@@ -78,58 +79,69 @@ func ResolveConfigurationFromFile(confPath string) (*conf.SchedulerConfiguration
 		return defaultConfig, nil
 	}
 
-	// Unmarshal over the defaults. A missing actions key keeps them.
-	// An explicit value, including "", replaces the default.
-	schedulerConf := *defaultConfig
-	if err := loadSchedulerConf(schedulerConfStr, &schedulerConf); err != nil {
+	schedulerConfigFromCM, err := loadSchedulerConf(schedulerConfStr)
+	if err != nil {
 		return nil, err
 	}
-	if len(schedulerConf.Tiers) == 0 {
-		schedulerConf.Tiers = defaultConfig.Tiers
+
+	if len(schedulerConfigFromCM.Tiers) == 0 {
+		schedulerConfigFromCM.Tiers = defaultConfig.Tiers
 	}
-	if len(schedulerConf.QueueDepthPerAction) == 0 {
-		schedulerConf.QueueDepthPerAction = defaultConfig.QueueDepthPerAction
+	if len(schedulerConfigFromCM.QueueDepthPerAction) == 0 {
+		schedulerConfigFromCM.QueueDepthPerAction = defaultConfig.QueueDepthPerAction
 	}
 
-	return &schedulerConf, nil
+	return schedulerConfigFromCM, nil
 }
 
-func GetActionsFromConfig(schedulerConf *conf.SchedulerConfiguration) ([]framework.Action, error) {
-	if schedulerConf == nil {
-		return nil, nil
-	}
+func GetActionsFromConfig(conf *conf.SchedulerConfiguration) ([]framework.Action, error) {
 	var actions []framework.Action
-	for _, actionName := range schedulerConf.ActionNames() {
-		action, found := framework.GetAction(actionName)
-		if !found {
+	actionNames := strings.Split(conf.Actions, ",")
+	for _, actionName := range actionNames {
+		actionName = strings.TrimSpace(actionName)
+		if actionName == "" {
+			continue
+		}
+		if action, found := framework.GetAction(actionName); found {
+			actions = append(actions, action)
+		} else {
 			return nil, fmt.Errorf("failed to find Action %s as given in the config, ignore it", actionName)
 		}
-		actions = append(actions, action)
 	}
 	return actions, nil
 }
 
 func GetDefaultSchedulerConf() (*conf.SchedulerConfiguration, error) {
-	schedulerConf := &conf.SchedulerConfiguration{}
-	if err := loadSchedulerConf(defaultSchedulerConf, schedulerConf); err != nil {
-		return nil, err
-	}
-	return schedulerConf, nil
+	return loadSchedulerConf(defaultSchedulerConf)
 }
 
-func loadSchedulerConf(confStr string, schedulerConf *conf.SchedulerConfiguration) error {
+func loadSchedulerConf(confStr string) (*conf.SchedulerConfiguration, error) {
+	schedulerConf := &conf.SchedulerConfiguration{}
+	// Start from the defaults so a missing actions key keeps them. An explicit
+	// value, including "", replaces that default. Skip this when loading the
+	// defaults themselves.
+	if confStr != defaultSchedulerConf {
+		defaultConfig, err := GetDefaultSchedulerConf()
+		if err != nil {
+			return nil, err
+		}
+		copied := *defaultConfig
+		schedulerConf = &copied
+	}
+
 	buf := make([]byte, len(confStr))
 	copy(buf, confStr)
 
 	if err := yaml.Unmarshal(buf, schedulerConf); err != nil {
-		return err
+		return nil, err
 	}
 	// Validate that the actions config section is valid
 	if _, err := GetActionsFromConfig(schedulerConf); err != nil {
-		return err
+		return nil, err
 	}
 	schedulerConf.ScenarioSearchBudgets = kaiv1.DefaultScenarioSearchBudgets(schedulerConf.ScenarioSearchBudgets)
-	return nil
+
+	return schedulerConf, nil
 }
 
 func readSchedulerConf(confPath string) (string, error) {

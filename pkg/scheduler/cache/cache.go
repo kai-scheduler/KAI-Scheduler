@@ -177,8 +177,9 @@ type SchedulerCacheParams struct {
 	DiscoveryClient             discovery.DiscoveryInterface
 	EvictionActionNames         []string
 
-	// NoActions skips stale BindRequest deletion during Snapshot.
-	NoActions bool
+	// SkipDeleteStaleBindRequests leaves BindRequests in place during Snapshot.
+	// The zero value is false, so cleanup still runs.
+	SkipDeleteStaleBindRequests bool
 }
 
 type SchedulerCache struct {
@@ -204,7 +205,7 @@ type SchedulerCache struct {
 	fullHierarchyFairness     bool
 	stuckInReleasingThreshold time.Duration
 
-	noActions bool
+	skipDeleteStaleBindRequests bool
 
 	internalPlugins *k8splugins.K8sPlugins
 
@@ -222,7 +223,7 @@ func newSchedulerCache(schedulerCacheParams *SchedulerCacheParams) (*SchedulerCa
 		kubeClient:                draversionawareclient.NewDRAAwareClient(schedulerCacheParams.KubeClient),
 		kubeAiSchedulerClient:     schedulerCacheParams.KAISchedulerClient,
 	}
-	sc.noActions = schedulerCacheParams.NoActions
+	sc.skipDeleteStaleBindRequests = schedulerCacheParams.SkipDeleteStaleBindRequests
 
 	schedulerName := schedulerCacheParams.SchedulerName
 
@@ -304,7 +305,7 @@ func (sc *SchedulerCache) Snapshot() (*api.ClusterInfo, error) {
 		return nil, err
 	}
 
-	if !sc.noActions {
+	if !sc.skipDeleteStaleBindRequests {
 		if cleanErr := sc.cleanStaleBindRequest(snapshot.BindRequests, snapshot.FailedBindRequestsForShard); cleanErr != nil {
 			log.InfraLogger.V(2).Warnf("Failed to clean stale bind requests: %v", cleanErr)
 			err = multierr.Append(err, cleanErr)
