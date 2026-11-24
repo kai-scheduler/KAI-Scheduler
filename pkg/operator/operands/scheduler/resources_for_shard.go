@@ -353,9 +353,8 @@ func (s *SchedulerForShard) serviceForShard(
 	return service, err
 }
 
-// schedulerServiceMetricsTargetPort is the TCP port the scheduler process should bind
-// for HTTP metrics. It matches the Service's targetPort (container port), not the
-// Service's front-facing port when the two differ.
+// schedulerServiceMetricsTargetPort returns the container TCP port for scheduler HTTP
+// metrics from SchedulerService, preferring targetPort over port.
 func schedulerServiceMetricsTargetPort(schedulerConfig *kaiv1scheduler.Scheduler) (int32, bool) {
 	if schedulerConfig == nil || schedulerConfig.SchedulerService == nil {
 		return 0, false
