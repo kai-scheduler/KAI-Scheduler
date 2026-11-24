@@ -495,9 +495,10 @@ func (drap *draPlugin) releaseExtendedResourceClaim(task *pod_info.PodInfo) {
 }
 
 // restoreExtendedResourceClaim gives back the devices released on eviction when the pod returns to the node it was
-// evicted from and those devices are still free, and reports whether it did. Otherwise the pod is placed anew and
-// gets a new allocation. The pre-filter marks every task it sees, victims included, so the marker cannot tell the
-// two cases apart.
+// evicted from, and reports whether it did. A pod placed on another node is placed anew and gets a new allocation.
+// The pre-filter marks every task it sees, victims included, so the marker cannot tell the two cases apart.
+// Another claim may hold a restored device in the meantime: the session claim tracker counts holders per device,
+// as it does for spec claims.
 func (drap *draPlugin) restoreExtendedResourceClaim(task *pod_info.PodInfo) bool {
 	released, found := drap.releasedExtendedClaims[task.Pod.UID]
 	if !found || task.NodeName != released.nodeName {
@@ -511,14 +512,6 @@ func (drap *draPlugin) restoreExtendedResourceClaim(task *pod_info.PodInfo) bool
 			delete(drap.releasedExtendedClaims, task.Pod.UID)
 		}
 		logExtendedResourceClaimLookupFailure(task, claimName, err)
-		return false
-	}
-
-	if drap.releasedDevicesTaken(released.allocation) {
-		// The preemptor, or a pod placed after it, already took a device of the evicted pod. Giving it back
-		// would allocate that device twice, so the pod is placed anew.
-		log.InfraLogger.V(6).Infof("Not restoring extended resource claim <%s/%s> of pod %s: its devices were taken",
-			task.Namespace, claimName, task.Name)
 		return false
 	}
 
@@ -539,21 +532,6 @@ func (drap *draPlugin) restoreExtendedResourceClaim(task *pod_info.PodInfo) bool
 			task.Namespace, claimName, getClaimDevicesString(claim))
 	})
 	return true
-}
-
-// releasedDevicesTaken reports whether any device of an evicted pod's allocation is allocated to another claim now.
-func (drap *draPlugin) releasedDevicesTaken(allocation *resourceapi.AllocationResult) bool {
-	allocatedState, err := drap.manager.ResourceClaims().GatherAllocatedState()
-	if err != nil {
-		log.InfraLogger.Errorf("Failed to gather allocated device state: %v", err)
-		return true
-	}
-	for _, result := range allocation.Devices.Results {
-		if allocatedState.AllocatedDevices.Has(structured.MakeDeviceID(result.Driver, result.Pool, result.Device)) {
-			return true
-		}
-	}
-	return false
 }
 
 func (drap *draPlugin) OnSessionClose(_ *framework.Session) {}

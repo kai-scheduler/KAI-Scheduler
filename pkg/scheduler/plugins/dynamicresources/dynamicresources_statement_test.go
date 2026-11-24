@@ -761,8 +761,9 @@ func TestStatementEvictThenPipelineToSameNode_Repeated(t *testing.T) {
 	}
 }
 
-// The preemptor is placed before the victims return, so it can take a victim's device. The victim must not get it back too.
-func TestStatementEvictThenPipelineToSameNode_DeviceTaken(t *testing.T) {
+// The preemptor is placed before the victims return, so it can take a victim's device. The victim still gets its
+// allocation back, and the device stays allocated until every claim that holds it lets go.
+func TestStatementEvictThenPipelineToSameNode_DeviceHeldByAnotherClaim(t *testing.T) {
 	test_utils.InitTestingInfrastructure()
 	controller := NewController(t)
 	defer controller.Finish()
@@ -780,13 +781,16 @@ func TestStatementEvictThenPipelineToSameNode_DeviceTaken(t *testing.T) {
 	preemptorClaim.UID = "preemptor-claim-uid"
 	preemptorClaim.Status.Allocation = probe.initial.DeepCopy()
 	assert.NoError(t, manager.SignalClaimPendingAllocation(preemptorClaim.UID, preemptorClaim))
-	assert.True(t, probe.deviceAllocated(), "The preemptor took the freed device")
 
 	probe.task.ExtendedResourceClaim = &pod_info.ExtendedResourceClaim{}
 	assert.NoError(t, stmt.Pipeline(probe.task, "node0", true))
+	assert.Equal(t, probe.initial, probe.getClaim().Status.Allocation, "The victim gets its allocation back")
+	assert.True(t, probe.deviceAllocated())
 
-	assert.Nil(t, probe.getClaim().Status.Allocation, "The victim does not get back a device that was given to another pod")
-	assert.Empty(t, probe.getClaim().Status.ReservedFor)
+	// The preemptor's placement is rolled back, for example when a later gang member does not fit.
+	manager.RemoveClaimPendingAllocation(preemptorClaim.UID)
+	assert.True(t, probe.deviceAllocated(), "The victim still holds the device after the other claim lets go")
+	assert.Equal(t, probe.initial, probe.getClaim().Status.Allocation)
 }
 
 // A victim placed on another node is placed anew, even when the solver allows undoing its eviction.
