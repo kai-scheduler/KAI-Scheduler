@@ -308,6 +308,7 @@ func (sc *SchedulerCache) Snapshot() (*api.ClusterInfo, error) {
 		return nil, err
 	}
 
+	// Deleting stale BindRequests is a cluster write, which a NoActions scheduler must not do.
 	if !sc.noActions {
 		if cleanErr := sc.cleanStaleBindRequest(snapshot.BindRequests, snapshot.FailedBindRequestsForShard); cleanErr != nil {
 			log.InfraLogger.V(2).Warnf("Failed to clean stale bind requests: %v", cleanErr)
