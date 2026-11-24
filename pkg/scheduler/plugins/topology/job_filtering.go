@@ -88,7 +88,7 @@ func (t *topologyPlugin) subSetNodesFn(
 
 	// Sorting the tree for both packing and closest preferred level domain scoring
 	effectivePreferredLevel := relevantLevels[0]
-	sortTreeFromRoot(tasks, domain, effectivePreferredLevel, topologyTree.VectorMap, dbc)
+	sortTree(tasksResources, domain, effectivePreferredLevel, topologyTree.VectorMap, dbc)
 	if subGroup.GetTopologyConstraint().PreferredLevel != "" {
 		t.subGroupNodeScores[subGroup.GetName()] = calculateNodeScores(domain, effectivePreferredLevel)
 	}
@@ -479,20 +479,6 @@ func (*topologyPlugin) treeAllocatableCleanup(topologyTree *Info) {
 			domain.IdleOrReleasingVector = resource_info.NewResourceVector(topologyTree.VectorMap)
 		}
 	}
-}
-
-func sortTreeFromRoot(tasks []*pod_info.PodInfo, root *DomainInfo, maxDepthLevel DomainLevel,
-	vectorMap *resource_info.ResourceVectorMap, dbc *extendedresourcecache.ExtendedResourceCache) {
-	var tasksResources resource_info.ResourceVector
-	for _, task := range tasks {
-		if tasksResources == nil {
-			tasksResources = task.ResReqVector.Clone()
-		} else {
-			tasksResources.Add(task.ResReqVector)
-		}
-	}
-
-	sortTree(tasksResources, root, maxDepthLevel, vectorMap, dbc)
 }
 
 // sortTree recursively sorts the topology tree for bin-packing behavior.

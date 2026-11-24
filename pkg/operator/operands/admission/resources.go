@@ -42,8 +42,14 @@ func (a *Admission) deploymentForKAIConfig(
 		return nil, err
 	}
 
-	deployment.Spec.Strategy.Type = appsv1.RecreateDeploymentStrategyType
-	deployment.Spec.Strategy.RollingUpdate = nil
+	// The pod webhooks fail closed, so a new pod must be serving before an old one stops.
+	deployment.Spec.Strategy = appsv1.DeploymentStrategy{
+		Type: appsv1.RollingUpdateDeploymentStrategyType,
+		RollingUpdate: &appsv1.RollingUpdateDeployment{
+			MaxUnavailable: ptr.To(intstr.FromInt32(0)),
+			MaxSurge:       ptr.To(intstr.FromInt32(1)),
+		},
+	}
 	deployment.Spec.Replicas = config.Replicas
 	nriPluginEnabled, err := common.IsGPUOperatorNRIPluginEnabled(ctx, runtimeClient)
 	if err != nil {

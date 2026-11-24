@@ -1,6 +1,0 @@
-kind: Changed
-body: |-
-  Score and sort nodes for a task without per-worker score maps
-custom:
-  Author: "theminjunchoi"
-  Issue: "2409"

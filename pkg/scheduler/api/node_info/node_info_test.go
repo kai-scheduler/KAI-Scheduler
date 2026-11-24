@@ -1869,3 +1869,35 @@ func TestPredicateByNodeResourcesType_SharedGPU_DRANode(t *testing.T) {
 		})
 	}
 }
+
+func TestIsInPlaceResizeAllocatable(t *testing.T) {
+	tests := []struct {
+		name                  string
+		taskNode              string
+		idleCPU, releasingCPU float64
+		idleMemory            float64
+		want                  bool
+	}{
+		{name: "over-committed", taskNode: "node0", idleCPU: -1000, want: false},
+		{name: "releasing covers the shortfall", taskNode: "node0", idleCPU: -1000, releasingCPU: 1000, want: true},
+		{name: "memory over-committed", taskNode: "node0", idleMemory: -1, want: false},
+		{name: "another node", taskNode: "node1", want: false},
+		{name: "fits", taskNode: "node0", want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			vectorMap := resource_info.NewResourceVectorMap()
+			ni := &NodeInfo{
+				Name:            "node0",
+				VectorMap:       vectorMap,
+				IdleVector:      resource_info.NewResourceVector(vectorMap),
+				ReleasingVector: resource_info.NewResourceVector(vectorMap),
+			}
+			ni.IdleVector.Set(vectorMap.GetIndex(v1.ResourceCPU), tt.idleCPU)
+			ni.IdleVector.Set(vectorMap.GetIndex(v1.ResourceMemory), tt.idleMemory)
+			ni.ReleasingVector.Set(vectorMap.GetIndex(v1.ResourceCPU), tt.releasingCPU)
+
+			assert.Equal(t, tt.want, ni.IsInPlaceResizeAllocatable(&pod_info.PodInfo{NodeName: tt.taskNode}))
+		})
+	}
+}
