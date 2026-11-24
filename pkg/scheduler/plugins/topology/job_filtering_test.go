@@ -2273,6 +2273,7 @@ func TestTopologyPlugin_subsetNodesFnSearchBoundary(t *testing.T) {
 		wantFit    bool
 	}{
 		{name: "root constraints", required: "root", preferred: "root", wantFit: true},
+		{name: "required root permits active pod outside effective required zone", required: "root", preferred: "zone", active: true, wantFit: true},
 		{name: "root permits active pod outside search subtree", required: "root", preferred: "root", active: true, wantFit: true},
 		{name: "zone rejects active pod outside search subtree", required: "zone", preferred: "rack", active: true},
 		{name: "required ancestor without preference", required: "root", wantFit: true},
@@ -2345,7 +2346,10 @@ func TestCalculateRelevantDomainLevelsSearchBoundary(t *testing.T) {
 		want      []DomainLevel
 		wantError bool
 	}{
-		{name: "ancestors only", required: "root", preferred: "root"},
+		{name: "ancestors only", required: "root", preferred: "root", want: []DomainLevel{"zone"}},
+		{name: "required ancestor only", required: "root", want: []DomainLevel{"zone"}},
+		{name: "preferred ancestor only", preferred: "root", want: []DomainLevel{"zone"}},
+		{name: "preferred descendant only", preferred: "rack", want: []DomainLevel{"rack", "zone"}},
 		{name: "truncate ancestors", required: "root", preferred: "rack", want: []DomainLevel{"rack", "zone"}},
 		{name: "descendants only", required: "rack", preferred: "rack", want: []DomainLevel{"rack"}},
 		{name: "include boundary", required: "zone", preferred: "zone", want: []DomainLevel{"zone"}},
