@@ -137,7 +137,7 @@ func TestSnapshotPlugin(t *testing.T) {
 	}
 
 	schedulerConfig := &conf.SchedulerConfiguration{
-		Actions: ptr.To("allocate"),
+		Actions: "allocate",
 		Tiers: []conf.Tier{
 			{
 				Plugins: []conf.PluginOption{

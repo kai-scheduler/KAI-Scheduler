@@ -552,9 +552,9 @@ func closeSession(ssn *Session) {
 			ssn.ID, len(ssn.ClusterInfo.PodGroupInfos), len(ssn.ClusterInfo.Queues))
 	})
 
-	// An explicit empty action list is listen-only. The session still opens so plugins
-	// such as snapshot can register, and PodGroup status is left untouched.
-	if !ssn.Config.ExplicitlyEmptyActions() {
+	// An empty action list is listen-only. The session still opens so plugins such as
+	// snapshot can register, and PodGroup status is left untouched.
+	if !ssn.Config.NoActions() {
 		resolveDetailedFitErrors := ssn.RecomputeDetailedFitErrors
 		for _, job := range ssn.ClusterInfo.PodGroupInfos {
 			if job.IsSemiPreemptibleJob() {

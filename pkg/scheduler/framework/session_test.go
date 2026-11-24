@@ -12,7 +12,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
-	"k8s.io/utils/ptr"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
@@ -92,23 +91,19 @@ func TestCloseSessionReleasesSnapshotReferencesWhileSessionIsLive(t *testing.T) 
 }
 
 func TestCloseSessionSkipsStatusWritesWhenActionsAreEmpty(t *testing.T) {
-	for _, actions := range []*string{ptr.To(""), ptr.To(" , "), ptr.To("   ")} {
+	for _, actions := range []string{"", " , ", "   "} {
 		cacheMock := scheduler_cache.NewMockCache(gomock.NewController(t))
 		cacheMock.EXPECT().WaitForWorkers(gomock.Any()).Times(1)
 		closeSession(sessionWithOneJob(cacheMock, &conf.SchedulerConfiguration{Actions: actions}))
 	}
 }
 
-func TestCloseSessionRecordsStatusWhenActionsAreConfiguredOrUnset(t *testing.T) {
-	for _, schedulerConf := range []*conf.SchedulerConfiguration{
-		{},
-		{Actions: ptr.To("allocate")},
-		{Actions: ptr.To("allocate, , reclaim")},
-	} {
+func TestCloseSessionRecordsStatusWhenActionsAreConfigured(t *testing.T) {
+	for _, actions := range []string{"allocate", "allocate, , reclaim"} {
 		cacheMock := scheduler_cache.NewMockCache(gomock.NewController(t))
 		cacheMock.EXPECT().RecordJobStatusEvent(gomock.Any(), gomock.Any()).Return(nil).Times(1)
 		cacheMock.EXPECT().WaitForWorkers(gomock.Any()).Times(1)
-		closeSession(sessionWithOneJob(cacheMock, schedulerConf))
+		closeSession(sessionWithOneJob(cacheMock, &conf.SchedulerConfiguration{Actions: actions}))
 	}
 
 	cacheMock := scheduler_cache.NewMockCache(gomock.NewController(t))

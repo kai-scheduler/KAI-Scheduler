@@ -78,23 +78,20 @@ func ResolveConfigurationFromFile(confPath string) (*conf.SchedulerConfiguration
 		return defaultConfig, nil
 	}
 
-	schedulerConfigFromCM, err := loadSchedulerConf(schedulerConfStr)
-	if err != nil {
+	// Unmarshal over the defaults. A missing actions key keeps them.
+	// An explicit value, including "", replaces the default.
+	schedulerConf := *defaultConfig
+	if err := loadSchedulerConf(schedulerConfStr, &schedulerConf); err != nil {
 		return nil, err
 	}
-
-	// Unset keeps the defaults. An explicit empty list runs no actions.
-	if schedulerConfigFromCM.Actions == nil {
-		schedulerConfigFromCM.Actions = defaultConfig.Actions
+	if len(schedulerConf.Tiers) == 0 {
+		schedulerConf.Tiers = defaultConfig.Tiers
 	}
-	if len(schedulerConfigFromCM.Tiers) == 0 {
-		schedulerConfigFromCM.Tiers = defaultConfig.Tiers
-	}
-	if len(schedulerConfigFromCM.QueueDepthPerAction) == 0 {
-		schedulerConfigFromCM.QueueDepthPerAction = defaultConfig.QueueDepthPerAction
+	if len(schedulerConf.QueueDepthPerAction) == 0 {
+		schedulerConf.QueueDepthPerAction = defaultConfig.QueueDepthPerAction
 	}
 
-	return schedulerConfigFromCM, nil
+	return &schedulerConf, nil
 }
 
 func GetActionsFromConfig(schedulerConf *conf.SchedulerConfiguration) ([]framework.Action, error) {
@@ -113,25 +110,26 @@ func GetActionsFromConfig(schedulerConf *conf.SchedulerConfiguration) ([]framewo
 }
 
 func GetDefaultSchedulerConf() (*conf.SchedulerConfiguration, error) {
-	return loadSchedulerConf(defaultSchedulerConf)
+	schedulerConf := &conf.SchedulerConfiguration{}
+	if err := loadSchedulerConf(defaultSchedulerConf, schedulerConf); err != nil {
+		return nil, err
+	}
+	return schedulerConf, nil
 }
 
-func loadSchedulerConf(confStr string) (*conf.SchedulerConfiguration, error) {
-	schedulerConf := &conf.SchedulerConfiguration{}
-
+func loadSchedulerConf(confStr string, schedulerConf *conf.SchedulerConfiguration) error {
 	buf := make([]byte, len(confStr))
 	copy(buf, confStr)
 
 	if err := yaml.Unmarshal(buf, schedulerConf); err != nil {
-		return nil, err
+		return err
 	}
 	// Validate that the actions config section is valid
 	if _, err := GetActionsFromConfig(schedulerConf); err != nil {
-		return nil, err
+		return err
 	}
 	schedulerConf.ScenarioSearchBudgets = kaiv1.DefaultScenarioSearchBudgets(schedulerConf.ScenarioSearchBudgets)
-
-	return schedulerConf, nil
+	return nil
 }
 
 func readSchedulerConf(confPath string) (string, error) {

@@ -41,7 +41,7 @@ func TestResolveConfigurationFromFile(t *testing.T) {
 			name: "valid config",
 			args: args{
 				config: &conf.SchedulerConfiguration{
-					Actions: ptr.To("consolidation"),
+					Actions: "consolidation",
 					Tiers: []conf.Tier{
 						{
 							Plugins: []conf.PluginOption{
@@ -57,7 +57,7 @@ func TestResolveConfigurationFromFile(t *testing.T) {
 				},
 			},
 			want: &conf.SchedulerConfiguration{
-				Actions: ptr.To("consolidation"),
+				Actions: "consolidation",
 				Tiers: []conf.Tier{
 					{
 						Plugins: []conf.PluginOption{
@@ -78,7 +78,7 @@ func TestResolveConfigurationFromFile(t *testing.T) {
 			name: "valid config - no QueueDepthPerAction map",
 			args: args{
 				config: &conf.SchedulerConfiguration{
-					Actions: ptr.To("consolidation"),
+					Actions: "consolidation",
 					Tiers: []conf.Tier{
 						{
 							Plugins: []conf.PluginOption{
@@ -91,7 +91,7 @@ func TestResolveConfigurationFromFile(t *testing.T) {
 				},
 			},
 			want: &conf.SchedulerConfiguration{
-				Actions: ptr.To("consolidation"),
+				Actions: "consolidation",
 				Tiers: []conf.Tier{
 					{
 						Plugins: []conf.PluginOption{
@@ -109,7 +109,7 @@ func TestResolveConfigurationFromFile(t *testing.T) {
 			name: "invalid config - wrong action",
 			args: args{
 				config: &conf.SchedulerConfiguration{
-					Actions: ptr.To("action1"),
+					Actions: "action1",
 					Tiers: []conf.Tier{
 						{
 							Plugins: []conf.PluginOption{
@@ -167,28 +167,23 @@ func TestGetActionsFromConfigSkipsBlankTokens(t *testing.T) {
 	actions.InitDefaultActions()
 
 	got, err := GetActionsFromConfig(&conf.SchedulerConfiguration{
-		Actions: ptr.To("allocate, , consolidation,  "),
+		Actions: "allocate, , consolidation,  ",
 	})
 	require.NoError(t, err)
 	require.Equal(t, []string{"allocate", "consolidation"}, actionNameList(got))
 }
 
-func TestGetActionsFromConfigEmptyAndUnset(t *testing.T) {
+func TestGetActionsFromConfigEmptyAndBlank(t *testing.T) {
 	actions.InitDefaultActions()
 
-	unset, err := GetActionsFromConfig(&conf.SchedulerConfiguration{})
-	require.NoError(t, err)
-	require.Empty(t, unset)
+	for _, actionsValue := range []string{"", " , ", "   "} {
+		got, err := GetActionsFromConfig(&conf.SchedulerConfiguration{Actions: actionsValue})
+		require.NoError(t, err)
+		require.Empty(t, got)
+		require.True(t, (&conf.SchedulerConfiguration{Actions: actionsValue}).NoActions())
+	}
 
-	empty, err := GetActionsFromConfig(&conf.SchedulerConfiguration{Actions: ptr.To("")})
-	require.NoError(t, err)
-	require.Empty(t, empty)
-
-	blank, err := GetActionsFromConfig(&conf.SchedulerConfiguration{Actions: ptr.To(" , ")})
-	require.NoError(t, err)
-	require.Empty(t, blank)
-
-	_, err = GetActionsFromConfig(&conf.SchedulerConfiguration{Actions: ptr.To("not-an-action")})
+	_, err := GetActionsFromConfig(&conf.SchedulerConfiguration{Actions: "not-an-action"})
 	require.Error(t, err)
 }
 
@@ -202,8 +197,8 @@ func TestResolveConfigurationFromFileUnsetActionsUsesDefaults(t *testing.T) {
 
 	defaults, err := GetDefaultSchedulerConf()
 	require.NoError(t, err)
-	require.NotNil(t, got.Actions)
-	require.Equal(t, *defaults.Actions, *got.Actions)
+	require.Equal(t, defaults.Actions, got.Actions)
+	require.False(t, got.NoActions())
 	require.Equal(t, []conf.Tier{{Plugins: []conf.PluginOption{{Name: "predicates"}}}}, got.Tiers)
 
 	parsed, err := GetActionsFromConfig(got)
@@ -222,24 +217,27 @@ func TestResolveConfigurationFromFileEmptyActionsRunsNone(t *testing.T) {
 		confFile := writeSchedulerConf(t, raw)
 		got, err := ResolveConfigurationFromFile(confFile)
 		require.NoError(t, err)
-		require.True(t, got.ExplicitlyEmptyActions())
+		require.True(t, got.NoActions())
 
 		parsed, err := GetActionsFromConfig(got)
 		require.NoError(t, err)
 		require.Empty(t, parsed)
+		require.Equal(t, []conf.Tier{{Plugins: []conf.PluginOption{{Name: "predicates"}}}}, got.Tiers)
 	}
 }
 
-func TestEmptyActionsYAMLRoundTrip(t *testing.T) {
-	empty := ""
-	data, err := yaml.Marshal(&conf.SchedulerConfiguration{Actions: &empty})
-	require.NoError(t, err)
+func TestEmptyActionsYAMLRoundTripKeepsExplicitEmpty(t *testing.T) {
+	actions.InitDefaultActions()
+	plugins.InitDefaultPlugins()
 
-	var got conf.SchedulerConfiguration
-	require.NoError(t, yaml.Unmarshal(data, &got))
-	require.NotNil(t, got.Actions)
-	require.Empty(t, *got.Actions)
-	require.True(t, got.ExplicitlyEmptyActions())
+	data, err := yaml.Marshal(&conf.SchedulerConfiguration{Actions: ""})
+	require.NoError(t, err)
+	require.Contains(t, string(data), "actions:")
+
+	confFile := writeSchedulerConf(t, string(data)+"tiers:\n- plugins:\n  - name: predicates\n")
+	got, err := ResolveConfigurationFromFile(confFile)
+	require.NoError(t, err)
+	require.True(t, got.NoActions())
 }
 
 func TestDefaultSchedulerConfRegistersScenarioGeneratorsForDefaultBudgets(t *testing.T) {

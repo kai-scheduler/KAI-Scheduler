@@ -54,10 +54,9 @@ type SchedulerParams struct {
 // SchedulerConfiguration defines the configuration of scheduler.
 type SchedulerConfiguration struct {
 	// Actions defines the actions list of the scheduler, in order.
-	// Nil means the field was unset and the default actions are used.
-	// An empty string runs no actions: the scheduler still opens sessions
-	// and serves /get-snapshot, and it does not write scheduling updates.
-	Actions *string `yaml:"actions" json:"actions"`
+	// Empty runs no actions. A config file that omits the key keeps the defaults,
+	// which are filled in before the file is unmarshalled.
+	Actions string `yaml:"actions" json:"actions"`
 
 	// Tiers defines plugins in different tiers
 	Tiers []Tier `yaml:"tiers,omitempty" json:"tiers,omitempty"`
@@ -104,13 +103,13 @@ type SchedulingNodePoolParams struct {
 }
 
 // ActionNames returns configured action names with surrounding space removed
-// and blank tokens dropped. A nil Actions pointer yields nil.
+// and blank tokens dropped.
 func (c *SchedulerConfiguration) ActionNames() []string {
-	if c == nil || c.Actions == nil {
+	if c == nil || strings.TrimSpace(c.Actions) == "" {
 		return nil
 	}
 	var names []string
-	for _, actionName := range strings.Split(*c.Actions, ",") {
+	for _, actionName := range strings.Split(c.Actions, ",") {
 		name := strings.TrimSpace(actionName)
 		if name == "" {
 			continue
@@ -120,10 +119,11 @@ func (c *SchedulerConfiguration) ActionNames() []string {
 	return names
 }
 
-// ExplicitlyEmptyActions reports that the action list was set and names no actions.
-// A nil list is unset, so callers can still apply the default actions.
-func (c *SchedulerConfiguration) ExplicitlyEmptyActions() bool {
-	return c != nil && c.Actions != nil && len(c.ActionNames()) == 0
+// NoActions reports that this config names no actions.
+// A nil config is not empty: callers that have not loaded a file keep the
+// historical write behavior. Defaults are applied when a config file is loaded.
+func (c *SchedulerConfiguration) NoActions() bool {
+	return c != nil && len(c.ActionNames()) == 0
 }
 
 func (s *SchedulingNodePoolParams) GetLabelSelector() (labels.Selector, error) {

@@ -325,7 +325,8 @@ tiers:
 
 			var parsed conf.SchedulerConfiguration
 			Expect(yaml.Unmarshal([]byte(cmObj.(*v1.ConfigMap).Data["config.yaml"]), &parsed)).To(Succeed())
-			Expect(parsed.ExplicitlyEmptyActions()).To(BeTrue())
+			Expect(parsed.Actions).To(BeEmpty())
+			Expect(parsed.ActionNames()).To(BeEmpty())
 		})
 	})
 
