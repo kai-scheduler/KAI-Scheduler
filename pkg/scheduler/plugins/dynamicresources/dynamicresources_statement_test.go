@@ -761,38 +761,6 @@ func TestStatementEvictThenPipelineToSameNode_Repeated(t *testing.T) {
 	}
 }
 
-// The preemptor is placed before the victims return, so it can take a victim's device. The victim still gets its
-// allocation back, and the device stays allocated until every claim that holds it lets go.
-func TestStatementEvictThenPipelineToSameNode_DeviceHeldByAnotherClaim(t *testing.T) {
-	test_utils.InitTestingInfrastructure()
-	controller := NewController(t)
-	defer controller.Finish()
-	defer gock.Off()
-
-	probe := newExtendedClaimProbe(t, controller, true)
-	stmt := probe.ssn.Statement()
-	manager := probe.ssn.InternalK8sPlugins().SessionDRAManager.ResourceClaims()
-
-	evictForReclaim(t, stmt, probe.task)
-	assert.False(t, probe.deviceAllocated(), "Evicting the pod frees the device")
-
-	preemptorClaim := probe.getClaim().DeepCopy()
-	preemptorClaim.Name = "preemptor-claim"
-	preemptorClaim.UID = "preemptor-claim-uid"
-	preemptorClaim.Status.Allocation = probe.initial.DeepCopy()
-	assert.NoError(t, manager.SignalClaimPendingAllocation(preemptorClaim.UID, preemptorClaim))
-
-	probe.task.ExtendedResourceClaim = &pod_info.ExtendedResourceClaim{}
-	assert.NoError(t, stmt.Pipeline(probe.task, "node0", true))
-	assert.Equal(t, probe.initial, probe.getClaim().Status.Allocation, "The victim gets its allocation back")
-	assert.True(t, probe.deviceAllocated())
-
-	// The preemptor's placement is rolled back, for example when a later gang member does not fit.
-	manager.RemoveClaimPendingAllocation(preemptorClaim.UID)
-	assert.True(t, probe.deviceAllocated(), "The victim still holds the device after the other claim lets go")
-	assert.Equal(t, probe.initial, probe.getClaim().Status.Allocation)
-}
-
 // A victim placed on another node is placed anew, even when the solver allows undoing its eviction.
 func TestStatementEvictThenPipelineToOtherNode_DoesNotRestore(t *testing.T) {
 	test_utils.InitTestingInfrastructure()
@@ -810,6 +778,85 @@ func TestStatementEvictThenPipelineToOtherNode_DoesNotRestore(t *testing.T) {
 	assert.Equal(t, "node1", probe.task.NodeName)
 	assert.False(t, probe.deviceAllocated(), "A pod placed on another node does not get its old device back")
 	assert.Nil(t, probe.getClaim().Status.Allocation)
+}
+
+// A pending task can pipeline onto the GPU of a terminating pod: WithoutTerminatingPods sets the terminating pod aside
+// and puts it back afterwards. If that pipeline is rolled back later (for example a later gang member does not fit),
+// the terminating pod must still hold its GPU, and the device must not show as free.
+func TestWithoutTerminatingPods_ExtendedResourceClaimHeldAfterPipelineRollback(t *testing.T) {
+	test_utils.InitTestingInfrastructure()
+	controller := NewController(t)
+	defer controller.Finish()
+	defer gock.Off()
+
+	ssn := setupTestSession(t, test_utils.TestTopologyBasic{
+		Queues: []test_utils.TestQueueBasic{{Name: "q-1"}},
+		Jobs: []*jobs_fake.TestJobBasic{
+			{
+				Name:      "test-job",
+				Namespace: "test",
+				QueueName: "q-1",
+				Tasks: []*tasks_fake.TestTaskBasic{
+					{
+						Name:                      "test-task",
+						State:                     pod_status.Releasing,
+						NodeName:                  "node0",
+						ExtendedResourceClaimName: extendedClaimName,
+					},
+				},
+			},
+			{
+				Name:      "pending-job",
+				Namespace: "test",
+				QueueName: "q-1",
+				Tasks:     []*tasks_fake.TestTaskBasic{{Name: "pending-task", State: pod_status.Pending}},
+			},
+		},
+		Nodes: map[string]nodes_fake.TestNodeBasic{"node0": {GPUs: 1}},
+		TestDRAObjects: dra_fake.TestDRAObjects{
+			DeviceClasses: []string{"nvidia.com/gpu"},
+			ResourceSlices: []*dra_fake.TestResourceSlice{
+				{Name: "node0-gpu", DeviceClassName: "nvidia.com/gpu", NodeName: "node0", Count: 1},
+			},
+			ResourceClaims: []*dra_fake.TestResourceClaim{
+				dra_fake.NewTestResourceClaim(extendedClaimName, "test", "q-1").
+					WithAllocation("node0", "0", extendedClaimPod).
+					ExtendedResourceFor(extendedClaimPod),
+			},
+		},
+	}, controller)
+
+	manager := ssn.InternalK8sPlugins().SessionDRAManager.ResourceClaims()
+	pending := getTaskByStatus(t, ssn, "pending-job", pod_status.Pending)
+	node0 := ssn.ClusterInfo.Nodes["node0"]
+	deviceAllocated := func() bool {
+		state, err := manager.GatherAllocatedState()
+		assert.NoError(t, err)
+		return state.AllocatedDevices.Has(structured.MakeDeviceID("nvidia.com/gpu", "node0", "0"))
+	}
+	terminatingClaim, err := manager.Get("test", extendedClaimName)
+	assert.NoError(t, err)
+	initial := terminatingClaim.Status.Allocation.DeepCopy()
+	assert.True(t, deviceAllocated(), "The terminating pod holds the device")
+
+	pendingClaim := terminatingClaim.DeepCopy()
+	pendingClaim.Name = "pending-claim"
+	pendingClaim.UID = "pending-claim-uid"
+	pendingClaim.Status.Allocation = initial.DeepCopy()
+
+	ssn.WithoutTerminatingPods(pending, node0, func() {
+		assert.False(t, deviceAllocated(), "The terminating pod is set aside, so its device is free")
+		assert.NoError(t, manager.SignalClaimPendingAllocation(pendingClaim.UID, pendingClaim), "The pending task takes the device")
+	})
+
+	claim, err := manager.Get("test", extendedClaimName)
+	assert.NoError(t, err)
+	assert.Equal(t, initial, claim.Status.Allocation, "The terminating pod gets its allocation back even though the device is taken")
+	assert.True(t, deviceAllocated())
+
+	// The pending task's placement is rolled back.
+	manager.RemoveClaimPendingAllocation(pendingClaim.UID)
+	assert.True(t, deviceAllocated(), "The terminating pod still holds its device")
 }
 
 // A pod whose extended-resource claim no longer exists is evicted and restored without errors.
