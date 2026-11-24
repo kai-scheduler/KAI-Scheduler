@@ -11,6 +11,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/storageclaim_info"
@@ -87,10 +88,10 @@ func schedulingConstraintsSignature(pod *v1.Pod, storageClaims map[storageclaim_
 		}
 		constraints := fmt.Sprintf("%v", dereferencedTPCs)
 		hash.Write([]byte(constraints))
-		// Spread counts only pods in the pod's own namespace, and the pod's labels decide self-matching and
-		// matchLabelKeys, so pods differing in either must not share a failed-job representative.
+		// Spread counts only pods in the pod's own namespace. Of the pod's own labels, only self-matching and
+		// matchLabelKeys values affect the result; hashing all labels would split replicas that differ in an index label.
 		hash.Write([]byte(pod.Namespace))
-		hash.Write([]byte(fmt.Sprintf("%v", pod.Labels)))
+		hash.Write([]byte(topologySpreadPodLabelsRepresentation(pod)))
 	}
 
 	// Ports
@@ -101,6 +102,23 @@ func schedulingConstraintsSignature(pod *v1.Pod, storageClaims map[storageclaim_
 	}
 
 	return common_info.SchedulingConstraintsSignature(fmt.Sprintf("%x", hash.Sum(nil)))
+}
+
+func topologySpreadPodLabelsRepresentation(pod *v1.Pod) string {
+	var representation []string
+	for _, tpc := range pod.Spec.TopologySpreadConstraints {
+		selfMatch := false
+		if selector, err := metav1.LabelSelectorAsSelector(tpc.LabelSelector); err == nil {
+			selfMatch = selector.Matches(labels.Set(pod.Labels))
+		}
+		matchLabelKeyValues := make([]string, 0, len(tpc.MatchLabelKeys))
+		for _, key := range tpc.MatchLabelKeys {
+			value, found := pod.Labels[key]
+			matchLabelKeyValues = append(matchLabelKeyValues, fmt.Sprintf("%t:%s", found, value))
+		}
+		representation = append(representation, fmt.Sprintf("%t%q", selfMatch, matchLabelKeyValues))
+	}
+	return fmt.Sprintf("%q", representation)
 }
 
 type dereferencedTopologySpreadConstraints struct {

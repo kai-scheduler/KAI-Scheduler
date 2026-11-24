@@ -72,6 +72,19 @@ func getAllocateTopologySpreadTestsMetadata() []integration_tests_utils.TestTopo
 			}},
 		}
 	}
+	pendingSpreadReplicas := func(name string, replicas int, whenUnsatisfiable v1.UnsatisfiableConstraintAction) *jobs_fake.TestJobBasic {
+		job := pendingSpreadJob(whenUnsatisfiable)
+		job.Name = name
+		job.Tasks = nil
+		for i := 0; i < replicas; i++ {
+			job.Tasks = append(job.Tasks, &tasks_fake.TestTaskBasic{
+				State:                     pod_status.Pending,
+				PodAffinityLabels:         spreadLabels,
+				TopologySpreadConstraints: spreadOverHosts(whenUnsatisfiable),
+			})
+		}
+		return job
+	}
 	nodes := func(gpus int) map[string]nodes_fake.TestNodeBasic {
 		return map[string]nodes_fake.TestNodeBasic{
 			"node0": {GPUs: gpus, Labels: map[string]string{hostnameTopologyKey: "node0"}},
@@ -116,6 +129,66 @@ func getAllocateTopologySpreadTestsMetadata() []integration_tests_utils.TestTopo
 					"running_job0": {GPUsRequired: 1, Status: pod_status.Running, NodeName: "node0"},
 					"running_job1": {GPUsRequired: 1, Status: pod_status.Running, NodeName: "node1"},
 					"pending_job0": {GPUsRequired: 1, Status: pod_status.Pending},
+				},
+			},
+		},
+		{
+			TestTopologyBasic: test_utils.TestTopologyBasic{
+				Name: "DoNotSchedule spread over hosts: replicas of one job spread across nodes",
+				Jobs: []*jobs_fake.TestJobBasic{
+					pendingSpreadReplicas("pending_job0", 2, v1.DoNotSchedule),
+				},
+				Nodes:  nodes(2),
+				Queues: queues,
+				Mocks: &test_utils.TestMock{
+					CacheRequirements: &test_utils.CacheMocking{NumberOfCacheBinds: 2},
+				},
+				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"pending_job0": {GPUsRequired: 2, Status: pod_status.Binding},
+				},
+				ExpectedNodesResources: map[string]test_utils.TestExpectedNodesResources{
+					"node0": {IdleGPUs: 1},
+					"node1": {IdleGPUs: 1},
+				},
+			},
+		},
+		{
+			TestTopologyBasic: test_utils.TestTopologyBasic{
+				Name: "DoNotSchedule spread over hosts: second replica would exceed maxSkew, gang stays pending",
+				Jobs: []*jobs_fake.TestJobBasic{
+					runningJob("running_job0", "node1", nil),
+					pendingSpreadReplicas("pending_job0", 2, v1.DoNotSchedule),
+				},
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node0": {GPUs: 2, Labels: map[string]string{hostnameTopologyKey: "node0"}},
+					"node1": {GPUs: 1, Labels: map[string]string{hostnameTopologyKey: "node1"}},
+				},
+				Queues: queues,
+				Mocks:  &test_utils.TestMock{CacheRequirements: &test_utils.CacheMocking{}},
+				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"running_job0": {GPUsRequired: 1, Status: pod_status.Running, NodeName: "node1"},
+					"pending_job0": {GPUsRequired: 2, Status: pod_status.Pending},
+				},
+			},
+		},
+		{
+			// Control: ScheduleAnyway does not filter, so the replicas bin-pack onto one node.
+			TestTopologyBasic: test_utils.TestTopologyBasic{
+				Name: "ScheduleAnyway spread over hosts: replicas of one job bin-pack onto one node",
+				Jobs: []*jobs_fake.TestJobBasic{
+					pendingSpreadReplicas("pending_job0", 2, v1.ScheduleAnyway),
+				},
+				Nodes:  nodes(2),
+				Queues: queues,
+				Mocks: &test_utils.TestMock{
+					CacheRequirements: &test_utils.CacheMocking{NumberOfCacheBinds: 2},
+				},
+				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"pending_job0": {GPUsRequired: 2, Status: pod_status.Binding},
+				},
+				ExpectedNodesResources: map[string]test_utils.TestExpectedNodesResources{
+					"node0": {IdleGPUs: 0},
+					"node1": {IdleGPUs: 2},
 				},
 			},
 		},
