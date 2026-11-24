@@ -94,33 +94,28 @@ func UpdateQueueHierarchy(queues map[common_info.QueueID]*queue_info.QueueInfo) 
 }
 
 func removeQueueParentCycles(queues map[common_info.QueueID]*queue_info.QueueInfo) {
-	checked := map[common_info.QueueID]struct{}{}
-	var cyclic []common_info.QueueID
+	cyclic := map[common_info.QueueID]bool{}
 	for queueId := range queues {
-		cyclic = append(cyclic, findParentCycle(queues, queueId, checked)...)
+		if cyclic[queueId] {
+			continue
+		}
+		for _, id := range findParentCycle(queues, queueId) {
+			cyclic[id] = true
+		}
 	}
-	for _, queueId := range cyclic {
+	for queueId := range cyclic {
 		log.InfraLogger.V(2).Warnf("Found queue %s in a parent queue cycle, deleting it", queueId)
 		delete(queues, queueId)
 	}
 }
 
-// findParentCycle walks up the parent chain of queueId and returns the queues that form a cycle, or nil if the chain
-// reaches a root or a queue that was already checked. Every queue it walks through is added to checked.
-func findParentCycle(queues map[common_info.QueueID]*queue_info.QueueInfo, queueId common_info.QueueID,
-	checked map[common_info.QueueID]struct{}) []common_info.QueueID {
+// findParentCycle walks up the parent chain of queueId and returns the queues that form a cycle,
+// or nil if the chain reaches a root or a missing parent.
+func findParentCycle(queues map[common_info.QueueID]*queue_info.QueueInfo,
+	queueId common_info.QueueID) []common_info.QueueID {
 	var chain []common_info.QueueID
 	positionInChain := map[common_info.QueueID]int{}
-	defer func() {
-		for _, id := range chain {
-			checked[id] = struct{}{}
-		}
-	}()
-
 	for current := queueId; current != ""; {
-		if _, alreadyChecked := checked[current]; alreadyChecked {
-			return nil
-		}
 		if position, seen := positionInChain[current]; seen {
 			return chain[position:]
 		}
