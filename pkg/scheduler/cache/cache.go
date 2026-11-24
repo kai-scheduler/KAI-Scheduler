@@ -177,8 +177,6 @@ type SchedulerCacheParams struct {
 	DiscoveryClient             discovery.DiscoveryInterface
 	EvictionActionNames         []string
 
-	// SkipDeleteStaleBindRequests leaves BindRequests in place during Snapshot.
-	// The zero value is false, so cleanup still runs.
 	SkipDeleteStaleBindRequests bool
 }
 
@@ -227,20 +225,23 @@ func newSchedulerCache(schedulerCacheParams *SchedulerCacheParams) (*SchedulerCa
 
 	schedulerName := schedulerCacheParams.SchedulerName
 
-	// Prepare event clients.
-	broadcaster := newEventBroadcaster()
-	// The new broadcaster objects uses watch.NewLongQueueBroadcaster(maxQueuedEvents, watch.DropIfChannelFull) under the hood.
-	// This means that we need to be careful when writing events using the recorder.
-	// If the broadcaster will have more then maxQueuedEvents waiting to be published, he will drop all incoming recording requests.
-	broadcaster.StartRecordingToSink(&corev1.EventSinkImpl{Interface: sc.kubeClient.CoreV1().Events("")})
-	recorder := broadcaster.NewRecorder(kubeaischedulerschema.Scheme, v1.EventSource{Component: schedulerName})
-
 	sc.Evictor = evictor.New(sc.kubeClient, schedulerCacheParams.UpdatePodEvictionCondition)
 
-	sc.StatusUpdater = status_updater.New(
-		sc.kubeClient, sc.kubeAiSchedulerClient, recorder, schedulerCacheParams.NumOfStatusRecordingWorkers,
-		sc.detailedFitErrors, sc.schedulingNodePoolParams.NodePoolLabelKey,
-	)
+	if schedulerCacheParams.SkipDeleteStaleBindRequests {
+		sc.StatusUpdater = status_updater.NewNoop()
+	} else {
+		// Prepare event clients.
+		broadcaster := newEventBroadcaster()
+		// The new broadcaster objects uses watch.NewLongQueueBroadcaster(maxQueuedEvents, watch.DropIfChannelFull) under the hood.
+		// This means that we need to be careful when writing events using the recorder.
+		// If the broadcaster will have more then maxQueuedEvents waiting to be published, he will drop all incoming recording requests.
+		broadcaster.StartRecordingToSink(&corev1.EventSinkImpl{Interface: sc.kubeClient.CoreV1().Events("")})
+		recorder := broadcaster.NewRecorder(kubeaischedulerschema.Scheme, v1.EventSource{Component: schedulerName})
+		sc.StatusUpdater = status_updater.New(
+			sc.kubeClient, sc.kubeAiSchedulerClient, recorder, schedulerCacheParams.NumOfStatusRecordingWorkers,
+			sc.detailedFitErrors, sc.schedulingNodePoolParams.NodePoolLabelKey,
+		)
+	}
 
 	sc.informerFactory = informers.NewSharedInformerFactory(sc.kubeClient, 0)
 	registerSchedulerPodInformer(sc.informerFactory)

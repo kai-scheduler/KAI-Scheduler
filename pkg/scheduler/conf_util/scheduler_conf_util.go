@@ -117,9 +117,6 @@ func GetDefaultSchedulerConf() (*conf.SchedulerConfiguration, error) {
 
 func loadSchedulerConf(confStr string) (*conf.SchedulerConfiguration, error) {
 	schedulerConf := &conf.SchedulerConfiguration{}
-	// Start from the defaults so a missing actions key keeps them. An explicit
-	// value, including "", replaces that default. Skip this when loading the
-	// defaults themselves.
 	if confStr != defaultSchedulerConf {
 		defaultConfig, err := GetDefaultSchedulerConf()
 		if err != nil {

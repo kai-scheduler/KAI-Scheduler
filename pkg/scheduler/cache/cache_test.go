@@ -43,6 +43,7 @@ import (
 
 	featuregates "github.com/kai-scheduler/KAI-scheduler/pkg/common/feature_gates"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
 	kubeaischedulerfake "github.com/kai-scheduler/api/client/clientset/versioned/fake"
@@ -509,10 +510,12 @@ var _ = Describe("Cache", func() {
 
 			_, err = cache.Snapshot()
 			Expect(err).NotTo(HaveOccurred())
+			Expect(cache.RecordJobStatusEvent(&podgroup_info.PodGroupInfo{Name: "job"}, nil)).To(Succeed())
 
 			bindRequestsAfterCleanup, err := kubeAiSchedulerClient.SchedulingV1alpha2().BindRequests("namespace-1").List(context.TODO(), metav1.ListOptions{})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(bindRequestsAfterCleanup.Items).To(HaveLen(1))
+			expectNoClusterWrites(append(kubeClient.Actions(), kubeAiSchedulerClient.Actions()...))
 		})
 
 		It("Reports all failed deletions", func() {
@@ -572,6 +575,15 @@ var _ = Describe("Cache", func() {
 
 	})
 })
+
+func expectNoClusterWrites(actions []faketesting.Action) {
+	for _, action := range actions {
+		switch action.GetVerb() {
+		case "create", "update", "patch", "delete":
+			Fail(fmt.Sprintf("unexpected %s %s", action.GetVerb(), action.GetResource().Resource))
+		}
+	}
+}
 
 func setupCacheWithObjects(snapshot bool, objects []runtime.Object, kaiSchedulerObjects ...runtime.Object) (Cache, chan struct{}) {
 	kubeClient := fake.NewSimpleClientset(objects...)

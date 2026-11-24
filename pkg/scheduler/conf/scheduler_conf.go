@@ -53,9 +53,7 @@ type SchedulerParams struct {
 
 // SchedulerConfiguration defines the configuration of scheduler.
 type SchedulerConfiguration struct {
-	// Actions defines the actions list of the scheduler, in order.
-	// Empty runs no actions. A config file that omits the key keeps the defaults,
-	// which are filled in before the file is unmarshalled.
+	// Actions defines the actions list of scheduler in order
 	Actions string `yaml:"actions" json:"actions"`
 
 	// Tiers defines plugins in different tiers
@@ -102,8 +100,6 @@ type SchedulingNodePoolParams struct {
 	NodePoolLabelValue string
 }
 
-// ActionNames returns configured action names with surrounding space removed
-// and blank tokens dropped.
 func (c *SchedulerConfiguration) ActionNames() []string {
 	if c == nil || strings.TrimSpace(c.Actions) == "" {
 		return nil
@@ -119,9 +115,6 @@ func (c *SchedulerConfiguration) ActionNames() []string {
 	return names
 }
 
-// NoActions reports that this config names no actions.
-// A nil config is not empty: callers that have not loaded a file keep the
-// historical write behavior. Defaults are applied when a config file is loaded.
 func (c *SchedulerConfiguration) NoActions() bool {
 	return c != nil && len(c.ActionNames()) == 0
 }
