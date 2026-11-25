@@ -24,6 +24,7 @@ import (
 	faketesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/record"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	kubeaischedfake "github.com/kai-scheduler/api/client/clientset/versioned/fake"
 	fakeschedulingv2alpha2 "github.com/kai-scheduler/api/client/clientset/versioned/typed/scheduling/v2alpha2/fake"
 	enginev2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
@@ -292,6 +293,39 @@ var _ = Describe("Status Updater Concurrency - large scale: increase queue size"
 			Fail("Update queue should be empty - no retry should be queued for Forbidden errors")
 		case <-time.After(100 * time.Millisecond):
 		}
+	})
+
+	It("updatePod - Drops in-flight update after Forbidden error and does not retry", func() {
+		previousInfraLogger := log.InfraLogger
+		previousStatusLogger := log.StatusUpdaterLogger
+		defer func() {
+			log.InfraLogger = previousInfraLogger
+			log.StatusUpdaterLogger = previousStatusLogger
+		}()
+		Expect(log.InitLoggers(6, false)).To(Succeed())
+		patchCalls := 0
+		kubeClient.CoreV1().(*fakecorev1.FakeCoreV1).PrependReactor(
+			"patch", "pods", func(action faketesting.Action) (handled bool, ret runtime.Object, err error) {
+				patchCalls++
+				return true, nil, apierrors.NewForbidden(
+					schema.GroupResource{Resource: "pods"}, "test-pod", errors.New("pods is forbidden"),
+				)
+			},
+		)
+
+		pod := &v1.Pod{ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod",
+			Namespace: "test-ns",
+			UID:       "test-uid",
+		}}
+		key := statusUpdater.keyForPodLabelsPayload(pod.Name, pod.Namespace, pod.UID)
+		statusUpdater.inFlightPods.Store(key, &inflightUpdate{object: pod})
+
+		statusUpdater.updatePod(context.Background(), key, []byte(`{"metadata":{"labels":{"foo":"bar"}}}`), nil, pod)
+
+		Expect(patchCalls).To(Equal(1), "Patch should be attempted once")
+		_, inFlightExists := statusUpdater.inFlightPods.Load(key)
+		Expect(inFlightExists).To(BeFalse(), "In-flight update should be dropped after Forbidden error")
 	})
 
 	It("updatePod - Drops in-flight update after NotFound error on a deleted pod", func() {
