@@ -1,6 +1,6 @@
 kind: Fixed
 body: |-
-  Retry BindRequest status writes after API failures without losing Pod binding reports
+  Persist consecutive BindRequest failure counts and reasons and retry failed status writes
 custom:
   Author: "NVGreg"
   Issue: "2418"
