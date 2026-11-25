@@ -158,7 +158,7 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 				"topologyNodeCount", totalNodes,
 			)
 
-			updateFakeGPUOperatorGPUsPerNode(ctx, testCtx)
+			configureGPUsPerNode(ctx, testCtx)
 
 			var nodePools kwok.NodePoolList
 			Expect(testCtx.ControllerClient.List(ctx, &nodePools)).To(Succeed())
@@ -175,6 +175,9 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 			Expect(testCtx.ControllerClient.Create(ctx, &clusterTopology)).To(Succeed())
 
 			topologyNodePools = topology.GenerateNodePools(topologyLevels, nodesPerDomain, map[string]string{"test": "topology-e2e"})
+			for i := range topologyNodePools {
+				labelMokkaGPUNodePool(&topologyNodePools[i])
+			}
 			Expect(topologyNodePools).To(HaveLen(topologyConfig.nodePoolCount()))
 			Expect(createTopologyNodePools(ctx, testCtx, topologyNodePools)).To(Succeed())
 
@@ -286,8 +289,7 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 
 	Context("Big cluster", Ordered, func() {
 		BeforeAll(func(ctx context.Context) {
-			GinkgoLogr.Info("Updating fake GPU operator GPUs per node")
-			updateFakeGPUOperatorGPUsPerNode(ctx, testCtx)
+			configureGPUsPerNode(ctx, testCtx)
 
 			GinkgoLogr.Info("Setting up managed node pool to 0 nodes")
 			managedNodePool := kwok.NodePool{
@@ -314,6 +316,7 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 			Expect(err).To(Succeed())
 
 			originalManagedNodePool = managedNodePool.DeepCopy()
+			labelMokkaGPUNodePool(&managedNodePool)
 			managedNodePool.Spec.NodeCount = int32(numberOfNodes)
 
 			GinkgoLogr.Info("Setting up managed node pool. ", "numberOfNodes", numberOfNodes, "gpusPerNode", gpusPerNode)
@@ -766,7 +769,27 @@ func patchQueueGPU(ctx context.Context, testCtx *testcontext.TestContext, queue 
 	return testCtx.ControllerClient.Patch(ctx, queue, runtimeClient.RawPatch(types.MergePatchType, patch))
 }
 
-func updateFakeGPUOperatorGPUsPerNode(ctx context.Context, testCtx *testcontext.TestContext) {
+// The real GPU Operator needs OS identification on virtual GPU Nodes.
+func labelMokkaGPUNodePool(pool *kwok.NodePool) {
+	if os.Getenv("KWOK_GPU_PROVIDER") != "mokka" {
+		return
+	}
+	labels := pool.Spec.NodeTemplate.Labels
+	if labels == nil {
+		labels = make(map[string]string)
+		pool.Spec.NodeTemplate.Labels = labels
+	}
+	labels["mokka.nvidia.com/sgpu-node"] = "true"
+	labels["mokka.nvidia.com/node-type"] = "KWOK"
+	labels["nvidia.com/gpu.deploy.operands"] = "false"
+	labels["feature.node.kubernetes.io/system-os_release.ID"] = "debian"
+	labels["feature.node.kubernetes.io/system-os_release.VERSION_ID"] = "12"
+}
+
+func configureGPUsPerNode(ctx context.Context, testCtx *testcontext.TestContext) {
+	if os.Getenv("KWOK_GPU_PROVIDER") == "mokka" {
+		return // The Mokka rack profile supplies gpusPerNode.
+	}
 	topologyConfig := &v1.ConfigMap{}
 
 	Expect(testCtx.ControllerClient.Get(ctx, runtimeClient.ObjectKey{

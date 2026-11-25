@@ -7,19 +7,31 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 SCALE_DIR="${REPO_ROOT}/test/e2e/scale"
 
-KWOK_LATEST_RELEASE=v0.6.1
+gpu_provider=${KWOK_GPU_PROVIDER:-fgo}
+case "$gpu_provider" in
+  fgo) KWOK_LATEST_RELEASE=v0.6.1 ;;
+  mokka) KWOK_LATEST_RELEASE=v0.8.0 ;;
+  *) echo "Unknown KWOK_GPU_PROVIDER: $gpu_provider" >&2; exit 1 ;;
+esac
 kubectl apply -f "https://github.com/kubernetes-sigs/kwok/releases/download/${KWOK_LATEST_RELEASE}/kwok.yaml"
 kubectl apply -f "https://github.com/kubernetes-sigs/kwok/releases/download/${KWOK_LATEST_RELEASE}/stage-fast.yaml"
 kubectl apply --server-side -f https://github.com/run-ai/kwok-operator/releases/download/1.0.4/kwok-operator.yaml
-kubectl apply -f "${SCALE_DIR}/base_kwok_managed_nodepool.yaml"
+if [[ "$gpu_provider" == mokka ]]; then
+  kubectl patch --local -f "${SCALE_DIR}/base_kwok_managed_nodepool.yaml" --type=merge \
+    -p '{"spec":{"nodeCount":0}}' -o yaml | kubectl apply -f -
+else
+  kubectl apply -f "${SCALE_DIR}/base_kwok_managed_nodepool.yaml"
+fi
 
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 helm repo add grafana https://grafana.github.io/helm-charts
 helm repo update
 
-helm upgrade -i fake-gpu-operator oci://ghcr.io/run-ai/fake-gpu-operator/fake-gpu-operator --namespace gpu-operator --create-namespace --set topology.nodePools.default.gpuCount=8 --devel --version 0.0.73
-kubectl delete deployment -n gpu-operator nvidia-dcgm-exporter --ignore-not-found
-kubectl delete deployment -n gpu-operator device-plugin --ignore-not-found
+if [[ "$gpu_provider" == fgo ]]; then
+  helm upgrade -i fake-gpu-operator oci://ghcr.io/run-ai/fake-gpu-operator/fake-gpu-operator --namespace gpu-operator --create-namespace --set topology.nodePools.default.gpuCount=8 --devel --version 0.0.73
+  kubectl delete deployment -n gpu-operator nvidia-dcgm-exporter --ignore-not-found
+  kubectl delete deployment -n gpu-operator device-plugin --ignore-not-found
+fi
 
 helm upgrade -i --create-namespace -n monitoring kube-prometheus-stack prometheus-community/kube-prometheus-stack --set prometheus.enabled=true --set grafana.enabled=true
 helm -n monitoring upgrade -i pyroscope grafana/pyroscope
