@@ -193,6 +193,10 @@ func buildPreemptibleFilterFunc(preemptor *podgroup_info.PodGroupInfo, maxPreemp
 			return false
 		}
 
+		if !job.IsSafeToDisrupt() {
+			return false
+		}
+
 		if preemptor.UID == job.UID {
 			return false
 		}
