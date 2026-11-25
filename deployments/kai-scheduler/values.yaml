@@ -199,6 +199,8 @@ scheduler:
   # actions allows overriding or adding custom scheduler actions
   # Built-in actions can be disabled or reordered.
   # New actions can be added by specifying a name not in the default set.
+  # Disable every action to run none: the scheduler keeps its cache and serves
+  # /get-snapshot, and does not write scheduling updates.
   # Example:
   # actions:
   #   consolidation:
