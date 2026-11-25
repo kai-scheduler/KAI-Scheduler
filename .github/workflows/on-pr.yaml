@@ -386,12 +386,11 @@ jobs:
           exit 1
 
   e2e-numa:
-    name: NUMA preemption
+    name: Full NUMA suite
     needs: build
     uses: ./.github/workflows/e2e-numa.yaml
     with:
       package_version: ${{ needs.build.outputs.package_version }}
-      label_filter: 'numa && !nightly'
 
   e2e-upgrade-tests:
     name: Run E2E Upgrade Tests
@@ -550,7 +549,7 @@ jobs:
           results=(
             "Build:$BUILD_RESULT"
             "Prepare E2E Buckets:$PREPARE_RESULT"
-            "NUMA preemption:$NUMA_RESULT"
+            "Full NUMA suite:$NUMA_RESULT"
             "Main E2E Buckets:$MAIN_RESULT"
             "Upgrade E2E:$UPGRADE_RESULT"
           )

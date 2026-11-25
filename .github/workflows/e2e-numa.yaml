@@ -7,9 +7,6 @@ on:
       package_version:
         type: string
         required: true
-      label_filter:
-        type: string
-        required: true
 jobs:
   e2e-numa:
     name: Run NUMA E2E Tests on Mokka
@@ -48,14 +45,12 @@ jobs:
             --set scheduler.plugins.numa.enabled=true --set binder.runtimeClassName=nvidia \
             --set global.gpuSharing=true --set global.gpuSharingMode=NonMemoryEnforced \
             --set prometheus.enabled=true --wait --timeout 10m
-      - name: Run selected NUMA tests
-        env:
-          LABEL_FILTER: ${{ inputs.label_filter }}
+      - name: Run full NUMA suite
         run: |
-          go tool ginkgo --label-filter "$LABEL_FILTER" --keep-going --trace -vv --timeout 45m --json-report=numa.json ./test/e2e/suites/numa
+          go tool ginkgo --keep-going --trace -vv --timeout 45m --json-report=numa.json ./test/e2e/suites/numa
           # A missing topology can skip a selected spec while Ginkgo still exits successfully.
-          jq -e '.[0] | .PreRunStats.SpecsThatWillRun as $selected |
-            $selected > 0 and ([.SpecReports[] | select(.LeafNodeType == "It" and .State == "passed")] | length) == $selected' numa.json
+          jq -e '.[0] | .PreRunStats.TotalSpecs as $total |
+            $total > 0 and ([.SpecReports[] | select(.LeafNodeType == "It" and .State == "passed")] | length) == $total' numa.json
       - uses: actions/upload-artifact@v6
         if: always()
         with:

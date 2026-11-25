@@ -78,7 +78,6 @@ jobs:
     uses: ./.github/workflows/e2e-numa.yaml
     with:
       package_version: ${{ needs.build-and-push.outputs.package_version }}
-      label_filter: 'numa'
 
   e2e-matrix:
     name: E2E (${{ matrix.k8s_version }}, ${{ matrix.feature_config }})
