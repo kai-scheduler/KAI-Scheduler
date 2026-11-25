@@ -1249,7 +1249,7 @@ var _ = Describe("ResourceReservationService", func() {
 						v1.ResourceCPU:              resource.MustParse("100m"),
 						constants.NvidiaGpuResource: resource.MustParse("999"), // This should be ignored
 					},
-				}, nil, nil, false)
+				}, nil, nil)
 
 			pod, err := rsc.createGPUReservationPod(context.TODO(), nil, "test-node", "test-gpu-group")
 			Expect(err).To(BeNil())
@@ -1284,14 +1284,11 @@ var _ = Describe("ResourceReservationService", func() {
 			passed := configured.DeepCopy()
 			rsc := NewService(false, fake.NewClientBuilder().WithScheme(testScheme).Build(), "test-image:latest",
 				time.Minute, "kai-resource-reservation", "kai-sa", "kai-reservation", scalingPodsNamespace, "",
-				configured, nil, nil, false)
+				configured, nil, nil)
 			stripped := rsc.podResources.DeepCopy()
 
 			for _, id := range []string{"gpu-group-1", "gpu-group-2"} {
-				_, err := rsc.createGPUReservationPod(context.TODO(), nil, "test-node", schedulingv1alpha2.FractionalGpuGroup{
-					ID:                 id,
-					ComputeSharingMode: schedulingv1alpha2.GPUComputeSharingModeTimeSlicing,
-				})
+				_, err := rsc.createGPUReservationPod(context.TODO(), nil, "test-node", id)
 				Expect(err).To(BeNil())
 			}
 
