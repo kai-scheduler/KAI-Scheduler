@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Allow PodGroup and Queue controllers to record leader-election events.
+custom:
+  Author: "cr7258"
+  Issue: "2697"

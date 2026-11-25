@@ -13,12 +13,11 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/cmd/operator/config"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/controller"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands"
+	"github.com/kai-scheduler/api/constants"
 	kaiv1 "github.com/kai-scheduler/api/kai/v1"
 	kaiv1alpha1 "github.com/kai-scheduler/api/kai/v1alpha1"
 
-	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
-	discoveryv1 "k8s.io/api/discovery/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -74,21 +73,9 @@ func New() (*App, error) {
 	clientConfig.QPS = float32(opts.Qps)
 	clientConfig.Burst = opts.Burst
 
-	// Pods, Leases and EndpointSlices are watched only to reconcile scheduler
-	// shards, and all relevant objects live in the KAI namespace. Without this
-	// scoping the shared cache stores every such object in the cluster, and
-	// operator memory grows linearly with cluster size.
-	kaiNamespace := map[string]cache.Config{opts.Namespace: {}}
 	mgr, err := ctrl.NewManager(clientConfig, ctrl.Options{
 		Scheme: scheme,
-		Cache: cache.Options{
-			DefaultTransform: cache.TransformStripManagedFields(),
-			ByObject: map[client.Object]cache.ByObject{
-				&corev1.Pod{}:                {Namespaces: kaiNamespace},
-				&coordinationv1.Lease{}:      {Namespaces: kaiNamespace},
-				&discoveryv1.EndpointSlice{}: {Namespaces: kaiNamespace},
-			},
-		},
+		Cache:  NewCacheOptions(opts.Namespace),
 		Metrics: server.Options{
 			BindAddress: opts.MetricsAddr,
 		},
@@ -125,6 +112,35 @@ func New() (*App, error) {
 		configReconciler: configReconciler,
 		shardReconciler:  shardReconciler,
 	}, nil
+}
+
+// NewCacheOptions scopes the manager informer cache for namespaced resources
+// to the KAI namespace by default via DefaultNamespaces. Without this scoping
+// the shared cache stores every watched namespaced object across the cluster,
+// and operator memory grows linearly with cluster size. Cluster-scoped
+// resources continue to use controller-runtime's cluster cache.
+//
+// ByObject exempts only ServiceAccount so it remains cached across all
+// namespaces, because the binder and node-scale-adjuster operands also
+// reconcile ServiceAccounts in their dedicated resource-reservation and
+// scale-adjust namespaces.
+func NewCacheOptions(namespace string) cache.Options {
+	if namespace == "" {
+		namespace = constants.DefaultKAINamespace
+	}
+	return cache.Options{
+		DefaultTransform: cache.TransformStripManagedFields(),
+		DefaultNamespaces: map[string]cache.Config{
+			namespace: {},
+		},
+		ByObject: map[client.Object]cache.ByObject{
+			&corev1.ServiceAccount{}: {
+				Namespaces: map[string]cache.Config{
+					cache.AllNamespaces: {},
+				},
+			},
+		},
+	}
 }
 
 func (app *App) InitOperands(configOperands []operands.Operand, shardOperandsForShard func(*kaiv1.SchedulingShard) []operands.Operand) {

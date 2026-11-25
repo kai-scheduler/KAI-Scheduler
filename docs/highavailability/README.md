@@ -26,8 +26,13 @@ kubectl scale deployment --all --replicas=2 -n kai-scheduler
 
 ## Pod Anti Affinity
 
-In order to spread replicas of each individual service across cluster nodes, set the following value:
+By default, a preferred podAntiAffinityTerm is added to all deployments, so the scheduler tries to place pods of the same service on different nodes.
+
+To make this a hard requirement, set the following value:
 ```
 --set global.requireDefaultPodAntiAffinityTerm=true
 ```
 This will add a required podAntiAffinityTerm to all deployments, requiring the scheduler to not place multiple pods of the same service on the same node.
+Make sure each service has more eligible nodes than replicas, so that rolling updates can place the new pods.
+
+A custom `podAntiAffinity`, set in the global or in a service's `affinity`, replaces the default terms, including the required one.

@@ -31,6 +31,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/kubeflow"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/minruntime"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/multinodegang"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/nodeassignment"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/nodeavailability"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/nodelocalgreedy"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/nodeplacement"
@@ -70,6 +71,7 @@ func InitDefaultPlugins() {
 	framework.RegisterPluginBuilder("subgrouporder", subgrouporder.New)
 	framework.RegisterPluginBuilder("dynamicresources", dynamicresources.New)
 	framework.RegisterPluginBuilder("topology", topology.New)
+	framework.RegisterPluginBuilder(nodeassignment.Name, nodeassignment.New)
 
 	// Plugins for Queues
 	framework.RegisterPluginBuilder("proportion", proportion.New)
