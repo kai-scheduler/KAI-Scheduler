@@ -43,10 +43,20 @@ fi
 kubectl apply -f "https://github.com/kubernetes-sigs/kwok/releases/download/${KWOK_LATEST_RELEASE}/stage-fast.yaml"
 kubectl apply --server-side -f https://github.com/run-ai/kwok-operator/releases/download/1.0.4/kwok-operator.yaml
 if [[ "$gpu_provider" == mokka ]]; then
-  kubectl patch --local -f "${SCALE_DIR}/base_kwok_managed_nodepool.yaml" --type=merge \
-    -p '{"spec":{"nodeCount":0}}' -o yaml | kubectl apply -f -
-else
-  kubectl apply -f "${SCALE_DIR}/base_kwok_managed_nodepool.yaml"
+  kubectl wait --for=condition=Established crd/nodepools.kwok.sigs.run-ai.com --timeout=90s
+fi
+kubectl apply -f "${SCALE_DIR}/base_kwok_managed_nodepool.yaml"
+
+# KWOK operator 1.0.4 can leave a new zero-size pool in Updating. Let it
+# reconcile the template's initial Node before scaling this pool back to zero.
+wait_for_managed_pool() {
+  local generation
+  generation=$(kubectl get nodepool managed-nodepool -o jsonpath='{.metadata.generation}') || return 1
+  kubectl wait nodepool/managed-nodepool --for="jsonpath={.status.observedGeneration}=$generation" --timeout=3m &&
+    kubectl wait nodepool/managed-nodepool --for=condition=Available --timeout=3m
+}
+if [[ "$gpu_provider" == mokka ]]; then
+  wait_for_managed_pool || exit 1
 fi
 
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
@@ -63,6 +73,10 @@ helm upgrade -i --create-namespace -n monitoring kube-prometheus-stack prometheu
 helm -n monitoring upgrade -i pyroscope grafana/pyroscope
 
 kubectl patch nodepool managed-nodepool -p '{"spec":{"nodeCount": 0, "nodeTemplate": {"metadata": {"labels": {"run.ai/simulated-gpu-node-pool": "default"}}}}}' --type merge
+
+if [[ "$gpu_provider" == mokka ]]; then
+  wait_for_managed_pool || exit 1
+fi
 
 kubectl apply -f "${SCALE_DIR}/scheduler-service-monitor.yaml"
 kubectl apply -f "${SCALE_DIR}/queue-controller-service-monitor.yaml"
