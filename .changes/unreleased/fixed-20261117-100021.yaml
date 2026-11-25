@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Count one reservation pod per new GPU group when checking node pod slots for multi-device fractions
+custom:
+  Author: "cvas22"
+  Issue: "2696"

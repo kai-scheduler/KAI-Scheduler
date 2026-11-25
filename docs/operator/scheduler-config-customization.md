@@ -81,6 +81,23 @@ This option is disabled by default.
 
 Higher priority values run first.
 
+An empty action list runs no actions. The scheduler still starts, keeps its informer cache, opens a session every cycle, and serves `/get-snapshot`. It does not update PodGroup status or delete stale BindRequests. Leave `actions` unset to keep the defaults above. Disable every action on the shard, or set `actions: ""` in the scheduler config file, to run none.
+
+```yaml
+spec:
+  actions:
+    allocate:
+      enabled: false
+    consolidation:
+      enabled: false
+    reclaim:
+      enabled: false
+    preempt:
+      enabled: false
+    stalegangeviction:
+      enabled: false
+```
+
 ## Examples
 
 ### Disable a built-in plugin

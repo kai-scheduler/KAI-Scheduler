@@ -36,6 +36,15 @@ resolves so the FIPS image variants are used. Usage:
 {{- end -}}
 
 {{/*
+Resolves a component image pull policy: explicit pullPolicy, then
+global.imagePullPolicy, then IfNotPresent. Usage:
+  {{ include "kai-scheduler.imagePullPolicy" (dict "root" $ "pullPolicy" .Values.<svc>.image.pullPolicy) }}
+*/}}
+{{- define "kai-scheduler.imagePullPolicy" -}}
+{{- .pullPolicy | default .root.Values.global.imagePullPolicy | default "IfNotPresent" -}}
+{{- end -}}
+
+{{/*
 Renders the GODEBUG env entry that forces FIPS 140-3 mode at runtime. Only set
 when global.fipsMode is "only" - see docs/fips/README.md for the runtime panic
 risk this carries. tlsmlkem=0 works around a crypto/tls gap where its default,
@@ -152,7 +161,7 @@ spec:
         name: {{ .Values.binder.image.name }}
         repository: {{ .Values.global.registry }}
         tag: {{ include "kai-scheduler.imageTag" (dict "root" $ "tag" .Values.binder.image.tag) }}
-        pullPolicy: {{ .Values.binder.image.pullPolicy | default .Values.global.imagePullPolicy }}
+        pullPolicy: {{ include "kai-scheduler.imagePullPolicy" (dict "root" $ "pullPolicy" .Values.binder.image.pullPolicy) }}
       {{- if .Values.binder.resources }}
       resources:
         {{- toYaml .Values.binder.resources | nindent 8 }}
@@ -188,7 +197,7 @@ spec:
         name: {{ .Values.binder.resourceReservationImage.name }}
         repository: {{ .Values.global.registry }}
         tag: {{ include "kai-scheduler.imageTag" (dict "root" $ "tag" .Values.binder.resourceReservationImage.tag) }}
-        pullPolicy: {{ .Values.binder.resourceReservationImage.pullPolicy | default .Values.global.imagePullPolicy }}
+        pullPolicy: {{ include "kai-scheduler.imagePullPolicy" (dict "root" $ "pullPolicy" .Values.binder.resourceReservationImage.pullPolicy) }}
       {{- if .Values.binder.resourceReservationPodResources }}
       podResources:
         {{- toYaml .Values.binder.resourceReservationPodResources | nindent 8 }}
@@ -208,7 +217,7 @@ spec:
         name: {{ .Values.podgrouper.image.name }}
         repository: {{ .Values.global.registry }}
         tag: {{ include "kai-scheduler.imageTag" (dict "root" $ "tag" .Values.podgrouper.image.tag) }}
-        pullPolicy: {{ .Values.podgrouper.image.pullPolicy | default .Values.global.imagePullPolicy }}
+        pullPolicy: {{ include "kai-scheduler.imagePullPolicy" (dict "root" $ "pullPolicy" .Values.podgrouper.image.pullPolicy) }}
       {{- if .Values.podgrouper.resources }}
       resources:
         {{- toYaml .Values.podgrouper.resources | nindent 8 }}
@@ -245,7 +254,7 @@ spec:
         name: {{ .Values.podgroupcontroller.image.name }}
         repository: {{ .Values.global.registry }}
         tag: {{ include "kai-scheduler.imageTag" (dict "root" $ "tag" .Values.podgroupcontroller.image.tag) }}
-        pullPolicy: {{ .Values.podgroupcontroller.image.pullPolicy | default .Values.global.imagePullPolicy }}
+        pullPolicy: {{ include "kai-scheduler.imagePullPolicy" (dict "root" $ "pullPolicy" .Values.podgroupcontroller.image.pullPolicy) }}
       {{- if .Values.podgroupcontroller.resources }}
       resources:
         {{- toYaml .Values.podgroupcontroller.resources | nindent 8 }}
@@ -262,7 +271,7 @@ spec:
         name: {{ .Values.queuecontroller.image.name }}
         repository: {{ .Values.global.registry }}
         tag: {{ include "kai-scheduler.imageTag" (dict "root" $ "tag" .Values.queuecontroller.image.tag) }}
-        pullPolicy: {{ .Values.queuecontroller.image.pullPolicy | default .Values.global.imagePullPolicy }}
+        pullPolicy: {{ include "kai-scheduler.imagePullPolicy" (dict "root" $ "pullPolicy" .Values.queuecontroller.image.pullPolicy) }}
       {{- if .Values.queuecontroller.resources }}
       resources:
         {{- toYaml .Values.queuecontroller.resources | nindent 8 }}
@@ -288,7 +297,7 @@ spec:
         name: {{ .Values.admission.image.name }}
         repository: {{ .Values.global.registry }}
         tag: {{ include "kai-scheduler.imageTag" (dict "root" $ "tag" .Values.admission.image.tag) }}
-        pullPolicy: {{ .Values.admission.image.pullPolicy | default .Values.global.imagePullPolicy }}
+        pullPolicy: {{ include "kai-scheduler.imagePullPolicy" (dict "root" $ "pullPolicy" .Values.admission.image.pullPolicy) }}
       {{- if .Values.admission.resources }}
       resources:
         {{- toYaml .Values.admission.resources | nindent 8 }}
@@ -310,7 +319,7 @@ spec:
     gpuSharing: {{ .Values.global.gpuSharing }}
     {{- end }}
     blockNvidiaVisibleDevices: {{ .Values.global.blockNvidiaVisibleDevices | default false }}
-    queueLabelSelector: false
+    queueLabelSelector: {{ .Values.admission.queueLabelSelector | default false }}
     webhook:
       port: 443
       targetPort: {{ .Values.admission.ports.webhookPort | default 9443 }}
@@ -329,7 +338,7 @@ spec:
         name: {{ .Values.nodescaleadjuster.image.name }}
         repository: {{ .Values.global.registry }}
         tag: {{ include "kai-scheduler.imageTag" (dict "root" $ "tag" .Values.nodescaleadjuster.image.tag) }}
-        pullPolicy: {{ .Values.nodescaleadjuster.image.pullPolicy | default .Values.global.imagePullPolicy }}
+        pullPolicy: {{ include "kai-scheduler.imagePullPolicy" (dict "root" $ "pullPolicy" .Values.nodescaleadjuster.image.pullPolicy) }}
       {{- if .Values.nodescaleadjuster.resources }}
       resources:
         {{- toYaml .Values.nodescaleadjuster.resources | nindent 8 }}
@@ -344,7 +353,7 @@ spec:
         name: {{ .Values.nodescaleadjuster.scalingPodImage.name }}
         repository: {{ .Values.global.registry }}
         tag: {{ include "kai-scheduler.imageTag" (dict "root" $ "tag" .Values.nodescaleadjuster.scalingPodImage.tag) }}
-        pullPolicy: {{ .Values.nodescaleadjuster.scalingPodImage.pullPolicy | default .Values.global.imagePullPolicy }}
+        pullPolicy: {{ include "kai-scheduler.imagePullPolicy" (dict "root" $ "pullPolicy" .Values.nodescaleadjuster.scalingPodImage.pullPolicy) }}
 
   scheduler:
     service:
@@ -353,7 +362,7 @@ spec:
         name: {{ .Values.scheduler.image.name }}
         repository: {{ .Values.global.registry }}
         tag: {{ include "kai-scheduler.imageTag" (dict "root" $ "tag" .Values.scheduler.image.tag) }}
-        pullPolicy: {{ .Values.scheduler.image.pullPolicy | default .Values.global.imagePullPolicy }}
+        pullPolicy: {{ include "kai-scheduler.imagePullPolicy" (dict "root" $ "pullPolicy" .Values.scheduler.image.pullPolicy) }}
       {{- if .Values.scheduler.resources }}
       resources:
         {{- toYaml .Values.scheduler.resources | nindent 8 }}
@@ -397,7 +406,7 @@ spec:
         name: {{ .Values.numaPlacementExporter.image.name }}
         repository: {{ .Values.global.registry }}
         tag: {{ include "kai-scheduler.imageTag" (dict "root" $ "tag" .Values.numaPlacementExporter.image.tag) }}
-        pullPolicy: {{ .Values.numaPlacementExporter.image.pullPolicy | default .Values.global.imagePullPolicy }}
+        pullPolicy: {{ include "kai-scheduler.imagePullPolicy" (dict "root" $ "pullPolicy" .Values.numaPlacementExporter.image.pullPolicy) }}
       {{- if .Values.numaPlacementExporter.resources }}
       resources:
         {{- toYaml .Values.numaPlacementExporter.resources | nindent 8 }}

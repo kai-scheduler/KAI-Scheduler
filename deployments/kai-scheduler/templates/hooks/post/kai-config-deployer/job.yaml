@@ -54,7 +54,7 @@ spec:
       containers:
       - name: deployer
         image: "{{ .Values.kaiConfigDeployer.image.registry | default .Values.global.registry }}/{{ .Values.kaiConfigDeployer.image.name }}:{{ include "kai-scheduler.imageTag" (dict "root" $ "tag" .Values.kaiConfigDeployer.image.tag) }}"
-        imagePullPolicy: {{ .Values.kaiConfigDeployer.image.pullPolicy }}
+        imagePullPolicy: {{ include "kai-scheduler.imagePullPolicy" (dict "root" $ "pullPolicy" .Values.kaiConfigDeployer.image.pullPolicy) }}
         {{- with .Values.kaiConfigDeployer.resources }}
         resources:
           {{- toYaml . | nindent 10 }}

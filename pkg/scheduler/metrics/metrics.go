@@ -167,7 +167,7 @@ func InitMetrics(namespace string) {
 		prometheus.CounterOpts{
 			Namespace: namespace,
 			Name:      "total_preemption_attempts",
-			Help:      "Total preemption attempts in the cluster till now",
+			Help:      "Total preemptions started by the scheduler, counted once per preemption regardless of the number of victims",
 		},
 	)
 
