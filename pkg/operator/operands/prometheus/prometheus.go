@@ -45,6 +45,7 @@ func (p *Prometheus) DesiredState(
 		}
 
 		if len(prometheus) == 0 {
+			p.lastDesiredState = nil
 			return nil, nil
 		}
 
