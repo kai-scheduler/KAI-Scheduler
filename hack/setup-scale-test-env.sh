@@ -8,12 +8,16 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 SCALE_DIR="${REPO_ROOT}/test/e2e/scale"
 
 gpu_provider=${KWOK_GPU_PROVIDER:-fgo}
+kwok_apply_args=()
 case "$gpu_provider" in
   fgo) KWOK_LATEST_RELEASE=v0.6.1 ;;
-  mokka) KWOK_LATEST_RELEASE=v0.8.0 ;;
+  mokka) KWOK_LATEST_RELEASE=v0.8.0; kwok_apply_args=(--server-side) ;;
   *) echo "Unknown KWOK_GPU_PROVIDER: $gpu_provider" >&2; exit 1 ;;
 esac
-kubectl apply -f "https://github.com/kubernetes-sigs/kwok/releases/download/${KWOK_LATEST_RELEASE}/kwok.yaml"
+kubectl apply "${kwok_apply_args[@]}" -f "https://github.com/kubernetes-sigs/kwok/releases/download/${KWOK_LATEST_RELEASE}/kwok.yaml"
+if [[ "$gpu_provider" == mokka ]]; then
+  kubectl wait --for=condition=Established crd/stages.kwok.x-k8s.io --timeout=90s
+fi
 kubectl apply -f "https://github.com/kubernetes-sigs/kwok/releases/download/${KWOK_LATEST_RELEASE}/stage-fast.yaml"
 kubectl apply --server-side -f https://github.com/run-ai/kwok-operator/releases/download/1.0.4/kwok-operator.yaml
 if [[ "$gpu_provider" == mokka ]]; then
