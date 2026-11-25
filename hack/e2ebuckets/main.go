@@ -21,7 +21,7 @@ import (
 const (
 	defaultBuckets   = 3
 	defaultSuitesDir = "test/e2e/suites"
-	defaultDedicated = "test/e2e/suites/gitops,test/e2e/suites/upgrade"
+	defaultDedicated = "test/e2e/suites/gitops,test/e2e/suites/numa,test/e2e/suites/upgrade"
 )
 
 func main() {

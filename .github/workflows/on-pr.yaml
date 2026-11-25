@@ -386,37 +386,12 @@ jobs:
           exit 1
 
   e2e-numa:
-    name: Run NUMA E2E Tests on Mokka
+    name: NUMA preemption
     needs: build
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
-    steps:
-      - uses: actions/checkout@v7
-      - uses: ./.github/actions/setup-e2e-cluster
-        with:
-          package_version: ${{ needs.build.outputs.package_version }}
-          k8s_version: v1.35.0
-          feature_config: mokka-numa
-      - name: Install KAI with NUMA scheduling
-        env:
-          PACKAGE_VERSION: ${{ needs.build.outputs.package_version }}
-        run: |
-          bash hack/numa/place-addons.sh
-          helm upgrade --install kai-scheduler "/mnt/images/kai-scheduler-$PACKAGE_VERSION.tgz" \
-            --namespace kai-scheduler --create-namespace --set global.registry=localhost:30100 \
-            --set-string 'global.nodeSelector.mokka\.nvidia\.com/e2e-cpu=true' \
-            --set-string 'numaPlacementExporter.nodeSelector.mokka\.nvidia\.com/e2e-gpu=true' \
-            --set scheduler.plugins.numa.enabled=true --set binder.runtimeClassName=nvidia \
-            --set global.gpuSharing=true --set global.gpuSharingMode=NonMemoryEnforced \
-            --set prometheus.enabled=true --wait --timeout 10m
-      - name: Run full NUMA suite
-        run: go tool ginkgo --label-filter numa --keep-going --trace -vv --timeout 45m --json-report=numa.json ./test/e2e/suites/numa
-      - uses: actions/upload-artifact@v6
-        if: always()
-        with:
-          name: numa-mokka-report
-          path: numa.json
-          if-no-files-found: ignore
+    uses: ./.github/workflows/e2e-numa.yaml
+    with:
+      package_version: ${{ needs.build.outputs.package_version }}
+      label_filter: 'numa && !nightly'
 
   e2e-upgrade-tests:
     name: Run E2E Upgrade Tests
@@ -540,6 +515,7 @@ jobs:
       - build
       - prepare-e2e-buckets
       - e2e-tests
+      - e2e-numa
       - e2e-upgrade-tests
     if: always()
     runs-on: ubuntu-latest
@@ -553,6 +529,7 @@ jobs:
           BUILD_RESULT: ${{ needs.build.result }}
           CODE_REQUIRED: ${{ needs.check-build-and-test-required.outputs.code }}
           PREPARE_RESULT: ${{ needs.prepare-e2e-buckets.result }}
+          NUMA_RESULT: ${{ needs.e2e-numa.result }}
           MAIN_RESULT: ${{ needs.e2e-tests.result }}
           UPGRADE_RESULT: ${{ needs.e2e-upgrade-tests.result }}
         run: |
@@ -573,6 +550,7 @@ jobs:
           results=(
             "Build:$BUILD_RESULT"
             "Prepare E2E Buckets:$PREPARE_RESULT"
+            "NUMA preemption:$NUMA_RESULT"
             "Main E2E Buckets:$MAIN_RESULT"
             "Upgrade E2E:$UPGRADE_RESULT"
           )
@@ -612,7 +590,7 @@ jobs:
 
   cleanup-images-cache:
     name: Cleanup Images Cache
-    needs: [ e2e-tests, e2e-upgrade-tests, e2e-gitops-tests, check-build-and-test-required ]
+    needs: [ e2e-tests, e2e-numa, e2e-upgrade-tests, e2e-gitops-tests, check-build-and-test-required ]
     # No always(): a failed e2e job must keep the cache so "Re-run failed
     # jobs" can restore images; stale entries fall to GitHub cache eviction.
     if: success() && needs.check-build-and-test-required.outputs.code == 'true'

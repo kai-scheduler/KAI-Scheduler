@@ -72,6 +72,14 @@ jobs:
           cp charts/kai-scheduler-$PACKAGE_VERSION.tgz /mnt/images/
 
 
+  e2e-numa:
+    name: Full NUMA suite
+    needs: build-and-push
+    uses: ./.github/workflows/e2e-numa.yaml
+    with:
+      package_version: ${{ needs.build-and-push.outputs.package_version }}
+      label_filter: 'numa'
+
   e2e-matrix:
     name: E2E (${{ matrix.k8s_version }}, ${{ matrix.feature_config }})
     needs: build-and-push
@@ -142,7 +150,7 @@ jobs:
 
       - name: Run e2e tests
         run: |
-          go tool ginkgo -r --keep-going --randomize-all --randomize-suites --trace -vv --label-filter '!autoscale && !scale && !upgrade && !gitops' --output-dir=. --json-report=e2e-report.json ./test/e2e/suites
+          go tool ginkgo -r --keep-going --randomize-all --randomize-suites --trace -vv --label-filter '!autoscale && !scale && !upgrade && !gitops && !numa' --output-dir=. --json-report=e2e-report.json ./test/e2e/suites
 
       - name: Print test summary
         if: always()
