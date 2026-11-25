@@ -281,7 +281,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: NVIDIA/k8s-test-infra
-          ref: 7f6e6eb1bbd8fd589797ea129c08fdda46b313e1 # KWOK M1, NVIDIA/k8s-test-infra#1305
+          ref: dd8a681f36f02b7f7678543d40f08f9810b8ca47 # KWOK M1, NVIDIA/k8s-test-infra#1368
           path: .mokka
           persist-credentials: false
       - name: Install KWOK, its node pool operator and Mokka
