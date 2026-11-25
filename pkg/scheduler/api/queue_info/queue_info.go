@@ -30,17 +30,18 @@ import (
 )
 
 type QueueInfo struct {
-	UID               common_info.QueueID
-	Name              string
-	DisplayName       string
-	ParentQueue       common_info.QueueID
-	ChildQueues       []common_info.QueueID
-	Resources         QueueQuota
-	ResourceUsage     QueueUsage
-	Priority          int
-	CreationTimestamp metav1.Time
-	PreemptMinRuntime *metav1.Duration
-	ReclaimMinRuntime *metav1.Duration
+	UID                     common_info.QueueID
+	Name                    string
+	DisplayName             string
+	ParentQueue             common_info.QueueID
+	ChildQueues             []common_info.QueueID
+	Resources               QueueQuota
+	ResourceUsage           QueueUsage
+	Priority                int
+	CreationTimestamp       metav1.Time
+	PreemptMinRuntime       *metav1.Duration
+	ReclaimMinRuntime       *metav1.Duration
+	ConsolidationMinRuntime *metav1.Duration
 }
 
 func NewQueueInfo(queue *enginev2.Queue) *QueueInfo {
@@ -55,16 +56,17 @@ func NewQueueInfo(queue *enginev2.Queue) *QueueInfo {
 	}
 
 	return &QueueInfo{
-		UID:               common_info.QueueID(queue.Name),
-		Name:              queueName,
-		DisplayName:       queue.Spec.DisplayName,
-		ParentQueue:       common_info.QueueID(queue.Spec.ParentQueue),
-		ChildQueues:       []common_info.QueueID{},
-		Resources:         getQueueQuota(*queue),
-		Priority:          priority,
-		CreationTimestamp: queue.CreationTimestamp,
-		PreemptMinRuntime: queue.Spec.PreemptMinRuntime,
-		ReclaimMinRuntime: queue.Spec.ReclaimMinRuntime,
+		UID:                     common_info.QueueID(queue.Name),
+		Name:                    queueName,
+		DisplayName:             queue.Spec.DisplayName,
+		ParentQueue:             common_info.QueueID(queue.Spec.ParentQueue),
+		ChildQueues:             []common_info.QueueID{},
+		Resources:               getQueueQuota(*queue),
+		Priority:                priority,
+		CreationTimestamp:       queue.CreationTimestamp,
+		PreemptMinRuntime:       queue.Spec.PreemptMinRuntime,
+		ReclaimMinRuntime:       queue.Spec.ReclaimMinRuntime,
+		ConsolidationMinRuntime: queue.Spec.ConsolidationMinRuntime,
 	}
 }
 

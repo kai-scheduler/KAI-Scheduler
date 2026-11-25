@@ -139,10 +139,11 @@ func BuildQueueInfoMap(testMetadata TestTopologyBasic) map[common_info.QueueID]*
 				CreationTimestamp: metav1.Time{Time: time.Now().Add(time.Minute * time.Duration(queueIndex))},
 			},
 			Spec: enginev2.QueueSpec{
-				DisplayName:       queue.Name,
-				ParentQueue:       queue.ParentQueue,
-				Priority:          queue.Priority,
-				ReclaimMinRuntime: queue.ReclaimMinRuntime,
+				DisplayName:             queue.Name,
+				ParentQueue:             queue.ParentQueue,
+				Priority:                queue.Priority,
+				ReclaimMinRuntime:       queue.ReclaimMinRuntime,
+				ConsolidationMinRuntime: queue.ConsolidationMinRuntime,
 				Resources: &enginev2.QueueResources{
 					GPU: enginev2.QueueResource{
 						Quota:           queue.DeservedGPUs,

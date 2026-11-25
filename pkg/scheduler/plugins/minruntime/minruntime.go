@@ -17,18 +17,20 @@ import (
 )
 
 const (
-	defaultReclaimMinRuntimeConfig = "defaultReclaimMinRuntime"
-	defaultPreemptMinRuntimeConfig = "defaultPreemptMinRuntime"
-	reclaimResolveMethod           = "reclaimResolveMethod"
-	resolveMethodLCA               = "lca"
-	resolveMethodQueue             = "queue"
+	defaultReclaimMinRuntimeConfig       = "defaultReclaimMinRuntime"
+	defaultPreemptMinRuntimeConfig       = "defaultPreemptMinRuntime"
+	defaultConsolidationMinRuntimeConfig = "defaultConsolidationMinRuntime"
+	reclaimResolveMethod                 = "reclaimResolveMethod"
+	resolveMethodLCA                     = "lca"
+	resolveMethodQueue                   = "queue"
 )
 
 type minruntimePlugin struct {
-	defaultReclaimMinRuntime metav1.Duration
-	defaultPreemptMinRuntime metav1.Duration
-	reclaimResolveMethod     string
-	queues                   map[common_info.QueueID]*queue_info.QueueInfo
+	defaultReclaimMinRuntime       metav1.Duration
+	defaultPreemptMinRuntime       metav1.Duration
+	defaultConsolidationMinRuntime metav1.Duration
+	reclaimResolveMethod           string
+	queues                         map[common_info.QueueID]*queue_info.QueueInfo
 
 	resolver *resolver
 }
@@ -51,6 +53,7 @@ func New(arguments framework.PluginArguments) framework.Plugin {
 
 	plugin.defaultReclaimMinRuntime = parseMinRuntime(arguments, defaultReclaimMinRuntimeConfig)
 	plugin.defaultPreemptMinRuntime = parseMinRuntime(arguments, defaultPreemptMinRuntimeConfig)
+	plugin.defaultConsolidationMinRuntime = parseMinRuntime(arguments, defaultConsolidationMinRuntimeConfig)
 
 	validResolveMethods := []string{resolveMethodLCA, resolveMethodQueue}
 	plugin.reclaimResolveMethod = arguments[reclaimResolveMethod]
@@ -75,7 +78,7 @@ func (mr *minruntimePlugin) OnSessionOpen(ssn *framework.Session) {
 	ssn.AddReclaimScenarioValidatorFn(mr.reclaimScenarioValidatorFn)
 	ssn.AddPreemptScenarioValidatorFn(mr.preemptScenarioValidatorFn)
 	mr.queues = ssn.ClusterInfo.Queues
-	mr.resolver = NewResolver(mr.queues, mr.defaultPreemptMinRuntime, mr.defaultReclaimMinRuntime)
+	mr.resolver = NewResolver(mr.queues, mr.defaultPreemptMinRuntime, mr.defaultReclaimMinRuntime, mr.defaultConsolidationMinRuntime)
 }
 
 func (mr *minruntimePlugin) OnSessionClose(ssn *framework.Session) {
@@ -99,10 +102,17 @@ func (mr *minruntimePlugin) preemptFilterFn(pendingJob *podgroup_info.PodGroupIn
 	return !mr.isPreemptMinRuntimeProtected(pendingJob, victim)
 }
 
-func (mr *minruntimePlugin) consolidationFilterFn(pendingJob *podgroup_info.PodGroupInfo, victim *podgroup_info.PodGroupInfo) bool {
+func (mr *minruntimePlugin) consolidationFilterFn(_ *podgroup_info.PodGroupInfo, victim *podgroup_info.PodGroupInfo) bool {
 	// Consolidation can move every pod, including the minimum members of elastic jobs.
-	return !mr.isPreemptMinRuntimeProtected(pendingJob, victim) &&
-		!mr.isReclaimMinRuntimeProtected(pendingJob, victim)
+	minRuntime, err := mr.resolver.getConsolidationMinRuntime(mr.queues[victim.Queue])
+	if err != nil {
+		log.InfraLogger.Errorf("Failed to get consolidation min runtime for victim %v: %v", victim.NamespacedName, err)
+		minRuntime = mr.defaultConsolidationMinRuntime
+	}
+	if victim.LastStartTimestamp != nil && !victim.LastStartTimestamp.IsZero() {
+		return !time.Now().Before(victim.LastStartTimestamp.Add(minRuntime.Duration))
+	}
+	return true
 }
 
 func (mr *minruntimePlugin) reclaimScenarioValidatorFn(scenario api.ScenarioInfo) bool {

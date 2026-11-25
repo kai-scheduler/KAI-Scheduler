@@ -26,7 +26,7 @@ var _ = Describe("MinRuntime Resolver", func() {
 		defaultPreemptDuration = metav1.Duration{Duration: 2 * time.Second}
 		defaultReclaimDuration = metav1.Duration{Duration: 1 * time.Second}
 
-		resolver = NewResolver(queues, defaultPreemptDuration, defaultReclaimDuration)
+		resolver = NewResolver(queues, defaultPreemptDuration, defaultReclaimDuration, metav1.Duration{})
 	})
 
 	AfterEach(func() {
@@ -323,7 +323,7 @@ var _ = Describe("MinRuntime Resolver", func() {
 					"leaf":       leafQueue,
 				}
 
-				resolver := NewResolver(testQueues, defaultPreemptDuration, defaultReclaimDuration)
+				resolver := NewResolver(testQueues, defaultPreemptDuration, defaultReclaimDuration, metav1.Duration{})
 
 				// Test LCA between queue from different hierarchies
 				result, err := resolver.resolveReclaimMinRuntimeLCA(queues["dev-team1"], leafQueue)

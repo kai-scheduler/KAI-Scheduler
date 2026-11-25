@@ -12,22 +12,44 @@ import (
 )
 
 type resolver struct {
-	preemptMinRuntimeCache   map[common_info.QueueID]metav1.Duration
-	reclaimMinRuntimeCache   map[common_info.QueueID]map[common_info.QueueID]metav1.Duration
-	defaultPreemptMinRuntime metav1.Duration
-	defaultReclaimMinRuntime metav1.Duration
+	preemptMinRuntimeCache         map[common_info.QueueID]metav1.Duration
+	reclaimMinRuntimeCache         map[common_info.QueueID]map[common_info.QueueID]metav1.Duration
+	defaultPreemptMinRuntime       metav1.Duration
+	defaultReclaimMinRuntime       metav1.Duration
+	defaultConsolidationMinRuntime metav1.Duration
+	consolidationMinRuntimeCache   map[common_info.QueueID]metav1.Duration
 
 	queues map[common_info.QueueID]*queue_info.QueueInfo
 }
 
-func NewResolver(queues map[common_info.QueueID]*queue_info.QueueInfo, defaultPreemptMinRuntime metav1.Duration, defaultReclaimMinRuntime metav1.Duration) *resolver {
+func NewResolver(queues map[common_info.QueueID]*queue_info.QueueInfo, defaultPreemptMinRuntime metav1.Duration, defaultReclaimMinRuntime metav1.Duration, defaultConsolidationMinRuntime metav1.Duration) *resolver {
 	return &resolver{
-		queues:                   queues,
-		defaultPreemptMinRuntime: defaultPreemptMinRuntime,
-		defaultReclaimMinRuntime: defaultReclaimMinRuntime,
-		preemptMinRuntimeCache:   make(map[common_info.QueueID]metav1.Duration),
-		reclaimMinRuntimeCache:   make(map[common_info.QueueID]map[common_info.QueueID]metav1.Duration),
+		queues:                         queues,
+		defaultPreemptMinRuntime:       defaultPreemptMinRuntime,
+		defaultReclaimMinRuntime:       defaultReclaimMinRuntime,
+		defaultConsolidationMinRuntime: defaultConsolidationMinRuntime,
+		consolidationMinRuntimeCache:   make(map[common_info.QueueID]metav1.Duration),
+		preemptMinRuntimeCache:         make(map[common_info.QueueID]metav1.Duration),
+		reclaimMinRuntimeCache:         make(map[common_info.QueueID]map[common_info.QueueID]metav1.Duration),
 	}
+}
+
+func (r *resolver) getConsolidationMinRuntime(queue *queue_info.QueueInfo) (metav1.Duration, error) {
+	if queue == nil {
+		return r.defaultConsolidationMinRuntime, fmt.Errorf("queue is nil")
+	}
+	if minRuntime, ok := r.consolidationMinRuntimeCache[queue.UID]; ok {
+		return minRuntime, nil
+	}
+	minRuntime := r.defaultConsolidationMinRuntime
+	for currentQueue := queue; currentQueue != nil; currentQueue = r.queues[currentQueue.ParentQueue] {
+		if currentQueue.ConsolidationMinRuntime != nil {
+			minRuntime = *currentQueue.ConsolidationMinRuntime
+			break
+		}
+	}
+	r.consolidationMinRuntimeCache[queue.UID] = minRuntime
+	return minRuntime, nil
 }
 
 func (r *resolver) getPreemptMinRuntime(

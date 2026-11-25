@@ -27,7 +27,7 @@ func TestConsolidateIntegrationTest(t *testing.T) {
 func TestConsolidationHonorsMinRuntime(t *testing.T) {
 	metadata := getConsolidateTestsMetadata()[0]
 	metadata.TestTopologyBasic.Name = "minimum runtime prevents consolidation of fragmented running jobs"
-	metadata.Queues[0].ReclaimMinRuntime = &v1.Duration{Duration: time.Hour}
+	metadata.Queues[0].ConsolidationMinRuntime = &v1.Duration{Duration: time.Hour}
 	metadata.JobExpectedResults["running_job1"] = test_utils.TestExpectedResultBasic{
 		NodeName: "node1", GPUsRequired: 1, Status: pod_status.Running,
 	}
