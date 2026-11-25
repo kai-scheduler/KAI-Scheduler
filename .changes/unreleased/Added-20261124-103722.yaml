@@ -1,4 +1,4 @@
-kind: Fixed
+kind: Added
 body: |-
   Allow an empty action list to serve snapshots without cluster writes
 custom:
