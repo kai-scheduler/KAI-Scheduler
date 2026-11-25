@@ -71,6 +71,7 @@ func (mr *minruntimePlugin) Name() string {
 func (mr *minruntimePlugin) OnSessionOpen(ssn *framework.Session) {
 	ssn.AddReclaimVictimFilterFn(mr.reclaimFilterFn)
 	ssn.AddPreemptVictimFilterFn(mr.preemptFilterFn)
+	ssn.AddConsolidationVictimFilterFn(mr.consolidationFilterFn)
 	ssn.AddReclaimScenarioValidatorFn(mr.reclaimScenarioValidatorFn)
 	ssn.AddPreemptScenarioValidatorFn(mr.preemptScenarioValidatorFn)
 	mr.queues = ssn.ClusterInfo.Queues
@@ -96,6 +97,12 @@ func (mr *minruntimePlugin) preemptFilterFn(pendingJob *podgroup_info.PodGroupIn
 		return true
 	}
 	return !mr.isPreemptMinRuntimeProtected(pendingJob, victim)
+}
+
+func (mr *minruntimePlugin) consolidationFilterFn(pendingJob *podgroup_info.PodGroupInfo, victim *podgroup_info.PodGroupInfo) bool {
+	// Consolidation can move every pod, including the minimum members of elastic jobs.
+	return !mr.isPreemptMinRuntimeProtected(pendingJob, victim) &&
+		!mr.isReclaimMinRuntimeProtected(pendingJob, victim)
 }
 
 func (mr *minruntimePlugin) reclaimScenarioValidatorFn(scenario api.ScenarioInfo) bool {

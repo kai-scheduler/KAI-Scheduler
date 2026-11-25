@@ -2,11 +2,12 @@
 
 ## Overview
 
-The MinRuntime plugin for KAI-Scheduler provides runtime protection for jobs by preventing preemption or resource reclamation of jobs until they have run for a specified minimum time duration. This ensures workloads can complete critical initialization or checkpointing before being interrupted.
+The MinRuntime plugin for KAI-Scheduler provides runtime protection for jobs by preventing preemption, resource reclamation, or consolidation until they have run for a specified minimum time duration. This ensures workloads can complete critical initialization or checkpointing before being interrupted.
 
 ## Key Features
 
 - **Preemption Protection**: Prevents jobs from being preempted until they have run for a specified minimum duration
+- **Consolidation Protection**: Prevents jobs from being moved while either their preemption or reclamation minimum runtime still applies
 - **Reclamation Protection**: Prevents elastic jobs from having resources reclaimed until they have run for a specified minimum duration
 - **Queue-based Configuration**: Configure different minimum runtime durations for different queues in your scheduling hierarchy
 - **Hierarchical Inheritance**: Minimum runtime settings cascade down from parent queues to leaf queues
@@ -87,6 +88,12 @@ For reclamation, two methods are supported:
 
 The LCA method is the default method if none is specified. The purpose of the LCA method is to follow how policies might be set for queue hierarchy, allowing users in sub-queues to set min-runtime values that are honored by their siblings, whilst not affecting cousin queues.
 
+### Consolidation Resolution
+
+Consolidation honors both existing minimum runtimes. A victim can be moved only after both its resolved preemption and reclamation protection periods expire. Preemption resolution uses the victim's queue hierarchy; reclamation resolution uses the pending job and victim queues with the configured `reclaimResolveMethod`. Defaults and queue overrides apply as above, with no separate consolidation setting.
+
+Protection is measured from the victim's `LastStartTimestamp`, as for preemption and reclamation. Jobs with no start timestamp are unprotected. With both resolved durations set to zero, consolidation behavior is unchanged.
+
 ## Elastic Jobs Handling
 
 For elastic jobs (where `MinAvailable < number of pods in a job`), the plugin:
@@ -94,12 +101,15 @@ For elastic jobs (where `MinAvailable < number of pods in a job`), the plugin:
 1. Allows the job to be considered for preemption/reclamation in the filter phase
 2. Validates in the scenario validator phase that the job will maintain its minimum number of pods if min-runtime has not been reached.
 
+Consolidation filters out protected elastic jobs entirely, because moving a job can interrupt its minimum members as well as its extra pods.
+
 ## Implementation Details
 
 The plugin implements the following functions:
 
 - `preemptFilterFn`: Filters victims that shouldn't be preempted due to minimum runtime
 - `reclaimFilterFn`: Filters victims that shouldn't have resources reclaimed due to minimum runtime
+- `consolidationFilterFn`: Filters victims while either minimum runtime still protects them, including elastic jobs
 - `preemptScenarioValidatorFn`: Validates preemption scenarios for elastic jobs
 - `reclaimScenarioValidatorFn`: Validates reclamation scenarios for elastic jobs
 

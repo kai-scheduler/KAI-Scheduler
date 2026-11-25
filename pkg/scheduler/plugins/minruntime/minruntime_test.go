@@ -93,6 +93,56 @@ var _ = Describe("MinRuntime Plugin", func() {
 		}
 	})
 
+	DescribeTable("consolidation runtime protection",
+		func(preemptRuntime, reclaimRuntime string, minAvailable int32, podsCount int, startAge *time.Duration, allowed bool) {
+			plugin := New(framework.PluginArguments{
+				defaultPreemptMinRuntimeConfig: preemptRuntime,
+				defaultReclaimMinRuntimeConfig: reclaimRuntime,
+			})
+			ssn := &framework.Session{ClusterInfo: &api.ClusterInfo{
+				Queues: map[common_info.QueueID]*queue_info.QueueInfo{"queue": {UID: "queue"}},
+			}}
+			plugin.OnSessionOpen(ssn)
+			defer plugin.OnSessionClose(ssn)
+
+			pendingJob := createPodGroup("pending", "queue", nil, 1, 1)
+			var start *time.Time
+			if startAge != nil {
+				timestamp := time.Now().Add(-*startAge)
+				start = &timestamp
+			}
+			victim := createPodGroup("victim", "queue", start, minAvailable, podsCount)
+			Expect(ssn.ConsolidationVictimFilter(pendingJob, victim)).To(Equal(allowed))
+		},
+		Entry("preempt runtime alone protects a rigid job", "2m", "0s", int32(1), 1, durationPtr(time.Minute), false),
+		Entry("reclaim runtime alone protects a rigid job", "0s", "2m", int32(1), 1, durationPtr(time.Minute), false),
+		Entry("preempt runtime protects an elastic job", "2m", "0s", int32(1), 3, durationPtr(time.Minute), false),
+		Entry("reclaim runtime protects an elastic job", "0s", "2m", int32(1), 3, durationPtr(time.Minute), false),
+		Entry("expired preempt runtime does not override reclaim protection", "30s", "2m", int32(1), 1, durationPtr(time.Minute), false),
+		Entry("expired reclaim runtime does not override preempt protection", "2m", "30s", int32(1), 1, durationPtr(time.Minute), false),
+		Entry("both runtimes expired", "30s", "30s", int32(1), 1, durationPtr(time.Minute), true),
+		Entry("expired runtimes allow elastic jobs", "30s", "30s", int32(1), 3, durationPtr(time.Minute), true),
+		Entry("zero runtimes preserve existing behavior", "0s", "0s", int32(1), 1, durationPtr(time.Minute), true),
+		Entry("missing start timestamp", "2m", "2m", int32(1), 1, (*time.Duration)(nil), true),
+	)
+
+	DescribeTable("consolidation queue resolution",
+		func(pendingQueue, victimQueue common_info.QueueID, method string, age time.Duration, allowed bool) {
+			plugin.reclaimResolveMethod = method
+			ssn := &framework.Session{ClusterInfo: &api.ClusterInfo{Queues: queues}}
+			plugin.OnSessionOpen(ssn)
+			defer plugin.OnSessionClose(ssn)
+			pendingJob := createPodGroup("pending", pendingQueue, nil, 1, 1)
+			start := time.Now().Add(-age)
+			victim := createPodGroup("victim", victimQueue, &start, 1, 1)
+			Expect(ssn.ConsolidationVictimFilter(pendingJob, victim)).To(Equal(allowed))
+		},
+		Entry("inherits preempt protection", common_info.QueueID("dev-team1"), common_info.QueueID("prod-team1"), resolveMethodLCA, 10*time.Second, false),
+		Entry("LCA uses victim's top-level reclaim runtime", common_info.QueueID("dev-team1"), common_info.QueueID("prod-team2"), resolveMethodLCA, 32*time.Second, true),
+		Entry("queue method uses victim's leaf reclaim runtime", common_info.QueueID("dev-team1"), common_info.QueueID("prod-team2"), resolveMethodQueue, 32*time.Second, false),
+		Entry("same queue uses leaf reclaim runtime", common_info.QueueID("prod-team2"), common_info.QueueID("prod-team2"), resolveMethodLCA, 32*time.Second, false),
+	)
+
 	Describe("preemptFilterFn", func() {
 		Context("when victim is protected by min-runtime", func() {
 			It("should return false for non-elastic job", func() {
@@ -409,3 +459,7 @@ var _ = Describe("MinRuntime Plugin", func() {
 		})
 	})
 })
+
+func durationPtr(duration time.Duration) *time.Duration {
+	return &duration
+}

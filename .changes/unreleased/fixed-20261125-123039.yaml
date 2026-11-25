@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Honor preemption and reclaim minimum runtimes when selecting consolidation victims, including elastic jobs
+custom:
+  Author: "enoodle"
+  Issue: "2073"

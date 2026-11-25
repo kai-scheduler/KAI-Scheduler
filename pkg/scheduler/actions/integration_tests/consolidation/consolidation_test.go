@@ -5,6 +5,7 @@ package consolidation_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/integration_tests_utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
@@ -21,6 +22,20 @@ import (
 
 func TestConsolidateIntegrationTest(t *testing.T) {
 	integration_tests_utils.RunTests(t, getConsolidateTestsMetadata())
+}
+
+func TestConsolidationHonorsMinRuntime(t *testing.T) {
+	metadata := getConsolidateTestsMetadata()[0]
+	metadata.TestTopologyBasic.Name = "minimum runtime prevents consolidation of fragmented running jobs"
+	metadata.Queues[0].ReclaimMinRuntime = &v1.Duration{Duration: time.Hour}
+	metadata.JobExpectedResults["running_job1"] = test_utils.TestExpectedResultBasic{
+		NodeName: "node1", GPUsRequired: 1, Status: pod_status.Running,
+	}
+	metadata.JobExpectedResults["pending_job0"] = test_utils.TestExpectedResultBasic{
+		GPUsRequired: 2, Status: pod_status.Pending,
+	}
+	metadata.Mocks.CacheRequirements = &test_utils.CacheMocking{}
+	integration_tests_utils.RunTests(t, []integration_tests_utils.TestTopologyMetadata{metadata})
 }
 
 func getConsolidateTestsMetadata() []integration_tests_utils.TestTopologyMetadata {
