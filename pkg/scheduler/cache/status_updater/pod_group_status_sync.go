@@ -4,6 +4,7 @@
 package status_updater
 
 import (
+	"reflect"
 	"slices"
 	"strconv"
 
@@ -83,6 +84,10 @@ func (su *defaultStatusUpdater) cleanUpdatesForNonSeenPodGroups(usedKeys map[upd
 }
 
 func (su *defaultStatusUpdater) syncPodGroup(inFlightPodGroup, snapshotPodGroup *enginev2alpha2.PodGroup) podGroupStatusSyncResult {
+	nodePool := utils.GetNodePoolNameFromLabels(inFlightPodGroup.Labels, su.nodePoolLabelKey)
+	if !schedulingInputsEqual(inFlightPodGroup, snapshotPodGroup) {
+		return updateRequestIsOlder
+	}
 	staleTimeStampUpdated := false
 	if snapshotPodGroup.Annotations[commonconstants.StalePodgroupTimeStamp] == inFlightPodGroup.Annotations[commonconstants.StalePodgroupTimeStamp] {
 		staleTimeStampUpdated = true
@@ -96,10 +101,19 @@ func (su *defaultStatusUpdater) syncPodGroup(inFlightPodGroup, snapshotPodGroup 
 		syncAnnotation(snapshotPodGroup, inFlightPodGroup, commonconstants.LastStartTimeStamp)
 	}
 
-	statusComparison := compareSchedulingConditions(inFlightPodGroup, snapshotPodGroup)
+	statusComparison := compareNodePoolSchedulingConditions(inFlightPodGroup, snapshotPodGroup, nodePool)
 
 	if statusComparison == equalStatuses || statusComparison == snapshotStatusIsOlder {
-		snapshotPodGroup.Status.SchedulingConditions = inFlightPodGroup.Status.SchedulingConditions
+		removePodGroupSchedulingCondition(snapshotPodGroup, nodePool)
+		if condition := conditionForNodePool(inFlightPodGroup, nodePool); condition != nil {
+			snapshotPodGroup.Status.SchedulingConditions = append(snapshotPodGroup.Status.SchedulingConditions, *condition.DeepCopy())
+		}
+		if inFlightPodGroup.Status.SchedulingState != nil {
+			if !reflect.DeepEqual(inFlightPodGroup.Status.SchedulingState, snapshotPodGroup.Status.SchedulingState) {
+				statusComparison = snapshotStatusIsOlder
+			}
+			snapshotPodGroup.Status.SchedulingState = inFlightPodGroup.Status.SchedulingState.DeepCopy()
+		}
 	}
 	if statusComparison == equalStatuses && (!lastStartTimestampUpdated || !staleTimeStampUpdated) {
 		statusComparison = snapshotStatusIsOlder
@@ -122,9 +136,9 @@ func syncAnnotation(snapshotPodGroup, inFlightPodGroup *enginev2alpha2.PodGroup,
 	snapshotPodGroup.Annotations[key] = value
 }
 
-func compareSchedulingConditions(inFlightPodGroup, snapshotPodGroup *enginev2alpha2.PodGroup) podGroupStatusSyncResult {
-	lastSchedulingCondition := utils.GetLastSchedulingCondition(inFlightPodGroup)
-	currentLastSchedulingCondition := utils.GetLastSchedulingCondition(snapshotPodGroup)
+func compareNodePoolSchedulingConditions(inFlightPodGroup, snapshotPodGroup *enginev2alpha2.PodGroup, nodePool string) podGroupStatusSyncResult {
+	lastSchedulingCondition := conditionForNodePool(inFlightPodGroup, nodePool)
+	currentLastSchedulingCondition := conditionForNodePool(snapshotPodGroup, nodePool)
 
 	if currentLastSchedulingCondition == nil && lastSchedulingCondition == nil {
 		return equalStatuses
@@ -133,7 +147,7 @@ func compareSchedulingConditions(inFlightPodGroup, snapshotPodGroup *enginev2alp
 		return snapshotStatusIsOlder
 	}
 	if lastSchedulingCondition == nil {
-		return updateRequestIsOlder
+		return snapshotStatusIsOlder
 	}
 
 	currentID, currentErr := strconv.Atoi(currentLastSchedulingCondition.TransitionID)

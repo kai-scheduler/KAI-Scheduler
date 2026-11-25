@@ -267,7 +267,8 @@ spec:
                     type: object
                 type: object
               schedulingConditions:
-                description: The scheduling conditions of PodGroup.
+                description: The scheduling conditions of PodGroup, keyed by node
+                  pool.
                 items:
                   description: SchedulingCondition contains details for the current
                     scheduling state of this pod group.
@@ -409,8 +410,14 @@ spec:
                     type:
                       description: Type is the type of the scheduling condition
                       type: string
+                  required:
+                  - nodePool
                   type: object
+                  x-kubernetes-map-type: atomic
                 type: array
+                x-kubernetes-list-map-keys:
+                - nodePool
+                x-kubernetes-list-type: map
               schedulingState:
                 description: |-
                   SchedulingState is the scheduler's authoritative view of this pod group. Read-only for
@@ -425,6 +432,7 @@ spec:
                       type: string
                     type: array
                 type: object
+                x-kubernetes-map-type: atomic
             type: object
         type: object
     served: true

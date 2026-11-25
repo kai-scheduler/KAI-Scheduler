@@ -5,6 +5,8 @@ package status_updater
 
 import (
 	"context"
+	"hash/fnv"
+	"slices"
 
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -36,6 +38,13 @@ func (su *defaultStatusUpdater) keyForPodLabelsPayload(name, namespace string, u
 }
 
 func (su *defaultStatusUpdater) processPayload(ctx context.Context, payload *updatePayload) {
+	if payload.objectType == podGroupType {
+		hash := fnv.New32a()
+		_, _ = hash.Write([]byte(payload.key))
+		lock := &su.podGroupUpdateLocks[hash.Sum32()%uint32(len(su.podGroupUpdateLocks))]
+		lock.Lock()
+		defer lock.Unlock()
+	}
 	updateData, found := su.loadInflightUpdate(payload)
 	if !found {
 		return
@@ -94,14 +103,16 @@ func (su *defaultStatusUpdater) updatePod(
 func (su *defaultStatusUpdater) updatePodGroup(
 	ctx context.Context, key updatePayloadKey, updateData *inflightUpdate,
 ) {
+	originalUpdate := updateData
+	copyUpdate := *updateData
+	copyUpdate.writtenResourceVersions = slices.Clone(updateData.writtenResourceVersions)
+	updateData = &copyUpdate
 	podGroup := updateData.object.(*enginev2alpha2.PodGroup)
 
 	var statusErr, patchErr error
 	if updateData.updateStatus {
 		var updated *enginev2alpha2.PodGroup
-		updated, statusErr = su.kaiClient.SchedulingV2alpha2().PodGroups(podGroup.Namespace).UpdateStatus(
-			ctx, podGroup, metav1.UpdateOptions{},
-		)
+		updated, statusErr = su.applyPodGroupStatus(ctx, podGroup)
 		if statusErr == nil {
 			updateData.writtenResourceVersions = append(updateData.writtenResourceVersions, updated.ResourceVersion)
 		}
@@ -132,7 +143,7 @@ func (su *defaultStatusUpdater) updatePodGroup(
 				log.StatusUpdaterLogger.V(5).Infof("Dropping non-retryable pod group patch %s/%s: %v",
 					podGroup.Namespace, podGroup.Name, patchErr)
 			}
-			su.inFlightPodGroups.Delete(key)
+			su.inFlightPodGroups.CompareAndDelete(key, originalUpdate)
 			return
 		}
 
@@ -145,20 +156,16 @@ func (su *defaultStatusUpdater) updatePodGroup(
 				podGroup.Namespace, podGroup.Name, patchErr)
 		}
 
-		su.pushToUpdateQueue(
-			&updatePayload{
-				key:        key,
-				objectType: podGroupType,
-			},
-			updateData,
-		)
+		if su.inFlightPodGroups.CompareAndSwap(key, originalUpdate, updateData) {
+			su.updateQueueIn <- &updatePayload{key: key, objectType: podGroupType}
+		}
 
 		return
 	}
 
 	// Move the update to the applied cache
 	su.appliedPodGroupUpdates.Store(key, updateData)
-	_, loaded := su.inFlightPodGroups.LoadAndDelete(key)
+	loaded := su.inFlightPodGroups.CompareAndDelete(key, originalUpdate)
 	if !loaded {
 		su.appliedPodGroupUpdates.Delete(key)
 	}
@@ -166,7 +173,7 @@ func (su *defaultStatusUpdater) updatePodGroup(
 
 // isTerminalUpdateError reports whether an update error can never succeed on retry.
 func isTerminalUpdateError(err error) bool {
-	return apierrors.IsNotFound(err) || apierrors.IsConflict(err)
+	return apierrors.IsNotFound(err) || apierrors.IsConflict(err) || apierrors.IsInvalid(err) || apierrors.IsBadRequest(err)
 }
 
 func (su *defaultStatusUpdater) updateInFlightObject(key updatePayloadKey, objectType string, object *inflightUpdate) {
