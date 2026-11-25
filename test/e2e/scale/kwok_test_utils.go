@@ -15,6 +15,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	utilwait "k8s.io/apimachinery/pkg/util/wait"
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
@@ -60,13 +61,28 @@ func deleteAllOfWithRetries(
 	ctx context.Context, kubeClient runtimeClient.Client,
 	obj runtimeClient.Object, opts ...runtimeClient.DeleteAllOfOption,
 ) error {
-	var err error
-	for i := 0; i < operationAttemptsRetries; i++ {
-		err = kubeClient.DeleteAllOf(ctx, obj, opts...)
-		if err == nil {
-			return nil
+	var lastErr error
+	backoff := utilwait.Backoff{
+		Duration: 200 * time.Millisecond,
+		Factor:   2,
+		Jitter:   0.2,
+		Steps:    operationAttemptsRetries,
+		Cap:      5 * time.Second,
+	}
+	err := utilwait.ExponentialBackoffWithContext(ctx, backoff, func(ctx context.Context) (bool, error) {
+		lastErr = kubeClient.DeleteAllOf(ctx, obj, opts...)
+		if lastErr == nil {
+			return true, nil
 		}
-		time.Sleep(retryInterval)
+		if errors.IsTooManyRequests(lastErr) || errors.IsTimeout(lastErr) ||
+			errors.IsServerTimeout(lastErr) || errors.IsServiceUnavailable(lastErr) ||
+			errors.IsInternalError(lastErr) || errors.IsConflict(lastErr) {
+			return false, nil
+		}
+		return false, lastErr
+	})
+	if ctx.Err() == nil && utilwait.Interrupted(err) && lastErr != nil {
+		return lastErr
 	}
 	return err
 }
@@ -109,34 +125,25 @@ func addKWOKTaintsAndAffinity(podSpec *v1.PodSpec) {
 }
 
 func cleanupTestQueue(ctx context.Context, testCtx *testcontext.TestContext, queueToClean *v2.Queue) {
-	Expect(deleteAllOfWithRetries(ctx, testCtx.ControllerClient, &batchv1.Job{},
-		runtimeClient.InNamespace(queue.GetConnectedNamespaceToQueue(queueToClean)),
-		runtimeClient.PropagationPolicy(metav1.DeletePropagationBackground),
-		runtimeClient.MatchingLabels{
-			"app": "engine-e2e",
-		},
-	)).To(Succeed())
+	Expect(deleteTestQueueObjects(ctx, testCtx.ControllerClient, queueToClean)).To(Succeed())
+}
 
-	Expect(deleteAllOfWithRetries(ctx, testCtx.ControllerClient, &v1.Pod{},
-		runtimeClient.InNamespace(queue.GetConnectedNamespaceToQueue(queueToClean)),
-		runtimeClient.MatchingLabels{
-			"app": "engine-e2e",
-		},
-	)).To(Succeed())
-
-	Expect(deleteAllOfWithRetries(ctx, testCtx.ControllerClient, &v2alpha2.PodGroup{},
-		runtimeClient.InNamespace(queue.GetConnectedNamespaceToQueue(queueToClean)),
-		runtimeClient.MatchingLabels{
-			"app": "engine-e2e",
-		},
-	)).To(Succeed())
-
-	Expect(deleteAllOfWithRetries(ctx, testCtx.ControllerClient, &v1.Pod{},
-		runtimeClient.InNamespace(queue.GetConnectedNamespaceToQueue(queueToClean)),
-		runtimeClient.MatchingLabels{
-			"app": "engine-e2e",
-		},
-	)).To(Succeed())
+func deleteTestQueueObjects(ctx context.Context, client runtimeClient.Client, queueToClean *v2.Queue) error {
+	namespace := queue.GetConnectedNamespaceToQueue(queueToClean)
+	options := []runtimeClient.DeleteAllOfOption{
+		runtimeClient.InNamespace(namespace),
+		runtimeClient.MatchingLabels{"app": "engine-e2e"},
+	}
+	jobOptions := append([]runtimeClient.DeleteAllOfOption{runtimeClient.PropagationPolicy(metav1.DeletePropagationBackground)}, options...)
+	if err := deleteAllOfWithRetries(ctx, client, &batchv1.Job{}, jobOptions...); err != nil {
+		return fmt.Errorf("delete jobs in %s: %w", namespace, err)
+	}
+	for _, object := range []runtimeClient.Object{&v1.Pod{}, &v2alpha2.PodGroup{}, &v1.Pod{}} {
+		if err := deleteAllOfWithRetries(ctx, client, object, options...); err != nil {
+			return fmt.Errorf("delete %T in %s: %w", object, namespace, err)
+		}
+	}
+	return nil
 }
 
 func waitForAllJobsToSchedule(
