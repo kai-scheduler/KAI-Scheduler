@@ -225,7 +225,7 @@ var _ = Describe("DRA GPU Extraction", func() {
 				return resourceapi.DeviceRequest{
 					Name: name,
 					Exactly: &resourceapi.ExactDeviceRequest{
-						DeviceClassName: constants.NvidiaGpuResource,
+						DeviceClassName: "nvidia.com/gpu",
 						AllocationMode:  mode,
 						Count:           count,
 						AdminAccess:     ptr.To(true),
@@ -274,7 +274,7 @@ var _ = Describe("DRA GPU Extraction", func() {
 								{
 									Name: "gpu",
 									Exactly: &resourceapi.ExactDeviceRequest{
-										DeviceClassName: constants.NvidiaGpuResource,
+										DeviceClassName: "nvidia.com/gpu",
 										AllocationMode:  resourceapi.DeviceAllocationModeExactCount,
 										Count:           2,
 										AdminAccess:     ptr.To(false),
