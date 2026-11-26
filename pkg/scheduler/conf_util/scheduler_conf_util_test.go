@@ -163,6 +163,83 @@ func TestResolveConfigurationFromFile(t *testing.T) {
 	}
 }
 
+func TestGetActionsFromConfigSkipsBlankTokens(t *testing.T) {
+	actions.InitDefaultActions()
+
+	got, err := GetActionsFromConfig(&conf.SchedulerConfiguration{
+		Actions: "allocate, , consolidation,  ",
+	})
+	require.NoError(t, err)
+	require.Equal(t, []string{"allocate", "consolidation"}, actionNameList(got))
+}
+
+func TestGetActionsFromConfigEmptyAndBlank(t *testing.T) {
+	actions.InitDefaultActions()
+
+	for _, actionsValue := range []string{"", " , ", "   "} {
+		got, err := GetActionsFromConfig(&conf.SchedulerConfiguration{Actions: actionsValue})
+		require.NoError(t, err)
+		require.Empty(t, got)
+		require.True(t, (&conf.SchedulerConfiguration{Actions: actionsValue}).NoActions())
+	}
+
+	_, err := GetActionsFromConfig(&conf.SchedulerConfiguration{Actions: "not-an-action"})
+	require.Error(t, err)
+}
+
+func TestResolveConfigurationFromFileUnsetActionsUsesDefaults(t *testing.T) {
+	actions.InitDefaultActions()
+	plugins.InitDefaultPlugins()
+
+	confFile := writeSchedulerConf(t, "tiers:\n- plugins:\n  - name: predicates\n")
+	got, err := ResolveConfigurationFromFile(confFile)
+	require.NoError(t, err)
+
+	defaults, err := GetDefaultSchedulerConf()
+	require.NoError(t, err)
+	require.Equal(t, defaults.Actions, got.Actions)
+	require.False(t, got.NoActions())
+	require.Equal(t, []conf.Tier{{Plugins: []conf.PluginOption{{Name: "predicates"}}}}, got.Tiers)
+
+	parsed, err := GetActionsFromConfig(got)
+	require.NoError(t, err)
+	require.Equal(t, actionNameList(mustActions(t, defaults)), actionNameList(parsed))
+}
+
+func TestResolveConfigurationFromFileEmptyActionsRunsNone(t *testing.T) {
+	actions.InitDefaultActions()
+	plugins.InitDefaultPlugins()
+
+	for _, raw := range []string{
+		"actions: \"\"\ntiers:\n- plugins:\n  - name: predicates\n",
+		"actions: \" , \"\ntiers:\n- plugins:\n  - name: predicates\n",
+	} {
+		confFile := writeSchedulerConf(t, raw)
+		got, err := ResolveConfigurationFromFile(confFile)
+		require.NoError(t, err)
+		require.True(t, got.NoActions())
+
+		parsed, err := GetActionsFromConfig(got)
+		require.NoError(t, err)
+		require.Empty(t, parsed)
+		require.Equal(t, []conf.Tier{{Plugins: []conf.PluginOption{{Name: "predicates"}}}}, got.Tiers)
+	}
+}
+
+func TestEmptyActionsYAMLRoundTripKeepsExplicitEmpty(t *testing.T) {
+	actions.InitDefaultActions()
+	plugins.InitDefaultPlugins()
+
+	data, err := yaml.Marshal(&conf.SchedulerConfiguration{Actions: ""})
+	require.NoError(t, err)
+	require.Contains(t, string(data), "actions:")
+
+	confFile := writeSchedulerConf(t, string(data)+"tiers:\n- plugins:\n  - name: predicates\n")
+	got, err := ResolveConfigurationFromFile(confFile)
+	require.NoError(t, err)
+	require.True(t, got.NoActions())
+}
+
 func TestDefaultSchedulerConfRegistersScenarioGeneratorsForDefaultBudgets(t *testing.T) {
 	actions.InitDefaultActions()
 
@@ -214,6 +291,34 @@ func scenarioSearchDurationForTest(value string) metav1.Duration {
 
 func scenarioSearchDurationPtrForTest(value string) *metav1.Duration {
 	return ptr.To(scenarioSearchDurationForTest(value))
+}
+
+func actionNameList(configured []framework.Action) []string {
+	names := make([]string, 0, len(configured))
+	for _, action := range configured {
+		names = append(names, string(action.Name()))
+	}
+	return names
+}
+
+func mustActions(t *testing.T, schedulerConf *conf.SchedulerConfiguration) []framework.Action {
+	t.Helper()
+	configured, err := GetActionsFromConfig(schedulerConf)
+	require.NoError(t, err)
+	return configured
+}
+
+func writeSchedulerConf(t *testing.T, raw string) string {
+	t.Helper()
+	confFile, err := os.CreateTemp("", "scheduler_test_conf_")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		os.Remove(confFile.Name())
+	})
+	_, err = confFile.WriteString(raw)
+	require.NoError(t, err)
+	require.NoError(t, confFile.Close())
+	return confFile.Name()
 }
 
 func generateConfigFile(config *conf.SchedulerConfiguration) (*os.File, error) {

@@ -20,6 +20,7 @@ limitations under the License.
 package conf
 
 import (
+	"strings"
 	"time"
 
 	"k8s.io/apimachinery/pkg/labels"
@@ -97,6 +98,25 @@ type PluginOption struct {
 type SchedulingNodePoolParams struct {
 	NodePoolLabelKey   string
 	NodePoolLabelValue string
+}
+
+func (c *SchedulerConfiguration) ActionNames() []string {
+	if c == nil || strings.TrimSpace(c.Actions) == "" {
+		return nil
+	}
+	var names []string
+	for _, actionName := range strings.Split(c.Actions, ",") {
+		name := strings.TrimSpace(actionName)
+		if name == "" {
+			continue
+		}
+		names = append(names, name)
+	}
+	return names
+}
+
+func (c *SchedulerConfiguration) NoActions() bool {
+	return c != nil && len(c.ActionNames()) == 0
 }
 
 func (s *SchedulingNodePoolParams) GetLabelSelector() (labels.Selector, error) {

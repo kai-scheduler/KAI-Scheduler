@@ -176,6 +176,8 @@ type SchedulerCacheParams struct {
 	StuckInReleasingThreshold   time.Duration
 	DiscoveryClient             discovery.DiscoveryInterface
 	EvictionActionNames         []string
+
+	NoActions bool
 }
 
 type SchedulerCache struct {
@@ -201,6 +203,8 @@ type SchedulerCache struct {
 	fullHierarchyFairness     bool
 	stuckInReleasingThreshold time.Duration
 
+	noActions bool
+
 	internalPlugins *k8splugins.K8sPlugins
 
 	K8sClusterPodAffinityInfo
@@ -217,6 +221,7 @@ func newSchedulerCache(schedulerCacheParams *SchedulerCacheParams) (*SchedulerCa
 		kubeClient:                draversionawareclient.NewDRAAwareClient(schedulerCacheParams.KubeClient),
 		kubeAiSchedulerClient:     schedulerCacheParams.KAISchedulerClient,
 	}
+	sc.noActions = schedulerCacheParams.NoActions
 
 	schedulerName := schedulerCacheParams.SchedulerName
 
@@ -225,7 +230,9 @@ func newSchedulerCache(schedulerCacheParams *SchedulerCacheParams) (*SchedulerCa
 	// The new broadcaster objects uses watch.NewLongQueueBroadcaster(maxQueuedEvents, watch.DropIfChannelFull) under the hood.
 	// This means that we need to be careful when writing events using the recorder.
 	// If the broadcaster will have more then maxQueuedEvents waiting to be published, he will drop all incoming recording requests.
-	broadcaster.StartRecordingToSink(&corev1.EventSinkImpl{Interface: sc.kubeClient.CoreV1().Events("")})
+	if !schedulerCacheParams.NoActions {
+		broadcaster.StartRecordingToSink(&corev1.EventSinkImpl{Interface: sc.kubeClient.CoreV1().Events("")})
+	}
 	recorder := broadcaster.NewRecorder(kubeaischedulerschema.Scheme, v1.EventSource{Component: schedulerName})
 
 	sc.Evictor = evictor.New(sc.kubeClient, schedulerCacheParams.UpdatePodEvictionCondition)
@@ -234,6 +241,9 @@ func newSchedulerCache(schedulerCacheParams *SchedulerCacheParams) (*SchedulerCa
 		sc.kubeClient, sc.kubeAiSchedulerClient, recorder, schedulerCacheParams.NumOfStatusRecordingWorkers,
 		sc.detailedFitErrors, sc.schedulingNodePoolParams.NodePoolLabelKey,
 	)
+	if schedulerCacheParams.NoActions {
+		sc.StatusUpdater = status_updater.NewNoop()
+	}
 
 	sc.informerFactory = informers.NewSharedInformerFactory(sc.kubeClient, 0)
 	registerSchedulerPodInformer(sc.informerFactory)
@@ -298,9 +308,12 @@ func (sc *SchedulerCache) Snapshot() (*api.ClusterInfo, error) {
 		return nil, err
 	}
 
-	if cleanErr := sc.cleanStaleBindRequest(snapshot.BindRequests, snapshot.FailedBindRequestsForShard); cleanErr != nil {
-		log.InfraLogger.V(2).Warnf("Failed to clean stale bind requests: %v", cleanErr)
-		err = multierr.Append(err, cleanErr)
+	// Deleting stale BindRequests is a cluster write, which a NoActions scheduler must not do.
+	if !sc.noActions {
+		if cleanErr := sc.cleanStaleBindRequest(snapshot.BindRequests, snapshot.FailedBindRequestsForShard); cleanErr != nil {
+			log.InfraLogger.V(2).Warnf("Failed to clean stale bind requests: %v", cleanErr)
+			err = multierr.Append(err, cleanErr)
+		}
 	}
 
 	return snapshot, err

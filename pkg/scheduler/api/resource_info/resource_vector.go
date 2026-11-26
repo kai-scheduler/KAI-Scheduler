@@ -189,7 +189,8 @@ func convertResourceToFloat64(rName v1.ResourceName, rQuant resource.Quantity) f
 	return float64(rQuant.Value())
 }
 
-func isGpuResource(resourceName v1.ResourceName) bool {
+// IsGpuResourceName reports whether the resource is one of the GPU resources a pod can request.
+func IsGpuResourceName(resourceName v1.ResourceName) bool {
 	switch string(resourceName) {
 	case constants.GpuResource, GPUResourceName, amdGpuResourceName:
 		return true
@@ -198,7 +199,7 @@ func isGpuResource(resourceName v1.ResourceName) bool {
 }
 
 func normalizeResourceName(resourceName v1.ResourceName) v1.ResourceName {
-	if isGpuResource(resourceName) {
+	if IsGpuResourceName(resourceName) {
 		return v1.ResourceName(constants.GpuResource)
 	}
 	return resourceName

@@ -84,9 +84,6 @@ func ResolveConfigurationFromFile(confPath string) (*conf.SchedulerConfiguration
 		return nil, err
 	}
 
-	if len(schedulerConfigFromCM.Actions) == 0 {
-		schedulerConfigFromCM.Actions = defaultConfig.Actions
-	}
 	if len(schedulerConfigFromCM.Tiers) == 0 {
 		schedulerConfigFromCM.Tiers = defaultConfig.Tiers
 	}
@@ -101,7 +98,11 @@ func GetActionsFromConfig(conf *conf.SchedulerConfiguration) ([]framework.Action
 	var actions []framework.Action
 	actionNames := strings.Split(conf.Actions, ",")
 	for _, actionName := range actionNames {
-		if action, found := framework.GetAction(strings.TrimSpace(actionName)); found {
+		actionName = strings.TrimSpace(actionName)
+		if actionName == "" {
+			continue
+		}
+		if action, found := framework.GetAction(actionName); found {
 			actions = append(actions, action)
 		} else {
 			return nil, fmt.Errorf("failed to find Action %s as given in the config, ignore it", actionName)
@@ -116,6 +117,14 @@ func GetDefaultSchedulerConf() (*conf.SchedulerConfiguration, error) {
 
 func loadSchedulerConf(confStr string) (*conf.SchedulerConfiguration, error) {
 	schedulerConf := &conf.SchedulerConfiguration{}
+	if confStr != defaultSchedulerConf {
+		defaultConfig, err := GetDefaultSchedulerConf()
+		if err != nil {
+			return nil, err
+		}
+		copied := *defaultConfig
+		schedulerConf = &copied
+	}
 
 	buf := make([]byte, len(confStr))
 	copy(buf, confStr)

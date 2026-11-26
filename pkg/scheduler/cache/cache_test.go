@@ -43,6 +43,7 @@ import (
 
 	featuregates "github.com/kai-scheduler/KAI-scheduler/pkg/common/feature_gates"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
 	kubeaischedulerfake "github.com/kai-scheduler/api/client/clientset/versioned/fake"
@@ -474,6 +475,49 @@ var _ = Describe("Cache", func() {
 			Expect(bindRequestsAfterCleanup.Items).To(HaveLen(1))
 		})
 
+		It("Leaves stale bind requests when the scheduler runs no actions", func() {
+			bindRequest := &schedulingv1alpha2.BindRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "bind-request-1",
+					Namespace: "namespace-1",
+				},
+				Spec: schedulingv1alpha2.BindRequestSpec{
+					PodName:      "pod-1",
+					SelectedNode: "node-1",
+					BackoffLimit: ptr.To(int32(1)),
+				},
+				Status: schedulingv1alpha2.BindRequestStatus{
+					Phase:          schedulingv1alpha2.BindRequestPhaseFailed,
+					FailedAttempts: 1,
+				},
+			}
+			kubeClient := fake.NewSimpleClientset()
+			kubeAiSchedulerClient := kubeaischedulerfake.NewSimpleClientset(bindRequest)
+			cache, err := New(&SchedulerCacheParams{
+				KubeClient:            kubeClient,
+				KAISchedulerClient:    kubeAiSchedulerClient,
+				NodePoolParams:        &conf.SchedulingNodePoolParams{},
+				FullHierarchyFairness: true,
+				DiscoveryClient:       kubeClient.Discovery(),
+				NoActions:             true,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			stopCh := make(chan struct{})
+			defer close(stopCh)
+			cache.Run(stopCh)
+			cache.WaitForCacheSync(stopCh)
+
+			_, err = cache.Snapshot()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(cache.RecordJobStatusEvent(&podgroup_info.PodGroupInfo{Name: "job"}, nil)).To(Succeed())
+
+			bindRequestsAfterCleanup, err := kubeAiSchedulerClient.SchedulingV1alpha2().BindRequests("namespace-1").List(context.TODO(), metav1.ListOptions{})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(bindRequestsAfterCleanup.Items).To(HaveLen(1))
+			expectNoClusterWrites(append(kubeClient.Actions(), kubeAiSchedulerClient.Actions()...))
+		})
+
 		It("Reports all failed deletions", func() {
 			cache, stopCh := setupCacheWithObjects(
 				false,
@@ -531,6 +575,15 @@ var _ = Describe("Cache", func() {
 
 	})
 })
+
+func expectNoClusterWrites(actions []faketesting.Action) {
+	for _, action := range actions {
+		switch action.GetVerb() {
+		case "create", "update", "patch", "delete":
+			Fail(fmt.Sprintf("unexpected %s %s", action.GetVerb(), action.GetResource().Resource))
+		}
+	}
+}
 
 func setupCacheWithObjects(snapshot bool, objects []runtime.Object, kaiSchedulerObjects ...runtime.Object) (Cache, chan struct{}) {
 	kubeClient := fake.NewSimpleClientset(objects...)
