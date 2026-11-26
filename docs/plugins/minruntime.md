@@ -65,7 +65,7 @@ tiers:
 |-----------|-------------|---------|
 | `defaultPreemptMinRuntime` | Default minimum runtime before preemption if not specified in queue | "0s" |
 | `defaultReclaimMinRuntime` | Default minimum runtime before resource reclamation if not specified in queue | "0s" |
-| `defaultConsolidationMinRuntime` | Default minimum runtime before consolidation if not specified in queue | "0s" |
+| `defaultConsolidationMinRuntime` | Shard minimum runtime before consolidation if not specified in the victim's queue hierarchy | Unset (use the larger resolved preempt or reclaim runtime) |
 | `reclaimResolveMethod` | Method to resolve reclaim minimum runtime ("lca" or "queue") | "lca" |
 
 0s means workloads are instantly reclaimable/preemptible.
@@ -94,7 +94,9 @@ The LCA method is the default method if none is specified. The purpose of the LC
 
 ### Consolidation Resolution
 
-Consolidation uses `consolidationMinRuntime` independently of preemption and reclamation. Starting from the victim's queue, it uses the first value defined on that queue or its ancestors, then falls back to `defaultConsolidationMinRuntime`. An explicit `0s` overrides inherited protection. The pending job's queue and `reclaimResolveMethod` do not affect consolidation protection.
+Starting from the victim's queue, consolidation uses the first `consolidationMinRuntime` defined on that queue or its ancestors. If the whole hierarchy leaves it unset, consolidation uses `defaultConsolidationMinRuntime` when configured. An explicit `0s` at either level takes precedence over the fallback.
+
+If neither setting is defined, consolidation uses the larger of the resolved preemption and reclamation minimum runtimes. Both use their existing resolution rules and defaults. With `reclaimResolveMethod: "lca"`, the fallback can depend on the pending job's queue.
 
 The shard-wide default can also be configured through `SchedulingShard.spec.minRuntime.consolidationMinRuntime`:
 
@@ -104,7 +106,7 @@ spec:
     consolidationMinRuntime: "5m"
 ```
 
-Protection is measured from the victim's `LastStartTimestamp`, as for preemption and reclamation. Jobs with no start timestamp are unprotected. The default is `0s`, which leaves jobs immediately eligible for consolidation regardless of their preemption and reclamation runtimes.
+Protection is measured from the victim's `LastStartTimestamp`, as for preemption and reclamation. Jobs with no start timestamp are unprotected. If both resolved runtimes are `0s`, the fallback adds no protection.
 
 ## Elastic Jobs Handling
 
@@ -137,7 +139,7 @@ The plugin implements the following functions:
 The plugin maintains caches to improve performance:
 - `preemptMinRuntimeCache`: Caches preemption minimum runtime values by queue
 - `reclaimMinRuntimeCache`: Caches reclamation minimum runtime values by queue pair
-- `consolidationMinRuntimeCache`: Caches consolidation minimum runtime values by victim queue
+- `consolidationMinRuntimeCache`: Caches the configured consolidation minimum runtime (or its absence) by victim queue
 - `preemptProtectionCache`: Tracks jobs protected from preemption
 - `reclaimProtectionCache`: Tracks jobs protected from reclamation
 

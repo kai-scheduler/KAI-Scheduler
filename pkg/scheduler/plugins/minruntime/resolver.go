@@ -4,6 +4,7 @@
 package minruntime
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
@@ -16,40 +17,50 @@ type resolver struct {
 	reclaimMinRuntimeCache         map[common_info.QueueID]map[common_info.QueueID]metav1.Duration
 	defaultPreemptMinRuntime       metav1.Duration
 	defaultReclaimMinRuntime       metav1.Duration
-	defaultConsolidationMinRuntime metav1.Duration
-	consolidationMinRuntimeCache   map[common_info.QueueID]metav1.Duration
+	defaultConsolidationMinRuntime *metav1.Duration
+	consolidationMinRuntimeCache   map[common_info.QueueID]*metav1.Duration
 
 	queues map[common_info.QueueID]*queue_info.QueueInfo
 }
 
-func NewResolver(queues map[common_info.QueueID]*queue_info.QueueInfo, defaultPreemptMinRuntime metav1.Duration, defaultReclaimMinRuntime metav1.Duration, defaultConsolidationMinRuntime metav1.Duration) *resolver {
+func NewResolver(queues map[common_info.QueueID]*queue_info.QueueInfo, defaultPreemptMinRuntime metav1.Duration, defaultReclaimMinRuntime metav1.Duration, defaultConsolidationMinRuntime *metav1.Duration) *resolver {
 	return &resolver{
 		queues:                         queues,
 		defaultPreemptMinRuntime:       defaultPreemptMinRuntime,
 		defaultReclaimMinRuntime:       defaultReclaimMinRuntime,
 		defaultConsolidationMinRuntime: defaultConsolidationMinRuntime,
-		consolidationMinRuntimeCache:   make(map[common_info.QueueID]metav1.Duration),
+		consolidationMinRuntimeCache:   make(map[common_info.QueueID]*metav1.Duration),
 		preemptMinRuntimeCache:         make(map[common_info.QueueID]metav1.Duration),
 		reclaimMinRuntimeCache:         make(map[common_info.QueueID]map[common_info.QueueID]metav1.Duration),
 	}
 }
 
-func (r *resolver) getConsolidationMinRuntime(queue *queue_info.QueueInfo) (metav1.Duration, error) {
+func (r *resolver) getConsolidationMinRuntime(reclaimMethod string, pendingQueue, victimQueue *queue_info.QueueInfo) (metav1.Duration, error) {
+	if configured := r.configuredConsolidationMinRuntime(victimQueue); configured != nil {
+		return *configured, nil
+	}
+	preemptRuntime, preemptErr := r.getPreemptMinRuntime(victimQueue)
+	reclaimRuntime, reclaimErr := r.getReclaimMinRuntime(reclaimMethod, pendingQueue, victimQueue)
+	return metav1.Duration{Duration: max(preemptRuntime.Duration, reclaimRuntime.Duration)}, errors.Join(preemptErr, reclaimErr)
+}
+
+func (r *resolver) configuredConsolidationMinRuntime(queue *queue_info.QueueInfo) *metav1.Duration {
 	if queue == nil {
-		return r.defaultConsolidationMinRuntime, fmt.Errorf("queue is nil")
+		return r.defaultConsolidationMinRuntime
 	}
 	if minRuntime, ok := r.consolidationMinRuntimeCache[queue.UID]; ok {
-		return minRuntime, nil
+		return minRuntime
 	}
 	minRuntime := r.defaultConsolidationMinRuntime
 	for currentQueue := queue; currentQueue != nil; currentQueue = r.queues[currentQueue.ParentQueue] {
 		if currentQueue.ConsolidationMinRuntime != nil {
-			minRuntime = *currentQueue.ConsolidationMinRuntime
+			minRuntime = currentQueue.ConsolidationMinRuntime
 			break
 		}
 	}
+	// Reclaim fallback can depend on the pending queue. Cache only the configured value.
 	r.consolidationMinRuntimeCache[queue.UID] = minRuntime
-	return minRuntime, nil
+	return minRuntime
 }
 
 func (r *resolver) getPreemptMinRuntime(

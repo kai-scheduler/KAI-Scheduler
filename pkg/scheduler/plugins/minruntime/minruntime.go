@@ -28,7 +28,7 @@ const (
 type minruntimePlugin struct {
 	defaultReclaimMinRuntime       metav1.Duration
 	defaultPreemptMinRuntime       metav1.Duration
-	defaultConsolidationMinRuntime metav1.Duration
+	defaultConsolidationMinRuntime *metav1.Duration
 	reclaimResolveMethod           string
 	queues                         map[common_info.QueueID]*queue_info.QueueInfo
 
@@ -53,7 +53,10 @@ func New(arguments framework.PluginArguments) framework.Plugin {
 
 	plugin.defaultReclaimMinRuntime = parseMinRuntime(arguments, defaultReclaimMinRuntimeConfig)
 	plugin.defaultPreemptMinRuntime = parseMinRuntime(arguments, defaultPreemptMinRuntimeConfig)
-	plugin.defaultConsolidationMinRuntime = parseMinRuntime(arguments, defaultConsolidationMinRuntimeConfig)
+	if _, configured := arguments[defaultConsolidationMinRuntimeConfig]; configured {
+		duration := parseMinRuntime(arguments, defaultConsolidationMinRuntimeConfig)
+		plugin.defaultConsolidationMinRuntime = &duration
+	}
 
 	validResolveMethods := []string{resolveMethodLCA, resolveMethodQueue}
 	plugin.reclaimResolveMethod = arguments[reclaimResolveMethod]
@@ -102,17 +105,16 @@ func (mr *minruntimePlugin) preemptFilterFn(pendingJob *podgroup_info.PodGroupIn
 	return !mr.isPreemptMinRuntimeProtected(pendingJob, victim)
 }
 
-func (mr *minruntimePlugin) consolidationFilterFn(_ *podgroup_info.PodGroupInfo, victim *podgroup_info.PodGroupInfo) bool {
+func (mr *minruntimePlugin) consolidationFilterFn(pendingJob *podgroup_info.PodGroupInfo, victim *podgroup_info.PodGroupInfo) bool {
 	// Consolidation can move every pod, including the minimum members of elastic jobs.
-	minRuntime, err := mr.resolver.getConsolidationMinRuntime(mr.queues[victim.Queue])
+	if victim.LastStartTimestamp == nil || victim.LastStartTimestamp.IsZero() {
+		return true
+	}
+	minRuntime, err := mr.resolver.getConsolidationMinRuntime(mr.reclaimResolveMethod, mr.queues[pendingJob.Queue], mr.queues[victim.Queue])
 	if err != nil {
 		log.InfraLogger.Errorf("Failed to get consolidation min runtime for victim %v: %v", victim.NamespacedName, err)
-		minRuntime = mr.defaultConsolidationMinRuntime
 	}
-	if victim.LastStartTimestamp != nil && !victim.LastStartTimestamp.IsZero() {
-		return !time.Now().Before(victim.LastStartTimestamp.Add(minRuntime.Duration))
-	}
-	return true
+	return !time.Now().Before(victim.LastStartTimestamp.Add(minRuntime.Duration))
 }
 
 func (mr *minruntimePlugin) reclaimScenarioValidatorFn(scenario api.ScenarioInfo) bool {

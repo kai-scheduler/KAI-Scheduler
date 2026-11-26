@@ -26,13 +26,36 @@ var _ = Describe("MinRuntime Resolver", func() {
 		defaultPreemptDuration = metav1.Duration{Duration: 2 * time.Second}
 		defaultReclaimDuration = metav1.Duration{Duration: 1 * time.Second}
 
-		resolver = NewResolver(queues, defaultPreemptDuration, defaultReclaimDuration, metav1.Duration{})
+		resolver = NewResolver(queues, defaultPreemptDuration, defaultReclaimDuration, nil)
 	})
 
 	AfterEach(func() {
 		// Reset the caches after each test
 		resolver.preemptMinRuntimeCache = make(map[common_info.QueueID]metav1.Duration)
 		resolver.reclaimMinRuntimeCache = make(map[common_info.QueueID]map[common_info.QueueID]metav1.Duration)
+	})
+
+	It("uses the resolved runtimes for each consolidation queue pair", func() {
+		victim := queues["prod-team2"]
+		for _, tc := range []struct {
+			pending common_info.QueueID
+			want    time.Duration
+		}{
+			{pending: "dev-team1", want: 30 * time.Second},
+			{pending: "prod-team1", want: 35 * time.Second},
+			{pending: "dev-team1", want: 30 * time.Second},
+		} {
+			duration, err := resolver.getConsolidationMinRuntime(resolveMethodLCA, queues[tc.pending], victim)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(duration.Duration).To(Equal(tc.want))
+		}
+	})
+
+	It("uses inherited preempt runtime when it exceeds resolved reclaim runtime", func() {
+		queues["prod"].PreemptMinRuntime = &metav1.Duration{Duration: time.Minute}
+		duration, err := resolver.getConsolidationMinRuntime(resolveMethodQueue, queues["dev-team1"], queues["prod-team1"])
+		Expect(err).NotTo(HaveOccurred())
+		Expect(duration.Duration).To(Equal(time.Minute))
 	})
 
 	Describe("getPreemptMinRuntime", func() {
@@ -323,7 +346,7 @@ var _ = Describe("MinRuntime Resolver", func() {
 					"leaf":       leafQueue,
 				}
 
-				resolver := NewResolver(testQueues, defaultPreemptDuration, defaultReclaimDuration, metav1.Duration{})
+				resolver := NewResolver(testQueues, defaultPreemptDuration, defaultReclaimDuration, nil)
 
 				// Test LCA between queue from different hierarchies
 				result, err := resolver.resolveReclaimMinRuntimeLCA(queues["dev-team1"], leafQueue)
