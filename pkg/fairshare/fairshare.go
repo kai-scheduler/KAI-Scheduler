@@ -25,7 +25,7 @@ type Queue struct {
 	MaxAllowed      float64
 	OverQuotaWeight float64
 	Request         float64
-	// Usage is the queue's historical usage, normalized to the cluster's capacity. It only matters when kValue > 0.
+	// Usage is the queue's historical usage, as a fraction of the capacity shared by these queues. It only matters when kValue > 0.
 	Usage     float64
 	FairShare float64
 }

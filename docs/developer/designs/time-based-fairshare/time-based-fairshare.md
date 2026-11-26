@@ -123,7 +123,7 @@ $$P'_i = \frac{P_i}{\sum{P}}$$
 Where:
 - $W'_i$ is the over-quota weight of the queue, normalized to the sum of non-satisfied queues' over-quota weight for the round
 - $\sum{P}$ considers only queues that participate in the current resource division round
-- $U'_i$ is the historical usage for the queue, normalized to the capacity of the cluster
+- $U'_i$ is historical usage as a fraction of cluster capacity for top-level queues, or relative to the parent for child queues
 - $k$ is set by the admin and controls the "significance" of historical usage
 - Applying $\max{\{,0\}}$ to the result floors negative values to 0
 
@@ -160,13 +160,17 @@ $$W'_i = \frac{W_i}{\sum{W}}$$
 
 ### Cluster-capacity normalized usage
 
-First, we'll define a normalized "usage" score for each queue and resource:
+For each queue and resource, the accounting service supplies the fraction of cluster capacity used over the historical window.
 
-$$U'_i = \frac{U_i}{T}$$
+$$H_i = \frac{U_i}{T}$$
 
-Where $T$ is the total potential resource capacity for the cluster in the relevant time period. For a cluster that is fully occupied, $\sum{U_i} = T$.
+Here $U_i$ is the queue's resource usage over the window and $T$ is the cluster's resource capacity integrated over the same window, with the same time decay. Top-level queues use $U'_i = H_i$.
 
-This works better than a naive normalization ($U'_i = \frac{U_i}{\sum{U}}$), because it doesn't result in heavy penalty when total usage ($\sum{U_i}$) is relatively low: in other words, queues are not penalized heavily for utilizing uncontended resources.
+For a parent queue $p$ with a positive fair share of the resource, let $f_p$ be that fair share divided by the scheduler's current allocatable cluster capacity. For each child $i$, the scheduler uses
+
+$$U'_i = \frac{H_i}{\max\left(f_p, H_p, \sum_{j \in \mathrm{children}(p)} H_j\right)}.$$
+
+The current fair share approximates the parent's entitlement over the window, so a small amount of usage in an idle parent carries a small penalty. The sum includes the historical usage of queues that moved into the parent during the window. The scheduler repeats the calculation at each level for CPU, memory and GPUs independently.
 
 
 ### Penalizing queues with historical usage
@@ -187,7 +191,7 @@ $$P'_i = \frac{P_i}{\sum{P}}$$
 Where:
 - $W'_i$ is the over-quota weight of the queue, normalized to the sum of non-satisfied queues' over-quota weight for the round
 - $\sum{P}$ considers only queues that participate in the current resource division round
-- $U'_i$ is the historical usage for the queue, normalized to the capacity of the cluster
+- $U'_i$ is the usage score for the queue at its level in the hierarchy
 - $k$ is set by the admin and controls the "significance" of historical usage
 - Applying $\max{\{,0\}}$ to the result floors negative values to 0
 

@@ -14,16 +14,30 @@ import (
 
 func SetResourcesShare(totalResource rs.ResourceQuantities, kValue float64, queues map[common_info.QueueID]*rs.QueueAttributes) {
 	for _, resource := range rs.AllResources {
-		setResourceShare(totalResource[resource], kValue, resource, queues)
+		divideResource(totalResource[resource], kValue, resource, queues, 0)
 	}
 	reportDivisionResult(queues)
 }
 
-func setResourceShare(totalAmount, kValue float64, resourceName rs.ResourceName, queues map[common_info.QueueID]*rs.QueueAttributes) float64 {
+// SetChildResourcesShare divides a parent's fair share among its children.
+func SetChildResourcesShare(parent *rs.QueueAttributes, cluster rs.ResourceQuantities, kValue float64, queues map[common_info.QueueID]*rs.QueueAttributes) {
+	for _, resource := range rs.AllResources {
+		share := parent.ResourceShare(resource)
+		var usageFloor float64
+		if kValue > 0 && cluster[resource] > 0 {
+			// Use the current entitlement as a floor so idle capacity carries little penalty.
+			usageFloor = max(share.GetUsage(), share.FairShare/cluster[resource])
+		}
+		divideResource(share.FairShare, kValue, resource, queues, usageFloor)
+	}
+	reportDivisionResult(queues)
+}
+
+func divideResource(totalAmount, kValue float64, resourceName rs.ResourceName, queues map[common_info.QueueID]*rs.QueueAttributes, usageFloor float64) float64 {
 	log.InfraLogger.V(6).Do(func() {
 		log.InfraLogger.Infof("About to start calculating %v fairShare, totalAmount: <%v>", resourceName, totalAmount)
 	})
-	fq, attributes := toFairshareQueues(queues, resourceName)
+	fq, attributes := toFairshareQueues(queues, resourceName, usageFloor)
 	remaining := fairshare.Divide(totalAmount, kValue, fq)
 	storeFairShare(fq, attributes, resourceName)
 	log.InfraLogger.V(6).Do(func() {
@@ -32,13 +46,15 @@ func setResourceShare(totalAmount, kValue float64, resourceName rs.ResourceName,
 	return remaining
 }
 
-func toFairshareQueues(queues map[common_info.QueueID]*rs.QueueAttributes, resourceName rs.ResourceName,
+func toFairshareQueues(queues map[common_info.QueueID]*rs.QueueAttributes, resourceName rs.ResourceName, usageFloor float64,
 ) ([]*fairshare.Queue, []*rs.QueueAttributes) {
 	fq := make([]*fairshare.Queue, 0, len(queues))
 	attributes := make([]*rs.QueueAttributes, 0, len(queues))
+	var siblingUsage float64
 	for _, queue := range queues {
 		attributes = append(attributes, queue)
 		share := queue.ResourceShare(resourceName)
+		siblingUsage += share.GetUsage()
 		fq = append(fq, &fairshare.Queue{
 			ID:                string(queue.UID),
 			Priority:          queue.Priority,
@@ -55,6 +71,13 @@ func toFairshareQueues(queues map[common_info.QueueID]*rs.QueueAttributes, resou
 				"overQuotaWeight: %v, request: %v, usage: %v, fairShare: %v", resourceName, queue.Name,
 				share.Deserved, share.MaxAllowed, share.OverQuotaWeight, share.Request, share.GetUsage(), share.FairShare)
 		})
+	}
+	if usageFloor > 0 {
+		// Reparented queues can carry more usage history than their new parent.
+		denominator := max(usageFloor, siblingUsage)
+		for _, queue := range fq {
+			queue.Usage /= denominator
+		}
 	}
 	return fq, attributes
 }

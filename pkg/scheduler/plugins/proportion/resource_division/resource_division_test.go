@@ -17,9 +17,13 @@ import (
 	commonconstants "github.com/kai-scheduler/api/constants"
 )
 
+func setResourceShare(totalAmount, kValue float64, resourceName rs.ResourceName, queues map[common_info.QueueID]*rs.QueueAttributes) float64 {
+	return divideResource(totalAmount, kValue, resourceName, queues, 0)
+}
+
 func divideOverQuotaResource(totalResourceAmount, kValue float64, queues map[common_info.QueueID]*rs.QueueAttributes,
 	resourceName rs.ResourceName) float64 {
-	fq, attributes := toFairshareQueues(queues, resourceName)
+	fq, attributes := toFairshareQueues(queues, resourceName, 0)
 	remaining := fairshare.DivideOverQuota(totalResourceAmount, kValue, fq)
 	storeFairShare(fq, attributes, resourceName)
 	return remaining

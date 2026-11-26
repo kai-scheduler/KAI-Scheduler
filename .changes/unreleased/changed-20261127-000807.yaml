@@ -1,0 +1,6 @@
+kind: Changed
+body: |-
+  Time-based fair share normalizes a child queue's historical usage to its parent, so kValue keeps its strength below the top-level queues
+custom:
+  Author: "ZeXi0308"
+  Issue: "2793"

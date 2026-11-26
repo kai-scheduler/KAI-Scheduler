@@ -42,6 +42,44 @@ func TestSetFairShare(t *testing.T) {
 	RunSpecs(t, "Proportion Suite")
 }
 
+func TestNestedTimeBasedFairShare(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		parentUsage float64
+		busyUsage   float64
+		otherUsage  float64
+		wantOther   float64
+	}{
+		{"one project used the whole department", 0.5, 0.5, 0, 16},
+		{"department was partly idle", 0.25, 0.25, 0, 11},
+		{"department previously used more than its current share", 1, 0.5, 0, 11},
+		{"projects have history but their new department does not", 0, 0.5, 0.5, 8},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			queues := map[common_info.QueueID]*rs.QueueAttributes{}
+			add := func(id, parent common_info.QueueID, usage float64) {
+				queue := &rs.QueueAttributes{UID: id, Name: string(id), ParentQueue: parent}
+				queue.GPU = rs.ResourceShare{Request: 16, MaxAllowed: 16, OverQuotaWeight: 1, Usage: usage}
+				queues[id] = queue
+				if parent == "" {
+					queue.GPU.Deserved = 16
+				} else {
+					queues[parent].ChildQueues = append(queues[parent].ChildQueues, id)
+				}
+			}
+			add("department-a", "", tc.parentUsage)
+			add("department-b", "", 0)
+			add("busy", "department-a", tc.busyUsage)
+			add("other", "department-a", tc.otherUsage)
+			pp := &proportionPlugin{totalResource: rs.ResourceQuantities{rs.GpuResource: 32}, kValue: 1, queues: queues}
+			pp.setFairShare()
+			if got := queues["other"].GPU.FairShare; got != tc.wantOther {
+				t.Errorf("other project's GPU fair share = %v, want %v", got, tc.wantOther)
+			}
+		})
+	}
+}
+
 func TestBuildReclaimerInfoDoesNotAllocate(t *testing.T) {
 	vectorMap := resource_info.NewResourceVectorMap()
 	reclaimer := podgroup_info.NewPodGroupInfoWithVectorMap("reclaimer", vectorMap)
