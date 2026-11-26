@@ -126,5 +126,23 @@ func getConsolidationTopologySpreadTestsMetadata() []integration_tests_utils.Tes
 				},
 			},
 		},
+		{
+			TestTopologyBasic: test_utils.TestTopologyBasic{
+				Name: "Control, same layout with ScheduleAnyway spread: consolidates",
+				Jobs: []*jobs_fake.TestJobBasic{
+					runningJob("running_job0", "node0", 1, constants.PriorityTrainNumber, spreadLabels),
+					runningJob("running_job1", "node1", 1, constants.PriorityBuildNumber, nil),
+					pendingSpreadJob(1, v1.ScheduleAnyway),
+				},
+				Nodes:  nodes(2, 1),
+				Queues: queues,
+				Mocks:  &test_utils.TestMock{CacheRequirements: &test_utils.CacheMocking{NumberOfCacheEvictions: 1, NumberOfPipelineActions: 2}},
+				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"running_job0": {GPUsRequired: 1, Status: pod_status.Running, NodeName: "node0"},
+					"running_job1": {GPUsRequired: 1, Status: pod_status.Running, NodeName: "node1"},
+					"pending_job0": {GPUsRequired: 1, Status: pod_status.Pipelined, NodeName: "node0"},
+				},
+			},
+		},
 	}
 }
