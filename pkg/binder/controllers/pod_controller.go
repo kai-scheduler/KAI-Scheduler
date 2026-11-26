@@ -114,10 +114,14 @@ func (r *PodReconciler) syncReservationIfNeeded(ctx context.Context, object clie
 
 func (r *PodReconciler) isRelevantPod(object client.Object) bool {
 	pod, isPod := object.(*corev1.Pod)
-	if isPod {
-		return pod.Spec.SchedulerName == r.SchedulerName
+	if !isPod {
+		return false
 	}
-	return false
+	if pod.Spec.SchedulerName == r.SchedulerName {
+		return true
+	}
+	// Reservation pods are created without the KAI scheduler name.
+	return r.ResourceReservation.IsReservationPod(pod)
 }
 
 func isCompletionEvent(oldObject client.Object, newObject client.Object) bool {

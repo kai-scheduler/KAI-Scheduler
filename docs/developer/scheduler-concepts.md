@@ -107,6 +107,8 @@ For detailed information about session implementation, lifecycle, and plugin int
 
 **Actions** are discrete scheduling operations executed in sequence during each cycle. Each action operates on the session's snapshot data and uses statements to ensure atomicity.
 
+An empty action list is valid. Each cycle still snapshots the cluster and opens a session, so plugins such as snapshot can serve `/get-snapshot`. The scheduler does not update PodGroup status or delete stale BindRequests in that mode.
+
 For detailed information about action types, execution order, and implementation details, see [Action Framework](action-framework.md).
 
 ## Plugins

@@ -14,6 +14,7 @@ import (
 )
 
 var _ = DescribeResizeSpecs()
+var _ = DescribeDeferredResizeSpecs()
 
 func TestInPlacePodResize(t *testing.T) {
 	utils.SetLogger()

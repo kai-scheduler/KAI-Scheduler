@@ -16,10 +16,10 @@ type Plugin interface {
 
 Plugins are registered using a builder pattern:
 ```go
-type PluginBuilder func(map[string]string) Plugin
+type PluginBuilder func(PluginArguments) Plugin
 
 // Register a new plugin
-RegisterPluginBuilder("my-plugin", func(args map[string]string) Plugin {
+RegisterPluginBuilder("my-plugin", func(args PluginArguments) Plugin {
     return &MyPlugin{}
 })
 ```
@@ -43,6 +43,10 @@ The session object provides the plugins with multiple extension points that the 
 - `AddQueueOrderFn`: Define queue priority ordering - for example, fair share or strict priority
 - `AddNodeOrderFn`: Score nodes for task placement - for example, binpack, node affinity
 
+#### Victim Selection
+- `AddReclaimVictimFilterFn`: Filter the jobs that reclaim may evict for a pending job - for example, min-runtime protection
+- `AddPreemptVictimFilterFn`: Filter the jobs that preempt may evict for a pending job
+- `AddConsolidationVictimFilterFn`: Filter the jobs that consolidation may move for a pending job
 
 #### Predicates
 

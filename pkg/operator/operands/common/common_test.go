@@ -76,6 +76,45 @@ var _ = Describe("DeploymentForKAIConfig", func() {
 		Expect(deployment.Spec.Template.Spec.PriorityClassName).To(Equal("system-cluster-critical"))
 	})
 
+	It("adds the preferred default pod anti-affinity term when no affinity is configured", func() {
+		config := &kaiv1.Config{Spec: kaiv1.ConfigSpec{Namespace: "kai-scheduler"}}
+		config.Spec.SetDefaultsWhereNeeded()
+
+		deployment, err := DeploymentForKAIConfig(
+			context.Background(), fake.NewClientBuilder().Build(), config, config.Spec.Binder.Service, "binder",
+		)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(deployment.Spec.Template.Spec.Affinity).ToNot(BeNil())
+		Expect(deployment.Spec.Template.Spec.Affinity.PodAntiAffinity).ToNot(BeNil())
+		Expect(deployment.Spec.Template.Spec.Affinity.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution).To(
+			ConsistOf(v1.WeightedPodAffinityTerm{
+				Weight: 100,
+				PodAffinityTerm: v1.PodAffinityTerm{
+					LabelSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "binder"}},
+					TopologyKey:   "kubernetes.io/hostname",
+				},
+			}))
+		Expect(deployment.Spec.Template.Spec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution).To(BeEmpty())
+	})
+
+	It("adds the required default pod anti-affinity term when no affinity is configured", func() {
+		config := &kaiv1.Config{Spec: kaiv1.ConfigSpec{Namespace: "kai-scheduler"}}
+		config.Spec.SetDefaultsWhereNeeded()
+		config.Spec.Global.RequireDefaultPodAntiAffinityTerm = ptr.To(true)
+
+		deployment, err := DeploymentForKAIConfig(
+			context.Background(), fake.NewClientBuilder().Build(), config, config.Spec.Binder.Service, "binder",
+		)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(deployment.Spec.Template.Spec.Affinity).ToNot(BeNil())
+		Expect(deployment.Spec.Template.Spec.Affinity.PodAntiAffinity).ToNot(BeNil())
+		Expect(deployment.Spec.Template.Spec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution).To(
+			ConsistOf(v1.PodAffinityTerm{
+				LabelSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "binder"}},
+				TopologyKey:   "kubernetes.io/hostname",
+			}))
+	})
+
 	It("does not set GODEBUG by default", func() {
 		config := &kaiv1.Config{Spec: kaiv1.ConfigSpec{Namespace: "kai-scheduler"}}
 		config.Spec.SetDefaultsWhereNeeded()
@@ -458,20 +497,22 @@ var _ = Describe("JSON logging args", func() {
 })
 
 var _ = Describe("MergeAffinities", func() {
-	It("should return globalAffinity when localAffinity is nil", func() {
+	It("should use globalAffinity when localAffinity is nil", func() {
 		globalAffinity := &v1.Affinity{
 			NodeAffinity: &v1.NodeAffinity{},
 		}
 		result := MergeAffinities(nil, globalAffinity, nil, false)
-		Expect(result).To(Equal(globalAffinity))
+		Expect(result.NodeAffinity).To(Equal(globalAffinity.NodeAffinity))
+		Expect(result.PodAntiAffinity).To(Equal(&v1.PodAntiAffinity{}))
 	})
 
-	It("should return localAffinity when globalAffinity is nil", func() {
+	It("should use localAffinity when globalAffinity is nil", func() {
 		localAffinity := &v1.Affinity{
 			NodeAffinity: &v1.NodeAffinity{},
 		}
 		result := MergeAffinities(localAffinity, nil, nil, false)
-		Expect(result).To(Equal(localAffinity))
+		Expect(result.NodeAffinity).To(Equal(localAffinity.NodeAffinity))
+		Expect(result.PodAntiAffinity).To(Equal(&v1.PodAntiAffinity{}))
 	})
 
 	It("should prefer local NodeAffinity over global", func() {
@@ -508,29 +549,41 @@ var _ = Describe("MergeAffinities", func() {
 		Expect(result.PodAffinity).To(Equal(global))
 	})
 
-	It("should use local PodAntiAffinity if present", func() {
-		local := &v1.PodAntiAffinity{
-			RequiredDuringSchedulingIgnoredDuringExecution: []v1.PodAffinityTerm{
-				{TopologyKey: "foo"},
+	customAntiAffinity := &v1.PodAntiAffinity{
+		RequiredDuringSchedulingIgnoredDuringExecution: []v1.PodAffinityTerm{
+			{
+				LabelSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "custom-app"}},
+				TopologyKey:   "topology.kubernetes.io/zone",
 			},
-		}
-		localAffinity := &v1.Affinity{PodAntiAffinity: local}
-		globalAffinity := &v1.Affinity{}
-		result := MergeAffinities(localAffinity, globalAffinity, nil, false)
-		Expect(result.PodAntiAffinity).To(Equal(local))
-	})
+		},
+	}
+	DescribeTable("should preserve configured PodAntiAffinity instead of adding default terms",
+		func(localAffinity, globalAffinity *v1.Affinity, expected *v1.PodAntiAffinity) {
+			localAffinity = localAffinity.DeepCopy()
+			globalAffinity = globalAffinity.DeepCopy()
+			originalLocal := localAffinity.DeepCopy()
+			originalGlobal := globalAffinity.DeepCopy()
+			want := expected.DeepCopy()
 
-	It("should use global PodAntiAffinity if local is nil", func() {
-		global := &v1.PodAntiAffinity{
-			RequiredDuringSchedulingIgnoredDuringExecution: []v1.PodAffinityTerm{
-				{TopologyKey: "bar"},
-			},
-		}
-		localAffinity := &v1.Affinity{}
-		globalAffinity := &v1.Affinity{PodAntiAffinity: global}
-		result := MergeAffinities(localAffinity, globalAffinity, nil, false)
-		Expect(result.PodAntiAffinity).To(Equal(global))
-	})
+			result := MergeAffinities(localAffinity, globalAffinity, map[string]string{"app": "my-app"}, true)
+
+			Expect(result.PodAntiAffinity).To(Equal(want))
+			Expect(localAffinity).To(Equal(originalLocal))
+			Expect(globalAffinity).To(Equal(originalGlobal))
+		},
+		Entry("local custom terms with global affinity unset",
+			&v1.Affinity{PodAntiAffinity: customAntiAffinity}, nil, customAntiAffinity),
+		Entry("global custom terms with local affinity unset",
+			nil, &v1.Affinity{PodAntiAffinity: customAntiAffinity}, customAntiAffinity),
+		Entry("local custom terms with global affinity empty",
+			&v1.Affinity{PodAntiAffinity: customAntiAffinity}, &v1.Affinity{}, customAntiAffinity),
+		Entry("global custom terms with local affinity empty",
+			&v1.Affinity{}, &v1.Affinity{PodAntiAffinity: customAntiAffinity}, customAntiAffinity),
+		Entry("local explicitly empty terms with global affinity unset",
+			&v1.Affinity{PodAntiAffinity: &v1.PodAntiAffinity{}}, nil, &v1.PodAntiAffinity{}),
+		Entry("global explicitly empty terms with local affinity unset",
+			nil, &v1.Affinity{PodAntiAffinity: &v1.PodAntiAffinity{}}, &v1.PodAntiAffinity{}),
+	)
 
 	It("should add default preferred podAntiAffinity when both are nil and label exists", func() {
 		labelMap := map[string]string{"app": "my-app"}
@@ -543,6 +596,41 @@ var _ = Describe("MergeAffinities", func() {
 		Expect(result.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution[0].PodAffinityTerm.LabelSelector.MatchLabels).To(Equal(labelMap))
 		Expect(result.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution[0].PodAffinityTerm.TopologyKey).To(Equal("kubernetes.io/hostname"))
 	})
+
+	It("should add the default podAntiAffinity terms when both affinities are unset", func() {
+		labelMap := map[string]string{"app": "my-app"}
+		result := MergeAffinities(nil, nil, labelMap, true)
+		Expect(result).ToNot(BeNil())
+		Expect(result.PodAntiAffinity).ToNot(BeNil())
+		defaultTerm := v1.PodAffinityTerm{
+			LabelSelector: &metav1.LabelSelector{MatchLabels: labelMap},
+			TopologyKey:   "kubernetes.io/hostname",
+		}
+		Expect(result.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution).To(ConsistOf(
+			v1.WeightedPodAffinityTerm{Weight: 100, PodAffinityTerm: defaultTerm}))
+		Expect(result.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution).To(ConsistOf(defaultTerm))
+	})
+
+	It("should not add the required default term unless requested", func() {
+		result := MergeAffinities(nil, nil, map[string]string{"app": "my-app"}, false)
+		Expect(result).ToNot(BeNil())
+		Expect(result.PodAntiAffinity).ToNot(BeNil())
+		Expect(result.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution).To(HaveLen(1))
+		Expect(result.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution).To(BeEmpty())
+	})
+
+	nodeAffinity := &v1.NodeAffinity{RequiredDuringSchedulingIgnoredDuringExecution: &v1.NodeSelector{}}
+	DescribeTable("should add the default podAntiAffinity terms when only one affinity is set",
+		func(localAffinity, globalAffinity *v1.Affinity) {
+			result := MergeAffinities(localAffinity, globalAffinity, map[string]string{"app": "my-app"}, true)
+			Expect(result.NodeAffinity).To(Equal(nodeAffinity))
+			Expect(result.PodAntiAffinity).ToNot(BeNil())
+			Expect(result.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution).To(HaveLen(1))
+			Expect(result.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution).To(HaveLen(1))
+		},
+		Entry("global only", nil, &v1.Affinity{NodeAffinity: nodeAffinity}),
+		Entry("local only", &v1.Affinity{NodeAffinity: nodeAffinity}, nil),
+	)
 })
 
 var _ = Describe("PodDisruptionBudgetForKAIConfig", func() {

@@ -83,50 +83,56 @@ func checkMaxPodsWithGpuGroupReservation(
 		return common_info.NewFitError(task.Name, task.Namespace, node.Name, api.NodePodNumberExceeded)
 	}
 
-	needsNewGpuGroup := willCreateNewGpuGroup(task, node, ssn)
-	if !needsNewGpuGroup {
+	newGpuGroups := newGpuGroupsCount(task, node, ssn)
+	if newGpuGroups == 0 {
 		return nil
 	}
 
-	if availablePods < 2 {
+	// The binder creates one reservation pod per new GPU group, on top of the task pod itself.
+	if availablePods < float64(1+newGpuGroups) {
 		return common_info.NewFitError(task.Name, task.Namespace, node.Name, api.NodePodNumberExceeded)
 	}
 
 	return nil
 }
 
-// willCreateNewGpuGroup determines if allocating this task will create a new GPU group
-// and thus require a new reservation pod.
-func willCreateNewGpuGroup(task *pod_info.PodInfo, node *node_info.NodeInfo, ssn *framework.Session) bool {
+// newGpuGroupsCount returns how many new GPU groups, and thus new reservation pods,
+// allocating this task on the node would create.
+func newGpuGroupsCount(task *pod_info.PodInfo, node *node_info.NodeInfo, ssn *framework.Session) int {
+	// Without a concrete assignment, assume every requested device opens a new group.
+	upperBound := int(task.GpuRequirement.GetNumOfGpuDevices())
+	if upperBound < 1 {
+		upperBound = 1
+	}
+
 	if ssn == nil {
-		return true
+		return upperBound
 	}
 
 	fittingGPUs := ssn.FittingGPUs(node, task)
 	gpuForSharingImmediate := gpu_sharing.GetNodePreferableGpuForSharing(fittingGPUs, node, task, false)
 
 	if gpuForSharingImmediate != nil && !gpuForSharingImmediate.IsReleasing {
-		return containsNewGpuGroup(gpuForSharingImmediate.GroupIDs())
+		return countNewGpuGroups(gpuForSharingImmediate.GroupIDs())
 	}
 
 	gpuForSharingPipelined := gpu_sharing.GetNodePreferableGpuForSharing(fittingGPUs, node, task, true)
 
 	if gpuForSharingPipelined != nil {
-		return containsNewGpuGroup(gpuForSharingPipelined.GroupIDs())
+		return countNewGpuGroups(gpuForSharingPipelined.GroupIDs())
 	}
 
-	// No GPU assignment possible - conservatively assume new group would be needed
-	return true
+	return upperBound
 }
 
-// containsNewGpuGroup checks if any of the GPU groups is a newly created one (UUID format).
-func containsNewGpuGroup(groups []string) bool {
+func countNewGpuGroups(groups []string) int {
+	count := 0
 	for _, gpuGroup := range groups {
 		if isNewGpuGroup(gpuGroup) {
-			return true
+			count++
 		}
 	}
-	return false
+	return count
 }
 
 // isNewGpuGroup determines if a GPU group ID represents a new group (UUID) vs an existing one (numeric).

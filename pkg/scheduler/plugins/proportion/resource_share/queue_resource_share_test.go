@@ -113,6 +113,14 @@ func TestQueueResourceShare_AddResourceShare(t *testing.T) {
 	assert.Equal(t, float64(17), qrs.GPU.FairShare)
 }
 
+func TestQueueResourceShare_SetFairShare(t *testing.T) {
+	qrs := createQueueResourceShare()
+	assert.Equal(t, float64(16), qrs.GetFairShare()[GpuResource])
+	qrs.SetFairShare(GpuResource, 4)
+	assert.Equal(t, float64(4), qrs.GPU.FairShare)
+	assert.Equal(t, float64(4), qrs.GetFairShare()[GpuResource])
+}
+
 func TestQueueResourceShare_SetQuotaResources(t *testing.T) {
 	qrs := createQueueResourceShare()
 	qrs.SetQuotaResources(CpuResource, 8.8, 9.9, 1.1)
