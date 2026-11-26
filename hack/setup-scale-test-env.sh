@@ -44,16 +44,27 @@ kubectl apply -f "https://github.com/kubernetes-sigs/kwok/releases/download/${KW
 kubectl apply --server-side -f https://github.com/run-ai/kwok-operator/releases/download/1.0.4/kwok-operator.yaml
 if [[ "$gpu_provider" == mokka ]]; then
   kubectl wait --for=condition=Established crd/nodepools.kwok.sigs.run-ai.com --timeout=90s
+  # On a fresh cluster, the API can accept pools before the operator starts.
+  if ! kubectl rollout status -n kwok-operator deployment/kwok-operator-kwok-operator --timeout=10m; then
+    kubectl get pods -n kwok-operator -o wide >&2
+    kubectl get events -n kwok-operator --field-selector type=Warning >&2
+    exit 1
+  fi
 fi
 kubectl apply -f "${SCALE_DIR}/base_kwok_managed_nodepool.yaml"
 
 # KWOK operator 1.0.4 can leave a new zero-size pool in Updating. Let it
 # reconcile the template's initial Node before scaling this pool back to zero.
 wait_for_managed_pool() {
-  local generation
-  generation=$(kubectl get nodepool managed-nodepool -o jsonpath='{.metadata.generation}') || return 1
-  kubectl wait nodepool/managed-nodepool --for="jsonpath={.status.observedGeneration}=$generation" --timeout=3m &&
-    kubectl wait nodepool/managed-nodepool --for=condition=Available --timeout=3m
+  local pool=nodepools.kwok.sigs.run-ai.com/managed-nodepool generation
+  generation=$(kubectl get "$pool" -o jsonpath='{.metadata.generation}') || return 1
+  if kubectl wait "$pool" --for="jsonpath={.status.observedGeneration}=$generation" --timeout=3m &&
+     kubectl wait "$pool" --for=condition=Available --timeout=3m; then
+    return 0
+  fi
+  kubectl get "$pool" -o jsonpath='{.status}{"\n"}' >&2
+  kubectl logs -n kwok-operator deployment/kwok-operator-kwok-operator -c manager --tail=30 >&2
+  return 1
 }
 if [[ "$gpu_provider" == mokka ]]; then
   wait_for_managed_pool || exit 1
