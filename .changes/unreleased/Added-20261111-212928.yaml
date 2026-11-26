@@ -1,0 +1,6 @@
+kind: Added
+body: |-
+  Alpha `nodeassignment` scheduler plugin (off by default): nodes labeled `kai.scheduler/assigned-queue=<queue>` are preferred by that queue's pods and avoided by other queues' pods
+custom:
+  Author: "amitaekbote"
+  Issue: "2465"

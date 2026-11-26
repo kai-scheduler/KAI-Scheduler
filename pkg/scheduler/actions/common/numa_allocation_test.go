@@ -20,6 +20,6 @@ func TestNumaSolveFailurePreservesPlacement(t *testing.T) {
 	session := &framework.Session{NumaPlacementFn: func(*pod_info.PodInfo, *node_info.NodeInfo) (pod_info.NUMAPlacement, error) {
 		return pod_info.NUMAPlacement{}, errors.New("insufficient memory group capacity")
 	}}
-	require.False(t, allocateTaskToNode(session, nil, task, &node_info.NodeInfo{Name: "node"}, false))
+	require.False(t, allocateTaskToNode(session, nil, task, &node_info.NodeInfo{Name: "node"}, false, false))
 	require.True(t, task.NUMAPlacement.Equal(previous))
 }

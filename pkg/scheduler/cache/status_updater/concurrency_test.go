@@ -24,6 +24,7 @@ import (
 	faketesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/record"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	kubeaischedfake "github.com/kai-scheduler/api/client/clientset/versioned/fake"
 	fakeschedulingv2alpha2 "github.com/kai-scheduler/api/client/clientset/versioned/typed/scheduling/v2alpha2/fake"
 	enginev2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
@@ -32,6 +33,29 @@ import (
 const (
 	nodePoolLabelKey = "kai.scheduler/node-pool"
 )
+
+func TestIsTerminalUpdateError(t *testing.T) {
+	groupResource := schema.GroupResource{Group: "scheduling.run.ai", Resource: "podgroups"}
+	terminal := []error{
+		apierrors.NewNotFound(groupResource, "pg"),
+		apierrors.NewConflict(groupResource, "pg", errors.New("modified")),
+		apierrors.NewForbidden(groupResource, "pg", errors.New("denied")),
+	}
+	for _, err := range terminal {
+		if !isTerminalUpdateError(err) {
+			t.Fatalf("expected terminal error, got %v", err)
+		}
+	}
+	retryable := []error{
+		errors.New("temporary"),
+		apierrors.NewTimeoutError("slow", 1),
+	}
+	for _, err := range retryable {
+		if isTerminalUpdateError(err) {
+			t.Fatalf("expected retryable error, got %v", err)
+		}
+	}
+}
 
 func TestConcurrency(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -222,6 +246,86 @@ var _ = Describe("Status Updater Concurrency - large scale: increase queue size"
 		case <-time.After(100 * time.Millisecond):
 			// Expected - queue is empty, meaning no retry was scheduled
 		}
+	})
+
+	It("updatePodGroup - No retry after Forbidden error", func() {
+		updateStatusCalls := 0
+
+		kubeAiSchedClient.SchedulingV2alpha2().(*fakeschedulingv2alpha2.FakeSchedulingV2alpha2).PrependReactor(
+			"update", "podgroups", func(action faketesting.Action) (handled bool, ret runtime.Object, err error) {
+				if updateAction, ok := action.(faketesting.UpdateAction); ok && updateAction.GetSubresource() == "status" {
+					updateStatusCalls++
+					return true, nil, apierrors.NewForbidden(
+						schema.GroupResource{Group: "scheduling.run.ai", Resource: "podgroups"},
+						"test-pg",
+						errors.New("podgroups is forbidden"),
+					)
+				}
+				return false, nil, nil
+			},
+		)
+
+		job := &enginev2alpha2.PodGroup{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-pg",
+				Namespace: "test-ns",
+				UID:       "test-uid",
+			},
+		}
+		key := statusUpdater.keyForPodGroupPayload(job.Name, job.Namespace, job.UID)
+		updateData := &inflightUpdate{
+			object:       job,
+			updateStatus: true,
+		}
+		statusUpdater.inFlightPodGroups.Store(key, updateData)
+		statusUpdater.Run(make(chan struct{}))
+
+		statusUpdater.updatePodGroup(context.Background(), key, updateData)
+
+		Expect(updateStatusCalls).To(Equal(1), "UpdateStatus should be called once")
+		_, inFlightExists := statusUpdater.inFlightPodGroups.Load(key)
+		Expect(inFlightExists).To(BeFalse(), "In-flight update should be dropped after Forbidden error")
+		_, appliedExists := statusUpdater.appliedPodGroupUpdates.Load(key)
+		Expect(appliedExists).To(BeFalse(), "Update should not be in applied cache after Forbidden error")
+
+		select {
+		case <-statusUpdater.updateQueueOut:
+			Fail("Update queue should be empty - no retry should be queued for Forbidden errors")
+		case <-time.After(100 * time.Millisecond):
+		}
+	})
+
+	It("updatePod - Drops in-flight update after Forbidden error and does not retry", func() {
+		previousInfraLogger := log.InfraLogger
+		previousStatusLogger := log.StatusUpdaterLogger
+		defer func() {
+			log.InfraLogger = previousInfraLogger
+			log.StatusUpdaterLogger = previousStatusLogger
+		}()
+		Expect(log.InitLoggers(6, false)).To(Succeed())
+		patchCalls := 0
+		kubeClient.CoreV1().(*fakecorev1.FakeCoreV1).PrependReactor(
+			"patch", "pods", func(action faketesting.Action) (handled bool, ret runtime.Object, err error) {
+				patchCalls++
+				return true, nil, apierrors.NewForbidden(
+					schema.GroupResource{Resource: "pods"}, "test-pod", errors.New("pods is forbidden"),
+				)
+			},
+		)
+
+		pod := &v1.Pod{ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod",
+			Namespace: "test-ns",
+			UID:       "test-uid",
+		}}
+		key := statusUpdater.keyForPodLabelsPayload(pod.Name, pod.Namespace, pod.UID)
+		statusUpdater.inFlightPods.Store(key, &inflightUpdate{object: pod})
+
+		statusUpdater.updatePod(context.Background(), key, []byte(`{"metadata":{"labels":{"foo":"bar"}}}`), nil, pod)
+
+		Expect(patchCalls).To(Equal(1), "Patch should be attempted once")
+		_, inFlightExists := statusUpdater.inFlightPods.Load(key)
+		Expect(inFlightExists).To(BeFalse(), "In-flight update should be dropped after Forbidden error")
 	})
 
 	It("updatePod - Drops in-flight update after NotFound error on a deleted pod", func() {

@@ -108,6 +108,10 @@ func (ssn *Session) AddPreemptVictimFilterFn(pf api.VictimFilterFn) {
 	ssn.PreemptVictimFilterFns = append(ssn.PreemptVictimFilterFns, pf)
 }
 
+func (ssn *Session) AddConsolidationVictimFilterFn(cf api.VictimFilterFn) {
+	ssn.ConsolidationVictimFilterFns = append(ssn.ConsolidationVictimFilterFns, cf)
+}
+
 func (ssn *Session) AddCanReclaimResourcesFn(crf api.CanReclaimResourcesFn) {
 	ssn.CanReclaimResourcesFns = append(ssn.CanReclaimResourcesFns, crf)
 }
@@ -205,6 +209,16 @@ func (ssn *Session) ReclaimScenarioValidatorFn(scenario api.ScenarioInfo) bool {
 func (ssn *Session) PreemptVictimFilter(preemptor *podgroup_info.PodGroupInfo, victim *podgroup_info.PodGroupInfo) bool {
 	for _, pf := range ssn.PreemptVictimFilterFns {
 		if !pf(preemptor, victim) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (ssn *Session) ConsolidationVictimFilter(preemptor *podgroup_info.PodGroupInfo, victim *podgroup_info.PodGroupInfo) bool {
+	for _, cf := range ssn.ConsolidationVictimFilterFns {
+		if !cf(preemptor, victim) {
 			return false
 		}
 	}
@@ -454,6 +468,7 @@ func logNodeSetsPluginResult(subsetNodesFn api.SubsetNodesFn, podGroup *podgroup
 }
 
 func (ssn *Session) PrePredicateFn(task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo) error {
+	ssn.dropAffinityState(task.Pod.UID)
 	for _, prePredicate := range ssn.PrePredicateFns {
 		err := prePredicate(task, job)
 		if err != nil {

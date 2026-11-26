@@ -42,6 +42,20 @@ func (m *MockInterface) EXPECT() *MockInterfaceMockRecorder {
 	return m.recorder
 }
 
+// IsReservationPod mocks base method.
+func (m *MockInterface) IsReservationPod(pod *v1.Pod) bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsReservationPod", pod)
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// IsReservationPod indicates an expected call of IsReservationPod.
+func (mr *MockInterfaceMockRecorder) IsReservationPod(pod any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsReservationPod", reflect.TypeOf((*MockInterface)(nil).IsReservationPod), pod)
+}
+
 // RemovePodGpuGroupsConnection mocks base method.
 func (m *MockInterface) RemovePodGpuGroupsConnection(ctx context.Context, pod *v1.Pod) error {
 	m.ctrl.T.Helper()

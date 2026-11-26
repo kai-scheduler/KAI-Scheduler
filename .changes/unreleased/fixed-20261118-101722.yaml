@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Pod-grouper logs pod and owner references instead of full objects, keeping env values out of its logs
+custom:
+  Author: "vrv3814"
+  Issue: "2715"
