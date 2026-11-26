@@ -1299,31 +1299,15 @@ func TestCalcPodGroupPreemptionDelay(t *testing.T) {
 	}
 }
 
-func TestGetPodGroupMetadata_DoesNotInheritLastAppliedConfiguration(t *testing.T) {
-	kubeClient := fake.NewFakeClient(priorityClassObj(constants.TrainPriorityClass, 1000))
-	lastApplied := `{"apiVersion":"batch/v1","kind":"Job","metadata":{"name":"test_name"}}`
-	owner := &unstructured.Unstructured{
-		Object: map[string]interface{}{
-			"kind":       "test_kind",
-			"apiVersion": "test_version",
-			"metadata": map[string]interface{}{
-				"name":      "test_name",
-				"namespace": "test_namespace",
-				"uid":       "1",
-				"annotations": map[string]interface{}{
-					v1.LastAppliedConfigAnnotation: lastApplied,
-					"test_annotation":              "test_value",
-				},
-			},
-		},
-	}
+func TestCalcPodGroupAnnotations_SkipsLastAppliedConfiguration(t *testing.T) {
+	owner := &unstructured.Unstructured{}
+	owner.SetAnnotations(map[string]string{
+		v1.LastAppliedConfigAnnotation: `{"kind":"Job"}`,
+		"test_annotation":              "test_value",
+	})
 
-	defaultGrouper := NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, kubeClient)
-	defaultGrouper.SetDefaultConfigPerTypeConfigMapParams("", "")
-	podGroupMetadata, err := defaultGrouper.GetPodGroupMetadata(owner, &v1.Pod{}, convertOwnerToPartial(owner))
+	annotations := NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, nil).CalcPodGroupAnnotations(owner, &v1.Pod{})
 
-	assert.Nil(t, err)
-	assert.NotContains(t, podGroupMetadata.Annotations, v1.LastAppliedConfigAnnotation)
-	assert.Equal(t, "test_value", podGroupMetadata.Annotations["test_annotation"])
-	assert.Equal(t, lastApplied, owner.GetAnnotations()[v1.LastAppliedConfigAnnotation])
+	assert.NotContains(t, annotations, v1.LastAppliedConfigAnnotation)
+	assert.Equal(t, "test_value", annotations["test_annotation"])
 }
