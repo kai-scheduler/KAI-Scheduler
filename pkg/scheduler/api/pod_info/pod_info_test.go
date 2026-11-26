@@ -739,15 +739,13 @@ func TestRequiresGPUNode_AdminAccessClaim(t *testing.T) {
 		Status: v1.PodStatus{Phase: v1.PodPending},
 	}
 
-	pi := NewTaskInfo(pod, resource_info.NewResourceVectorMap(), TaskInfoOptions{
-		DraPodClaims: []*resourceapi.ResourceClaim{claim},
-	})
+	pi := NewTaskInfo(pod, []*resourceapi.ResourceClaim{claim}, resource_info.NewResourceVectorMap())
 	assert.Assert(t, pi.HasDRAGPUClaim)
 	assert.Assert(t, pi.RequiresGPUNode(), "an admin access GPU claim still needs a GPU node")
 	assert.Assert(t, pi.Clone().RequiresGPUNode())
 
 	cpuPod := NewTaskInfo(&v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "p2", Namespace: "ns1"}},
-		resource_info.NewResourceVectorMap())
+		nil, resource_info.NewResourceVectorMap())
 	assert.Assert(t, !cpuPod.RequiresGPUNode())
 }
 
