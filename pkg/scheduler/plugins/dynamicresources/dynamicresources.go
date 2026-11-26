@@ -276,28 +276,7 @@ func (drap *draPlugin) filter(task *pod_info.PodInfo, _ *podgroup_info.PodGroupI
 		return nil
 	}
 
-	allocatedState, err := drap.manager.ResourceClaims().GatherAllocatedState()
-	if err != nil {
-		return fmt.Errorf("failed to gather allocated device state: %v", err)
-	}
-
-	slices, err := drap.manager.ResourceSlices().ListWithDeviceTaintRules()
-	if err != nil {
-		return fmt.Errorf("failed to list resource slices: %v", err)
-	}
-
-	allocator, err := structured.NewAllocator(
-		context.Background(), drap.allocatorFeatures,
-		*allocatedState,
-		drap.manager.DeviceClasses(),
-		slices,
-		drap.celCache,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create allocator: %v", err)
-	}
-
-	results, err := allocator.Allocate(context.Background(), nodeInfo.Node, claimsToAllocate)
+	results, err := drap.allocate(nodeInfo.Node, claimsToAllocate)
 	if err != nil {
 		return fmt.Errorf("cannot allocate DRA claims on node %s: %v", nodeInfo.Name, err)
 	}
