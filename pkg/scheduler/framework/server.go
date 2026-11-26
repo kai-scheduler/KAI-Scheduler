@@ -6,9 +6,11 @@ package framework
 import (
 	"fmt"
 	"net/http"
+	"sync"
 )
 
 type PluginServer struct {
+	mu                sync.RWMutex
 	registeredPlugins map[string]func(http.ResponseWriter, *http.Request)
 	mux               *http.ServeMux
 }
@@ -30,13 +32,19 @@ func (ps *PluginServer) registerPlugin(path string, handler func(http.ResponseWr
 		return fmt.Errorf("server not initialized")
 	}
 
+	// Handlers are re-registered on every session while the server is handling requests.
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
 	ps.registeredPlugins[path] = handler
 	return nil
 }
 
 func (ps *PluginServer) handlePlugin(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
+	// Unlock before serving: a slow handler must not block the next session's registration.
+	ps.mu.RLock()
 	handler, ok := ps.registeredPlugins[path]
+	ps.mu.RUnlock()
 	if !ok {
 		http.Error(w, "plugin not found", http.StatusNotFound)
 		return

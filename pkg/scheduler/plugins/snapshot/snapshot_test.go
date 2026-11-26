@@ -7,6 +7,7 @@ import (
 	"archive/zip"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -14,15 +15,19 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
 	v1 "k8s.io/api/core/v1"
 	resourcev1beta1 "k8s.io/api/resource/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	version "k8s.io/apimachinery/pkg/version"
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 	"k8s.io/utils/ptr"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/cluster_info/data_lister"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	kubeaischedulerver "github.com/kai-scheduler/api/client/clientset/versioned/fake"
@@ -200,6 +205,11 @@ func TestSnapshotPlugin(t *testing.T) {
 	schedulerCache.Run(ctx.Done())
 	schedulerCache.WaitForCacheSync(ctx.Done())
 
+	// One unavailable API group must not drop the resources of the groups that were discovered.
+	fakeDiscoveryClient.PrependReactor("get", "resource", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, errors.New("metrics.k8s.io/v1beta1: the server is currently unable to handle the request")
+	})
+
 	session := &framework.Session{
 		Config:          schedulerConfig,
 		SchedulerParams: schedulerParams,
@@ -282,4 +292,20 @@ func TestSnapshotPlugin(t *testing.T) {
 	assert.Equal(t, "32+", snapshot.Discovery.ServerVersion.Minor)
 	assert.Len(t, snapshot.Discovery.Resources, 1)
 	assert.Equal(t, resourcev1beta1.SchemeGroupVersion.String(), snapshot.Discovery.Resources[0].GroupVersion)
+}
+
+func TestSnapshotPluginListerError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	lister := data_lister.NewMockDataLister(ctrl)
+	lister.EXPECT().ListPods().Return(nil, errors.New("lister failed"))
+	schedulerCache := cache.NewMockCache(ctrl)
+	schedulerCache.EXPECT().GetDataLister().Return(lister)
+
+	plugin := New(nil)
+	plugin.OnSessionOpen(&framework.Session{Cache: schedulerCache})
+	w := httptest.NewRecorder()
+	plugin.(*snapshotPlugin).serveSnapshot(w, httptest.NewRequest("GET", "/get-snapshot", nil))
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	assert.Contains(t, w.Body.String(), "listing pods: lister failed")
 }
