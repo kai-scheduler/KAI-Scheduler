@@ -139,6 +139,7 @@ func (pp *predicatesPlugin) OnSessionOpen(ssn *framework.Session) {
 	topologySpreadValidator := pp.topologySpreadScenarioValidator(k8sPredicates)
 	ssn.AddReclaimScenarioValidatorFn(topologySpreadValidator)
 	ssn.AddPreemptScenarioValidatorFn(topologySpreadValidator)
+	ssn.AddConsolidationScenarioValidatorFn(topologySpreadValidator)
 
 	ssn.AddPredicateFn(func(task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo) error {
 		return pp.evaluateTaskOnPredicates(task, job, node, k8sPredicates,

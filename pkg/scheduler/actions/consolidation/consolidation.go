@@ -117,7 +117,9 @@ func attemptToConsolidatePreemptor(
 	feasibleNodes := common.FeasibleNodesForJob(maps.Values(ssn.ClusterInfo.Nodes), preemptor)
 	solver := solvers.NewJobsSolver(
 		feasibleNodes,
-		allPodsReallocated,
+		func(scenario api.ScenarioInfo) bool {
+			return allPodsReallocated(scenario) && ssn.ConsolidationScenarioValidator(scenario)
+		},
 		getOrderedVictimsQueue(ssn, preemptor),
 		framework.Consolidation,
 		actionBudget)

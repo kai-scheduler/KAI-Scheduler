@@ -124,6 +124,10 @@ func (ssn *Session) AddPreemptScenarioValidatorFn(rf api.ScenarioValidatorFn) {
 	ssn.PreemptScenarioValidatorFns = append(ssn.PreemptScenarioValidatorFns, rf)
 }
 
+func (ssn *Session) AddConsolidationScenarioValidatorFn(rf api.ScenarioValidatorFn) {
+	ssn.ConsolidationScenarioValidatorFns = append(ssn.ConsolidationScenarioValidatorFns, rf)
+}
+
 func (ssn *Session) AddReclaimVictimFilterFn(rf api.VictimFilterFn) {
 	ssn.ReclaimVictimFilterFns = append(ssn.ReclaimVictimFilterFns, rf)
 }
@@ -231,6 +235,18 @@ func (ssn *Session) PreemptScenarioValidator(
 ) bool {
 	for _, pf := range ssn.PreemptScenarioValidatorFns {
 		if !pf(scenario) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (ssn *Session) ConsolidationScenarioValidator(
+	scenario api.ScenarioInfo,
+) bool {
+	for _, cf := range ssn.ConsolidationScenarioValidatorFns {
+		if !cf(scenario) {
 			return false
 		}
 	}
