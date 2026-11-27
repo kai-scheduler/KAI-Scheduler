@@ -1,0 +1,6 @@
+kind: Changed
+body: |-
+  Speed up binder GPU reservation cleanup with indexed Pod and BindRequest lookups
+custom:
+  Author: "enoodle"
+  Issue: "2805"
