@@ -220,6 +220,77 @@ var _ = Describe("DRA GPU Extraction", func() {
 				Expect(count).To(Equal(int64(0))) // Unknown mode skipped
 			})
 		})
+		Context("when GPU requests use admin access", func() {
+			adminRequest := func(name string, mode resourceapi.DeviceAllocationMode, count int64) resourceapi.DeviceRequest {
+				return resourceapi.DeviceRequest{
+					Name: name,
+					Exactly: &resourceapi.ExactDeviceRequest{
+						DeviceClassName: "nvidia.com/gpu",
+						AllocationMode:  mode,
+						Count:           count,
+						AdminAccess:     ptr.To(true),
+					},
+				}
+			}
+
+			It("should not count an ExactCount admin access request", func() {
+				claim := &resourceapi.ResourceClaim{
+					Spec: resourceapi.ResourceClaimSpec{
+						Devices: resourceapi.DeviceClaim{
+							Requests: []resourceapi.DeviceRequest{
+								adminRequest("validation-gpu", resourceapi.DeviceAllocationModeExactCount, 1),
+							},
+						},
+					},
+				}
+
+				count, err := countGPUDevicesFromClaim(claim)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(count).To(Equal(int64(0)))
+			})
+
+			It("should not count an All admin access request", func() {
+				claim := &resourceapi.ResourceClaim{
+					Spec: resourceapi.ResourceClaimSpec{
+						Devices: resourceapi.DeviceClaim{
+							Requests: []resourceapi.DeviceRequest{
+								adminRequest("admin-gpus", resourceapi.DeviceAllocationModeAll, 0),
+							},
+						},
+					},
+				}
+
+				count, err := countGPUDevicesFromClaim(claim)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(count).To(Equal(int64(0)))
+			})
+
+			It("should count only the non-admin requests of a mixed claim", func() {
+				claim := &resourceapi.ResourceClaim{
+					Spec: resourceapi.ResourceClaimSpec{
+						Devices: resourceapi.DeviceClaim{
+							Requests: []resourceapi.DeviceRequest{
+								adminRequest("admin-gpus", resourceapi.DeviceAllocationModeAll, 0),
+								{
+									Name: "gpu",
+									Exactly: &resourceapi.ExactDeviceRequest{
+										DeviceClassName: "nvidia.com/gpu",
+										AllocationMode:  resourceapi.DeviceAllocationModeExactCount,
+										Count:           2,
+										AdminAccess:     ptr.To(false),
+									},
+								},
+							},
+						},
+					},
+				}
+
+				count, err := countGPUDevicesFromClaim(claim)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(count).To(Equal(int64(2)))
+			})
+
+		})
 	})
 
 	Describe("ExtractDRAGPUResources", func() {
