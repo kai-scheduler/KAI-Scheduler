@@ -494,5 +494,175 @@ func getReclaimGpuMemoryTestsMetadata() []integration_tests_utils.TestTopologyMe
 				},
 			},
 		},
+		{
+			// 320 MiB fits only on node0 (800 MiB/GPU), where it costs 0.4 GPU of queue1's 1 GPU.
+			// Priced on the smallest GPU in the cluster (160 MiB) it would cost 2 GPUs.
+			TestTopologyBasic: test_utils.TestTopologyBasic{
+				Name: "reclaim a large GPU for a gpu memory request while a smaller GPU is idle",
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:                "q0_borrower",
+						RequiredGPUsPerTask: 1,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "queue0",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								NodeName: "node0",
+								State:    pod_status.Running,
+							},
+						},
+					},
+					{
+						Name:              "q1_pending",
+						RequiredGpuMemory: 320,
+						Priority:          constants.PriorityTrainNumber,
+						QueueName:         "queue1",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								State: pod_status.Pending,
+							},
+						},
+					},
+				},
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node0": {GPUs: 1, GPUMemory: 800},
+					"node1": {GPUs: 1, GPUMemory: 160},
+				},
+				Queues: []test_utils.TestQueueBasic{
+					{
+						Name:               "queue0",
+						DeservedGPUs:       0,
+						GPUOverQuotaWeight: 1,
+					},
+					{
+						Name:         "queue1",
+						DeservedGPUs: 1,
+					},
+				},
+				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"q0_borrower": {
+						Status:       pod_status.Pipelined,
+						NodeName:     "node1",
+						GPUsRequired: 1,
+					},
+					"q1_pending": {
+						Status:               pod_status.Pipelined,
+						NodeName:             "node0",
+						GPUsRequired:         0,
+						DontValidateGPUGroup: true,
+					},
+				},
+				Mocks: &test_utils.TestMock{
+					CacheRequirements: &test_utils.CacheMocking{
+						NumberOfCacheEvictions:  1,
+						NumberOfPipelineActions: 2,
+					},
+				},
+			},
+		},
+		{
+			// queue1 already uses 0.5 GPU of its 1 GPU fair share. q1_pending may only run on node0,
+			// where 320 MiB costs 0.8 GPU, so reclaiming node0 would take queue1 to 1.3 GPUs.
+			// Priced on the largest GPU in the cluster it would cost 0.4 GPU.
+			TestTopologyBasic: test_utils.TestTopologyBasic{
+				Name: "no reclaim when a gpu memory request costs more than the fair share on its node",
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:                "q1_running",
+						RequiredGPUsPerTask: 0.5,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "queue1",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								NodeName:  "node1",
+								State:     pod_status.Running,
+								GPUGroups: []string{"0"},
+							},
+						},
+					},
+					{
+						Name:                "q0_node0",
+						RequiredGPUsPerTask: 1,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "queue0",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								NodeName: "node0",
+								State:    pod_status.Running,
+							},
+						},
+					},
+					{
+						Name:                "q0_node2",
+						RequiredGPUsPerTask: 1,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "queue0",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								NodeName: "node2",
+								State:    pod_status.Running,
+							},
+						},
+					},
+					{
+						Name:                "q2_pending",
+						RequiredGPUsPerTask: 1,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "queue2",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								State:             pod_status.Pending,
+								NodeAffinityNames: []string{"missing-node"},
+							},
+						},
+					},
+					{
+						Name:              "q1_pending",
+						RequiredGpuMemory: 320,
+						Priority:          constants.PriorityTrainNumber,
+						QueueName:         "queue1",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								State:             pod_status.Pending,
+								NodeAffinityNames: []string{"node0"},
+							},
+						},
+					},
+				},
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node0": {GPUs: 1, GPUMemory: 400},
+					"node1": {GPUs: 1, GPUMemory: 800},
+					"node2": {GPUs: 1, GPUMemory: 800},
+				},
+				Queues: []test_utils.TestQueueBasic{
+					{
+						Name:               "queue0",
+						DeservedGPUs:       0,
+						GPUOverQuotaWeight: 1,
+					},
+					{
+						Name:         "queue1",
+						DeservedGPUs: 1,
+					},
+					{
+						Name:         "queue2",
+						DeservedGPUs: 1,
+					},
+				},
+				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"q0_node0": {
+						Status:       pod_status.Running,
+						NodeName:     "node0",
+						GPUsRequired: 1,
+					},
+					"q1_pending": {
+						Status: pod_status.Pending,
+					},
+				},
+				Mocks: &test_utils.TestMock{
+					CacheRequirements: &test_utils.CacheMocking{},
+				},
+			},
+		},
 	}
 }

@@ -62,6 +62,8 @@ type proportionPlugin struct {
 	relcaimerSaturationMultiplier float64
 	kValue                        float64
 	minNodeGPUMemory              *int64
+	maxNodeGPUMemory              *int64
+	clusterInfo                   *api.ClusterInfo
 	queuePriorityInQuotaReclaim   bool
 	// lastSemiPreemptibleCore tracks the not-preemptible (core) resource vector last applied to the queues
 	// for each semi-preemptible job, so allocate/deallocate events apply only the delta as pods flip
@@ -112,6 +114,8 @@ func (pp *proportionPlugin) OnSessionOpen(ssn *framework.Session) {
 	pp.subGroupOrderFn = ssn.SubGroupOrderFn
 	pp.taskOrderFunc = ssn.TaskOrderFn
 	pp.minNodeGPUMemory = ssn.ClusterInfo.MinNodeGPUMemoryMiB
+	pp.maxNodeGPUMemory = ssn.ClusterInfo.MaxNodeGPUMemoryMiB
+	pp.clusterInfo = ssn.ClusterInfo
 	pp.calculateResourcesProportion(ssn)
 	pp.reclaimablePlugin = rec.New(pp.relcaimerSaturationMultiplier, pp.queuePriorityInQuotaReclaim)
 	capacityPolicy := cp.New(pp.queues, ssn.ClusterInfo.MaxNodeGPUMemoryMiB)
@@ -148,8 +152,12 @@ func (pp *proportionPlugin) OnJobSolutionStartFn() {
 	}
 }
 
+// CanReclaimResourcesFn and reclaimVictimFilterFn run before the reclaimer has a node, so they charge
+// GPU-memory requests on the largest GPU in the cluster. reclaimableFn charges them on the GPUs the
+// scenario placed them on.
 func (pp *proportionPlugin) CanReclaimResourcesFn(reclaimer *podgroup_info.PodGroupInfo) bool {
 	reclaimerInfo := pp.buildReclaimerInfo(reclaimer, pp.minNodeGPUMemory, podgroup_info.PartialTaskAllocation)
+	pp.chargeGpuMemory(reclaimer, &reclaimerInfo, pp.largestGpuMemory)
 	return pp.reclaimablePlugin.CanReclaimResources(pp.queues, &reclaimerInfo)
 }
 
@@ -157,15 +165,19 @@ func (pp *proportionPlugin) reclaimVictimFilterFn(
 	reclaimer *podgroup_info.PodGroupInfo, victim *podgroup_info.PodGroupInfo,
 ) bool {
 	reclaimerInfo := pp.buildReclaimerInfo(reclaimer, pp.minNodeGPUMemory, podgroup_info.PartialTaskAllocation)
+	pp.chargeGpuMemory(reclaimer, &reclaimerInfo, pp.largestGpuMemory)
 	return pp.reclaimablePlugin.FilterVictim(pp.queues, &reclaimerInfo, victim.Queue)
 }
 
 func (pp *proportionPlugin) reclaimableFn(
 	scenario api.ScenarioInfo,
 ) bool {
-	reclaimerInfo := pp.buildReclaimerInfo(
-		scenario.GetPreemptor(), pp.minNodeGPUMemory, podgroup_info.PartialTaskAllocation,
-	)
+	reclaimer := scenario.GetPreemptor()
+	reclaimerInfo := pp.buildReclaimerInfo(reclaimer, pp.minNodeGPUMemory, podgroup_info.PartialTaskAllocation)
+	if pp.chargeGpuMemory(reclaimer, &reclaimerInfo, pp.placedGpuMemory(reclaimer)) &&
+		!pp.reclaimablePlugin.CanReclaimResources(pp.jobSimulationQueues, &reclaimerInfo) {
+		return false
+	}
 	totalVictimsResources := make(map[common_info.QueueID][]resource_info.ResourceVector)
 	victims := scenario.GetVictims()
 	for _, victim := range victims {
@@ -392,6 +404,57 @@ func (pp *proportionPlugin) buildReclaimerInfo(
 		RequiredResources: podgroup_info.GetTasksToAllocateInitResourceVector(reclaimer, pp.subGroupOrderFn, pp.taskOrderFunc,
 			allocationMode, minNodeGPUMemory),
 		VectorMap: reclaimer.VectorMap,
+	}
+}
+
+// chargeGpuMemory recomputes the GPUs charged for the reclaimer's GPU-memory requests, dividing each
+// request by gpuMemoryOf(task) instead of the smallest GPU in the cluster. It reports whether the
+// reclaimer has GPU-memory requests.
+//
+// It walks the same cached task list that RequiredResources was summed from. In a scenario the
+// simulation has already moved those tasks to Pipelined, so they are not filtered by status again.
+func (pp *proportionPlugin) chargeGpuMemory(
+	reclaimer *podgroup_info.PodGroupInfo, reclaimerInfo *rec.ReclaimerInfo,
+	gpuMemoryOf func(task *pod_info.PodInfo) int64,
+) bool {
+	if pp.minNodeGPUMemory == nil {
+		return false
+	}
+	hasGpuMemoryRequests := false
+	for _, task := range podgroup_info.GetTasksToAllocate(reclaimer, pp.subGroupOrderFn, pp.taskOrderFunc,
+		podgroup_info.PartialTaskAllocation) {
+		if !task.IsGpuMemoryRequest() {
+			continue
+		}
+		if !hasGpuMemoryRequests {
+			hasGpuMemoryRequests = true
+			reclaimerInfo.RequiredResources = reclaimerInfo.RequiredResources.Clone()
+		}
+		correction := task.GpuRequirement.GpuMemoryAsGpuFraction(gpuMemoryOf(task)) -
+			task.GpuRequirement.GpuMemoryAsGpuFraction(*pp.minNodeGPUMemory)
+		reclaimerInfo.RequiredResources.Set(resource_info.GPUIndex,
+			reclaimerInfo.RequiredResources.Get(resource_info.GPUIndex)+correction)
+	}
+	return hasGpuMemoryRequests
+}
+
+func (pp *proportionPlugin) largestGpuMemory(*pod_info.PodInfo) int64 {
+	return *pp.maxNodeGPUMemory
+}
+
+// placedGpuMemory returns the GPU memory of the node the current scenario placed each task on. The
+// scenario's preemptor is a copy of the job, so the placement is read from the session's job.
+func (pp *proportionPlugin) placedGpuMemory(reclaimer *podgroup_info.PodGroupInfo) func(*pod_info.PodInfo) int64 {
+	job := pp.clusterInfo.PodGroupInfos[reclaimer.UID]
+	return func(task *pod_info.PodInfo) int64 {
+		if job != nil {
+			if placed, found := job.GetAllPodsMap()[task.UID]; found {
+				if node, found := pp.clusterInfo.Nodes[placed.NodeName]; found {
+					return node.MemoryOfEveryGpuOnNode
+				}
+			}
+		}
+		return *pp.minNodeGPUMemory
 	}
 }
 
