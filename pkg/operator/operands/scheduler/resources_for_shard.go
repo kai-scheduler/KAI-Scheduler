@@ -29,6 +29,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
 	"github.com/kai-scheduler/api/constants"
 	kaiv1 "github.com/kai-scheduler/api/kai/v1"
+	kaiv1scheduler "github.com/kai-scheduler/api/kai/v1/scheduler"
 )
 
 const (
@@ -352,6 +353,22 @@ func (s *SchedulerForShard) serviceForShard(
 	return service, err
 }
 
+// schedulerServiceMetricsTargetPort returns the container TCP port for scheduler HTTP
+// metrics from SchedulerService, preferring targetPort over port.
+func schedulerServiceMetricsTargetPort(schedulerConfig *kaiv1scheduler.Scheduler) (int32, bool) {
+	if schedulerConfig == nil || schedulerConfig.SchedulerService == nil {
+		return 0, false
+	}
+	svc := schedulerConfig.SchedulerService
+	if svc.TargetPort != nil {
+		return int32(*svc.TargetPort), true
+	}
+	if svc.Port != nil {
+		return int32(*svc.Port), true
+	}
+	return 0, false
+}
+
 func buildArgsList(
 	shard *kaiv1.SchedulingShard, kaiConfig *kaiv1.Config, configName string,
 ) ([]string, error) {
@@ -373,9 +390,8 @@ func buildArgsList(
 		args = append(args, fmt.Sprintf("--%s=%s", "gpu-sharing-mode", *kaiConfig.Spec.Global.GpuSharingMode))
 	}
 
-	if kaiConfig.Spec.Scheduler.SchedulerService.Port != nil {
-		portNumberString := strconv.Itoa(*kaiConfig.Spec.Scheduler.SchedulerService.Port)
-		args = append(args, fmt.Sprintf("--%s=:%s", "listen-address", portNumberString))
+	if metricsPort, ok := schedulerServiceMetricsTargetPort(kaiConfig.Spec.Scheduler); ok {
+		args = append(args, fmt.Sprintf("--%s=:%d", "listen-address", metricsPort))
 	}
 
 	if kaiConfig.Spec.QueueController.MetricsNamespace != nil {
@@ -450,7 +466,10 @@ func (s *SchedulerForShard) endpointSliceForShard(
 
 	svcName := serviceName(kaiConfig, shard)
 	namespace := kaiConfig.Spec.Namespace
-	port := int32(*schedulerConfig.SchedulerService.Port)
+	metricsPort, ok := schedulerServiceMetricsTargetPort(schedulerConfig)
+	if !ok {
+		return nil, fmt.Errorf("scheduler metrics target port is not configured")
+	}
 
 	es := &discoveryv1.EndpointSlice{
 		TypeMeta: metav1.TypeMeta{
@@ -469,7 +488,7 @@ func (s *SchedulerForShard) endpointSliceForShard(
 		Ports: []discoveryv1.EndpointPort{
 			{
 				Name:     ptr.To("http-metrics"),
-				Port:     ptr.To(port),
+				Port:     ptr.To(metricsPort),
 				Protocol: ptr.To(corev1.ProtocolTCP),
 			},
 		},

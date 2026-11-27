@@ -28,6 +28,7 @@ import (
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -483,6 +484,34 @@ func TestBuildArgsList(t *testing.T) {
 				"scheduler-name":   "test-scheduler",
 				"namespace":        "kai-system",
 				"gpu-sharing-mode": "NvFractions",
+			},
+		},
+		{
+			name: "listen-address uses scheduler service targetPort",
+			config: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Global: &kaiv1.GlobalConfig{
+						SchedulerName: ptr.To("test-scheduler"),
+					},
+					Namespace: "kai-system",
+					Scheduler: &kaiv1scheduler.Scheduler{
+						Replicas: ptr.To(int32(2)),
+						SchedulerService: &kaiv1scheduler.Service{
+							Port:       ptr.To(9090),
+							TargetPort: ptr.To(8080),
+						},
+					},
+				},
+			},
+			shard: &kaiv1.SchedulingShard{
+				Spec: kaiv1.SchedulingShardSpec{},
+			},
+			expected: map[string]string{
+				"scheduler-conf": "config.yaml",
+				"scheduler-name": "test-scheduler",
+				"namespace":      "kai-system",
+				"listen-address": ":8080",
+				"leader-elect":   "true",
 			},
 		},
 	}
@@ -1144,6 +1173,26 @@ func TestServiceForShard(t *testing.T) {
 			},
 			expectedPort: 80,
 		},
+		{
+			name: "service port and targetPort may differ",
+			config: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Scheduler: &kaiv1scheduler.Scheduler{
+						SchedulerService: &kaiv1scheduler.Service{
+							Port:       ptr.To(9090),
+							TargetPort: ptr.To(8080),
+							Type:       ptr.To(corev1.ServiceTypeClusterIP),
+						},
+					},
+				},
+			},
+			shard: &kaiv1.SchedulingShard{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "metrics-shard",
+				},
+			},
+			expectedPort: 9090,
+		},
 	}
 
 	for _, tt := range tests {
@@ -1165,9 +1214,48 @@ func TestServiceForShard(t *testing.T) {
 			assert.Equal(t, tt.config.Spec.Namespace, svc.Namespace)
 
 			assert.Equal(t, tt.expectedPort, svc.Spec.Ports[0].Port)
-			assert.Equal(t, tt.expectedPort, svc.Spec.Ports[0].TargetPort.IntVal)
+			if tt.name == "service port and targetPort may differ" {
+				assert.Equal(t, int32(8080), svc.Spec.Ports[0].TargetPort.IntVal)
+			} else {
+				assert.Equal(t, tt.expectedPort, svc.Spec.Ports[0].TargetPort.IntVal)
+			}
 		})
 	}
+}
+
+func TestEndpointSliceForShard_usesTargetPort(t *testing.T) {
+	ctx := context.Background()
+	config := &kaiv1.Config{
+		Spec: kaiv1.ConfigSpec{
+			Global: &kaiv1.GlobalConfig{
+				SchedulerName: ptr.To("kai-scheduler"),
+			},
+			Namespace: "kai-system",
+			Scheduler: &kaiv1scheduler.Scheduler{
+				Replicas: ptr.To(int32(2)),
+				SchedulerService: &kaiv1scheduler.Service{
+					Port:       ptr.To(9090),
+					TargetPort: ptr.To(8080),
+					Type:       ptr.To(corev1.ServiceTypeClusterIP),
+				},
+			},
+		},
+	}
+	shard := &kaiv1.SchedulingShard{
+		ObjectMeta: metav1.ObjectMeta{Name: "default"},
+	}
+	config.Spec.SetDefaultsWhereNeeded()
+
+	s := NewSchedulerForShard(shard)
+	esObj, err := s.endpointSliceForShard(ctx, fake.NewClientBuilder().Build(), config, shard)
+	require.NoError(t, err)
+	require.NotNil(t, esObj)
+
+	es, ok := esObj.(*discoveryv1.EndpointSlice)
+	require.True(t, ok)
+	require.Len(t, es.Ports, 1)
+	require.NotNil(t, es.Ports[0].Port)
+	assert.Equal(t, int32(8080), *es.Ports[0].Port)
 }
 
 func TestServiceAccountForScheduler(t *testing.T) {
