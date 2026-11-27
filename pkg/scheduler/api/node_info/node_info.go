@@ -848,20 +848,20 @@ func (ni *NodeInfo) setAcceptedResources(pi *pod_info.PodInfo) {
 	}
 }
 
+// lessEqualTaskToNodeResources defers DRA-backed non-GPU dimensions with zero node
+// allocatable to subsequent DRA allocation checks. GPU capacity is checked separately.
 func (ni *NodeInfo) lessEqualTaskToNodeResources(
 	task *pod_info.PodInfo, nodeResourcesVector resource_info.ResourceVector,
 ) bool {
 	if !ni.isValidGpuPortion(&task.GpuRequirement) {
 		return false
 	}
-	// A task sharing an already-counted DRA device does not need additional
-	// GPU capacity for that device.
-	if discount := ni.sharedDRAGpuDiscount(task); discount > 0 {
-		adjusted := nodeResourcesVector.Clone()
-		adjusted.Set(resource_info.GPUIndex, adjusted.Get(resource_info.GPUIndex)+discount)
-		return task.ResReqVector.LessEqual(adjusted)
+	if !ni.lessEqualVectorsExcludingGPU(task.ResReqVector, nodeResourcesVector) {
+		return false
 	}
-	return task.ResReqVector.LessEqual(nodeResourcesVector)
+	// Shared DRA GPUs already counted on this node need no additional capacity.
+	return task.ResReqVector.Get(resource_info.GPUIndex) <=
+		nodeResourcesVector.Get(resource_info.GPUIndex)+ni.sharedDRAGpuDiscount(task)
 }
 
 func isMigResource(rName v1.ResourceName) bool {

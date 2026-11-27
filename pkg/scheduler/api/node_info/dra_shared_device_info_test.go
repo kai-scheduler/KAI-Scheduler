@@ -10,7 +10,10 @@ import (
 	"go.uber.org/mock/gomock"
 	v1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/dynamic-resource-allocation/deviceclass/extendedresourcecache"
+	"k8s.io/klog/v2"
 	"k8s.io/utils/ptr"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
@@ -124,6 +127,33 @@ func TestAddTask_SharedDRAClaimCountedOnce(t *testing.T) {
 
 	idleGPUs, _ := ni.GetSumOfIdleGPUs()
 	assert.Equal(t, 0.0, idleGPUs, "idle GPUs must be 0, never negative, on a fully-shared 1-GPU node")
+}
+
+func TestSharedDRAGPUConsumerFitsWithDRABackedExtendedResource(t *testing.T) {
+	ni, vectorMap := newGPUNodeInfo(t, "node", "1", 1, 0)
+	ni.AllocatableVector.Set(resource_info.PodsIndex, 10)
+	ni.IdleVector.Set(resource_info.PodsIndex, 10)
+	const nicResource v1.ResourceName = "example.com/nic"
+	vectorMap.AddResource(nicResource)
+	ni.DeviceClassByResource = extendedresourcecache.NewExtendedResourceCache(klog.Background())
+	ni.DeviceClassByResource.OnAdd(&resourceapi.DeviceClass{
+		ObjectMeta: metav1.ObjectMeta{Name: "nic"},
+		Spec:       resourceapi.DeviceClassSpec{ExtendedResourceName: ptr.To(string(nicResource))},
+	}, false)
+	claim := sharedGPUClaim("shared", "test", gpuDeviceClass, "node", "gpu-0")
+	options := pod_info.TaskInfoOptions{DraPodClaims: []*resourceapi.ResourceClaim{claim}}
+	consumer := pod_info.NewTaskInfo(draConsumerPod("running", "test", "node", "shared"), vectorMap, options)
+	assert.NoError(t, ni.AddTask(consumer))
+	assert.Zero(t, ni.IdleVector.Get(resource_info.GPUIndex))
+
+	pod := draConsumerPod("pending", "test", "", "shared")
+	pod.Status.Phase = v1.PodPending
+	pod.Spec.Containers[0].Resources.Requests[nicResource] = resource.MustParse("1")
+	task := pod_info.NewTaskInfo(pod, vectorMap, options)
+	assert.Equal(t, 1.0, task.ResReqVector.Get(resource_info.GPUIndex))
+	assert.True(t, ni.IsTaskAllocatable(task))
+	assert.True(t, ni.IsTaskAllocatableOnReleasingOrIdle(task))
+	assert.Nil(t, ni.FittingError(task, false))
 }
 
 // TestAddRemoveTask_SharedDRAClaimSymmetry verifies the used count follows the
