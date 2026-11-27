@@ -6,6 +6,7 @@ package upgrade
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"time"
 
@@ -27,6 +28,9 @@ func upgradeKAIScheduler(chartPath string) {
 		"--set", "global.registry=localhost:30100",
 		"--wait",
 		"--timeout", helmUpgradeTimeout.String(),
+	}
+	if os.Getenv("GPU_STACK") != "fake" {
+		args = append(args, "--set", "binder.runtimeClassName=nvidia")
 	}
 
 	GinkgoWriter.Printf("Running: helm %v\n", args)

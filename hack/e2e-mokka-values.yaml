@@ -1,0 +1,12 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+image:
+  pullPolicy: IfNotPresent
+gpu:
+  profile: a100
+nodeSelector:
+  mokka.nvidia.com/e2e-gpu: "true"
+nri:
+  enabled: true
+  pluginIndex: "05"

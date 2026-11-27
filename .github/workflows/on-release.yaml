@@ -116,6 +116,7 @@ jobs:
           package_version: ${{ needs.build-and-push.outputs.package_version }}
           k8s_version: ${{ matrix.k8s_version }}
           feature_config: ${{ matrix.feature_config }}
+          gpu_stack: fake
 
       # Prefers the chart push-artifacts.yaml published, so a release exercises the artifact it
       # ships rather than a rebuild of it. That workflow runs concurrently, hence the wait. A
