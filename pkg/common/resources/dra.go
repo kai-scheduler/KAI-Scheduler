@@ -154,11 +154,16 @@ func IsGPUDeviceClass(deviceClassName string) bool {
 // Returns empty string if no GPU device class is found.
 func getGPUDeviceClassNameFromClaim(claim *resourceapi.ResourceClaim) string {
 	for _, request := range claim.Spec.Devices.Requests {
-		if request.Exactly != nil && IsGPUDeviceClass(request.Exactly.DeviceClassName) {
+		if isGPUConsumingRequest(request) {
 			return request.Exactly.DeviceClassName
 		}
 	}
 	return ""
+}
+
+func isGPUConsumingRequest(request resourceapi.DeviceRequest) bool {
+	return request.Exactly != nil && IsGPUDeviceClass(request.Exactly.DeviceClassName) &&
+		(request.Exactly.AdminAccess == nil || !*request.Exactly.AdminAccess)
 }
 
 // countGPUDevicesFromClaim counts GPU devices from a ResourceClaim.
@@ -167,11 +172,7 @@ func countGPUDevicesFromClaim(claim *resourceapi.ResourceClaim) int64 {
 	totalCount := int64(0)
 
 	for _, request := range claim.Spec.Devices.Requests {
-		if request.Exactly == nil {
-			continue
-		}
-
-		if !IsGPUDeviceClass(request.Exactly.DeviceClassName) {
+		if !isGPUConsumingRequest(request) {
 			continue
 		}
 

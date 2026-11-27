@@ -698,7 +698,7 @@ func TestGetPodStorageClaims(t *testing.T) {
 	assert.Equal(t, "owned-pvc-name", pod.GetOwnedStorageClaims()[ownedClaimKey].Name)
 }
 
-func TestIsRequireAnyKindOfGPU_DRA(t *testing.T) {
+func TestRequiresGPUCapacity_DRA(t *testing.T) {
 	req := resource_info.EmptyResourceRequirements()
 	req.GpuResourceRequirement.SetDraGpus(map[string]int64{"nvidia.com/gpu": 2})
 	pi := &PodInfo{
@@ -706,8 +706,47 @@ func TestIsRequireAnyKindOfGPU_DRA(t *testing.T) {
 		ResReq: req,
 		Pod:    &v1.Pod{},
 	}
-	assert.Assert(t, pi.IsRequireAnyKindOfGPU(), "pod with only DRA GPU requests should require GPU")
+	assert.Assert(t, pi.requiresGPUCapacity(), "pod with only DRA GPU requests should require GPU capacity")
 	assert.Assert(t, !pi.IsCPUOnlyRequest(), "pod with only DRA GPU requests should not be CPU-only")
+}
+
+func TestRequiresGPUNode_AdminAccessClaim(t *testing.T) {
+	claim := &resourceapi.ResourceClaim{
+		ObjectMeta: metav1.ObjectMeta{Name: "dcgm-exporter", Namespace: "ns1"},
+		Spec: resourceapi.ResourceClaimSpec{
+			Devices: resourceapi.DeviceClaim{
+				Requests: []resourceapi.DeviceRequest{{
+					Name: "gpus",
+					Exactly: &resourceapi.ExactDeviceRequest{
+						DeviceClassName: "gpu.nvidia.com",
+						AllocationMode:  resourceapi.DeviceAllocationModeAll,
+						AdminAccess:     ptr.To(true),
+					},
+				}},
+			},
+		},
+	}
+	pod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{UID: types.UID("pod-uid"), Name: "p1", Namespace: "ns1"},
+		Spec: v1.PodSpec{
+			Containers: []v1.Container{
+				{Resources: v1.ResourceRequirements{Requests: common_info.BuildResourceList("1000m", "1G")}},
+			},
+			ResourceClaims: []v1.PodResourceClaim{
+				{Name: "dcgm-exporter", ResourceClaimName: ptr.To("dcgm-exporter")},
+			},
+		},
+		Status: v1.PodStatus{Phase: v1.PodPending},
+	}
+
+	pi := NewTaskInfo(pod, []*resourceapi.ResourceClaim{claim}, resource_info.NewResourceVectorMap())
+	assert.Assert(t, pi.HasDRAGPUClaim)
+	assert.Assert(t, pi.RequiresGPUNode(), "an admin access GPU claim still needs a GPU node")
+	assert.Assert(t, pi.Clone().RequiresGPUNode())
+
+	cpuPod := NewTaskInfo(&v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "p2", Namespace: "ns1"}},
+		nil, resource_info.NewResourceVectorMap())
+	assert.Assert(t, !cpuPod.RequiresGPUNode())
 }
 
 func TestNewTaskInfoWithBindRequest_ResourceClaimInfo(t *testing.T) {
