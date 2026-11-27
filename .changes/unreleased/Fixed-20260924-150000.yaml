@@ -1,0 +1,6 @@
+kind: Fixed
+body: Clear a pod group's reported non-preemptible allocation when it becomes preemptible
+time: 2026-09-24T15:00:00+07:00
+custom:
+    Author: ntheanh201
+    Issue: "2232"
