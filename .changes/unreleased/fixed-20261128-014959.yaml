@@ -3,4 +3,4 @@ body: |-
   Reclaim prices gpu-memory requests on the GPU they can use instead of the smallest GPU in the cluster
 custom:
   Author: "ZeXi0308"
-  Issue: "2803"
+  Issue: "2804"
