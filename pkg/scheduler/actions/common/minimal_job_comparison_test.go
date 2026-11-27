@@ -154,6 +154,35 @@ var _ = Describe("MinimalJobComparison", func() {
 			}
 		})
 
+		Context("resource claims", func() {
+			smallJob := v1.ResourceList{v1.ResourceCPU: resource.MustParse("100m")}
+			largeJob := v1.ResourceList{v1.ResourceCPU: resource.MustParse("200m")}
+
+			It("does not skip a larger job without claims after a job with claims failed", func() {
+				smallestFailedJobs.UpdateRepresentative(jobWithResourceClaimTemplate(smallJob, "h100"))
+				easier, _ := smallestFailedJobs.IsEasierToSchedule(jobWithResourceClaimTemplate(largeJob, ""))
+				Expect(easier).To(BeTrue())
+			})
+
+			It("does not skip a larger job with claims after a job without claims failed", func() {
+				smallestFailedJobs.UpdateRepresentative(jobWithResourceClaimTemplate(smallJob, ""))
+				easier, _ := smallestFailedJobs.IsEasierToSchedule(jobWithResourceClaimTemplate(largeJob, "h100"))
+				Expect(easier).To(BeTrue())
+			})
+
+			It("does not skip a larger job with the same claim template", func() {
+				smallestFailedJobs.UpdateRepresentative(jobWithResourceClaimTemplate(smallJob, "h100"))
+				easier, _ := smallestFailedJobs.IsEasierToSchedule(jobWithResourceClaimTemplate(largeJob, "h100"))
+				Expect(easier).To(BeTrue())
+			})
+
+			It("still skips a larger job without claims after a job without claims failed", func() {
+				smallestFailedJobs.UpdateRepresentative(jobWithResourceClaimTemplate(smallJob, ""))
+				easier, _ := smallestFailedJobs.IsEasierToSchedule(jobWithResourceClaimTemplate(largeJob, ""))
+				Expect(easier).To(BeFalse())
+			})
+		})
+
 		Context("multiple pods", func() {
 			for testName, testCase := range map[string]struct {
 				representativeResources []v1.ResourceList
@@ -370,6 +399,16 @@ func jobFromRequirements(requirements ...v1.ResourceList) *podgroup_info.PodGrou
 		jobTestInfo[index] = podTestsInfo{req, v1.PodPending}
 	}
 	return JobFromPodSignatureData(jobTestInfo)
+}
+
+func jobWithResourceClaimTemplate(resources v1.ResourceList, templateName string) *podgroup_info.PodGroupInfo {
+	pod := common_info.BuildPod("test-0", "test", "", v1.PodPending, resources.DeepCopy(),
+		[]metav1.OwnerReference{}, map[string]string{},
+		map[string]string{commonconstants.PodGroupAnnotationForPod: "test"})
+	if templateName != "" {
+		pod.Spec.ResourceClaims = []v1.PodResourceClaim{{Name: "gpu", ResourceClaimTemplateName: &templateName}}
+	}
+	return podgroup_info.NewPodGroupInfo("test", pod_info.NewTaskInfo(pod, resource_info.NewResourceVectorMap()))
 }
 
 func copyResources(resources ...v1.ResourceList) []v1.ResourceList {
