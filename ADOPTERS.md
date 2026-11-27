@@ -35,6 +35,7 @@ Projects that ship a KAI Scheduler integration. Listed alphabetically.
 | [Elotl](https://www.elotl.co/) | [Integration](https://www.elotl.co/blog/building-an-elastic-gpu-cluster-with-the-kai-scheduler-and-luna-autoscaler) |
 | [Kubeflow](https://www.kubeflow.org/) | [Integration](https://www.kubeflow.org/docs/components/trainer/legacy-v1/user-guides/job-scheduling/#kai-scheduler) |
 | [KubeRay](https://github.com/ray-project/kuberay) | [Integration](https://docs.ray.io/en/latest/cluster/kubernetes/k8s-ecosystem/kai-scheduler.html) |
+| [Kubex](https://kubex.ai) | [Integration](https://docs.kubex.ai/docs-kubex/Content/Kubex/automation-engine/gpu-sharing-with-kai) |
 | [NVIDIA Cloud Functions (NVCF)](https://github.com/NVIDIA/nvcf) | [NVCF integration](https://docs.nvidia.com/nvcf/kai-scheduler) |
 | [NVIDIA Dynamo](https://github.com/ai-dynamo/dynamo) | [Dynamo integration](https://docs.nvidia.com/dynamo/latest/kubernetes-deployment/multinode/multinode-deployments#using-grove-default) |
 | [vCluster](https://www.vcluster.com/) | [Integration](https://www.vcluster.com/docs/vcluster/third-party-integrations/scheduler/kai-scheduler) |
