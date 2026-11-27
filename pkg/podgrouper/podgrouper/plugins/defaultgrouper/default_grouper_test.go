@@ -1298,3 +1298,16 @@ func TestCalcPodGroupPreemptionDelay(t *testing.T) {
 		})
 	}
 }
+
+func TestCalcPodGroupAnnotations_SkipsLastAppliedConfiguration(t *testing.T) {
+	owner := &unstructured.Unstructured{}
+	owner.SetAnnotations(map[string]string{
+		v1.LastAppliedConfigAnnotation: `{"kind":"Job"}`,
+		"test_annotation":              "test_value",
+	})
+
+	annotations := NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, nil).CalcPodGroupAnnotations(owner, &v1.Pod{})
+
+	assert.NotContains(t, annotations, v1.LastAppliedConfigAnnotation)
+	assert.Equal(t, "test_value", annotations["test_annotation"])
+}

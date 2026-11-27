@@ -112,6 +112,7 @@ func (dg *DefaultGrouper) CalcPodGroupAnnotations(topOwner *unstructured.Unstruc
 	}
 
 	maps.Copy(pgAnnotations, topOwner.GetAnnotations())
+	delete(pgAnnotations, v1.LastAppliedConfigAnnotation)
 
 	return pgAnnotations
 }

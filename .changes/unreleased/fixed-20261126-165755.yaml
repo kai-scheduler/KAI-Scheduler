@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Stop copying kubectl last-applied-configuration from workload owners onto PodGroups
+custom:
+  Author: "nkq232"
+  Issue: "2783"
