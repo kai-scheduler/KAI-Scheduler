@@ -132,7 +132,7 @@ func RunApp() error {
 
 	mux := http.NewServeMux()
 	go func() {
-		_ = http.ListenAndServe(fmt.Sprintf("127.0.0.1:%d", so.PluginServerPort), mux)
+		glog.Errorf("Plugin Http Server failed %s", http.ListenAndServe(fmt.Sprintf("127.0.0.1:%d", so.PluginServerPort), mux))
 	}()
 
 	setupProfiling(so)
