@@ -47,6 +47,8 @@ func TestBinderReservationLifecycle(t *testing.T) {
 		t.Run("retry must retain reservation/"+testCase.name, func(t *testing.T) {
 			apiClient := fake.NewClientBuilder().WithScheme(scheme).
 				WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).
+				WithIndex(&v1.Pod{}, resourcereservation.PodGPUGroupIndex, resourcereservation.PodGPUGroups).
+				WithIndex(&schedulingv1alpha2.BindRequest{}, resourcereservation.BindRequestGPUGroupIndex, resourcereservation.BindRequestGPUGroups).
 				WithIndex(&v1.Pod{}, "metadata.name", func(obj client.Object) []string { return []string{obj.GetName()} }).
 				WithStatusSubresource(&schedulingv1alpha2.BindRequest{}, &v1.Pod{}).Build()
 			pod, node, request, reservation := createLifecycleObjects(t, apiClient, "retry-"+testCase.name, ptr.To(int32(2)))

@@ -79,6 +79,8 @@ var _ = Describe("BindRequest Controller", func() {
 		Expect(kubeaischedulerscheme.AddToScheme(testScheme)).Should(Succeed())
 		fakeClient = fake.NewClientBuilder().WithScheme(testScheme).
 			WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).
+			WithIndex(&v1.Pod{}, resourcereservation.PodGPUGroupIndex, resourcereservation.PodGPUGroups).
+			WithIndex(&schedulingv1alpha2.BindRequest{}, resourcereservation.BindRequestGPUGroupIndex, resourcereservation.BindRequestGPUGroups).
 			WithStatusSubresource(&schedulingv1alpha2.BindRequest{}).
 			Build()
 		fakeEventRecorder = record.NewFakeRecorder(100)

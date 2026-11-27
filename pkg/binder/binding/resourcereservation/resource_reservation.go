@@ -165,28 +165,13 @@ func (rsc *service) SyncForGpuGroup(ctx context.Context, gpuGroup string) error 
 
 func (rsc *service) syncForGpuGroupWithLock(ctx context.Context, gpuGroup string) error {
 	podsList := &v1.PodList{}
-	err := rsc.kubeClient.List(ctx, podsList,
-		client.MatchingLabels{constants.GPUGroup: gpuGroup},
-	)
-	if err != nil {
+	if err := rsc.kubeClient.List(ctx, podsList, client.MatchingFields{PodGPUGroupIndex: gpuGroup}); err != nil {
 		return err
 	}
 
-	multiFractionsPodsList := &v1.PodList{}
-	multiGroupKey, multiGroupValue := resources.GetMultiFractionGpuGroupLabel(gpuGroup)
-	err = rsc.kubeClient.List(ctx, multiFractionsPodsList,
-		client.MatchingLabels{multiGroupKey: multiGroupValue},
-	)
-	if err != nil {
-		return err
-	}
-
-	pods := []*v1.Pod{}
-	for index := range len(podsList.Items) {
-		pods = append(pods, &podsList.Items[index])
-	}
-	for index := range len(multiFractionsPodsList.Items) {
-		pods = append(pods, &multiFractionsPodsList.Items[index])
+	pods := make([]*v1.Pod, len(podsList.Items))
+	for i := range podsList.Items {
+		pods[i] = &podsList.Items[i]
 	}
 
 	return rsc.syncForPods(ctx, pods, gpuGroup)
@@ -250,15 +235,11 @@ func (rsc *service) syncForPods(ctx context.Context, pods []*v1.Pod, gpuGroupToS
 // the pod label can lag behind the BindRequest status in the controller cache.
 func (rsc *service) hasActiveBindRequestsForGpuGroup(ctx context.Context, gpuGroup string) (bool, error) {
 	bindRequestList := &schedulingv1alpha2.BindRequestList{}
-	if err := rsc.kubeClient.List(ctx, bindRequestList); err != nil {
+	if err := rsc.kubeClient.List(ctx, bindRequestList, client.MatchingFields{BindRequestGPUGroupIndex: gpuGroup}); err != nil {
 		return false, fmt.Errorf("failed to list BindRequests: %w", err)
 	}
 
 	for _, br := range bindRequestList.Items {
-		if !slices.Contains(br.Spec.SelectedFractionalGpuGroupIDs(), gpuGroup) {
-			continue
-		}
-
 		if br.Status.Phase == schedulingv1alpha2.BindRequestPhaseFailed {
 			var backoffLimit any
 			if br.Spec.BackoffLimit != nil {

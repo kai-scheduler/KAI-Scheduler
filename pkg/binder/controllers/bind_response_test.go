@@ -90,6 +90,8 @@ func TestReconcileBindingResponse(t *testing.T) {
 				WithObjects(pod, node, br, reservation).
 				WithStatusSubresource(&schedulingv1alpha2.BindRequest{}, &v1.Pod{}).
 				WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).
+				WithIndex(&v1.Pod{}, resourcereservation.PodGPUGroupIndex, resourcereservation.PodGPUGroups).
+				WithIndex(&schedulingv1alpha2.BindRequest{}, resourcereservation.BindRequestGPUGroupIndex, resourcereservation.BindRequestGPUGroups).
 				WithInterceptorFuncs(interceptor.Funcs{
 					Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
 						// Simulate the identity assigned by the API, including for guarded rollback deletion.
