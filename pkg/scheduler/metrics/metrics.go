@@ -34,8 +34,6 @@ import (
 	enginev2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
 )
 
-// cycleDurationBuckets are the histogram buckets, in seconds, shared by the scheduling cycle,
-// session, plugin and action duration histograms: 0.1ms, 0.2ms, 0.4ms, ..., ~105s.
 var cycleDurationBuckets = prometheus.ExponentialBuckets(0.0001, 2, 21)
 
 const (
