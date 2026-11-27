@@ -1,0 +1,6 @@
+kind: Added
+body: Add scheduler histograms for the scheduling cycle, session open/close, plugin and action durations so percentiles can be computed (the existing millisecond gauges are kept)
+time: 2026-11-11T12:00:00.000000000+00:00
+custom:
+    Author: NopeCharon
+    Issue: "2617"
