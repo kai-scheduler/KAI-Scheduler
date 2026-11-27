@@ -10,6 +10,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
+	"k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/component-helpers/scheduling/corev1/nodeaffinity"
 	"k8s.io/dynamic-resource-allocation/cel"
 	"k8s.io/dynamic-resource-allocation/deviceclass/extendedresourcecache"
@@ -40,6 +41,15 @@ type draPlugin struct {
 	allocatorFeatures     structured.Features
 	queueLabelKey         string
 	deviceClassByResource *extendedresourcecache.ExtendedResourceCache
+
+	// gateFeatures are the allocator features from the feature gates;
+	// allocatorFeatures adds the ones the session's ResourceSlices use.
+	gateFeatures structured.Features
+	sliceEnable  sliceFeatureEnable
+	// celCaches holds one CEL cache per ConsumableCapacity setting, since
+	// that setting is part of how device selectors compile.
+	celCaches          map[bool]*cel.Cache
+	maxCelCacheEntries int
 }
 
 // +kubebuilder:rbac:groups="resource.k8s.io",resources=deviceclasses;resourceslices;resourceclaims,verbs=get;list;watch
@@ -65,11 +75,42 @@ func New(pluginArgs framework.PluginArguments) framework.Plugin {
 			maxCelCacheEntriesKey, err, defaultMaxCelCacheEntries)
 	}
 
-	features := k8s_utils.GetK8sFeatures()
-	return &draPlugin{
-		celCache:          cel.NewCache(maxCelCacheEntries, cel.Features{EnableConsumableCapacity: features.EnableDRAConsumableCapacity}),
-		allocatorFeatures: allocatorFeatures(features),
+	gateFeatures := allocatorFeatures(k8s_utils.GetK8sFeatures())
+	drap := &draPlugin{
+		gateFeatures:       gateFeatures,
+		sliceEnable:        sliceFeatureEnableFromGates(feature.DefaultMutableFeatureGate),
+		celCaches:          map[bool]*cel.Cache{},
+		maxCelCacheEntries: maxCelCacheEntries,
 	}
+	drap.setAllocatorFeatures(gateFeatures)
+	return drap
+}
+
+// setAllocatorFeatures sets the features used to build allocators, along with
+// the CEL cache that matches them.
+func (drap *draPlugin) setAllocatorFeatures(features structured.Features) {
+	drap.allocatorFeatures = features
+	cache, found := drap.celCaches[features.ConsumableCapacity]
+	if !found {
+		cache = cel.NewCache(drap.maxCelCacheEntries, cel.Features{EnableConsumableCapacity: features.ConsumableCapacity})
+		drap.celCaches[features.ConsumableCapacity] = cache
+	}
+	drap.celCache = cache
+}
+
+// updateSliceFeatures turns on the allocator features the session's
+// ResourceSlices use, on top of the feature gates.
+func (drap *draPlugin) updateSliceFeatures() {
+	features := drap.gateFeatures
+	if drap.manager != nil {
+		slices, err := drap.manager.ResourceSlices().ListWithDeviceTaintRules()
+		if err != nil {
+			log.InfraLogger.Errorf("Failed to list resource slices for DRA allocator features: %v", err)
+		} else {
+			features = sliceAllocatorFeatures(features, drap.sliceEnable, slices)
+		}
+	}
+	drap.setAllocatorFeatures(features)
 }
 
 func (drap *draPlugin) Name() string {
@@ -89,6 +130,7 @@ func (drap *draPlugin) OnSessionOpen(ssn *framework.Session) {
 		)
 		k8sPlugins.SessionDRAManager = drap.manager
 	}
+	drap.updateSliceFeatures()
 
 	ssn.AddEventHandler(&framework.EventHandler{
 		AllocateFunc:   drap.allocateHandlerFn(ssn),

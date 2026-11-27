@@ -16,6 +16,8 @@ KAI Scheduler supports DRA through its [Binder controller](https://github.com/ka
  --set scheduler.additionalArgs[0]=--feature-gates=DynamicResourceAllocation=true --set binder.additionalArgs[0]=--feature-gates=DynamicResourceAllocation=true
 ```
 
+- The scheduler turns on the DRA allocator features `DRAPartitionableDevices` and `DRAConsumableCapacity` when a ResourceSlice in the cluster uses them (shared counters, devices that consume counters, per-device node selection, devices that allow multiple allocations, or capacity request policies), so partitionable devices such as dynamic MIG work without extra flags on any Kubernetes version that serves these fields. A value set explicitly through `--feature-gates` always wins, for example `--feature-gates=DRAPartitionableDevices=false`.
+
 ### DRA IMEX POD
 To submit a pod that requests an IMEX channel, run this command:
 ```
