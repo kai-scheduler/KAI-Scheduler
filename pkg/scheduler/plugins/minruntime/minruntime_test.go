@@ -89,9 +89,72 @@ var _ = Describe("MinRuntime Plugin", func() {
 			defaultPreemptMinRuntime: defaultPreemptDuration,
 			defaultReclaimMinRuntime: defaultReclaimDuration,
 			reclaimResolveMethod:     resolveMethodLCA,
-			resolver:                 NewResolver(queues, defaultPreemptDuration, defaultReclaimDuration),
+			resolver:                 NewResolver(queues, defaultPreemptDuration, defaultReclaimDuration, nil),
 		}
 	})
+
+	DescribeTable("consolidation runtime protection",
+		func(consolidationRuntime string, minAvailable int32, podsCount int, startAge *time.Duration, allowed bool) {
+			arguments := framework.PluginArguments{
+				defaultPreemptMinRuntimeConfig: "1h",
+				defaultReclaimMinRuntimeConfig: "1h",
+			}
+			if consolidationRuntime != "" {
+				arguments[defaultConsolidationMinRuntimeConfig] = consolidationRuntime
+			}
+			plugin := New(arguments)
+			ssn := &framework.Session{ClusterInfo: &api.ClusterInfo{
+				Queues: map[common_info.QueueID]*queue_info.QueueInfo{"queue": {UID: "queue"}},
+			}}
+			plugin.OnSessionOpen(ssn)
+			defer plugin.OnSessionClose(ssn)
+
+			pendingJob := createPodGroup("pending", "queue", nil, 1, 1)
+			var start *time.Time
+			if startAge != nil {
+				timestamp := time.Now().Add(-*startAge)
+				start = &timestamp
+			}
+			victim := createPodGroup("victim", "queue", start, minAvailable, podsCount)
+			Expect(ssn.ConsolidationVictimFilter(pendingJob, victim)).To(Equal(allowed))
+		},
+		Entry("protects a rigid job", "2m", int32(1), 1, durationPtr(time.Minute), false),
+		Entry("protects an elastic job", "2m", int32(1), 3, durationPtr(time.Minute), false),
+		Entry("expired consolidation runtime ignores other protections", "30s", int32(1), 1, durationPtr(time.Minute), true),
+		Entry("expired runtime allows elastic jobs", "30s", int32(1), 3, durationPtr(time.Minute), true),
+		Entry("zero runtime ignores other protections", "0s", int32(1), 1, durationPtr(time.Minute), true),
+		Entry("unset runtime uses the existing defaults", "", int32(1), 1, durationPtr(time.Minute), false),
+		Entry("invalid runtime defaults to zero", "invalid", int32(1), 1, durationPtr(time.Minute), true),
+		Entry("negative runtime defaults to zero", "-1m", int32(1), 1, durationPtr(time.Minute), true),
+		Entry("missing start timestamp", "2m", int32(1), 1, (*time.Duration)(nil), true),
+	)
+
+	DescribeTable("consolidation queue resolution",
+		func(parentRuntime, leafRuntime *metav1.Duration, victimQueue common_info.QueueID, allowed bool) {
+			plugin.defaultConsolidationMinRuntime = &metav1.Duration{Duration: 2 * time.Minute}
+			queues = map[common_info.QueueID]*queue_info.QueueInfo{
+				"parent":  {UID: "parent", ConsolidationMinRuntime: parentRuntime},
+				"leaf":    {UID: "leaf", ParentQueue: "parent", ConsolidationMinRuntime: leafRuntime},
+				"pending": {UID: "pending", ConsolidationMinRuntime: &metav1.Duration{Duration: time.Hour}},
+			}
+			ssn := &framework.Session{ClusterInfo: &api.ClusterInfo{Queues: queues}}
+			plugin.OnSessionOpen(ssn)
+			defer plugin.OnSessionClose(ssn)
+			pendingJob := createPodGroup("pending", "pending", nil, 1, 1)
+			start := time.Now().Add(-time.Minute)
+			victim := createPodGroup("victim", victimQueue, &start, 1, 1)
+			Expect(ssn.ConsolidationVictimFilter(pendingJob, victim)).To(Equal(allowed))
+			oldStart := time.Now().Add(-3 * time.Minute)
+			victim.LastStartTimestamp = &oldStart
+			Expect(ssn.ConsolidationVictimFilter(pendingJob, victim)).To(BeTrue())
+		},
+		Entry("inherits parent protection", &metav1.Duration{Duration: 2 * time.Minute}, (*metav1.Duration)(nil), common_info.QueueID("leaf"), false),
+		Entry("inherits parent zero ahead of the shard default", &metav1.Duration{}, (*metav1.Duration)(nil), common_info.QueueID("leaf"), true),
+		Entry("leaf zero overrides parent protection", &metav1.Duration{Duration: 2 * time.Minute}, &metav1.Duration{}, common_info.QueueID("leaf"), true),
+		Entry("leaf protection overrides parent zero", &metav1.Duration{}, &metav1.Duration{Duration: 2 * time.Minute}, common_info.QueueID("leaf"), false),
+		Entry("uses scheduler default", (*metav1.Duration)(nil), (*metav1.Duration)(nil), common_info.QueueID("leaf"), false),
+		Entry("missing queue uses scheduler default", (*metav1.Duration)(nil), (*metav1.Duration)(nil), common_info.QueueID("missing"), false),
+	)
 
 	Describe("preemptFilterFn", func() {
 		Context("when victim is protected by min-runtime", func() {
@@ -409,3 +472,7 @@ var _ = Describe("MinRuntime Plugin", func() {
 		})
 	})
 })
+
+func durationPtr(duration time.Duration) *time.Duration {
+	return &duration
+}

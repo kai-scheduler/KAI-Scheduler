@@ -1,0 +1,6 @@
+kind: Added
+body: |-
+  Independent queue and shard minimum-runtime protection for consolidation, including elastic jobs
+custom:
+  Author: "enoodle"
+  Issue: "2771"

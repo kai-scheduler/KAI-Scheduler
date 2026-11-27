@@ -2,11 +2,12 @@
 
 ## Overview
 
-The MinRuntime plugin for KAI-Scheduler provides runtime protection for jobs by preventing preemption or resource reclamation of jobs until they have run for a specified minimum time duration. This ensures workloads can complete critical initialization or checkpointing before being interrupted.
+The MinRuntime plugin for KAI-Scheduler provides runtime protection for jobs by preventing preemption, resource reclamation, or consolidation until they have run for a specified minimum time duration. This ensures workloads can complete critical initialization or checkpointing before being interrupted.
 
 ## Key Features
 
 - **Preemption Protection**: Prevents jobs from being preempted until they have run for a specified minimum duration
+- **Consolidation Protection**: Prevents jobs from being moved until their independent consolidation minimum runtime expires
 - **Reclamation Protection**: Prevents elastic jobs from having resources reclaimed until they have run for a specified minimum duration
 - **Queue-based Configuration**: Configure different minimum runtime durations for different queues in your scheduling hierarchy
 - **Hierarchical Inheritance**: Minimum runtime settings cascade down from parent queues to leaf queues
@@ -27,6 +28,7 @@ Queues can specify the following minimum runtime parameters:
 
 - `preemptMinRuntime`: Minimum runtime before a job in this queue can be preempted
 - `reclaimMinRuntime`: Minimum runtime before a job in this queue can have resources reclaimed
+- `consolidationMinRuntime`: Minimum runtime before a job in this queue can be moved by consolidation
 
 Example Queue definition:
 
@@ -38,6 +40,7 @@ metadata:
 spec:
   preemptMinRuntime: "20s"
   reclaimMinRuntime: "30s"
+  consolidationMinRuntime: "5m"
 ```
 
 ### Plugin Configuration
@@ -52,6 +55,7 @@ tiers:
     arguments:
       defaultPreemptMinRuntime: "10m"
       defaultReclaimMinRuntime: "10m"
+      defaultConsolidationMinRuntime: "5m"
       reclaimResolveMethod: "lca"  # or "queue"
 ```
 
@@ -61,6 +65,7 @@ tiers:
 |-----------|-------------|---------|
 | `defaultPreemptMinRuntime` | Default minimum runtime before preemption if not specified in queue | "0s" |
 | `defaultReclaimMinRuntime` | Default minimum runtime before resource reclamation if not specified in queue | "0s" |
+| `defaultConsolidationMinRuntime` | Shard minimum runtime before consolidation if not specified in the victim's queue hierarchy | Unset (use the larger resolved preempt or reclaim runtime) |
 | `reclaimResolveMethod` | Method to resolve reclaim minimum runtime ("lca" or "queue") | "lca" |
 
 0s means workloads are instantly reclaimable/preemptible.
@@ -87,6 +92,22 @@ For reclamation, two methods are supported:
 
 The LCA method is the default method if none is specified. The purpose of the LCA method is to follow how policies might be set for queue hierarchy, allowing users in sub-queues to set min-runtime values that are honored by their siblings, whilst not affecting cousin queues.
 
+### Consolidation Resolution
+
+Starting from the victim's queue, consolidation uses the first `consolidationMinRuntime` defined on that queue or its ancestors. If the whole hierarchy leaves it unset, consolidation uses `defaultConsolidationMinRuntime` when configured. An explicit `0s` at either level takes precedence over the fallback.
+
+If neither setting is defined, consolidation uses the larger of the resolved preemption and reclamation minimum runtimes. Both use their existing resolution rules and defaults. With `reclaimResolveMethod: "lca"`, the fallback can depend on the pending job's queue.
+
+The shard-wide default can also be configured through `SchedulingShard.spec.minRuntime.consolidationMinRuntime`:
+
+```yaml
+spec:
+  minRuntime:
+    consolidationMinRuntime: "5m"
+```
+
+Protection is measured from the victim's `LastStartTimestamp`, as for preemption and reclamation. Jobs with no start timestamp are unprotected. If both resolved runtimes are `0s`, the fallback adds no protection.
+
 ## Elastic Jobs Handling
 
 For elastic jobs (where `MinAvailable < number of pods in a job`), the plugin:
@@ -94,12 +115,15 @@ For elastic jobs (where `MinAvailable < number of pods in a job`), the plugin:
 1. Allows the job to be considered for preemption/reclamation in the filter phase
 2. Validates in the scenario validator phase that the job will maintain its minimum number of pods if min-runtime has not been reached.
 
+Consolidation filters out protected elastic jobs entirely, because moving a job can interrupt its minimum members as well as its extra pods.
+
 ## Implementation Details
 
 The plugin implements the following functions:
 
 - `preemptFilterFn`: Filters victims that shouldn't be preempted due to minimum runtime
 - `reclaimFilterFn`: Filters victims that shouldn't have resources reclaimed due to minimum runtime
+- `consolidationFilterFn`: Filters victims while their consolidation minimum runtime protects them, including elastic jobs
 - `preemptScenarioValidatorFn`: Validates preemption scenarios for elastic jobs
 - `reclaimScenarioValidatorFn`: Validates reclamation scenarios for elastic jobs
 
@@ -115,6 +139,7 @@ The plugin implements the following functions:
 The plugin maintains caches to improve performance:
 - `preemptMinRuntimeCache`: Caches preemption minimum runtime values by queue
 - `reclaimMinRuntimeCache`: Caches reclamation minimum runtime values by queue pair
+- `consolidationMinRuntimeCache`: Caches the configured consolidation minimum runtime (or its absence) by victim queue
 - `preemptProtectionCache`: Tracks jobs protected from preemption
 - `reclaimProtectionCache`: Tracks jobs protected from reclamation
 

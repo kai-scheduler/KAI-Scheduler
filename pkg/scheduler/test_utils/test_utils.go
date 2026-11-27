@@ -94,6 +94,7 @@ type TestQueueBasic struct {
 	ParentQueue                 string
 	InteractiveTimeoutInMinutes int64
 	ReclaimMinRuntime           *metav1.Duration
+	ConsolidationMinRuntime     *metav1.Duration
 	UseOnlyFreeCPUResources     bool
 	V1                          bool
 }

@@ -58,6 +58,11 @@ spec:
           spec:
             description: QueueSpec defines the desired state of Queue
             properties:
+              consolidationMinRuntime:
+                description: |-
+                  Minimum runtime of a job in queue before it can be moved by consolidation.
+                  Inherits from the nearest parent queue when unset, then the scheduler default.
+                type: string
               displayName:
                 type: string
               parentQueue:

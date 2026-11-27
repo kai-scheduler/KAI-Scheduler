@@ -105,6 +105,10 @@ spec:
                 description: MinRuntime specifies the minimum runtime of a jobs in
                   the shard
                 properties:
+                  consolidationMinRuntime:
+                    description: ConsolidationMinRuntime specifies the default minimum
+                      runtime before a job can be moved by consolidation.
+                    type: string
                   preemptMinRuntime:
                     description: PreemptMinRuntime specifies the minimum runtime of
                       a job in queue before it can be preempted
