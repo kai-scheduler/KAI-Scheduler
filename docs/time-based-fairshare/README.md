@@ -34,7 +34,13 @@ Where:
 
 #### Normalization to cluster capacity
 
-The aggregated usage for each queue is then normalized to the **cluster capacity** at the relevant time period: the scheduler looks at the available resources in the cluster for that time period, and normalizes all resource usage to it. For example, in a cluster with 10 GPUs, and considering a time period of 10 hours, a queue which consumed 24 GPU hours (wether it's 8 GPUs for 3 hours, or 12 GPUs for 2 hours), will get a normalized usage score of 0.24 (used 24 GPU hours out of a potential 100). This normalization ensures that a small amount of resource usage relative to the cluster size will not result in a heavy penalty.
+The scheduler measures each queue's historical usage as a fraction of cluster capacity over the same time window. For example, a queue that consumes 24 GPU-hours in a 10-GPU cluster over 10 hours has a usage score of 0.24. Top-level queues use this score directly.
+
+#### Usage within a parent queue
+
+When sharing resources between sibling queues, the scheduler measures each child's usage relative to its parent. For example, suppose a department has a fair share of 16 GPUs in a 32-GPU cluster. If one project used all 16 GPUs throughout the window and its sibling used none, their usage scores within the department are 1 and 0.
+
+For each resource, the scheduler divides the child's cluster usage fraction by the largest of the parent's historical usage fraction, its current fair share as a fraction of schedulable cluster capacity, and the combined usage fraction of its current children. The current fair share keeps the penalty small when a department was mostly idle. Counting the children's history also covers projects that moved into the department during the window.
 
 ### Effect on fair share
 

@@ -513,21 +513,21 @@ func (pp *proportionPlugin) setFairShare() {
 	topQueues := pp.getTopQueues()
 	metrics.ResetQueueUsage()
 	metrics.ResetQueueFairShare()
-	pp.setFairShareForQueues(pp.totalResource, pp.kValue, topQueues)
+	pp.setFairShareForQueues(nil, topQueues)
 }
 
-func (pp *proportionPlugin) setFairShareForQueues(totalResources rs.ResourceQuantities, kValue float64,
-	queues map[common_info.QueueID]*rs.QueueAttributes) {
-
+func (pp *proportionPlugin) setFairShareForQueues(parent *rs.QueueAttributes, queues map[common_info.QueueID]*rs.QueueAttributes) {
 	if len(queues) == 0 {
 		return
 	}
 
-	resource_division.SetResourcesShare(totalResources, kValue, queues)
+	if parent == nil {
+		resource_division.SetResourcesShare(pp.totalResource, pp.kValue, queues)
+	} else {
+		resource_division.SetChildResourcesShare(parent, pp.totalResource, pp.kValue, queues)
+	}
 	for _, queue := range queues {
-		childQueues := pp.getChildQueues(queue)
-		resources := queue.GetFairShare()
-		pp.setFairShareForQueues(resources, kValue, childQueues)
+		pp.setFairShareForQueues(queue, pp.getChildQueues(queue))
 	}
 }
 

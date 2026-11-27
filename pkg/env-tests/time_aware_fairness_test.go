@@ -77,6 +77,35 @@ var _ = Describe("Time Aware Fairness", Ordered, func() {
 		Expect(err).NotTo(HaveOccurred(), "Failed to write allocation history to file")
 	})
 
+	It("reclaims a department's GPUs between projects while a second department is busy", func(ctx context.Context) {
+		history, err, cleanupErr := timeaware.RunSimulation(ctx, ctrlClient, cfg, timeaware.TimeAwareSimulation{
+			Queues: []timeaware.TestQueue{
+				{Name: "dept-a"}, {Name: "dept-b"},
+				{Name: "a1", Parent: "dept-a"}, {Name: "a2", Parent: "dept-a"}, {Name: "b1", Parent: "dept-b"},
+			},
+			Jobs: map[string]timeaware.TestJobs{
+				"a1": {NumPods: 1, NumJobs: 20, GPUs: 16},
+				"a2": {NumPods: 1, NumJobs: 20, GPUs: 16},
+				"b1": {NumPods: 1, NumJobs: 20, GPUs: 16},
+			},
+			Nodes:          []timeaware.TestNodes{{GPUs: 32, Count: 1}},
+			Cycles:         ptr.To(1024),
+			WindowSize:     ptr.To(256),
+			HalfLifePeriod: ptr.To(128),
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cleanupErr).NotTo(HaveOccurred())
+
+		var a1Ran, a2Ran bool
+		for _, cycle := range history {
+			if cycle["b1"].Allocation == 16 {
+				a1Ran = a1Ran || cycle["a1"].Allocation == 16
+				a2Ran = a2Ran || cycle["a2"].Allocation == 16
+			}
+		}
+		Expect(a1Ran && a2Ran).To(BeTrue(), "both projects must run a whole-department job")
+	})
+
 	It("Should allow burst use cases", func(ctx context.Context) {
 		allocationHistory, err, cleanupError := timeaware.RunSimulation(ctx, ctrlClient, cfg, timeaware.TimeAwareSimulation{
 			Queues: []timeaware.TestQueue{
