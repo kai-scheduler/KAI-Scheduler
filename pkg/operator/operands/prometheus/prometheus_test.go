@@ -63,6 +63,25 @@ var _ = Describe("Prometheus", func() {
 		})
 
 		Context("when Prometheus is disabled", func() {
+			It("should stop checking objects after Prometheus is disabled", func(ctx context.Context) {
+				Expect(fakeKubeClient.Create(ctx, getPrometheusCRD())).To(Succeed())
+				objects, err := prometheus.DesiredState(ctx, fakeKubeClient, kaiConfig)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(objects).NotTo(BeEmpty())
+
+				kaiConfig.Spec.Prometheus.Enabled = ptr.To(false)
+				objects, err = prometheus.DesiredState(ctx, fakeKubeClient, kaiConfig)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(objects).To(BeEmpty())
+
+				deployed, err := prometheus.IsDeployed(ctx, fakeKubeClient)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(deployed).To(BeTrue())
+				available, err := prometheus.IsAvailable(ctx, fakeKubeClient)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(available).To(BeTrue())
+			})
+
 			It("should return no objects when no Prometheus instance exists", func(ctx context.Context) {
 				kaiConfig.Spec.Prometheus.Enabled = ptr.To(false)
 				objects, err := prometheus.DesiredState(ctx, fakeKubeClient, kaiConfig)

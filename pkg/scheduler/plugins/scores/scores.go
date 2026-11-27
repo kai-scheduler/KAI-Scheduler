@@ -9,6 +9,7 @@ const (
 	Numa           = 100
 	Availability   = 1000
 	GpuSharing     = 10000
+	NodeAssignment = 20000
 	Topology       = 100000
 	K8sPlugins     = 1000000
 	NominatedNode  = 10000000

@@ -32,8 +32,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	. "go.uber.org/mock/gomock"
 	v1 "k8s.io/api/core/v1"
+	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/dynamic-resource-allocation/deviceclass/extendedresourcecache"
+	"k8s.io/klog/v2"
+	"k8s.io/utils/ptr"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_affinity"
@@ -1560,6 +1564,14 @@ func TestPredicateByNodeResourcesType_DRA(t *testing.T) {
 			nodeInfo: &NodeInfo{
 				Name:       "dra-node",
 				HasDRAGPUs: true,
+				DeviceClassByResource: func() *extendedresourcecache.ExtendedResourceCache {
+					cache := extendedresourcecache.NewExtendedResourceCache(klog.Background())
+					cache.OnAdd(&resourceapi.DeviceClass{
+						ObjectMeta: metav1.ObjectMeta{Name: "gpu"},
+						Spec:       resourceapi.DeviceClassSpec{ExtendedResourceName: ptr.To("nvidia.com/gpu")},
+					}, false)
+					return cache
+				}(),
 				Node: &v1.Node{
 					ObjectMeta: metav1.ObjectMeta{Name: "dra-node", Labels: map[string]string{}},
 				},
@@ -1866,6 +1878,134 @@ func TestPredicateByNodeResourcesType_SharedGPU_DRANode(t *testing.T) {
 			if (err != nil) != tt.wantErr {
 				t.Errorf("PredicateByNodeResourcesType error = %v, wantErr %v", err, tt.wantErr)
 			}
+		})
+	}
+}
+
+func TestIsInPlaceResizeAllocatable(t *testing.T) {
+	tests := []struct {
+		name                  string
+		taskNode              string
+		idleCPU, releasingCPU float64
+		idleMemory            float64
+		want                  bool
+	}{
+		{name: "over-committed", taskNode: "node0", idleCPU: -1000, want: false},
+		{name: "releasing covers the shortfall", taskNode: "node0", idleCPU: -1000, releasingCPU: 1000, want: true},
+		{name: "memory over-committed", taskNode: "node0", idleMemory: -1, want: false},
+		{name: "another node", taskNode: "node1", want: false},
+		{name: "fits", taskNode: "node0", want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			vectorMap := resource_info.NewResourceVectorMap()
+			ni := &NodeInfo{
+				Name:            "node0",
+				VectorMap:       vectorMap,
+				IdleVector:      resource_info.NewResourceVector(vectorMap),
+				ReleasingVector: resource_info.NewResourceVector(vectorMap),
+			}
+			ni.IdleVector.Set(vectorMap.GetIndex(v1.ResourceCPU), tt.idleCPU)
+			ni.IdleVector.Set(vectorMap.GetIndex(v1.ResourceMemory), tt.idleMemory)
+			ni.ReleasingVector.Set(vectorMap.GetIndex(v1.ResourceCPU), tt.releasingCPU)
+
+			assert.Equal(t, tt.want, ni.IsInPlaceResizeAllocatable(&pod_info.PodInfo{NodeName: tt.taskNode}))
+		})
+	}
+}
+
+func TestPredicateByNodeResourcesType_GpuWithoutDeviceSource(t *testing.T) {
+	podRequesting := func(main v1.ResourceList, init ...v1.ResourceList) *pod_info.PodInfo {
+		pod := &v1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "gpu-pod", Namespace: "default"},
+			Spec:       v1.PodSpec{Containers: []v1.Container{{Resources: v1.ResourceRequirements{Requests: main}}}},
+		}
+		for _, requests := range init {
+			pod.Spec.InitContainers = append(pod.Spec.InitContainers, v1.Container{Resources: v1.ResourceRequirements{Requests: requests}})
+		}
+		return &pod_info.PodInfo{Name: pod.Name, Namespace: pod.Namespace, Pod: pod}
+	}
+	list := func(resources map[string]string) v1.ResourceList {
+		result := v1.ResourceList{}
+		for name, quantity := range resources {
+			result[v1.ResourceName(name)] = resource.MustParse(quantity)
+		}
+		return result
+	}
+	mappedToDRA := func(names ...string) *extendedresourcecache.ExtendedResourceCache {
+		cache := extendedresourcecache.NewExtendedResourceCache(klog.Background())
+		for _, name := range names {
+			cache.OnAdd(&resourceapi.DeviceClass{
+				ObjectMeta: metav1.ObjectMeta{Name: "class-" + name},
+				Spec:       resourceapi.DeviceClassSpec{ExtendedResourceName: ptr.To(name)},
+			}, false)
+		}
+		return cache
+	}
+	const nvidia, amd = "nvidia.com/gpu", "amd.com/gpu"
+
+	for name, test := range map[string]struct {
+		hasDRAGPUs  bool
+		allocatable map[string]string
+		mapped      []string
+		task        *pod_info.PodInfo
+		cpuOnly     bool
+		wantMissing string
+	}{
+		"nvidia, DRA-only node, no mapping": {
+			hasDRAGPUs: true, task: podRequesting(list(map[string]string{nvidia: "1"})), wantMissing: nvidia,
+		},
+		"amd, DRA-only node, no mapping": {
+			hasDRAGPUs: true, task: podRequesting(list(map[string]string{amd: "1"})), wantMissing: amd,
+		},
+		"GPU requested only by an init container": {
+			hasDRAGPUs: true, task: podRequesting(list(map[string]string{"cpu": "1"}), list(map[string]string{nvidia: "1"})), wantMissing: nvidia,
+		},
+		"nvidia mapped to DRA": {
+			hasDRAGPUs: true, mapped: []string{nvidia}, task: podRequesting(list(map[string]string{nvidia: "1"})),
+		},
+		"amd requested, only nvidia is mapped": {
+			hasDRAGPUs: true, mapped: []string{nvidia}, task: podRequesting(list(map[string]string{amd: "1"})), wantMissing: amd,
+		},
+		"node also advertises device plugin GPUs": {
+			hasDRAGPUs: true, allocatable: map[string]string{nvidia: "4"}, task: podRequesting(list(map[string]string{nvidia: "1"})),
+		},
+		"node advertises zero device plugin GPUs": {
+			hasDRAGPUs: true, allocatable: map[string]string{nvidia: "0"}, task: podRequesting(list(map[string]string{nvidia: "1"})), wantMissing: nvidia,
+		},
+		"mixed vendors, only nvidia is advertised": {
+			hasDRAGPUs: true, allocatable: map[string]string{nvidia: "4"}, task: podRequesting(list(map[string]string{nvidia: "1", amd: "1"})), wantMissing: amd,
+		},
+		"node without DRA GPUs is not guarded": {
+			hasDRAGPUs: false, task: podRequesting(list(map[string]string{nvidia: "1"})),
+		},
+		"CPU-only pod on a DRA-only node": {
+			hasDRAGPUs: true, cpuOnly: true, task: podRequesting(list(map[string]string{"cpu": "1"})),
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			vectorMap := resource_info.NewResourceVectorMap()
+			nodeInfo := &NodeInfo{
+				Name:                  "node0",
+				HasDRAGPUs:            test.hasDRAGPUs,
+				VectorMap:             vectorMap,
+				AllocatableVector:     common_info.BuildResourceWithGpu("1000m", "1G", "4", "110").ToVector(vectorMap),
+				DeviceClassByResource: mappedToDRA(test.mapped...),
+				Node:                  &v1.Node{Status: v1.NodeStatus{Allocatable: list(test.allocatable)}},
+			}
+			test.task.ResReqVector = resource_info.NewResourceVectorWithValues(1000, 0, 1, vectorMap)
+			test.task.GpuRequirement = *resource_info.NewGpuResourceRequirementWithGpus(1, 0)
+			if test.cpuOnly {
+				test.task.GpuRequirement = *resource_info.NewGpuResourceRequirement()
+			}
+
+			err := nodeInfo.PredicateByNodeResourcesType(test.task)
+			if test.wantMissing == "" {
+				assert.NoError(t, err)
+				return
+			}
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), "node reports no "+test.wantMissing)
 		})
 	}
 }

@@ -67,7 +67,7 @@ func testStatementMemoryMove(t *testing.T, zones []pod_info.ZonePlacement) {
 	require.NoError(t, statement.Evict(task, "move", eviction_info.EvictionMetadata{}))
 	task.NUMAPlacement = original.Clone()
 	task.NUMAPlacement.MemoryGroups[0].Mask = 2
-	require.NoError(t, statement.Pipeline(task, "node", false))
+	require.NoError(t, statement.Pipeline(task, "node", true))
 	require.Contains(t, state.Groups, pod_info.NUMAMask(2))
 	require.NotContains(t, state.Groups, pod_info.NUMAMask(1))
 	require.Equal(t, pod_status.Pipelined, task.Status)

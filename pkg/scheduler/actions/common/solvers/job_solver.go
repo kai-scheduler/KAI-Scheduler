@@ -19,6 +19,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
+	"github.com/kai-scheduler/api/constants"
 )
 
 type GenerateVictimsQueue func() *utils.JobsOrderByQueues
@@ -115,7 +116,7 @@ func (s *JobSolver) SolveWithResult(
 	if s.generateVictimsQueue == nil {
 		return false, nil, nil, terminalSearchResult(SearchResultNoGenerator, jobBudget.ReducedBudget())
 	}
-	availableGenerators := ssn.ScenarioGeneratorRegistrations
+	availableGenerators := generatorsForJob(ssn.ScenarioGeneratorRegistrations, pendingJob)
 	if len(availableGenerators) == 0 {
 		return false, nil, nil, terminalSearchResult(SearchResultNoGenerator, jobBudget.ReducedBudget())
 	}
@@ -156,6 +157,19 @@ func (s *JobSolver) SolveWithResult(
 		lastResult = terminalSearchResult(SearchResultGeneratorsExhausted, jobBudget.ReducedBudget())
 	}
 	return false, nil, calcVictimNames(lastVictimTasks), lastResult
+}
+
+func generatorsForJob(
+	registrations []framework.ScenarioGeneratorRegistration, pendingJob *podgroup_info.PodGroupInfo,
+) []framework.ScenarioGeneratorRegistration {
+	if len(registrations) != 2 ||
+		registrations[0].Name != constants.GeneratorNodeLocalGreedy ||
+		registrations[1].Name != constants.GeneratorMultiNodeGang ||
+		len(pendingJob.GetAllPodsMap()) <= 1 {
+		return registrations
+	}
+
+	return []framework.ScenarioGeneratorRegistration{registrations[1], registrations[0]}
 }
 
 func (s *JobSolver) solvePendingJobWithGenerator(

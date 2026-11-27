@@ -1,0 +1,6 @@
+kind: Changed
+body: |-
+  Choose default scenario generator order by PodGroup size while preserving custom generator order
+custom:
+  Author: "enoodle"
+  Issue: "2750"

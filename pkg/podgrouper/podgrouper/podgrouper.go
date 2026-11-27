@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -57,14 +58,12 @@ func (pg *podGrouper) GetPodOwners(ctx context.Context, pod *v1.Pod) (
 	logger := log.FromContext(ctx)
 	logger.V(1).Info(fmt.Sprintf("Pod %s/%s owners: %+v", pod.Namespace, pod.Name, pod.OwnerReferences))
 
-	var topOwner *metav1.PartialObjectMetadata
-	var owners = make([]*metav1.PartialObjectMetadata, 0)
-	var err error
-	if len(pod.OwnerReferences) > 0 {
-		topOwner, owners, err = pg.getResourceOwners(ctx, pod)
-	} else {
-		topOwner, err = pg.getPodAsResourceOwner(pod)
+	if len(pod.OwnerReferences) == 0 {
+		podInstance, err := podAsUnstructured(pod)
+		return podInstance, make([]*metav1.PartialObjectMetadata, 0), err
 	}
+
+	topOwner, owners, err := pg.getResourceOwners(ctx, pod)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -79,8 +78,11 @@ func (pg *podGrouper) GetPGMetadata(ctx context.Context, pod *v1.Pod, topOwner *
 	logger := log.FromContext(ctx)
 	ownerKind := metav1.GroupVersionKind(topOwner.GroupVersionKind())
 	plugin := pg.pluginsHub.GetPodGrouperPlugin(ownerKind)
+	// Log a reference only: the owner object embeds the full pod spec, env values included.
 	logger.V(1).Info(fmt.Sprintf("Using %v plugin for pod.", plugin.Name()),
-		"pod", fmt.Sprintf("%s/%s", pod.Namespace, pod.Name), "topOwner", topOwner)
+		"pod", fmt.Sprintf("%s/%s", pod.Namespace, pod.Name),
+		"topOwner", fmt.Sprintf("%s/%s", topOwner.GetNamespace(), topOwner.GetName()),
+		"topOwnerKind", topOwner.GroupVersionKind().GroupKind().String())
 	return plugin.GetPodGroupMetadata(topOwner, pod, allOwners...)
 }
 
@@ -152,6 +154,16 @@ func (pg *podGrouper) getPodAsResourceOwner(pod *v1.Pod) (
 	return obj, nil
 }
 
+func podAsUnstructured(pod *v1.Pod) (*unstructured.Unstructured, error) {
+	content, err := runtime.DefaultUnstructuredConverter.ToUnstructured(pod)
+	if err != nil {
+		return nil, err
+	}
+	podInstance := &unstructured.Unstructured{Object: content}
+	podInstance.SetGroupVersionKind(v1.SchemeGroupVersion.WithKind("Pod"))
+	return podInstance, nil
+}
+
 func (pg *podGrouper) getTopOwnerInstance(ctx context.Context, topOwner *metav1.PartialObjectMetadata) (*unstructured.Unstructured, error) {
 	topOwnerInstance := &unstructured.Unstructured{}
 	topOwnerInstance.SetGroupVersionKind(topOwner.GroupVersionKind())
@@ -159,7 +171,7 @@ func (pg *podGrouper) getTopOwnerInstance(ctx context.Context, topOwner *metav1.
 		Namespace: topOwner.GetNamespace(),
 		Name:      topOwner.GetName(),
 	}
-	err := pg.client.Get(ctx, key, topOwnerInstance)
+	err := pg.clientWithoutCache.Get(ctx, key, topOwnerInstance)
 	return topOwnerInstance, err
 }
 

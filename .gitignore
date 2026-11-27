@@ -1,5 +1,6 @@
 bin/
-.claude/
+.claude/*
+!.claude/skills
 .gocache/
 .gotmp/
 .idea/

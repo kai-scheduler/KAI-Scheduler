@@ -8,7 +8,8 @@ SPDX-License-Identifier: Apache-2.0
 *Status: Implemented*
 
 Related issues: [#1906](https://github.com/kai-scheduler/KAI-Scheduler/issues/1906),
-[#1872](https://github.com/kai-scheduler/KAI-Scheduler/issues/1872) (deferred resize eviction — separate track)
+[#1872](https://github.com/kai-scheduler/KAI-Scheduler/issues/1872) (deferred resize eviction — see
+[deferred-resize-preemption.md](deferred-resize-preemption.md))
 
 ## Motivation
 
@@ -25,8 +26,9 @@ rescheduling. KAI has three gaps:
    delta.
 3. **Deferred resize eviction.** When the kubelet marks a resize `Deferred`
    for node capacity, KAI does not preempt or reclaim on that node to make
-   room. Out of scope here — tracked in
-   [#1872](https://github.com/kai-scheduler/KAI-Scheduler/issues/1872).
+   room. Implemented as an opt-in in
+   [deferred-resize-preemption.md](deferred-resize-preemption.md)
+   ([#1872](https://github.com/kai-scheduler/KAI-Scheduler/issues/1872)).
 
 This design covers (1) and (2). Upstream ResourceQuota already admits resize
 via status-aware requests and a positive usage delta; KAI needs the same
@@ -65,7 +67,7 @@ characterization test so a future upstream tightening surfaces as a failure.
 The `Deferred` charge at `max(spec, actual)` is load-bearing beyond
 accounting: deferred-resize eviction
 ([#1872](https://github.com/kai-scheduler/KAI-Scheduler/issues/1872),
-[#2051](https://github.com/kai-scheduler/KAI-Scheduler/pull/2051)) relies on
+[deferred-resize-preemption.md](deferred-resize-preemption.md)) relies on
 the deferred target already being reserved in node and queue accounting, so
 capacity freed by evicting victims is not backfilled before the kubelet
 enacts the resize. Charging `Deferred` at actual only would reintroduce
@@ -138,7 +140,7 @@ Exact CR field names TBD at implementation.
 | Non-preemptible growth past quota | Reject at webhook; keep reject at allocate |
 | Concurrent-resize / scheduler races | Best effort; optional `blockUpsizeOnBoundedQueues`; reservation ledger only if a concrete issue appears |
 | Drain-until-under-limit action | Rejected — poor UX; reclaim stays demand-driven |
-| Deferred resize preemption | Separate track: [#1872](https://github.com/kai-scheduler/KAI-Scheduler/issues/1872) / [#2051](https://github.com/kai-scheduler/KAI-Scheduler/pull/2051). Depends on `Deferred` charged at max(spec, actual) — the reserved target is its thrash safety |
+| Deferred resize preemption | Opt-in inside preempt and reclaim: [deferred-resize-preemption.md](deferred-resize-preemption.md) ([#1872](https://github.com/kai-scheduler/KAI-Scheduler/issues/1872)). Depends on `Deferred` charged at max(spec, actual) — the reserved target is its thrash safety |
 | Wait for upstream resize gates / KEP-5836 only | Rejected as sole plan — ship Goals accounting + admit now; upstream remains complementary ([kubernetes#131835](https://github.com/kubernetes/kubernetes/issues/131835)) |
 
 ## Known gaps

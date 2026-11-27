@@ -66,23 +66,16 @@ func createPod(ctx context.Context, testCtx *testcontext.TestContext, pod *v1.Po
 	return created
 }
 
-// expectGuaranteed asserts the (already created) pod was admitted as Guaranteed QoS, the only class the
-// numa plugin acts on.
 func expectGuaranteed(ctx context.Context, testCtx *testcontext.TestContext, pod *v1.Pod) {
-	Eventually(func(g Gomega) {
-		fetched, err := testCtx.KubeClientset.CoreV1().Pods(pod.Namespace).Get(ctx, pod.Name, metav1.GetOptions{})
-		g.Expect(err).To(Succeed())
-		g.Expect(fetched.Status.QOSClass).To(Equal(v1.PodQOSGuaranteed))
-	}, 30*time.Second, time.Second).Should(Succeed())
+	expectQoS(ctx, testCtx, pod, v1.PodQOSGuaranteed)
 }
 
-// expectNotGuaranteed asserts the pod was admitted with a non-Guaranteed QoS class, so the numa plugin
-// leaves it alone.
-func expectNotGuaranteed(ctx context.Context, testCtx *testcontext.TestContext, pod *v1.Pod) {
+// Check the QoS Kubernetes assigned after admission, which may have changed the pod's requests.
+func expectQoS(ctx context.Context, testCtx *testcontext.TestContext, pod *v1.Pod, qos v1.PodQOSClass) {
 	Eventually(func(g Gomega) {
 		fetched, err := testCtx.KubeClientset.CoreV1().Pods(pod.Namespace).Get(ctx, pod.Name, metav1.GetOptions{})
 		g.Expect(err).To(Succeed())
-		g.Expect(fetched.Status.QOSClass).ToNot(Equal(v1.PodQOSGuaranteed))
+		g.Expect(fetched.Status.QOSClass).To(Equal(qos))
 	}, 30*time.Second, time.Second).Should(Succeed())
 }
 

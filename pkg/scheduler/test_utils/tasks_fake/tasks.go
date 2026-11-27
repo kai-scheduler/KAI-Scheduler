@@ -6,8 +6,10 @@ package tasks_fake
 import (
 	"fmt"
 	"maps"
+	"strconv"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -45,6 +47,19 @@ type TestTaskBasic struct {
 	ResourceClaimTemplates     map[string]string
 	ResourceClaimNames         []string
 	PersistentVolumeClaimNames []string
+	// ResizeStatus holds the allocated/enacted size; the job's request is the desired size.
+	ResizeStatus *TestResizeStatus
+	HostPorts    []int32
+	// ConfigMapNames are required by the main container through envFrom.
+	ConfigMapNames []string
+}
+
+// TestResizeStatus uses the same units as the job's RequiredCPUsPerTask/RequiredMemoryPerTask.
+type TestResizeStatus struct {
+	ActualCPUs   float64
+	ActualMemory float64
+	Deferred     bool
+	Infeasible   bool
 }
 
 func BuildPod(
@@ -134,6 +149,21 @@ func BuildPod(
 
 	maps.Copy(pod.Annotations, task.Annotations)
 
+	applyResizeStatus(pod, task.ResizeStatus)
+	for _, hostPort := range task.HostPorts {
+		pod.Spec.Containers[0].Ports = append(pod.Spec.Containers[0].Ports, v1.ContainerPort{
+			ContainerPort: hostPort,
+			HostPort:      hostPort,
+			Protocol:      v1.ProtocolTCP,
+		})
+	}
+
+	for _, configMapName := range task.ConfigMapNames {
+		pod.Spec.Containers[0].EnvFrom = append(pod.Spec.Containers[0].EnvFrom, v1.EnvFromSource{
+			ConfigMapRef: &v1.ConfigMapEnvSource{LocalObjectReference: v1.LocalObjectReference{Name: configMapName}},
+		})
+	}
+
 	for _, claimName := range task.ResourceClaimNames {
 		pod.Spec.ResourceClaims = append(pod.Spec.ResourceClaims, v1.PodResourceClaim{
 			Name:              claimName,
@@ -153,6 +183,36 @@ func BuildPod(
 	}
 
 	return pod
+}
+
+func applyResizeStatus(pod *v1.Pod, resizeStatus *TestResizeStatus) {
+	if resizeStatus == nil {
+		return
+	}
+	actual := pod.Spec.Containers[0].Resources.Requests.DeepCopy()
+	if resizeStatus.ActualCPUs > 0 {
+		actual[v1.ResourceCPU] = resource.MustParse(strconv.FormatFloat(resizeStatus.ActualCPUs, 'f', -1, 64))
+	}
+	if resizeStatus.ActualMemory > 0 {
+		actual[v1.ResourceMemory] = resource.MustParse(strconv.FormatFloat(resizeStatus.ActualMemory, 'f', -1, 64))
+	}
+	pod.Status.ContainerStatuses = []v1.ContainerStatus{{
+		Name:               pod.Spec.Containers[0].Name,
+		AllocatedResources: actual,
+		Resources:          &v1.ResourceRequirements{Requests: actual.DeepCopy()},
+	}}
+
+	if resizeStatus.Deferred || resizeStatus.Infeasible {
+		reason := v1.PodReasonDeferred
+		if resizeStatus.Infeasible {
+			reason = v1.PodReasonInfeasible
+		}
+		pod.Status.Conditions = append(pod.Status.Conditions, v1.PodCondition{
+			Type:   v1.PodResizePending,
+			Status: v1.ConditionTrue,
+			Reason: reason,
+		})
+	}
 }
 
 func GetTestTaskGPUIndex(testTask *TestTaskBasic) []string {

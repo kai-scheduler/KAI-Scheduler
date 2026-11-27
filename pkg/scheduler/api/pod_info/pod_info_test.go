@@ -27,6 +27,7 @@ import (
 	"gotest.tools/assert"
 	v1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
@@ -290,6 +291,94 @@ func TestGetPodResourceRequest(t *testing.T) {
 				},
 			},
 			expectedResource: resource_info.NewResourceRequirements(1, 4000, 3000000000),
+		},
+		{
+			// KEP-2837: a pod-level request replaces the container-derived
+			// value for that resource. This is what kubelet admission charges,
+			// so the scheduler must charge it too or it over-commits the node.
+			name: "pod-level resources override the container sum",
+			pod: &v1.Pod{
+				Spec: v1.PodSpec{
+					Resources: &v1.ResourceRequirements{
+						Requests: common_info.BuildResourceList("4000m", "96Gi"),
+					},
+					Containers: []v1.Container{
+						{
+							Resources: v1.ResourceRequirements{
+								Requests: common_info.BuildResourceListWithGPU("0", "0", "1"),
+							},
+						},
+						{},
+					},
+				},
+			},
+			// containers contribute 0 cpu / 0 memory, pod-level supplies both;
+			// the GPU stays with the container.
+			expectedResource: resource_info.NewResourceRequirements(1, 4000, 103079215104),
+		},
+		{
+			// Only one resource set at pod level: the other keeps the
+			// container-derived value.
+			name: "pod-level cpu only, memory from containers",
+			pod: &v1.Pod{
+				Spec: v1.PodSpec{
+					Resources: &v1.ResourceRequirements{
+						Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("6")},
+					},
+					Containers: []v1.Container{
+						{
+							Resources: v1.ResourceRequirements{
+								Requests: common_info.BuildResourceList("1000m", "1G"),
+							},
+						},
+						{
+							Resources: v1.ResourceRequirements{
+								Requests: common_info.BuildResourceList("2000m", "1G"),
+							},
+						},
+					},
+				},
+			},
+			expectedResource: resource_info.RequirementsFromResourceList(common_info.BuildResourceList("6000m", "2G")),
+		},
+		{
+			// Pod-level resources sit outside the init-phase max and above
+			// the sidecar sum, exactly as in upstream PodRequests; overhead is
+			// still added on top.
+			name: "pod-level resources with sidecar, init container and overhead",
+			pod: &v1.Pod{
+				Spec: v1.PodSpec{
+					Resources: &v1.ResourceRequirements{
+						Requests: common_info.BuildResourceList("8000m", "16Gi"),
+					},
+					InitContainers: []v1.Container{
+						{
+							RestartPolicy: ptr.To(v1.ContainerRestartPolicyAlways),
+							Resources: v1.ResourceRequirements{
+								Requests: common_info.BuildResourceList("500m", "256Mi"),
+							},
+						},
+						{
+							Resources: v1.ResourceRequirements{
+								Requests: common_info.BuildResourceList("5000m", "1Gi"),
+							},
+						},
+					},
+					Containers: []v1.Container{
+						{
+							Resources: v1.ResourceRequirements{
+								Requests: common_info.BuildResourceList("1000m", "1Gi"),
+							},
+						},
+					},
+					Overhead: common_info.BuildResourceList("1000m", "1Gi"),
+				},
+			},
+			// pod-level (8000m, 16Gi) replaces the init/sidecar-derived
+			// (5500m, 1Gi+256Mi); overhead (1000m, 1Gi) is added: 9000m, 17Gi.
+			expectedResource: resource_info.RequirementsFromResourceList(
+				common_info.BuildResourceList("9000m", "18253611008"),
+			),
 		},
 	}
 	for i, test := range tests {
@@ -650,7 +739,7 @@ func TestGetPodStorageClaims(t *testing.T) {
 	assert.Equal(t, "owned-pvc-name", pod.GetOwnedStorageClaims()[ownedClaimKey].Name)
 }
 
-func TestIsRequireAnyKindOfGPU_DRA(t *testing.T) {
+func TestRequiresGPUCapacity_DRA(t *testing.T) {
 	gpuReq := resource_info.NewGpuResourceRequirement()
 	gpuReq.SetDraGpus(map[string]int64{"nvidia.com/gpu": 2})
 	pi := &PodInfo{
@@ -658,8 +747,49 @@ func TestIsRequireAnyKindOfGPU_DRA(t *testing.T) {
 		GpuRequirement: *gpuReq,
 		Pod:            &v1.Pod{},
 	}
-	assert.Assert(t, pi.IsRequireAnyKindOfGPU(), "pod with only DRA GPU requests should require GPU")
+	assert.Assert(t, pi.requiresGPUCapacity(), "pod with only DRA GPU requests should require GPU capacity")
 	assert.Assert(t, !pi.IsCPUOnlyRequest(), "pod with only DRA GPU requests should not be CPU-only")
+}
+
+func TestRequiresGPUNode_AdminAccessClaim(t *testing.T) {
+	claim := &resourceapi.ResourceClaim{
+		ObjectMeta: metav1.ObjectMeta{Name: "dcgm-exporter", Namespace: "ns1"},
+		Spec: resourceapi.ResourceClaimSpec{
+			Devices: resourceapi.DeviceClaim{
+				Requests: []resourceapi.DeviceRequest{{
+					Name: "gpus",
+					Exactly: &resourceapi.ExactDeviceRequest{
+						DeviceClassName: "gpu.nvidia.com",
+						AllocationMode:  resourceapi.DeviceAllocationModeAll,
+						AdminAccess:     ptr.To(true),
+					},
+				}},
+			},
+		},
+	}
+	pod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{UID: types.UID("pod-uid"), Name: "p1", Namespace: "ns1"},
+		Spec: v1.PodSpec{
+			Containers: []v1.Container{
+				{Resources: v1.ResourceRequirements{Requests: common_info.BuildResourceList("1000m", "1G")}},
+			},
+			ResourceClaims: []v1.PodResourceClaim{
+				{Name: "dcgm-exporter", ResourceClaimName: ptr.To("dcgm-exporter")},
+			},
+		},
+		Status: v1.PodStatus{Phase: v1.PodPending},
+	}
+
+	pi := NewTaskInfo(pod, resource_info.NewResourceVectorMap(), TaskInfoOptions{
+		DraPodClaims: []*resourceapi.ResourceClaim{claim},
+	})
+	assert.Assert(t, pi.HasDRAGPUClaim)
+	assert.Assert(t, pi.RequiresGPUNode(), "an admin access GPU claim still needs a GPU node")
+	assert.Assert(t, pi.Clone().RequiresGPUNode())
+
+	cpuPod := NewTaskInfo(&v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "p2", Namespace: "ns1"}},
+		resource_info.NewResourceVectorMap())
+	assert.Assert(t, !cpuPod.RequiresGPUNode())
 }
 
 func TestNewTaskInfoWithBindRequest_ResourceClaimInfo(t *testing.T) {

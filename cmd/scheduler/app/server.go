@@ -104,6 +104,7 @@ func BuildSchedulerParams(opt *options.ServerOption) *conf.SchedulerParams {
 		MaxNumberConsolidationPreemptees:  opt.MaxNumberConsolidationPreemptees,
 		ScheduleCSIStorage:                opt.ScheduleCSIStorage,
 		UseSchedulingSignatures:           opt.UseSchedulingSignatures,
+		DeferredResizePreemption:          opt.DeferredResizePreemption,
 		FullHierarchyFairness:             opt.FullHierarchyFairness,
 		AllowConsolidatingReclaim:         opt.AllowConsolidatingReclaim,
 		NumOfStatusRecordingWorkers:       opt.NumOfStatusRecordingWorkers,
@@ -131,7 +132,7 @@ func RunApp() error {
 
 	mux := http.NewServeMux()
 	go func() {
-		_ = http.ListenAndServe(fmt.Sprintf("127.0.0.1:%d", so.PluginServerPort), mux)
+		glog.Errorf("Plugin Http Server failed %s", http.ListenAndServe(fmt.Sprintf("127.0.0.1:%d", so.PluginServerPort), mux))
 	}()
 
 	setupProfiling(so)

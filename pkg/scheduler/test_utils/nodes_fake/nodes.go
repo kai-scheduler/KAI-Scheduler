@@ -59,6 +59,8 @@ type TestNodeBasic struct {
 	Labels          map[string]string
 	NumaTopology    *node_info.NumaTopology
 	Conditions      *[]v1.NodeCondition
+	Unschedulable   bool
+	Taints          []v1.Taint
 }
 
 func BuildNodesInfoMap(
@@ -196,6 +198,8 @@ func buildNodeInfo(
 	for labelKey, labelValue := range nodeMetadata.Labels {
 		node.Labels[labelKey] = labelValue
 	}
+	node.Spec.Unschedulable = nodeMetadata.Unschedulable
+	node.Spec.Taints = nodeMetadata.Taints
 	if nodeMetadata.Conditions != nil {
 		node.Status.Conditions = *nodeMetadata.Conditions
 	} else if nodeMetadata.GPUs > 0 {
@@ -225,6 +229,7 @@ func buildNodeInfo(
 	if draGPUCount > 0 {
 		log.InfraLogger.V(6).Infof("Node %s has %d DRA GPUs from ResourceSlices", nodeName, draGPUCount)
 		nodeInfo.AddDRAGPUs(float64(draGPUCount))
+		nodeInfo.HasDRAGPUs = true
 	}
 
 	// Order of node task addition matters

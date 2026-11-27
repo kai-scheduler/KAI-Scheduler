@@ -234,6 +234,13 @@ func (qrs *QueueResourceShare) AddResourceShare(resource ResourceName, amount fl
 	qrs.lastFairShare = nil
 }
 
+func (qrs *QueueResourceShare) SetFairShare(resource ResourceName, fairShare float64) {
+	qrs.ResourceShare(resource).FairShare = fairShare
+
+	// invalidate fairshare cache
+	qrs.lastFairShare = nil
+}
+
 func (qrs *QueueResourceShare) SetQuotaResources(resource ResourceName, deserved float64, maxAllowed float64,
 	overQuotaWeight float64) {
 	resourceShare := qrs.ResourceShare(resource)

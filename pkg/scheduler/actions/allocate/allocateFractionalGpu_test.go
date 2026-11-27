@@ -1671,7 +1671,7 @@ func getFractionalGPUTestsMetadata() []integration_tests_utils.TestTopologyMetad
 						GPUsRequired: 0.2,
 						Status:       pod_status.Binding,
 						NodeName:     "node0",
-						GPUGroups:    []string{"1"},
+						GPUGroups:    []string{"2"},
 					},
 				},
 				Mocks: &test_utils.TestMock{

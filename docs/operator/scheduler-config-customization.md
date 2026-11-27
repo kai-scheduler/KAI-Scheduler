@@ -32,6 +32,19 @@ scheduler:
 
 This option is disabled by default. Enable it when investigating unschedulable workloads, then disable it after collecting the needed diagnostics. Generating detailed errors re-evaluates failed tasks against candidate nodes during status reporting. On large clusters with many pending unschedulable tasks, this adds scheduler CPU work and can increase scheduling-cycle latency.
 
+### Deferred resize preemption
+
+Set `deferred-resize-preemption` to `"true"` to let the preempt and reclaim actions evict pods on a node so that an in-place resize the kubelet marked as `Deferred` can be enacted. See [Deferred resize preemption](../in-place-resize/README.md#deferred-resize-preemption-opt-in).
+
+```yaml
+# SchedulingShard
+spec:
+  args:
+    deferred-resize-preemption: "true"
+```
+
+This option is disabled by default.
+
 ## Default Plugins
 
 | Plugin | Priority | Description |
@@ -67,6 +80,23 @@ This option is disabled by default. Enable it when investigating unschedulable w
 | stalegangeviction | 100 | Evict stale gang-scheduled pods |
 
 Higher priority values run first.
+
+An empty action list runs no actions. The scheduler still starts, keeps its informer cache, opens a session every cycle, and serves `/get-snapshot`. It does not update PodGroup status or delete stale BindRequests. Leave `actions` unset to keep the defaults above. Disable every action on the shard, or set `actions: ""` in the scheduler config file, to run none.
+
+```yaml
+spec:
+  actions:
+    allocate:
+      enabled: false
+    consolidation:
+      enabled: false
+    reclaim:
+      enabled: false
+    preempt:
+      enabled: false
+    stalegangeviction:
+      enabled: false
+```
 
 ## Examples
 
