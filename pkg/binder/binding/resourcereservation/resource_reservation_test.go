@@ -336,7 +336,7 @@ var _ = Describe("ResourceReservationService", func() {
 				if testData.reservationPod != nil {
 					podsInCluster = append(podsInCluster, testData.reservationPod)
 				}
-				clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).WithRuntimeObjects(podsInCluster...).WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
+				clientWithObjs := newReservationClientBuilder().WithRuntimeObjects(podsInCluster...).WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
 				fakeClient := interceptor.NewClient(clientWithObjs, testData.clientInterceptFuncs)
 				rsc := initializeTestService(fakeClient)
 
@@ -408,7 +408,7 @@ var _ = Describe("ResourceReservationService", func() {
 			testName := testName
 			testData := testData
 			It(testName, func() {
-				clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).WithRuntimeObjects(testData.podsInCluster...).Build()
+				clientWithObjs := newReservationClientBuilder().WithRuntimeObjects(testData.podsInCluster...).Build()
 				fakeClient := interceptor.NewClient(clientWithObjs, testData.clientInterceptFuncs)
 				rsc := initializeTestService(fakeClient)
 
@@ -621,7 +621,7 @@ var _ = Describe("ResourceReservationService", func() {
 			testName := testName
 			testData := testData
 			It(testName, func() {
-				clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).WithRuntimeObjects(testData.podsInCluster...).WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
+				clientWithObjs := newReservationClientBuilder().WithRuntimeObjects(testData.podsInCluster...).WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
 				fakeClient := interceptor.NewClient(clientWithObjs, testData.clientInterceptFuncs)
 				rsc := initializeTestService(fakeClient)
 
@@ -879,7 +879,7 @@ var _ = Describe("ResourceReservationService", func() {
 			testName := testName
 			testData := testData
 			It(testName, func() {
-				clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).WithRuntimeObjects(testData.podsInCluster...).WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
+				clientWithObjs := newReservationClientBuilder().WithRuntimeObjects(testData.podsInCluster...).WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
 				fakeClient := interceptor.NewClient(clientWithObjs, testData.clientInterceptFuncs)
 				rsc := initializeTestService(fakeClient)
 
@@ -905,7 +905,7 @@ var _ = Describe("ResourceReservationService", func() {
 				appLabelValue:       "kai-reservation",
 				serviceAccountName:  "kai-sa",
 				reservationPodImage: "nvidia/kai-reservation:latest",
-				kubeClient:          fake.NewClientBuilder().WithScheme(testScheme).Build(),
+				kubeClient:          newReservationClientBuilder().Build(),
 			}
 
 			containerResources := v1.ResourceRequirements{
@@ -973,7 +973,7 @@ var _ = Describe("ResourceReservationService", func() {
 				appLabelValue:       "kai-reservation",
 				serviceAccountName:  "kai-sa",
 				reservationPodImage: "nvidia/kai-reservation:latest",
-				kubeClient:          fake.NewClientBuilder().WithScheme(testScheme).Build(),
+				kubeClient:          newReservationClientBuilder().Build(),
 			}
 
 			pod, err := rsc.createResourceReservationPod(
@@ -997,7 +997,7 @@ var _ = Describe("ResourceReservationService", func() {
 				appLabelValue:       "kai-reservation",
 				serviceAccountName:  "kai-sa",
 				reservationPodImage: "nvidia/kai-reservation:latest",
-				kubeClient:          fake.NewClientBuilder().WithScheme(testScheme).Build(),
+				kubeClient:          newReservationClientBuilder().Build(),
 			}
 			sourcePod := &v1.Pod{
 				Spec: v1.PodSpec{
@@ -1142,7 +1142,7 @@ var _ = Describe("ResourceReservationService", func() {
 			testData := testData
 			It(testName, func() {
 				podsInCluster := []runtime.Object{testData.pod}
-				clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).WithRuntimeObjects(podsInCluster...).Build()
+				clientWithObjs := newReservationClientBuilder().WithRuntimeObjects(podsInCluster...).Build()
 				fakeClient := interceptor.NewClient(clientWithObjs, testData.clientInterceptFuncs)
 				rsc := initializeTestService(fakeClient)
 
@@ -1172,7 +1172,7 @@ var _ = Describe("ResourceReservationService", func() {
 				appLabelValue:       "kai-reservation",
 				serviceAccountName:  "kai-sa",
 				reservationPodImage: "test-image:latest",
-				kubeClient:          fake.NewClientBuilder().WithScheme(testScheme).Build(),
+				kubeClient:          newReservationClientBuilder().Build(),
 				podResources: &v1.ResourceRequirements{
 					Requests: v1.ResourceList{
 						v1.ResourceCPU:    resource.MustParse("2m"),
@@ -1214,7 +1214,7 @@ var _ = Describe("ResourceReservationService", func() {
 				appLabelValue:       "kai-reservation",
 				serviceAccountName:  "kai-sa",
 				reservationPodImage: "test-image:latest",
-				kubeClient:          fake.NewClientBuilder().WithScheme(testScheme).Build(),
+				kubeClient:          newReservationClientBuilder().Build(),
 				podResources:        nil,
 				scalingPodNamespace: scalingPodsNamespace,
 			}
@@ -1252,7 +1252,7 @@ var _ = Describe("ResourceReservationService", func() {
 				appLabelValue:       "kai-reservation",
 				serviceAccountName:  "kai-sa",
 				reservationPodImage: "test-image:latest",
-				kubeClient:          fake.NewClientBuilder().WithScheme(testScheme).Build(),
+				kubeClient:          newReservationClientBuilder().Build(),
 				podResources: &v1.ResourceRequirements{
 					Requests: v1.ResourceList{
 						v1.ResourceCPU: resource.MustParse("5m"),
@@ -1287,7 +1287,7 @@ var _ = Describe("ResourceReservationService", func() {
 		It("should not allow GPU resources to be overridden by podResources", func() {
 			// This test ensures that even if podResources contains GPU configuration,
 			// it won't override the GPU resource value set by the service
-			rsc := NewService(false, fake.NewClientBuilder().WithScheme(testScheme).Build(), "test-image:latest",
+			rsc := NewService(false, newReservationClientBuilder().Build(), "test-image:latest",
 				time.Minute, "kai-resource-reservation", "kai-sa", "kai-reservation", scalingPodsNamespace, "",
 				&v1.ResourceRequirements{
 					Requests: v1.ResourceList{
@@ -1334,7 +1334,7 @@ var _ = Describe("ResourceReservationService", func() {
 				},
 			}
 			passed := configured.DeepCopy()
-			rsc := NewService(false, fake.NewClientBuilder().WithScheme(testScheme).Build(), "test-image:latest",
+			rsc := NewService(false, newReservationClientBuilder().Build(), "test-image:latest",
 				time.Minute, "kai-resource-reservation", "kai-sa", "kai-reservation", scalingPodsNamespace, "",
 				configured, nil, nil, false)
 			stripped := rsc.podResources.DeepCopy()
@@ -1460,7 +1460,7 @@ var _ = Describe("Race condition: reservation pod deleted during concurrent bind
 
 		DescribeTable("failed BindRequests preserve only needed reservations",
 			func(limit *int32, failedAttempts int32, preserveReservation bool) {
-				clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).
+				clientWithObjs := newReservationClientBuilder().
 					WithRuntimeObjects(reservationPod.DeepCopy(), failedRequest(limit, failedAttempts)).Build()
 				rsc := initializeTestService(clientWithObjs)
 
@@ -1487,7 +1487,7 @@ var _ = Describe("Race condition: reservation pod deleted during concurrent bind
 			pendingRequest.Name = "bind-request-2"
 			pendingRequest.Spec.PodName = "fraction-pod-2"
 			pendingRequest.Status = schedulingv1alpha2.BindRequestStatus{Phase: schedulingv1alpha2.BindRequestPhasePending}
-			clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).
+			clientWithObjs := newReservationClientBuilder().
 				WithRuntimeObjects(reservationPod.DeepCopy(), exhaustedRequest, pendingRequest).
 				WithInterceptorFuncs(interceptor.Funcs{
 					List: func(ctx context.Context, c runtimeClient.WithWatch, list runtimeClient.ObjectList, opts ...runtimeClient.ListOption) error {
@@ -1530,7 +1530,7 @@ var _ = Describe("Race condition: reservation pod deleted during concurrent bind
 				},
 			}
 
-			clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).
+			clientWithObjs := newReservationClientBuilder().
 				WithRuntimeObjects(reservationPod.DeepCopy(), activeBindRequest).
 				WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
 			rsc := initializeTestService(clientWithObjs)
@@ -1546,7 +1546,7 @@ var _ = Describe("Race condition: reservation pod deleted during concurrent bind
 		})
 
 		It("should delete reservation pod when no active BindRequests exist", func() {
-			clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).WithRuntimeObjects(reservationPod.DeepCopy()).WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
+			clientWithObjs := newReservationClientBuilder().WithRuntimeObjects(reservationPod.DeepCopy()).WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
 			rsc := initializeTestService(clientWithObjs)
 
 			err := rsc.SyncForGpuGroup(context.TODO(), gpuGroup)
@@ -1575,7 +1575,7 @@ var _ = Describe("Race condition: reservation pod deleted during concurrent bind
 				},
 			}
 
-			clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).
+			clientWithObjs := newReservationClientBuilder().
 				WithRuntimeObjects(reservationPod.DeepCopy(), succeededBindRequest).
 				WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
 			rsc := initializeTestService(clientWithObjs)
@@ -1615,7 +1615,7 @@ var _ = Describe("Race condition: reservation pod deleted during concurrent bind
 				},
 			}
 
-			clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).
+			clientWithObjs := newReservationClientBuilder().
 				WithRuntimeObjects(reservationPod.DeepCopy(), livePod, succeededBindRequest).
 				WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
 			rsc := initializeTestService(clientWithObjs)
@@ -1647,7 +1647,7 @@ var _ = Describe("Race condition: reservation pod deleted during concurrent bind
 				},
 			}
 
-			clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).
+			clientWithObjs := newReservationClientBuilder().
 				WithRuntimeObjects(reservationPod.DeepCopy(), failedBindRequest).
 				WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
 			rsc := initializeTestService(clientWithObjs)
@@ -1692,7 +1692,7 @@ var _ = Describe("Race condition: reservation pod deleted during concurrent bind
 				},
 			}
 
-			clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).
+			clientWithObjs := newReservationClientBuilder().
 				WithRuntimeObjects(reservationPod.DeepCopy(), activeBindRequestOtherGroup, activeBindRequest).
 				WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
 			rsc := initializeTestService(clientWithObjs)
@@ -1720,7 +1720,7 @@ var _ = Describe("Race condition: reservation pod deleted during concurrent bind
 				ReadOnlyRootFilesystem:   ptrBool(true),
 			}
 
-			clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).
+			clientWithObjs := newReservationClientBuilder().
 				WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
 			svc := NewService(false, clientWithObjs, "test-image", 40*time.Millisecond,
 				resourceReservationNameSpace, resourceReservationServiceAccount,
@@ -1745,7 +1745,7 @@ var _ = Describe("Race condition: reservation pod deleted during concurrent bind
 		})
 
 		It("should not set security contexts when nil", func() {
-			clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).
+			clientWithObjs := newReservationClientBuilder().
 				WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
 			svc := NewService(false, clientWithObjs, "test-image", 40*time.Millisecond,
 				resourceReservationNameSpace, resourceReservationServiceAccount,
@@ -1772,7 +1772,7 @@ var _ = Describe("Race condition: reservation pod deleted during concurrent bind
 
 	Context("FIPS only", func() {
 		createPod := func(fipsOnly bool) *v1.Pod {
-			clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).
+			clientWithObjs := newReservationClientBuilder().
 				WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
 			svc := NewService(false, clientWithObjs, "test-image", 40*time.Millisecond,
 				resourceReservationNameSpace, resourceReservationServiceAccount,
@@ -1830,7 +1830,7 @@ var _ = Describe("Reservation pod duplicate gpu-group race", func() {
 	// distinct physical GPU index. Deterministic per-(node, gpu-group) naming plus
 	// AlreadyExists handling must collapse the second create onto the first pod.
 	It("creates a single reservation pod for a gpu-group despite cache lag", func() {
-		base := fake.NewClientBuilder().WithScheme(testScheme).
+		base := newReservationClientBuilder().
 			WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
 
 		var gpuIndexCounter int32
@@ -1902,3 +1902,9 @@ var _ = Describe("IsReservationPod", func() {
 func ptrBool(b bool) *bool { return &b }
 
 func ptrInt64(i int64) *int64 { return &i }
+
+func newReservationClientBuilder() *fake.ClientBuilder {
+	return fake.NewClientBuilder().WithScheme(testScheme).
+		WithIndex(&v1.Pod{}, PodGPUGroupIndex, PodGPUGroups).
+		WithIndex(&schedulingv1alpha2.BindRequest{}, BindRequestGPUGroupIndex, BindRequestGPUGroups)
+}

@@ -5,7 +5,6 @@ package app
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
@@ -32,7 +31,6 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding/resourcereservation"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/controllers"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins"
-	"github.com/kai-scheduler/api/constants"
 )
 
 var (
@@ -204,23 +202,5 @@ func createIndexesForResourceReservation(mgr manager.Manager) error {
 		return err
 	}
 
-	if err := mgr.GetFieldIndexer().IndexField(
-		context.Background(), &corev1.Pod{}, fmt.Sprintf("metadata.labels.%s", constants.GPUGroup),
-		func(obj client.Object) []string {
-			labels := obj.(*corev1.Pod).Labels
-			if labels == nil {
-				return nil
-			}
-			gpuGroup, found := labels[constants.GPUGroup]
-			if !found {
-				return nil
-			}
-			return []string{gpuGroup}
-		},
-	); err != nil {
-		setupLog.Error(err, "failed to create index for spec.nodeName")
-		return err
-	}
-
-	return nil
+	return resourcereservation.RegisterGPUGroupIndexes(context.Background(), mgr.GetFieldIndexer())
 }

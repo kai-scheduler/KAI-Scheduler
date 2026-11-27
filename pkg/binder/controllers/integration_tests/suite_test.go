@@ -107,7 +107,14 @@ var _ = BeforeSuite(func() {
 		InformerFactory: informerFactory,
 	}, plugins.DefaultConfig(plugins.DefaultBindTimeoutSeconds, plugins.DefaultCDIEnabled))
 	Expect(err).NotTo(HaveOccurred())
-	clientWithWatch, err := client.NewWithWatch(cfg, client.Options{})
+	Expect(resourcereservation.RegisterGPUGroupIndexes(testContext, k8sManager.GetFieldIndexer())).To(Succeed())
+	Expect(k8sManager.GetFieldIndexer().IndexField(testContext, &corev1.Pod{}, "spec.nodeName", func(obj client.Object) []string {
+		return []string{obj.(*corev1.Pod).Spec.NodeName}
+	})).To(Succeed())
+	clientWithWatch, err := client.NewWithWatch(cfg, client.Options{
+		Scheme: scheme.Scheme,
+		Cache:  &client.CacheOptions{Reader: k8sManager.GetCache()},
+	})
 	Expect(err).NotTo(HaveOccurred())
 
 	rrs = resourcereservation.NewService(false, clientWithWatch, "", 40*time.Second,
