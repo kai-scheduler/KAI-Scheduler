@@ -17,6 +17,7 @@ var _ = DescribeAffinitySpecs()
 var _ = DescribeConfigMapSpecs()
 var _ = DescribePVCSpecs()
 var _ = DescribeTaintTolerationSpecs()
+var _ = DescribeTopologySpreadSpecs()
 
 func TestPredicates(t *testing.T) {
 	utils.SetLogger()

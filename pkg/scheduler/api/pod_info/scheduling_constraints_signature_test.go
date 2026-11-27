@@ -25,6 +25,8 @@ const (
 
 func TestPodSchedulingConstraintsSignature(t *testing.T) {
 	pod := getRandomPod()
+	pod.Namespace = "test-namespace"
+	pod.Labels = map[string]string{"key": "val"}
 	pod.Spec.NodeSelector = map[string]string{
 		"key": "val",
 	}
@@ -123,7 +125,7 @@ func TestPodSchedulingConstraintsSignature(t *testing.T) {
 	}
 	key := podInfo.GetSchedulingConstraintsSignature()
 
-	assert.Equal(t, common_info.SchedulingConstraintsSignature("6b58b34a1ca5d08254aaab7c8705a822bd824322b2547d2c64824cde270c2312"), key)
+	assert.Equal(t, common_info.SchedulingConstraintsSignature("1631890d56291a89b90d0895e154119a3e92ea9e6457aa1d45870945caa579c2"), key)
 }
 
 func TestPodSchedulingConstraintsSignature_NodeSelector(t *testing.T) {
@@ -220,6 +222,106 @@ func TestPodSchedulingConstraintsSignature_TopologySpreadConstraints_nodeTaintsP
 	newPodInfo := NewTaskInfo(&pod, resource_info.NewResourceVectorMap())
 	newKey := newPodInfo.GetSchedulingConstraintsSignature()
 	assert.NotEqualf(t, key, newKey, "Expected topology spread constraints to affect signature, got same")
+}
+
+func TestPodSchedulingConstraintsSignature_TopologySpreadConstraints_Namespace(t *testing.T) {
+	pod := getRandomPod()
+
+	podInfo := NewTaskInfo(&pod, resource_info.NewResourceVectorMap())
+	key := podInfo.GetSchedulingConstraintsSignature()
+
+	pod.Namespace = pod.Namespace + "-other"
+	newPodInfo := NewTaskInfo(&pod, resource_info.NewResourceVectorMap())
+	newKey := newPodInfo.GetSchedulingConstraintsSignature()
+	assert.NotEqualf(t, key, newKey, "Expected namespace to affect signature of a pod with topology spread constraints, got same")
+}
+
+func TestPodSchedulingConstraintsSignature_TopologySpreadConstraints_PodLabels(t *testing.T) {
+	basePod := getRandomPod()
+	spreadPod := func(labels map[string]string, matchLabelKeys ...string) v1.Pod {
+		pod := *basePod.DeepCopy()
+		pod.Labels = labels
+		pod.Spec.TopologySpreadConstraints = []v1.TopologySpreadConstraint{{
+			MaxSkew:           1,
+			TopologyKey:       "kubernetes.io/hostname",
+			WhenUnsatisfiable: v1.DoNotSchedule,
+			LabelSelector:     getLabelSelector("app", "spread"),
+			MatchLabelKeys:    matchLabelKeys,
+		}}
+		return pod
+	}
+	signature := func(pod v1.Pod) common_info.SchedulingConstraintsSignature {
+		return NewTaskInfo(&pod, resource_info.NewResourceVectorMap()).GetSchedulingConstraintsSignature()
+	}
+
+	tests := []struct {
+		name          string
+		base          v1.Pod
+		other         v1.Pod
+		sameSignature bool
+	}{
+		{
+			name:          "labels outside the selector and matchLabelKeys, such as the StatefulSet pod index, are ignored",
+			base:          spreadPod(map[string]string{"app": "spread", "apps.kubernetes.io/pod-index": "0"}),
+			other:         spreadPod(map[string]string{"app": "spread", "apps.kubernetes.io/pod-index": "1"}),
+			sameSignature: true,
+		},
+		{
+			name:          "indexed Job completion index is ignored",
+			base:          spreadPod(map[string]string{"app": "spread", "batch.kubernetes.io/job-completion-index": "0"}),
+			other:         spreadPod(map[string]string{"app": "spread", "batch.kubernetes.io/job-completion-index": "7"}),
+			sameSignature: true,
+		},
+		{
+			name:  "self-match changes",
+			base:  spreadPod(map[string]string{"app": "spread"}),
+			other: spreadPod(map[string]string{"app": "other"}),
+		},
+		{
+			name:  "self-match lost by removing the labels",
+			base:  spreadPod(map[string]string{"app": "spread"}),
+			other: spreadPod(nil),
+		},
+		{
+			name:  "matchLabelKeys value changes",
+			base:  spreadPod(map[string]string{"app": "spread", "pod-template-hash": "a"}, "pod-template-hash"),
+			other: spreadPod(map[string]string{"app": "spread", "pod-template-hash": "b"}, "pod-template-hash"),
+		},
+		{
+			name:  "matchLabelKeys key is missing",
+			base:  spreadPod(map[string]string{"app": "spread", "pod-template-hash": ""}, "pod-template-hash"),
+			other: spreadPod(map[string]string{"app": "spread"}, "pod-template-hash"),
+		},
+		{
+			name:          "label outside matchLabelKeys is ignored",
+			base:          spreadPod(map[string]string{"app": "spread", "pod-template-hash": "a", "index": "0"}, "pod-template-hash"),
+			other:         spreadPod(map[string]string{"app": "spread", "pod-template-hash": "a", "index": "1"}, "pod-template-hash"),
+			sameSignature: true,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if test.sameSignature {
+				assert.Equal(t, signature(test.base), signature(test.other))
+			} else {
+				assert.NotEqual(t, signature(test.base), signature(test.other))
+			}
+		})
+	}
+}
+
+func TestPodSchedulingConstraintsSignature_NoTopologySpreadConstraints_NamespaceAndLabelsIgnored(t *testing.T) {
+	pod := getRandomPod()
+	pod.Spec.TopologySpreadConstraints = nil
+
+	podInfo := NewTaskInfo(&pod, resource_info.NewResourceVectorMap())
+	key := podInfo.GetSchedulingConstraintsSignature()
+
+	pod.Namespace = pod.Namespace + "-other"
+	pod.Labels = map[string]string{"app": randomString(8)}
+	newPodInfo := NewTaskInfo(&pod, resource_info.NewResourceVectorMap())
+	newKey := newPodInfo.GetSchedulingConstraintsSignature()
+	assert.Equalf(t, key, newKey, "Expected namespace and labels not to affect signature without topology spread constraints")
 }
 
 func TestPodSchedulingConstraintsSignature_ContainerPorts(t *testing.T) {
