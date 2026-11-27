@@ -22,6 +22,7 @@ package node_info
 import (
 	"fmt"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -29,6 +30,7 @@ import (
 	"go.uber.org/multierr"
 	"golang.org/x/exp/maps"
 	v1 "k8s.io/api/core/v1"
+	resourcehelper "k8s.io/component-helpers/resource"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"k8s.io/dynamic-resource-allocation/deviceclass/extendedresourcecache"
@@ -334,6 +336,14 @@ func (ni *NodeInfo) PredicateByNodeResourcesType(task *pod_info.PodInfo) error {
 			"fractional/shared GPU pods are not yet supported on DRA-only nodes")
 	}
 
+	if ni.HasDRAGPUs {
+		if name, found := ni.gpuResourceWithoutDeviceSource(task.Pod); found {
+			return common_info.NewFitError(task.Name, task.Namespace, ni.Name,
+				fmt.Sprintf("node reports no %s, its GPUs are only available through DRA, and no DeviceClass maps %s to DRA",
+					name, name))
+		}
+	}
+
 	migNode := ni.IsMIGEnabled()
 	if !migNode && task.IsMigCandidate() {
 		return common_info.NewFitError(task.Name, task.Namespace, ni.Name,
@@ -358,6 +368,29 @@ func (ni *NodeInfo) PredicateByNodeResourcesType(task *pod_info.PodInfo) error {
 		}
 	}
 	return nil
+}
+
+// gpuResourceWithoutDeviceSource returns a GPU resource the pod requests that nothing on the node can provide:
+// the node does not advertise it and no DeviceClass maps it to DRA.
+func (ni *NodeInfo) gpuResourceWithoutDeviceSource(pod *v1.Pod) (v1.ResourceName, bool) {
+	var missing []v1.ResourceName
+	for name, quantity := range resourcehelper.PodRequests(pod, resourcehelper.PodResourcesOptions{}) {
+		if !resource_info.IsGpuResourceName(name) || quantity.IsZero() {
+			continue
+		}
+		if ni.DeviceClassByResource.GetDeviceClass(name) != nil {
+			continue
+		}
+		if allocatable, ok := ni.Node.Status.Allocatable[name]; ok && !allocatable.IsZero() {
+			continue
+		}
+		missing = append(missing, name)
+	}
+	if len(missing) == 0 {
+		return "", false
+	}
+	sort.Slice(missing, func(i, j int) bool { return missing[i] < missing[j] })
+	return missing[0], true
 }
 
 func (ni *NodeInfo) isTaskAllocatableOnNonAllocatedResources(

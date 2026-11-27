@@ -1076,16 +1076,7 @@ usageDBConfig:
 				if expectedConfig.ScenarioSearchBudgets != nil {
 					assert.Equal(t, expectedConfig.ScenarioSearchBudgets, actualConfig.ScenarioSearchBudgets, "ConfigMap ScenarioSearchBudgets content mismatch")
 				}
-				// Trim and split actions
-				expectedActions := make([]string, 0, len(expectedConfig.Actions))
-				for _, action := range strings.Split(expectedConfig.Actions, ",") {
-					expectedActions = append(expectedActions, strings.TrimSpace(action))
-				}
-
-				actualActions := make([]string, 0, len(actualConfig.Actions))
-				for _, action := range strings.Split(actualConfig.Actions, ",") {
-					actualActions = append(actualActions, strings.TrimSpace(action))
-				}
+				assert.Equal(t, expectedConfig.ActionNames(), actualConfig.ActionNames(), "ConfigMap actions content mismatch")
 
 			} else {
 				require.Error(t, err)

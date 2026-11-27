@@ -376,7 +376,7 @@ func (pp *predicatesPlugin) evaluateTaskOnPredicates(
 	if isRestrictNodeSchedulingEnabled() {
 		gpuWorkerLabelKey := conf.GetConfig().GPUWorkerNodeLabelKey
 		cpuWorkerLabelKey := conf.GetConfig().CPUWorkerNodeLabelKey
-		if task.IsRequireAnyKindOfGPU() {
+		if task.RequiresGPUNode() {
 			if _, found := node.Node.Labels[gpuWorkerLabelKey]; !found {
 				log.InfraLogger.V(6).Do(func() {
 					log.InfraLogger.Infof("Task <%s/%s> is a GPU job and will not be allocated to a non GPU <%s>",

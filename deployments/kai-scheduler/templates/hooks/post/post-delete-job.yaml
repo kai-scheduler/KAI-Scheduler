@@ -46,12 +46,20 @@ spec:
       containers:
         - name: deleter
           image: "{{ .Values.global.registry }}/{{ .Values.postCleanup.image.name }}:{{ include "kai-scheduler.imageTag" (dict "root" $ "tag" .Values.postCleanup.image.tag) }}"
-          imagePullPolicy: {{ .Values.postCleanup.image.pullPolicy }}
+          imagePullPolicy: {{ include "kai-scheduler.imagePullPolicy" (dict "root" $ "pullPolicy" .Values.postCleanup.image.pullPolicy) }}
           {{- with .Values.postCleanup.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- if .Values.global.securityContext }}
+          {{- if (include "kai-scheduler.openshift" .) }}
+          securityContext:
+            runAsUser: 10000
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+          {{- else if .Values.global.securityContext }}
           securityContext:
             {{- toYaml .Values.global.securityContext | nindent 12 }}
           {{- end }}

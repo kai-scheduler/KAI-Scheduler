@@ -79,7 +79,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.26.8'
+          go-version: '1.26.10'
           cache: true
 
       - name: Run validation
@@ -89,7 +89,7 @@ jobs:
         run: make test
 
       - name: Archive code coverage results
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v6
         with:
           name: code-coverage
           path: coverage/coverage.out
@@ -105,7 +105,7 @@ jobs:
 
       - name: Archive total coverage
         if: hashFiles('coverage/total-coverage.txt') != ''
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v6
         with:
           name: total-coverage
           path: coverage/total-coverage.txt
@@ -116,7 +116,7 @@ jobs:
     needs: [ validate-and-test, check-build-and-test-required ]
     if: github.event_name != 'merge_group' && needs.check-build-and-test-required.outputs.code == 'true' && github.base_ref == 'main'
     steps:
-      - uses: fgrosse/go-coverage-report@e432de98ee94a276e8f666d25bfd76347665f75b
+      - uses: fgrosse/go-coverage-report@c4bf7e78d1379325814b4dd42d80e526082e788b
         id: coverage_reporter
         with:
           coverage-artifact-name: "code-coverage"
@@ -160,14 +160,14 @@ jobs:
             fi
           } > coverage-report.txt
       - name: Upload coverage report
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-report-for-comment
           path: coverage-report.txt
       - name: Save PR number
         run: echo "${{ github.event.number }}" > pr_number.txt
       - name: Upload PR number
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v6
         with:
           name: pr-number-for-comment
           path: pr_number.txt
@@ -205,7 +205,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.26.8'
+          go-version: '1.26.10'
           cache: false
 
       - name: Move Docker Data to /mnt
@@ -350,7 +350,7 @@ jobs:
 
       - name: Upload E2E report
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v6
         with:
           name: e2e-report-${{ matrix.bucket }}
           path: e2e-report-${{ matrix.bucket }}.json

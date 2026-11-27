@@ -31,6 +31,8 @@ The snapshot plugin is a framework plugin that provides an HTTP endpoint to capt
 
 The plugin registers an HTTP endpoint `/get-snapshot` that returns a ZIP file containing a JSON snapshot of the cluster state.
 
+A scheduler configured with an empty action list still serves `/get-snapshot`. It keeps the informer cache and opens sessions so this plugin can register, and it does not write scheduling updates back to the cluster.
+
 To capture a snapshot, port-forward to the scheduler Deployment and call the endpoint:
 
 ```bash
