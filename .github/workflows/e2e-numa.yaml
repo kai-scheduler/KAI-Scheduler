@@ -1,0 +1,59 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+name: Mokka NUMA E2E
+on:
+  workflow_call:
+    inputs:
+      package_version:
+        type: string
+        required: true
+jobs:
+  e2e-numa:
+    name: Run NUMA E2E Tests on Mokka
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-e2e-cluster
+        with:
+          package_version: ${{ inputs.package_version }}
+          k8s_version: v1.35.0
+          feature_config: mokka-numa
+      - name: Fetch published KAI chart
+        if: github.event_name == 'release'
+        env:
+          VERSION: ${{ inputs.package_version }}
+        run: |
+          for attempt in {1..10}; do
+            if helm pull oci://ghcr.io/kai-scheduler/kai-scheduler/kai-scheduler --version "$VERSION" --untar --untardir "$RUNNER_TEMP"; then
+              exit 0
+            fi
+            sleep 30
+          done
+          exit 1
+      - name: Install KAI with NUMA scheduling
+        env:
+          PACKAGE_VERSION: ${{ inputs.package_version }}
+        run: |
+          bash hack/numa/place-addons.sh
+          chart="/mnt/images/kai-scheduler-$PACKAGE_VERSION.tgz"
+          if [[ "$GITHUB_EVENT_NAME" == release ]]; then chart="$RUNNER_TEMP/kai-scheduler"; fi
+          helm upgrade --install kai-scheduler "$chart" \
+            --namespace kai-scheduler --create-namespace --set global.registry=localhost:30100 \
+            --set-string 'global.nodeSelector.mokka\.nvidia\.com/e2e-cpu=true' \
+            --set-string 'numaPlacementExporter.nodeSelector.mokka\.nvidia\.com/e2e-gpu=true' \
+            --set scheduler.plugins.numa.enabled=true --set binder.runtimeClassName=nvidia \
+            --set global.gpuSharing=true --set global.gpuSharingMode=NonMemoryEnforced \
+            --set prometheus.enabled=true --wait --timeout 10m
+      - name: Run full NUMA suite
+        run: |
+          go tool ginkgo --keep-going --trace -vv --timeout 45m --json-report=numa.json ./test/e2e/suites/numa
+          # A missing topology can skip a selected spec while Ginkgo still exits successfully.
+          jq -e '.[0] | .PreRunStats.TotalSpecs as $total |
+            $total > 0 and ([.SpecReports[] | select(.LeafNodeType == "It" and .State == "passed")] | length) == $total' numa.json
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: numa-mokka-report
+          path: numa.json
+          if-no-files-found: ignore

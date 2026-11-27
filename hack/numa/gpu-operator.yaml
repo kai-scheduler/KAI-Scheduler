@@ -1,0 +1,63 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# Mokka supplies the userspace driver files and installs the container runtime.
+driver:
+  enabled: false
+toolkit:
+  enabled: false
+devicePlugin:
+  enabled: true
+  config:
+    name: ""
+gfd:
+  enabled: true
+  env:
+    - name: GFD_MACHINE_TYPE_FILE
+      value: /etc/nvml-mock/machine-type
+dcgmExporter:
+  enabled: true
+dcgm:
+  enabled: false
+nodeStatusExporter:
+  enabled: false
+mig:
+  strategy: none
+migManager:
+  enabled: false
+cdi:
+  enabled: true
+  default: true
+validator:
+  driver:
+    env:
+      - name: DISABLE_DEV_CHAR_SYMLINK_CREATION
+        value: "true"
+  toolkit:
+    env:
+      - name: NVIDIA_VISIBLE_DEVICES
+        value: all
+  cuda:
+    env:
+      # Synthetic GPUs do not execute CUDA kernels.
+      - name: WITH_WORKLOAD
+        value: "false"
+node-feature-discovery:
+  topologyUpdater:
+    enable: true
+    createCRDs: true
+    kubeletConfigPath: /var/lib/kubelet/config.yaml
+    updateInterval: 3s
+    nodeSelector:
+      mokka.nvidia.com/e2e-gpu: "true"
+    annotations:
+      nvml-mock.nvidia.com/inject: "false"
+    config:
+      # Both managers publish allocations through the real kubelet socket.
+      excludeList: {}
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        memory: 128Mi

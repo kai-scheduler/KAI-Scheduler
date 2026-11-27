@@ -385,6 +385,13 @@ jobs:
           echo "Pods did not terminate within 60 seconds. Uninstall incomplete."
           exit 1
 
+  e2e-numa:
+    name: Full NUMA suite
+    needs: build
+    uses: ./.github/workflows/e2e-numa.yaml
+    with:
+      package_version: ${{ needs.build.outputs.package_version }}
+
   e2e-upgrade-tests:
     name: Run E2E Upgrade Tests
     needs: [ build, check-build-and-test-required ]
@@ -507,6 +514,7 @@ jobs:
       - build
       - prepare-e2e-buckets
       - e2e-tests
+      - e2e-numa
       - e2e-upgrade-tests
     if: always()
     runs-on: ubuntu-latest
@@ -520,6 +528,7 @@ jobs:
           BUILD_RESULT: ${{ needs.build.result }}
           CODE_REQUIRED: ${{ needs.check-build-and-test-required.outputs.code }}
           PREPARE_RESULT: ${{ needs.prepare-e2e-buckets.result }}
+          NUMA_RESULT: ${{ needs.e2e-numa.result }}
           MAIN_RESULT: ${{ needs.e2e-tests.result }}
           UPGRADE_RESULT: ${{ needs.e2e-upgrade-tests.result }}
         run: |
@@ -540,6 +549,7 @@ jobs:
           results=(
             "Build:$BUILD_RESULT"
             "Prepare E2E Buckets:$PREPARE_RESULT"
+            "Full NUMA suite:$NUMA_RESULT"
             "Main E2E Buckets:$MAIN_RESULT"
             "Upgrade E2E:$UPGRADE_RESULT"
           )
@@ -579,7 +589,7 @@ jobs:
 
   cleanup-images-cache:
     name: Cleanup Images Cache
-    needs: [ e2e-tests, e2e-upgrade-tests, e2e-gitops-tests, check-build-and-test-required ]
+    needs: [ e2e-tests, e2e-numa, e2e-upgrade-tests, e2e-gitops-tests, check-build-and-test-required ]
     # No always(): a failed e2e job must keep the cache so "Re-run failed
     # jobs" can restore images; stale entries fall to GitHub cache eviction.
     if: success() && needs.check-build-and-test-required.outputs.code == 'true'

@@ -17,7 +17,7 @@ inputs:
     required: false
     default: 'v1.34.0'
   feature_config:
-    description: Named feature configuration (default, dra-enabled, or numa-full)
+    description: Named feature configuration (default, dra-enabled, numa-full, or mokka-numa)
     required: false
     default: 'default'
 
@@ -46,6 +46,7 @@ runs:
         key: images-${{ github.sha }}
 
     - name: Generate kind config
+      if: inputs.feature_config != 'mokka-numa'
       shell: bash
       env:
         FEATURE_CONFIG: ${{ inputs.feature_config }}
@@ -66,7 +67,7 @@ runs:
       with:
         cluster_name: kind
         version: v0.32.0
-        config: /tmp/kind-config.yaml
+        config: ${{ inputs.feature_config == 'mokka-numa' && 'hack/numa/kind.yaml' || '/tmp/kind-config.yaml' }}
         node_image: kindest/node:${{ inputs.k8s_version }}
 
     - name: Keep kindnet Burstable for simulated NUMA nodes
@@ -76,9 +77,16 @@ runs:
         kubectl -n kube-system rollout status daemonset/kindnet --timeout=180s
 
     - name: Deploy image registry
+      env:
+        NUMA_SETUP: ${{ inputs.feature_config }}
       shell: bash
       run: |
         kubectl apply -f ./hack/local_registry.yaml
+        if [[ "$NUMA_SETUP" == mokka-numa ]]; then
+          kubectl -n kube-registry patch deployment registry --type=merge \
+            -p '{"spec":{"template":{"spec":{"nodeSelector":{"mokka.nvidia.com/e2e-cpu":"true"}}}}}'
+          kubectl -n kube-registry rollout status deployment/registry --timeout=3m
+        fi
         kubectl wait --for=condition=available --timeout=60s deployment/registry -n kube-registry
 
     - name: Load docker images to registry
@@ -94,7 +102,13 @@ runs:
           docker push $new_image
         done
 
+    - name: Deploy Mokka and GPU Operator
+      if: inputs.feature_config == 'mokka-numa'
+      shell: bash
+      run: hack/numa/install.sh
+
     - name: Deploy fake gpu operator
+      if: inputs.feature_config != 'mokka-numa'
       shell: bash
       env:
         FEATURE_CONFIG: ${{ inputs.feature_config }}
