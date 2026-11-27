@@ -343,6 +343,7 @@ topologyMigration:
   image:
     name: helm-hooks
     pullPolicy: ""
+    # registry: ""  # Optional: Override global.registry (e.g. to mirror only the hook image)
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
   resources:
     requests:
@@ -356,6 +357,7 @@ postCleanup:
   image:
     name: helm-hooks
     pullPolicy: ""
+    # registry: ""  # Optional: Override global.registry (e.g. to mirror only the hook image)
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
   # Name of the ServiceAccount used by the post-delete hook Job.
   serviceAccountName: post-delete-cleanup

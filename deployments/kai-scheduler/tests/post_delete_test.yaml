@@ -133,3 +133,32 @@ tests:
       - equal:
           path: spec.template.spec.serviceAccountName
           value: custom-cleanup-sa
+
+  - it: should default image registry to global.registry
+    templates:
+      - hooks/post/post-delete-job.yaml
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.containers[0].image
+          pattern: '^registry/local/kai-scheduler/helm-hooks:'
+
+  - it: should follow global.registry when postCleanup.image.registry is unset
+    templates:
+      - hooks/post/post-delete-job.yaml
+    set:
+      global.registry: global.example.com
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.containers[0].image
+          pattern: '^global\.example\.com/helm-hooks:'
+
+  - it: should override image registry when postCleanup.image.registry is set
+    templates:
+      - hooks/post/post-delete-job.yaml
+    set:
+      global.registry: global.example.com
+      postCleanup.image.registry: mirror.example.com
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.containers[0].image
+          pattern: '^mirror\.example\.com/helm-hooks:'
