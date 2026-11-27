@@ -7,6 +7,7 @@ import (
 	"archive/zip"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 
@@ -98,6 +99,13 @@ func (sp *snapshotPlugin) OnSessionOpen(ssn *framework.Session) {
 func (sp *snapshotPlugin) OnSessionClose(ssn *framework.Session) {}
 
 func (sp *snapshotPlugin) serveSnapshot(writer http.ResponseWriter, request *http.Request) {
+	rawObjects, err := sp.listRawObjects()
+	if err != nil {
+		log.InfraLogger.Errorf("Error listing snapshot objects: %v", err)
+		http.Error(writer, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	writer.Header().Set("Content-Disposition", "attachment; filename=snapshot.zip")
 	writer.Header().Set("Content-Type", "application/zip")
 
@@ -114,12 +122,12 @@ func (sp *snapshotPlugin) serveSnapshot(writer http.ResponseWriter, request *htt
 		return
 	}
 
-	if err := sp.writeSnapshot(request.Context(), jsonWriter); err != nil {
+	if err := sp.writeSnapshot(request.Context(), jsonWriter, rawObjects); err != nil {
 		log.InfraLogger.Errorf("Error writing snapshot: %v", err)
 	}
 }
 
-func (sp *snapshotPlugin) writeSnapshot(ctx context.Context, writer io.Writer) error {
+func (sp *snapshotPlugin) writeSnapshot(ctx context.Context, writer io.Writer, rawObjects jsonFieldWriter) error {
 	stream := newJSONStream(writer)
 
 	return stream.writeObject(func(object *jsonObjectWriter) error {
@@ -127,7 +135,7 @@ func (sp *snapshotPlugin) writeSnapshot(ctx context.Context, writer io.Writer) e
 			object,
 			valueField("config", sp.config),
 			valueField("schedulerParams", &sp.session.SchedulerParams),
-			streamedField("rawObjects", sp.writeRawObjects),
+			rawObjects,
 			streamedField("discovery", func(stream *jsonStream) error {
 				return sp.writeDiscoverySnapshot(ctx, stream)
 			}),
@@ -135,34 +143,39 @@ func (sp *snapshotPlugin) writeSnapshot(ctx context.Context, writer io.Writer) e
 	})
 }
 
-func (sp *snapshotPlugin) writeRawObjects(stream *jsonStream) error {
+// listRawObjects calls every lister before the response starts, so the kinds are listed back to
+// back instead of between encodes, and a lister error can still be returned as an HTTP error.
+func (sp *snapshotPlugin) listRawObjects() (jsonFieldWriter, error) {
 	dataLister := sp.session.Cache.GetDataLister()
 
-	return stream.writeObject(func(object *jsonObjectWriter) error {
-		return writeFields(
-			object,
-			listedSliceField("pods", dataLister.ListPods, "Error getting raw pods"),
-			listedSliceField("nodes", dataLister.ListNodes, "Error getting raw nodes"),
-			listedSliceField("queues", dataLister.ListQueues, "Error getting raw queues"),
-			listedSliceField("podGroups", dataLister.ListPodGroups, "Error getting raw pod groups"),
-			listedSliceField("bindRequests", dataLister.ListBindRequests, "Error getting raw bind requests"),
-			listedSliceField("priorityClasses", dataLister.ListPriorityClasses, "Error getting raw priority classes"),
-			listedSliceField("configMaps", dataLister.ListConfigMaps, "Error getting raw config maps"),
-			listedSliceField("persistentVolumes", dataLister.ListPersistentVolumes, "Error getting raw persistent volumes"),
-			listedSliceField("persistentVolumeClaims", dataLister.ListPersistentVolumeClaims,
-				"Error getting raw persistent volume claims"),
-			listedSliceField("csiStorageCapacities", dataLister.ListCSIStorageCapacities,
-				"Error getting raw CSI storage capacities"),
-			listedSliceField("storageClasses", dataLister.ListStorageClasses, "Error getting raw storage classes"),
-			listedSliceField("csiDrivers", dataLister.ListCSIDrivers, "Error getting raw CSI drivers"),
-			listedSliceField("resourceClaims", dataLister.ListResourceClaims, "Error getting raw resource claims"),
-			listedSliceField("resourceSlices", dataLister.ListResourceSlices, "Error getting raw resource slices"),
-			listedSliceField("deviceClasses", dataLister.ListDeviceClasses, "Error getting raw device classes"),
-			listedSliceField("topologies", dataLister.ListTopologies, "Error getting raw topologies"),
-			listedSliceField("nodeResourceTopologies", dataLister.ListNodeResourceTopologies,
-				"Error getting raw node resource topologies"),
-		)
-	})
+	var err error
+	fields := []jsonFieldWriter{
+		listedSliceField("pods", dataLister.ListPods, &err),
+		listedSliceField("nodes", dataLister.ListNodes, &err),
+		listedSliceField("queues", dataLister.ListQueues, &err),
+		listedSliceField("podGroups", dataLister.ListPodGroups, &err),
+		listedSliceField("bindRequests", dataLister.ListBindRequests, &err),
+		listedSliceField("priorityClasses", dataLister.ListPriorityClasses, &err),
+		listedSliceField("configMaps", dataLister.ListConfigMaps, &err),
+		listedSliceField("persistentVolumes", dataLister.ListPersistentVolumes, &err),
+		listedSliceField("persistentVolumeClaims", dataLister.ListPersistentVolumeClaims, &err),
+		listedSliceField("csiStorageCapacities", dataLister.ListCSIStorageCapacities, &err),
+		listedSliceField("storageClasses", dataLister.ListStorageClasses, &err),
+		listedSliceField("csiDrivers", dataLister.ListCSIDrivers, &err),
+		listedSliceField("resourceClaims", dataLister.ListResourceClaims, &err),
+		listedSliceField("resourceSlices", dataLister.ListResourceSlices, &err),
+		listedSliceField("deviceClasses", dataLister.ListDeviceClasses, &err),
+		listedSliceField("topologies", dataLister.ListTopologies, &err),
+		listedSliceField("nodeResourceTopologies", dataLister.ListNodeResourceTopologies, &err),
+	}
+	if err != nil {
+		return nil, err
+	}
+	return streamedField("rawObjects", func(stream *jsonStream) error {
+		return stream.writeObject(func(object *jsonObjectWriter) error {
+			return writeFields(object, fields...)
+		})
+	}), nil
 }
 
 func (sp *snapshotPlugin) writeDiscoverySnapshot(ctx context.Context, stream *jsonStream) error {
@@ -190,8 +203,8 @@ func (sp *snapshotPlugin) getDiscoverySnapshot(ctx context.Context) *DiscoverySn
 
 	_, discoverySnapshot.Resources, err = discoveryClient.ServerGroupsAndResources()
 	if err != nil {
+		// ServerGroupsAndResources returns partial results along with the error, so they're kept.
 		log.InfraLogger.V(2).Warnf("Failed to snapshot server resources: %v", err)
-		discoverySnapshot.Resources = nil
 	}
 
 	return discoverySnapshot
@@ -273,26 +286,21 @@ func streamedField(fieldName string, writeValue func(*jsonStream) error) jsonFie
 	}
 }
 
-func listedSliceField[T any](fieldName string, list func() ([]T, error), errorMessage string) jsonFieldWriter {
-	return func(object *jsonObjectWriter) error {
-		return writeListedSlice(object, fieldName, list, errorMessage)
+func listedSliceField[T any](fieldName string, list func() ([]T, error), listErr *error) jsonFieldWriter {
+	if *listErr != nil {
+		return nil
 	}
+	values, err := list()
+	if err != nil {
+		*listErr = fmt.Errorf("listing %s: %w", fieldName, err)
+	}
+	return sliceField(fieldName, values)
 }
 
 func sliceField[T any](fieldName string, values []T) jsonFieldWriter {
 	return func(object *jsonObjectWriter) error {
 		return writeSliceField(object, fieldName, values)
 	}
-}
-
-func writeListedSlice[T any](object *jsonObjectWriter, fieldName string, list func() ([]T, error), errorMessage string) error {
-	values, err := list()
-	if err != nil {
-		log.InfraLogger.Errorf("%s: %v", errorMessage, err)
-		values = []T{}
-	}
-
-	return writeSliceField(object, fieldName, values)
 }
 
 func writeSliceField[T any](object *jsonObjectWriter, fieldName string, values []T) error {

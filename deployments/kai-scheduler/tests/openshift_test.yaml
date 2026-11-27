@@ -6,6 +6,9 @@ suite: test openshift mode
 templates:
   - rbac/scc.yaml
   - hooks/pre/crd-upgrader.yaml
+  - hooks/pre/topology-migration/job.yaml
+  - hooks/post/kai-config-deployer/job.yaml
+  - hooks/post/post-delete-job.yaml
 tests:
   - it: should not render the SCC resources by default (lookup returns nil offline)
     asserts:
@@ -99,3 +102,77 @@ tests:
           path: spec.template.spec.containers[0].securityContext.runAsUser
           value: 10000
         template: hooks/pre/crd-upgrader.yaml
+
+  - it: should use the OpenShift container securityContext in every hook job when openshift is set
+    set:
+      openshift: true
+      topologyMigration.enabled: true
+      kaiConfigDeployer.enabled: true
+      postCleanup.enabled: true
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation
+          value: false
+        template: hooks/pre/crd-upgrader.yaml
+      - contains:
+          path: spec.template.spec.containers[0].securityContext.capabilities.drop
+          content: ALL
+        template: hooks/pre/crd-upgrader.yaml
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.runAsUser
+          value: 10000
+        template: hooks/pre/topology-migration/job.yaml
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation
+          value: false
+        template: hooks/pre/topology-migration/job.yaml
+      - contains:
+          path: spec.template.spec.containers[0].securityContext.capabilities.drop
+          content: ALL
+        template: hooks/pre/topology-migration/job.yaml
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.runAsUser
+          value: 10000
+        template: hooks/post/kai-config-deployer/job.yaml
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation
+          value: false
+        template: hooks/post/kai-config-deployer/job.yaml
+      - contains:
+          path: spec.template.spec.containers[0].securityContext.capabilities.drop
+          content: ALL
+        template: hooks/post/kai-config-deployer/job.yaml
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.runAsUser
+          value: 10000
+        template: hooks/post/post-delete-job.yaml
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation
+          value: false
+        template: hooks/post/post-delete-job.yaml
+      - contains:
+          path: spec.template.spec.containers[0].securityContext.capabilities.drop
+          content: ALL
+        template: hooks/post/post-delete-job.yaml
+
+  - it: should prefer the OpenShift container securityContext over global.securityContext in the post-delete hook
+    set:
+      openshift: true
+      postCleanup.enabled: true
+      global.securityContext.readOnlyRootFilesystem: true
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.runAsUser
+          value: 10000
+        template: hooks/post/post-delete-job.yaml
+      - notExists:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+        template: hooks/post/post-delete-job.yaml
+
+  - it: should not set a container securityContext in the post-delete hook by default
+    set:
+      postCleanup.enabled: true
+    asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].securityContext
+        template: hooks/post/post-delete-job.yaml

@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Apply the OpenShift container securityContext to the post-delete cleanup hook
+custom:
+  Author: "chethanuk"
+  Issue: ""
