@@ -3,18 +3,13 @@
 # SPDX-License-Identifier: Apache-2.0
 set -euo pipefail
 
-# Pin the chart and its published node-agent image to the same main commit.
-revision=b9333a226f4256e169d87c33e2cf4324073f33e9
-chart=deployments/nvml-mock/helm/nvml-mock
-source_dir=$(mktemp -d)
-trap 'rm -rf "$source_dir"' EXIT
-curl -fsSL --retry 3 "https://codeload.github.com/NVIDIA/k8s-test-infra/tar.gz/$revision" |
-  tar -xz -C "$source_dir" --strip-components=1 "k8s-test-infra-$revision/$chart"
+chart=oci://ghcr.io/nvidia/k8s-test-infra/chart/nvml-mock
+version=0.8.0
 
 for policy in single-numa-node restricted best-effort; do
-  helm upgrade --install "mokka-$policy" "$source_dir/$chart" \
+  helm upgrade --install "mokka-$policy" "$chart" --version "$version" \
     --namespace "mokka-$policy" --create-namespace \
-    --set-string "image.tag=sha-${revision:0:7}" --set gpu.profile=a100 --set gpu.count=8 \
+    --set gpu.profile=a100 --set gpu.count=8 \
     --set nri.enabled=true --set-string nri.pluginIndex=05 \
     --set nodeAgent.numa.enabled=true --set nodeAgent.numa.cpuManagerPolicy=static \
     --set nodeAgent.numa.memoryManagerPolicy=static --set nodeAgent.numa.systemReservedCPU=100m \
