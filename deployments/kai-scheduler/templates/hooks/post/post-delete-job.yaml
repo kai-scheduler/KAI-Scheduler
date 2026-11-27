@@ -51,7 +51,15 @@ spec:
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- if .Values.global.securityContext }}
+          {{- if (include "kai-scheduler.openshift" .) }}
+          securityContext:
+            runAsUser: 10000
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+          {{- else if .Values.global.securityContext }}
           securityContext:
             {{- toYaml .Values.global.securityContext | nindent 12 }}
           {{- end }}
