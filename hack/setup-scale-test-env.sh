@@ -7,24 +7,87 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 SCALE_DIR="${REPO_ROOT}/test/e2e/scale"
 
-KWOK_LATEST_RELEASE=v0.6.1
-kubectl apply -f "https://github.com/kubernetes-sigs/kwok/releases/download/${KWOK_LATEST_RELEASE}/kwok.yaml"
+gpu_provider=${KWOK_GPU_PROVIDER:-fgo}
+case "$gpu_provider" in
+  fgo) KWOK_LATEST_RELEASE=v0.6.1 ;;
+  mokka) KWOK_LATEST_RELEASE=v0.8.0 ;;
+  *) echo "Unknown KWOK_GPU_PROVIDER: $gpu_provider" >&2; exit 1 ;;
+esac
+kwok_manifest="https://github.com/kubernetes-sigs/kwok/releases/download/${KWOK_LATEST_RELEASE}/kwok.yaml"
+if [[ "$gpu_provider" == mokka ]]; then
+  # Some API servers reject FlowSchemas that request exempt priority. KWOK can
+  # use the cluster's normal request queues. Keep every other release resource.
+  (
+    set -euo pipefail
+    dir=$(mktemp -d)
+    trap 'rm -rf "$dir"' EXIT
+    curl -fsSL --retry 3 "$kwok_manifest" -o "$dir/kwok.yaml"
+    cat > "$dir/kustomization.yaml" <<'EOF'
+resources:
+  - kwok.yaml
+patches:
+  - patch: |-
+      $patch: delete
+      apiVersion: flowcontrol.apiserver.k8s.io/v1
+      kind: FlowSchema
+      metadata:
+        name: kwok-controller
+        namespace: kube-system
+EOF
+    kubectl apply --server-side -k "$dir"
+  ) || exit 1
+  kubectl wait --for=condition=Established crd/stages.kwok.x-k8s.io --timeout=90s
+else
+  kubectl apply -f "$kwok_manifest"
+fi
 kubectl apply -f "https://github.com/kubernetes-sigs/kwok/releases/download/${KWOK_LATEST_RELEASE}/stage-fast.yaml"
 kubectl apply --server-side -f https://github.com/run-ai/kwok-operator/releases/download/1.0.4/kwok-operator.yaml
+if [[ "$gpu_provider" == mokka ]]; then
+  kubectl wait --for=condition=Established crd/nodepools.kwok.sigs.run-ai.com --timeout=90s
+  # On a fresh cluster, the API can accept pools before the operator starts.
+  if ! kubectl rollout status -n kwok-operator deployment/kwok-operator-kwok-operator --timeout=10m; then
+    kubectl get pods -n kwok-operator -o wide >&2
+    kubectl get events -n kwok-operator --field-selector type=Warning >&2
+    exit 1
+  fi
+fi
 kubectl apply -f "${SCALE_DIR}/base_kwok_managed_nodepool.yaml"
+
+# KWOK operator 1.0.4 can leave a new zero-size pool in Updating. Let it
+# reconcile the template's initial Node before scaling this pool back to zero.
+wait_for_managed_pool() {
+  local pool=nodepools.kwok.sigs.run-ai.com/managed-nodepool generation
+  generation=$(kubectl get "$pool" -o jsonpath='{.metadata.generation}') || return 1
+  if kubectl wait "$pool" --for="jsonpath={.status.observedGeneration}=$generation" --timeout=3m &&
+     kubectl wait "$pool" --for=condition=Available --timeout=3m; then
+    return 0
+  fi
+  kubectl get "$pool" -o jsonpath='{.status}{"\n"}' >&2
+  kubectl logs -n kwok-operator deployment/kwok-operator-kwok-operator -c manager --tail=30 >&2
+  return 1
+}
+if [[ "$gpu_provider" == mokka ]]; then
+  wait_for_managed_pool || exit 1
+fi
 
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 helm repo add grafana https://grafana.github.io/helm-charts
 helm repo update
 
-helm upgrade -i fake-gpu-operator oci://ghcr.io/run-ai/fake-gpu-operator/fake-gpu-operator --namespace gpu-operator --create-namespace --set topology.nodePools.default.gpuCount=8 --devel --version 0.0.73
-kubectl delete deployment -n gpu-operator nvidia-dcgm-exporter --ignore-not-found
-kubectl delete deployment -n gpu-operator device-plugin --ignore-not-found
+if [[ "$gpu_provider" == fgo ]]; then
+  helm upgrade -i fake-gpu-operator oci://ghcr.io/run-ai/fake-gpu-operator/fake-gpu-operator --namespace gpu-operator --create-namespace --set topology.nodePools.default.gpuCount=8 --devel --version 0.0.73
+  kubectl delete deployment -n gpu-operator nvidia-dcgm-exporter --ignore-not-found
+  kubectl delete deployment -n gpu-operator device-plugin --ignore-not-found
+fi
 
 helm upgrade -i --create-namespace -n monitoring kube-prometheus-stack prometheus-community/kube-prometheus-stack --set prometheus.enabled=true --set grafana.enabled=true
 helm -n monitoring upgrade -i pyroscope grafana/pyroscope
 
 kubectl patch nodepool managed-nodepool -p '{"spec":{"nodeCount": 0, "nodeTemplate": {"metadata": {"labels": {"run.ai/simulated-gpu-node-pool": "default"}}}}}' --type merge
+
+if [[ "$gpu_provider" == mokka ]]; then
+  wait_for_managed_pool || exit 1
+fi
 
 kubectl apply -f "${SCALE_DIR}/scheduler-service-monitor.yaml"
 kubectl apply -f "${SCALE_DIR}/queue-controller-service-monitor.yaml"

@@ -1,0 +1,4 @@
+kind: Added
+body: Allow the KWOK scale suite to use GPUs supplied by Mokka.
+custom:
+  Issue: "2721"
