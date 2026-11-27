@@ -16,6 +16,21 @@ type Plugin interface {
 	Mutate(*v1.Pod) error
 }
 
+// PluginError is the error returned by KaiAdmissionPlugins when a plugin rejects a pod.
+// It reads like the plugin's own error and unwraps to it, and additionally names the rejecting plugin.
+type PluginError struct {
+	Plugin string
+	Err    error
+}
+
+func (e *PluginError) Error() string {
+	return e.Err.Error()
+}
+
+func (e *PluginError) Unwrap() error {
+	return e.Err
+}
+
 type KaiAdmissionPlugins struct {
 	plugins []Plugin
 }
@@ -39,7 +54,7 @@ func (bp *KaiAdmissionPlugins) Validate(ctx context.Context, oldPod, pod *v1.Pod
 			logger := log.FromContext(context.Background())
 			logger.Error(err, "pod validation failed for pod",
 				"namespace", pod.Namespace, "name", pod.Name, "plugin", p.Name())
-			return err
+			return &PluginError{Plugin: p.Name(), Err: err}
 		}
 	}
 	return nil
@@ -52,7 +67,7 @@ func (bp *KaiAdmissionPlugins) Mutate(pod *v1.Pod) error {
 			logger := log.FromContext(context.Background())
 			logger.Error(err, "pod mutation failed for pod",
 				"namespace", pod.Namespace, "name", pod.Name, "plugin", p.Name())
-			return err
+			return &PluginError{Plugin: p.Name(), Err: err}
 		}
 	}
 	return nil

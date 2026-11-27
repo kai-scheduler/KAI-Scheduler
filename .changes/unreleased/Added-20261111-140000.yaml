@@ -1,0 +1,6 @@
+kind: Added
+body: Add admission webhook metrics counting the requests handled by each webhook and the rejections by reason
+time: 2026-11-11T14:00:00.000000000+00:00
+custom:
+    Author: NopeCharon
+    Issue: "2621"

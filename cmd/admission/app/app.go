@@ -33,6 +33,7 @@ import (
 	schedulingv2 "github.com/kai-scheduler/api/scheduling/v2"
 	schedulingv2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
 
+	admissionmetrics "github.com/kai-scheduler/KAI-scheduler/pkg/admission/metrics"
 	admissionplugins "github.com/kai-scheduler/KAI-scheduler/pkg/admission/plugins"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/admission/webhook/topologyhooks"
 )
@@ -152,20 +153,27 @@ func (app *App) Run() error {
 	// +kubebuilder:scaffold:builder
 
 	if err = ctrl.NewWebhookManagedBy(app.manager, &corev1.Pod{}).
-		WithDefaulter(admissionhooks.NewPodMutator(app.manager.GetClient(), app.admissionPlugins, app.Options.SchedulerName)).
-		WithValidator(admissionhooks.NewPodValidator(app.manager.GetClient(), app.admissionPlugins, app.Options.SchedulerName)).Complete(); err != nil {
+		WithDefaulter(admissionmetrics.InstrumentDefaulter(
+			admissionmetrics.WebhookPodMutator, admissionmetrics.ReasonMutationFailed,
+			admissionhooks.NewPodMutator(app.manager.GetClient(), app.admissionPlugins, app.Options.SchedulerName))).
+		WithValidator(admissionmetrics.InstrumentValidator(
+			admissionmetrics.WebhookPodValidator, admissionmetrics.ReasonValidationFailed,
+			admissionhooks.NewPodValidator(app.manager.GetClient(), app.admissionPlugins, app.Options.SchedulerName))).
+		Complete(); err != nil {
 		setupLog.Error(err, "unable to create pod webhooks", "webhook", "Pod")
 		return err
 	}
 
 	// Add a new webhook for the resize subresource with Ignore failPolicy
 	if err = ctrl.NewWebhookManagedBy(app.manager, &corev1.Pod{}).
-		WithValidator(admissionhooks.NewPodResizeValidator(
-			app.manager.GetClient(),
-			app.Options.SchedulerName,
-			app.Options.ValidatePodResizeQuota,
-			app.Options.BlockUpsizeOnBoundedQueues,
-		)).
+		WithValidator(admissionmetrics.InstrumentValidator(
+			admissionmetrics.WebhookPodResizeValidator, admissionmetrics.ReasonResizeRejected,
+			admissionhooks.NewPodResizeValidator(
+				app.manager.GetClient(),
+				app.Options.SchedulerName,
+				app.Options.ValidatePodResizeQuota,
+				app.Options.BlockUpsizeOnBoundedQueues,
+			))).
 		WithValidatorCustomPath("/validate--v1-pod-resize").
 		Complete(); err != nil {
 		setupLog.Error(err, "unable to create pod resize webhook", "webhook", "PodResize")
@@ -173,7 +181,9 @@ func (app *App) Run() error {
 	}
 
 	if err = ctrl.NewWebhookManagedBy(app.manager, &kaiv1alpha1.Topology{}).
-		WithValidator(topologyhooks.NewTopologyValidator()).Complete(); err != nil {
+		WithValidator(admissionmetrics.InstrumentValidator(
+			admissionmetrics.WebhookTopologyValidator, admissionmetrics.ReasonInvalidTopology,
+			topologyhooks.NewTopologyValidator())).Complete(); err != nil {
 		setupLog.Error(err, "unable to create topology webhook", "webhook", "Topology")
 		return err
 	}
