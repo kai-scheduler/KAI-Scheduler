@@ -35,6 +35,7 @@ import (
 const (
 	port               = 9443
 	schedulerNameField = "spec.schedulerName"
+	podPhaseField      = "status.phase"
 )
 
 var (
@@ -180,8 +181,13 @@ func getClientConfigOrDie(opts Options) *rest.Config {
 }
 
 func getCacheOptions(configs controllers.Configs) cache.Options {
+	// A failed pod never runs again, so it needs no PodGroup, but a Job with a large backoff
+	// limit can keep thousands of them, and caching them all can exhaust the pod-grouper's memory.
 	podByObject := cache.ByObject{
-		Field: fields.Set{schedulerNameField: configs.SchedulerName}.AsSelector(),
+		Field: fields.AndSelectors(
+			fields.OneTermEqualSelector(schedulerNameField, configs.SchedulerName),
+			fields.OneTermNotEqualSelector(podPhaseField, string(corev1.PodFailed)),
+		),
 	}
 	if len(configs.PodLabelSelector) > 0 {
 		podByObject.Label = labels.Set(configs.PodLabelSelector).AsSelector()

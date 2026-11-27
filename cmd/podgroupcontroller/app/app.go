@@ -32,6 +32,7 @@ import (
 
 const (
 	schedulerNameField = "spec.schedulerName"
+	podPhaseField      = "status.phase"
 )
 
 var (
@@ -59,21 +60,9 @@ func Run(options *Options, config *rest.Config, ctx context.Context) error {
 	draAPIVersion := commonresources.DetectDRAAPIVersion(draClient)
 	setupLog.Info("Detected DRA API version", "version", draAPIVersion)
 
-	schedulerSelector := fields.Set{schedulerNameField: options.SchedulerName}.AsSelector()
-	cacheOptions := cache.Options{}
-	cacheOptions.ByObject = map[client.Object]cache.ByObject{
-		&v1.Pod{}:                     {Field: schedulerSelector},
-		&v1.Node{}:                    {},
-		&schedulingv1.PriorityClass{}: {},
-		&v2alpha2.PodGroup{}:          {},
-	}
-	if cacheObj := commonresources.DRACacheObject(draAPIVersion); cacheObj != nil {
-		cacheOptions.ByObject[cacheObj] = cache.ByObject{}
-	}
-
 	mgr, err := ctrl.NewManager(config, ctrl.Options{
 		Scheme:                 scheme,
-		Cache:                  cacheOptions,
+		Cache:                  getCacheOptions(options.SchedulerName, draAPIVersion),
 		HealthProbeBindAddress: options.ProbeAddr,
 		LeaderElection:         options.EnableLeaderElection,
 		LeaderElectionID:       "o1x22tjj.kai.scheduler",
@@ -130,4 +119,26 @@ func Run(options *Options, config *rest.Config, ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func getCacheOptions(schedulerName, draAPIVersion string) cache.Options {
+	// A failed pod requests and holds no resources, so it never changes a PodGroup's status,
+	// but a Job with a large backoff limit can keep thousands of them, and caching them all
+	// can exhaust the controller's memory. A pod that turns Failed leaves the cache as a
+	// delete event, which still requeues its PodGroup.
+	podSelector := fields.AndSelectors(
+		fields.OneTermEqualSelector(schedulerNameField, schedulerName),
+		fields.OneTermNotEqualSelector(podPhaseField, string(v1.PodFailed)),
+	)
+	cacheOptions := cache.Options{}
+	cacheOptions.ByObject = map[client.Object]cache.ByObject{
+		&v1.Pod{}:                     {Field: podSelector},
+		&v1.Node{}:                    {},
+		&schedulingv1.PriorityClass{}: {},
+		&v2alpha2.PodGroup{}:          {},
+	}
+	if cacheObj := commonresources.DRACacheObject(draAPIVersion); cacheObj != nil {
+		cacheOptions.ByObject[cacheObj] = cache.ByObject{}
+	}
+	return cacheOptions
 }

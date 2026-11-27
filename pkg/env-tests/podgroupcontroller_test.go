@@ -104,7 +104,9 @@ var _ = Describe("PodGroupController", Ordered, func() {
 			Expect(err).NotTo(HaveOccurred(), "Failed to wait for test resources to be deleted")
 		})
 
-		It("Should update podgroup status", func(ctx context.Context) {
+		// createBoundPodWithAllocatedGPU binds a one-GPU pod in test-podgroup and waits until
+		// the podgroup status reports the GPU as allocated.
+		createBoundPodWithAllocatedGPU := func(ctx context.Context) *corev1.Pod {
 			testPod := utils.CreatePodObject(testNamespace.Name, "test-pod", corev1.ResourceRequirements{
 				Limits: corev1.ResourceList{
 					constants.NvidiaGpuResource: resource.MustParse("1"),
@@ -160,6 +162,32 @@ var _ = Describe("PodGroupController", Ordered, func() {
 				return true, nil
 			})
 			Expect(err).NotTo(HaveOccurred(), "Failed to wait for podgroup status allocated resources to be updated")
+
+			return testPod
+		}
+
+		It("Should update podgroup status", func(ctx context.Context) {
+			createBoundPodWithAllocatedGPU(ctx)
+		})
+
+		It("Should release allocated resources when a pod fails", func(ctx context.Context) {
+			testPod := createBoundPodWithAllocatedGPU(ctx)
+
+			Expect(ctrlClient.Get(ctx, client.ObjectKeyFromObject(testPod), testPod)).To(Succeed(), "Failed to get test pod")
+			testPod.Status.Phase = corev1.PodFailed
+			Expect(ctrlClient.Status().Update(ctx, testPod)).To(Succeed(), "Failed to mark test pod as failed")
+
+			var podgroup schedulingv2alpha2.PodGroup
+			err := wait.PollUntilContextTimeout(ctx, interval, defaultTimeout, true, func(ctx context.Context) (bool, error) {
+				err := ctrlClient.Get(ctx, client.ObjectKey{Name: "test-podgroup", Namespace: testNamespace.Name}, &podgroup)
+				if err != nil {
+					return false, err
+				}
+
+				allocatedGPU, found := podgroup.Status.ResourcesStatus.Allocated[constants.NvidiaGpuResource]
+				return !found || allocatedGPU.IsZero(), nil
+			})
+			Expect(err).NotTo(HaveOccurred(), "Failed to wait for podgroup status to release the failed pod's GPU")
 		})
 	})
 })

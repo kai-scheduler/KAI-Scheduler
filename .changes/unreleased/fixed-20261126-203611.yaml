@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Keep Failed pods out of the pod-grouper and pod-group-controller caches so they do not OOM
+custom:
+  Author: "V2arK"
+  Issue: "2795"
