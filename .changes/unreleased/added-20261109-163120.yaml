@@ -1,0 +1,6 @@
+kind: Added
+body: |-
+  Score nodes lower for PreferNoSchedule taints the pod does not tolerate
+custom:
+  Author: "angela-asher"
+  Issue: "2611"

@@ -46,6 +46,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/resourcetype"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/snapshot"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/subgrouporder"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/tainttoleration"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/taskorder"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/topology"
 )
@@ -64,6 +65,7 @@ func InitDefaultPlugins() {
 	framework.RegisterPluginBuilder("gpuspread", gpuspread.New)
 	framework.RegisterPluginBuilder("resourcetype", resourcetype.New)
 	framework.RegisterPluginBuilder("podaffinity", podaffinity.New)
+	framework.RegisterPluginBuilder("tainttoleration", tainttoleration.New)
 	framework.RegisterPluginBuilder("elastic", elastic.New)
 	framework.RegisterPluginBuilder("kubeflow", kubeflow.New)
 	framework.RegisterPluginBuilder("ray", ray.New)
