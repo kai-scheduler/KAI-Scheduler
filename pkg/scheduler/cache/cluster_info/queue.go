@@ -67,8 +67,9 @@ func (c *ClusterInfo) snapshotQueues() (map[common_info.QueueID]*queue_info.Queu
 
 		for _, queue := range queues {
 			if len(queue.Spec.ParentQueue) > 0 {
-				queue.Spec.ParentQueue = defaultQueueName
 				queueInfo := queue_info.NewQueueInfo(queue)
+				// The listed queue is shared with the informer cache, so only the snapshot copy is re-parented.
+				queueInfo.ParentQueue = defaultQueueName
 				result[queueInfo.UID] = queueInfo
 			}
 		}

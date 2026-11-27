@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Fix snapshot queues when full hierarchy fairness is disabled
+custom:
+  Author: "BahaaMattar"
+  Issue: "2727"
