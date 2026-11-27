@@ -1,0 +1,6 @@
+kind: Added
+body: |-
+  Podgrouper honors kai.scheduler/batch-min-member on StatefulSets
+custom:
+  Author: "davidLif"
+  Issue: "2098"
