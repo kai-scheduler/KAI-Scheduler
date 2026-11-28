@@ -120,13 +120,17 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 		if CurrentSpecReport().Failed() {
 			return
 		}
+		By("Deleting workloads from scale test queues")
 		for _, queueToClean := range testCtx.Queues {
 			cleanupTestQueue(ctx, testCtx, queueToClean)
 		}
 
+		By("Waiting for scale test pods to disappear")
 		wait.ForNoE2EPods(ctx, testCtx.ControllerClient)
 
+		By("Cleaning up scale test cluster resources")
 		testCtx.ClusterCleanup(ctx)
+		By("Deleting scale test priority classes")
 		Expect(rd.DeleteAllE2EPriorityClasses(ctx, testCtx.ControllerClient)).To(Succeed())
 		watcher.FlowTimeout = originalFlowTimeout
 	})
@@ -656,9 +660,16 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 				if CurrentSpecReport().Failed() {
 					return
 				}
-				for _, tier := range fractionTiers {
-					cleanupTestQueue(ctx, testCtx, tier.queue)
+				By("Deleting fractional workloads from both queues")
+				var workers sync.WaitGroup
+				deleteErrors := make([]error, len(fractionTiers))
+				for i, tier := range fractionTiers {
+					workers.Go(func() {
+						deleteErrors[i] = deleteTestQueueObjects(ctx, testCtx.ControllerClient, tier.queue)
+					})
 				}
+				workers.Wait()
+				Expect(errors.Join(deleteErrors...)).To(Succeed())
 			})
 
 			// Two equal-priority queues, one requesting 0.5 GPU per pod and one 0.125, together filling the cluster.
