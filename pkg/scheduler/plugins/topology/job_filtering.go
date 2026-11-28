@@ -52,6 +52,11 @@ func (t *topologyPlugin) subSetNodesFn(
 		return nil, fmt.Errorf("domain not found for node set in topology %s", topologyTree.Name)
 	}
 
+	relevantLevels, err := t.calculateRelevantDomainLevels(subGroup, topologyTree, domain.Level)
+	if err != nil {
+		return nil, err
+	}
+
 	t.treeAllocatableCleanup(topologyTree)
 	calcSubTreeFreeResources(domain)
 	if useRepresentorPodsAccounting(tasks) {
@@ -82,18 +87,13 @@ func (t *topologyPlugin) subSetNodesFn(
 	}
 
 	// Sorting the tree for both packing and closest preferred level domain scoring
-	preferredLevel := DomainLevel(subGroup.GetTopologyConstraint().PreferredLevel)
-	requiredLevel := DomainLevel(subGroup.GetTopologyConstraint().RequiredLevel)
-	maxDepthLevel := preferredLevel
-	if maxDepthLevel == "" {
-		maxDepthLevel = requiredLevel
-	}
-	sortTree(tasksResources, domain, maxDepthLevel, topologyTree.VectorMap, dbc)
-	if preferredLevel != "" {
-		t.subGroupNodeScores[subGroup.GetName()] = calculateNodeScores(domain, preferredLevel)
+	effectivePreferredLevel := relevantLevels[0]
+	sortTree(tasksResources, domain, effectivePreferredLevel, topologyTree.VectorMap, dbc)
+	if subGroup.GetTopologyConstraint().PreferredLevel != "" {
+		t.subGroupNodeScores[subGroup.GetName()] = calculateNodeScores(domain, effectivePreferredLevel)
 	}
 
-	jobAllocatableDomains, err := t.getJobAllocatableDomains(job, subGroup, tasksResources, tasksCount, topologyTree, dbc)
+	jobAllocatableDomains, err := t.getJobAllocatableDomains(job, subGroup, tasksResources, tasksCount, topologyTree, relevantLevels, dbc)
 	if err != nil {
 		return nil, err
 	}
@@ -270,14 +270,9 @@ func calcNodeAccommodation(jobAllocationMetaData *jobAllocationMetaData, node *n
 
 func (t *topologyPlugin) getJobAllocatableDomains(
 	job *podgroup_info.PodGroupInfo, subGroup *subgroup_info.SubGroupInfo, tasksResources resource_info.ResourceVector,
-	tasksCount int, topologyTree *Info,
+	tasksCount int, topologyTree *Info, relevantLevels []DomainLevel,
 	dbc *extendedresourcecache.ExtendedResourceCache,
 ) ([]*DomainInfo, error) {
-	relevantLevels, err := t.calculateRelevantDomainLevels(subGroup, topologyTree)
-	if err != nil {
-		return nil, err
-	}
-
 	// Validate that the domains do not clash with the chosen domain for active pods of the job
 	var relevantDomainsByLevel domainsByLevel
 	podSetsForAllocatedPodDomains, err := getPodSetsForAllocatedPodDomains(job, subGroup)
@@ -425,7 +420,7 @@ func checkJobDomainFit(job *podgroup_info.PodGroupInfo, subGroup *subgroup_info.
 }
 
 func (*topologyPlugin) calculateRelevantDomainLevels(
-	subGroup *subgroup_info.SubGroupInfo, topologyTree *Info,
+	subGroup *subgroup_info.SubGroupInfo, topologyTree *Info, lowestCommonDomainLevel DomainLevel,
 ) ([]DomainLevel, error) {
 	topologyConstraint := subGroup.GetTopologyConstraint()
 	requiredPlacement := DomainLevel(topologyConstraint.RequiredLevel)
@@ -435,8 +430,12 @@ func (*topologyPlugin) calculateRelevantDomainLevels(
 			subGroup.GetName(), topologyTree.Name)
 	}
 
-	foundRequiredLevel := false
-	foundPreferredLevel := false
+	if requiredPlacement == "" {
+		requiredPlacement = rootLevel
+	}
+	if preferredPlacement == "" {
+		preferredPlacement = requiredPlacement
+	}
 
 	levels := make([]DomainLevel, len(topologyTree.TopologyResource.Spec.Levels)+1)
 	levels[len(levels)-1] = rootLevel
@@ -444,29 +443,21 @@ func (*topologyPlugin) calculateRelevantDomainLevels(
 		levels[len(levels)-2-i] = DomainLevel(level.NodeLabel)
 	}
 
-	var relevantLevels []DomainLevel
-	for _, level := range levels {
-		if level == preferredPlacement {
-			foundPreferredLevel = true
-		}
-		if level == requiredPlacement {
-			foundRequiredLevel = true
-		}
-		if foundPreferredLevel || foundRequiredLevel {
-			relevantLevels = append(relevantLevels, level)
-		}
-		if foundRequiredLevel {
-			break
-		}
-	}
-
-	if requiredPlacement != "" && !foundRequiredLevel {
+	requiredIndex := slices.Index(levels, requiredPlacement)
+	preferredIndex := slices.Index(levels, preferredPlacement)
+	if requiredIndex < 0 {
 		return nil, newTopologyConstraintConfigError(subGroup, topologyTree, "required", requiredPlacement)
 	}
-	if preferredPlacement != "" && !foundPreferredLevel {
+	if preferredIndex < 0 || preferredIndex > requiredIndex {
 		return nil, newTopologyConstraintConfigError(subGroup, topologyTree, "preferred", preferredPlacement)
 	}
-	return relevantLevels, nil
+	boundaryIndex := slices.Index(levels, lowestCommonDomainLevel)
+	if boundaryIndex < 0 {
+		return nil, fmt.Errorf("lowest common domain level %q not found in topology %s", lowestCommonDomainLevel, topologyTree.Name)
+	}
+	start := min(preferredIndex, boundaryIndex)
+	end := min(requiredIndex, boundaryIndex)
+	return levels[start : end+1], nil
 }
 
 func newTopologyConstraintConfigError(subGroup *subgroup_info.SubGroupInfo, topologyTree *Info, placementType string, placementName DomainLevel) error {
