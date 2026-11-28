@@ -200,7 +200,11 @@ func divideRemainingResource(total float64, remainingRequested map[string]*remai
 		if total == 0 {
 			break
 		}
-		give := math.Min(1, total)
+		// A queue never gets more than it can still request, so a fractional request or MaxAllowed caps the unit.
+		give := math.Min(math.Min(1, total), getRemainingRequested(l.queue))
+		if give <= 0 {
+			continue
+		}
 		l.queue.FairShare += give
 		total -= give
 	}
