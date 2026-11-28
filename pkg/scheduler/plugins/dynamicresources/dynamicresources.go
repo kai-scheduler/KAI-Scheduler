@@ -102,6 +102,8 @@ func (drap *draPlugin) OnSessionOpen(ssn *framework.Session) {
 }
 
 func (drap *draPlugin) assumePendingClaims(ssn *framework.Session) {
+	extendedClaims := indexExtendedClaimsByPod(ssn.ClusterInfo.ResourceClaims)
+
 	for _, podGroup := range ssn.ClusterInfo.PodGroupInfos {
 		for _, pod := range podGroup.GetAllPodsMap() {
 			if pod.BindRequest == nil {
@@ -111,11 +113,16 @@ func (drap *draPlugin) assumePendingClaims(ssn *framework.Session) {
 				// If the pod has already succeeded or failed, the resources are freed and we can skip assuming pending claims
 				continue
 			}
-			for _, claim := range pod.BindRequest.BindRequest.Spec.ResourceClaimAllocations {
+			spec := &pod.BindRequest.BindRequest.Spec
+			for _, claim := range spec.ResourceClaimAllocations {
 				err := drap.assumePendingClaim(&claim, pod.Pod)
 				if err != nil {
 					log.InfraLogger.Errorf("Failed to assume pending claim %s for pod %s/%s: %v", claim.Name, pod.Namespace, pod.Name, err)
 				}
+			}
+			err := drap.assumePendingExtendedClaim(pod.Pod, spec.ExtendedResourceClaimAllocation, extendedClaims[pod.Pod.UID])
+			if err != nil {
+				log.InfraLogger.Errorf("Failed to assume pending extended resource claim for pod %s/%s: %v", pod.Namespace, pod.Name, err)
 			}
 		}
 	}
@@ -153,6 +160,30 @@ func (drap *draPlugin) assumePendingClaim(claim *schedulingv1alpha2.ResourceClai
 	updatedClaim.Status.Allocation = claim.Allocation
 
 	return drap.manager.ResourceClaims().SignalClaimPendingAllocation(updatedClaim.UID, updatedClaim)
+}
+
+func (drap *draPlugin) assumePendingExtendedClaim(
+	pod *v1.Pod, claimAllocation *schedulingv1alpha2.ExtendedResourceClaimAllocation, claim *resourceapi.ResourceClaim,
+) error {
+	if claimAllocation == nil || claimAllocation.Allocation == nil {
+		return nil
+	}
+	if claim != nil && claim.Status.Allocation != nil {
+		return nil
+	}
+	if drap.manager == nil {
+		return fmt.Errorf("DRA manager is unavailable")
+	}
+	if claim == nil {
+		claim = buildSpecialClaim(pod)
+		claim.Spec.Devices.Requests = claimAllocation.DeviceRequests
+	} else {
+		claim = claim.DeepCopy()
+	}
+
+	claim.Status.Allocation = claimAllocation.Allocation
+	resources.UpsertReservedFor(claim, pod)
+	return drap.manager.ResourceClaims().SignalClaimPendingAllocation(claim.UID, claim)
 }
 
 func (drap *draPlugin) preFilter(task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo) error {

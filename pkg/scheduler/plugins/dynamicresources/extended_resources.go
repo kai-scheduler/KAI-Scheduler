@@ -86,3 +86,20 @@ func podExtendedResourcesNeedingDRA(
 	}
 	return result
 }
+
+func indexExtendedClaimsByPod(claims []*resourceapi.ResourceClaim) map[types.UID]*resourceapi.ResourceClaim {
+	extendedClaims := make(map[types.UID]*resourceapi.ResourceClaim)
+	for _, claim := range claims {
+		if claim.Annotations[resourceapi.ExtendedResourceClaimAnnotation] != "true" {
+			continue
+		}
+		owner := metav1.GetControllerOfNoCopy(claim)
+		if owner == nil || owner.Kind != "Pod" {
+			continue
+		}
+		if extendedClaims[owner.UID] == nil || claim.Status.Allocation != nil {
+			extendedClaims[owner.UID] = claim
+		}
+	}
+	return extendedClaims
+}
