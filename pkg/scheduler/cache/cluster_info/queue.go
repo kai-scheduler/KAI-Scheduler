@@ -88,8 +88,46 @@ func (c *ClusterInfo) snapshotQueueResourceUsage() (*queue_info.ClusterUsage, er
 // UpdateQueueHierarchy iterates over a map containing multiple levels of queue hierarchies, and updates queues with
 // child queues where relevant
 func UpdateQueueHierarchy(queues map[common_info.QueueID]*queue_info.QueueInfo) {
+	removeQueueParentCycles(queues)
 	updateQueueChildren(queues)
 	cleanQueueOrphans(queues)
+}
+
+func removeQueueParentCycles(queues map[common_info.QueueID]*queue_info.QueueInfo) {
+	cyclic := map[common_info.QueueID]bool{}
+	for queueId := range queues {
+		if cyclic[queueId] {
+			continue
+		}
+		for _, id := range findParentCycle(queues, queueId) {
+			cyclic[id] = true
+		}
+	}
+	for queueId := range cyclic {
+		log.InfraLogger.V(2).Warnf("Found queue %s in a parent queue cycle, deleting it", queueId)
+		delete(queues, queueId)
+	}
+}
+
+// findParentCycle walks up the parent chain of queueId and returns the queues that form a cycle,
+// or nil if the chain reaches a root or a missing parent.
+func findParentCycle(queues map[common_info.QueueID]*queue_info.QueueInfo,
+	queueId common_info.QueueID) []common_info.QueueID {
+	var chain []common_info.QueueID
+	positionInChain := map[common_info.QueueID]int{}
+	for current := queueId; current != ""; {
+		if position, seen := positionInChain[current]; seen {
+			return chain[position:]
+		}
+		queue, found := queues[current]
+		if !found {
+			return nil
+		}
+		positionInChain[current] = len(chain)
+		chain = append(chain, current)
+		current = queue.ParentQueue
+	}
+	return nil
 }
 
 func updateQueueChildren(queues map[common_info.QueueID]*queue_info.QueueInfo) {
