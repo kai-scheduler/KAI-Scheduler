@@ -50,6 +50,7 @@ func (alloc *consolidationAction) Execute(ssn *framework.Session) {
 		FilterUnready:               true,
 		FilterNonPreemptible:        true,
 		FilterWithinPreemptionDelay: true,
+		FilterInSearchBackoffFor:    framework.Consolidation,
 		MaxJobsQueueDepth:           ssn.GetJobsDepth(framework.Consolidation),
 	})
 	jobsOrderByQueues.InitializeWithJobs(ssn.ClusterInfo.PodGroupInfos)
@@ -79,7 +80,9 @@ func (alloc *consolidationAction) Execute(ssn *framework.Session) {
 		}
 
 		metrics.IncPodgroupsConsideredByAction()
-		if succeeded, stmt, searchResult := attemptToConsolidateForPreemptor(ssn, job, actionBudget); succeeded {
+		succeeded, stmt, searchResult := attemptToConsolidateForPreemptor(ssn, job, actionBudget)
+		solvers.RecordSearchOutcome(ssn, framework.Consolidation, job, searchResult)
+		if succeeded {
 			metrics.IncPodgroupScheduledByAction()
 			err := stmt.Commit()
 			if err != nil {

@@ -59,6 +59,7 @@ func (alloc *preemptAction) Execute(ssn *framework.Session) {
 		FilterNonPending:            true,
 		FilterUnready:               true,
 		FilterWithinPreemptionDelay: true,
+		FilterInSearchBackoffFor:    framework.Preempt,
 		MaxJobsQueueDepth:           ssn.GetJobsDepth(framework.Preempt),
 		NonPendingJobFilter:         deferredresize.NonPendingJobFilter(ssn),
 	})
@@ -115,6 +116,7 @@ func preemptForPendingTasks(
 
 	metrics.IncPodgroupsConsideredByAction()
 	succeeded, statement, preemptedTasksNames, searchResult := attemptToPreemptForPreemptor(ssn, job, actionBudget)
+	solvers.RecordSearchOutcome(ssn, framework.Preempt, job, searchResult)
 	if succeeded {
 		metrics.RegisterPreemptionAttempts()
 		metrics.IncPodgroupScheduledByAction()

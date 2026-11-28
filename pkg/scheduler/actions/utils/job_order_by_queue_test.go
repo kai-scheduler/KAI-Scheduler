@@ -859,3 +859,36 @@ func TestInitializeWithJobs_PreemptionDelayFilter(t *testing.T) {
 	popped := []string{jobsOrder.PopNextJob().Name, jobsOrder.PopNextJob().Name}
 	assert.ElementsMatch(t, []string{"delayed", "regular"}, popped)
 }
+
+func TestInitializeWithJobs_SearchBackoffFilter(t *testing.T) {
+	ssn := newPrioritySession(t)
+	ssn.ClusterInfo.Queues = map[common_info.QueueID]*queue_info.QueueInfo{
+		testQueue:       {UID: testQueue, ParentQueue: testParentQueue},
+		testParentQueue: {UID: testParentQueue, ChildQueues: []common_info.QueueID{testQueue}},
+	}
+
+	backedOffJob := podGroupForJobOrderTest("backed-off", "backed-off", 100)
+	backedOffJob.SearchBackoffUntil = map[string]time.Time{string(framework.Reclaim): time.Now().Add(time.Minute)}
+	regularJob := podGroupForJobOrderTest("regular", "regular", 100)
+	jobs := map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{"backed-off": backedOffJob, "regular": regularJob}
+	ssn.ClusterInfo.PodGroupInfos = jobs
+
+	initialized := func(options JobsOrderInitOptions) []string {
+		options.FilterNonPending = true
+		options.MaxJobsQueueDepth = scheduler_util.QueueCapacityInfinite
+		jobsOrder := NewJobsOrderByQueues(ssn, options)
+		jobsOrder.InitializeWithJobs(jobs)
+		var names []string
+		for !jobsOrder.IsEmpty() {
+			names = append(names, jobsOrder.PopNextJob().Name)
+		}
+		return names
+	}
+
+	// The action the job backs off from skips it.
+	assert.Equal(t, []string{"regular"}, initialized(JobsOrderInitOptions{FilterInSearchBackoffFor: framework.Reclaim}))
+	// Another action, and the allocate path without the filter, still consider it.
+	assert.ElementsMatch(t, []string{"backed-off", "regular"},
+		initialized(JobsOrderInitOptions{FilterInSearchBackoffFor: framework.Preempt}))
+	assert.ElementsMatch(t, []string{"backed-off", "regular"}, initialized(JobsOrderInitOptions{}))
+}
