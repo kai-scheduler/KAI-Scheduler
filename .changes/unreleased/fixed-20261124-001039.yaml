@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Reclaim and preempt now free the GPU of a victim that holds it through a DRA extended resource claim.
+custom:
+  Author: "mohitvinchoo"
+  Issue: "2610"
