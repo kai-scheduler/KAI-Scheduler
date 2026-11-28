@@ -7,8 +7,10 @@ import (
 	"os"
 
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 
 	"github.com/kai-scheduler/KAI-scheduler/cmd/admission/app"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/version"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/admission/plugins"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/admission/webhook/v1alpha2/deviceaccess"
@@ -23,6 +25,8 @@ var (
 )
 
 func main() {
+	version.RegisterMetrics(metrics.Registry, "admission")
+
 	app, err := app.New()
 	if err != nil {
 		setupLog.Error(err, "failed to create app")

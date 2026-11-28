@@ -16,6 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/version"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/nodescaleadjuster/consts"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/nodescaleadjuster/controller"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/nodescaleadjuster/scale_adjuster"
@@ -47,6 +48,7 @@ func Run() error {
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+	ctrl.Log.Info(version.StartupMessage("node-scale-adjuster"))
 
 	log.Println("Node scale adjuster started")
 

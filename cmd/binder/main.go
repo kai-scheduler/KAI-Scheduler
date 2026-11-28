@@ -11,9 +11,11 @@ import (
 	"go.uber.org/zap/zapcore"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 
 	"github.com/kai-scheduler/KAI-scheduler/cmd/binder/app"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/version"
 )
 
 var (
@@ -21,6 +23,8 @@ var (
 )
 
 func main() {
+	version.RegisterMetrics(metrics.Registry, "binder")
+
 	options := app.InitOptions(nil)
 	opts := zap.Options{
 		Development: true,
@@ -31,6 +35,7 @@ func main() {
 
 	pflag.Parse()
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+	ctrl.Log.Info(version.StartupMessage("binder"))
 
 	app, err := app.New(options, ctrl.GetConfigOrDie())
 	if err != nil {

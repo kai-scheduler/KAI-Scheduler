@@ -11,17 +11,22 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/kai-scheduler/KAI-scheduler/cmd/queuecontroller/app"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/version"
 	"go.uber.org/zap/zapcore"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
 func main() {
+	version.RegisterMetrics(metrics.Registry, "queue-controller")
+
 	logOptions := bindLoggerFlags(flag.CommandLine)
 	opts := app.InitOptions(flag.CommandLine)
 
 	flag.Parse()
 	initLogger(logOptions, os.Stderr)
+	ctrl.Log.Info(version.StartupMessage("queue-controller"))
 
 	clientConfig := ctrl.GetConfigOrDie()
 
