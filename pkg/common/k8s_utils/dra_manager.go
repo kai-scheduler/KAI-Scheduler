@@ -49,9 +49,9 @@ func NewSessionDRAManager(
 	logger := klog.LoggerWithName(klog.Background(), "SessionResourceClaimCache")
 	sessionCache := assumecache.NewAssumeCache(logger, &snapshotInformer{objects: objects}, "ResourceClaim", "", nil)
 
-	return dynamicresources.NewDRAManager(
+	return newSessionDRAManager(dynamicresources.NewDRAManager(
 		context.Background(), sessionCache, tracker, informerFactory,
-	)
+	))
 }
 
 // StartResourceSliceTracker creates a ResourceSliceTracker from the informer factory.

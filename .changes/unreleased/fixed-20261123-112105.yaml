@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Pod-grouper no longer caches every object of a pod's top-owner kind, cutting memory use on large clusters
+custom:
+  Author: "tiffany-yu-ai"
+  Issue: "2430"

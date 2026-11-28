@@ -134,7 +134,7 @@ Please have a look at KAI-scheduler's [contribution guide](https://github.com/ka
 
 ### Slack
 
-Join the [CNCF Slack](https://communityinviter.com/apps/cloud-native/cncf) first and visit the [#kai-scheduler](https://cloud-native.slack.com/archives/kai-scheduler) channel.
+Join the [CNCF Slack](https://slack.cncf.io/) first and visit the [#kai-scheduler](https://cloud-native.slack.com/archives/kai-scheduler) channel.
 
 ### Bi-weekly Community Call
 

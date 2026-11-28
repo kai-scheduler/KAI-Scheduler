@@ -323,8 +323,9 @@ func TestValidate(t *testing.T) {
 				},
 			},
 			GPUSharingEnabled: true,
-			error: fmt.Errorf("cannot combine %s limit annotation with %s or %s annotation",
-				constants.NvFractionsAnnotationPrefix, constants.GpuFraction, constants.GpuMemory),
+			error: fmt.Errorf("cannot combine %s limit annotation with %s annotation unless a %s annotation is set",
+				constants.NvFractionsAnnotationPrefix, constants.GpuFraction,
+				strings.TrimPrefix(constants.GpuMemoryPortionLimitSuffix, ".")),
 		},
 		{
 			name: "GPU sharing enabled, NvFractions limit with gpu-memory annotation - not allowed",
@@ -347,8 +348,8 @@ func TestValidate(t *testing.T) {
 				},
 			},
 			GPUSharingEnabled: true,
-			error: fmt.Errorf("cannot combine %s limit annotation with %s or %s annotation",
-				constants.NvFractionsAnnotationPrefix, constants.GpuFraction, constants.GpuMemory),
+			error: fmt.Errorf("cannot combine %s limit annotation with %s annotation unless the %s annotation is set",
+				constants.NvFractionsAnnotationPrefix, constants.GpuMemory, constants.GpuMemoryLimit),
 		},
 		{
 			name: "GPU sharing enabled, invalid NvFractions request value",

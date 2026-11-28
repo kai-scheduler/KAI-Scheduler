@@ -41,6 +41,7 @@ Tests are organized into contexts:
   - Distributed job scheduling
   - Reclaim scenarios
   - Mixed NVfractions saturation
+  - Heterogeneous workloads
 
 
 ## Environment Setup

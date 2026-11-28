@@ -25,7 +25,7 @@ func (pp *numaPlugin) reconstructNodeAvailable(ssn *framework.Session) {
 		}
 		resetAvailableToAllocatable(topo)
 		for _, task := range node.PodInfos {
-			if !pod_status.IsActiveAllocatedStatus(task.Status) {
+			if !pod_status.IsActiveUsedStatus(task.Status) {
 				continue
 			}
 			record := resolvePlacementRecord(task.Pod, bindRequestZones(ssn, task.Pod))

@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Plugin endpoints no longer crash the scheduler or serve incomplete snapshots; plugin port bind failures are now logged
+custom:
+  Author: "eladb"
+  Issue: "2789"

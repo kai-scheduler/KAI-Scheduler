@@ -56,8 +56,8 @@ func TestBestEffortEvaluatorSpan(t *testing.T) {
 	}
 }
 
-func TestBestEffortEvaluatorMoreThanStackZones(t *testing.T) {
-	zones := make([]node_info.NumaZoneSpec, stackZones+1)
+func TestUnifiedSolverRejectsUnsupportedZoneCount(t *testing.T) {
+	zones := make([]node_info.NumaZoneSpec, 65)
 	for i := range zones {
 		zones[i] = numaZone(fmt.Sprintf("node-%d", i), map[string]string{gpu: "1"})
 	}
@@ -65,8 +65,8 @@ func TestBestEffortEvaluatorMoreThanStackZones(t *testing.T) {
 
 	placement, ok := evalPlacement(node, noIgnoreList, []v1.ResourceList{req(gpu, fmt.Sprintf("%d", len(zones)))})
 
-	assert.True(t, ok)
-	assert.Len(t, placement.Zones, len(zones))
+	assert.False(t, ok)
+	assert.Empty(t, placement.Zones)
 }
 
 func TestNodeScoreTiers(t *testing.T) {

@@ -28,7 +28,7 @@ Flow once both components are deployed:
 
 After both components are implemented and tested, a user guide will be added to the documentation.
 
-![image](images/resource-isolation-design.png)
+![image](images/kai-resource-isolation-design.png)
 
 ## HAMi-core daemonset installation
 

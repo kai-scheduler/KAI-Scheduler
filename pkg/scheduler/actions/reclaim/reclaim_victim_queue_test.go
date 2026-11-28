@@ -165,3 +165,19 @@ func newVictimQueueTestJob(
 	job.Preemptibility = schedulingv2alpha2.Preemptible
 	return job, task
 }
+
+func TestOrderedVictimsQueueOnNodeKeepsOnlyJobsOnTheNode(t *testing.T) {
+	ssn, reclaimer, onNode, otherNode := newVictimQueueTestSession()
+	for _, task := range otherNode.GetAllPodsMap() {
+		task.NodeName = "node-1"
+	}
+	ssn.AddReclaimVictimFilterFn(func(_, _ *podgroup_info.PodGroupInfo) bool { return true })
+
+	queue := getOrderedVictimsQueueOnNode(ssn, reclaimer, "node-0")()
+	require.Same(t, onNode, queue.PopNextJob())
+	require.True(t, queue.IsEmpty(), "same-queue and other-node jobs are not victims")
+
+	queue = getOrderedVictimsQueueOnNode(ssn, reclaimer, "node-1")()
+	require.Same(t, otherNode, queue.PopNextJob())
+	require.True(t, queue.IsEmpty())
+}
