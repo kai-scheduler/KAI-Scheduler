@@ -88,6 +88,10 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 		crd.SkipIfCrdIsNotInstalled(ctx, testCtx.KubeConfig, "stages.kwok.x-k8s.io", "v1alpha1")
 		crd.SkipIfCrdIsNotInstalled(ctx, testCtx.KubeConfig, "nodepools.kwok.sigs.run-ai.com", "v1beta1")
 
+		if err := recordServiceClientConfig(ctx, testCtx.ControllerClient); err != nil {
+			GinkgoLogr.Error(err, "Failed to record service client config")
+		}
+
 		queues := v2.QueueList{}
 		Expect(testCtx.ControllerClient.List(ctx, &queues)).To(Succeed())
 		for _, queueToClean := range queues.Items {
