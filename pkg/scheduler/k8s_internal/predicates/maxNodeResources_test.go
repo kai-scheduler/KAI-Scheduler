@@ -13,6 +13,8 @@ import (
 	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/dynamic-resource-allocation/deviceclass/extendedresourcecache"
+	"k8s.io/klog/v2"
 	ksf "k8s.io/kube-scheduler/framework"
 	"k8s.io/utils/ptr"
 
@@ -315,7 +317,7 @@ func Test_podToMaxNodeResourcesFiltering(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			nodesMap := buildTestNodes(tt.args.nodesResourceLists)
-			mnr := NewMaxNodeResourcesPredicate(nodesMap, tt.args.resourceClaims, tt.args.nodePoolName)
+			mnr := NewMaxNodeResourcesPredicate(nodesMap, tt.args.resourceClaims, nil, tt.args.nodePoolName)
 			_, status := mnr.PreFilter(context.TODO(), nil, tt.args.pod, nil)
 			if !tt.expected.skipExactMatch && !statusEqual(status, tt.expected.status) {
 				t.Errorf("PreFilter() = %v, want %v", status, tt.expected.status)
@@ -364,7 +366,7 @@ func Test_extendedResourcesAreNotScaledByThousand(t *testing.T) {
 		},
 	}
 
-	mnr := NewMaxNodeResourcesPredicate(nodesMap, []*resourceapi.ResourceClaim{}, "")
+	mnr := NewMaxNodeResourcesPredicate(nodesMap, []*resourceapi.ResourceClaim{}, nil, "")
 	_, status := mnr.PreFilter(context.TODO(), nil, pod, nil)
 	if status != nil {
 		t.Fatalf("PreFilter() rejected a pod requesting 4 %s on a node with 8: %v", rdmaResourceName, status.Message())
@@ -594,7 +596,7 @@ func TestMaxNodeResourcesPredicateDRA(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mnr := NewMaxNodeResourcesPredicate(tt.args.nodesMap, tt.args.resourceClaims, "")
+			mnr := NewMaxNodeResourcesPredicate(tt.args.nodesMap, tt.args.resourceClaims, nil, "")
 			_, status := mnr.PreFilter(context.TODO(), nil, tt.args.pod, nil)
 			if !statusEqual(status, tt.expected) {
 				t.Errorf("PreFilter() = %v, want %v", status, tt.expected)
@@ -667,7 +669,7 @@ func Test_maxNodeResourcesExtendedResourceOnSubsetOfNodes(t *testing.T) {
 	t.Run("pod requesting the resource within capacity fits", func(t *testing.T) {
 		for i := 0; i < extendedResourceTestIterations; i++ {
 			nodesMap, _ := buildTestNodesIncremental(scanOrder, nodesResourceLists)
-			mnr := NewMaxNodeResourcesPredicate(nodesMap, nil, "")
+			mnr := NewMaxNodeResourcesPredicate(nodesMap, nil, nil, "")
 			pod := buildPodRequestingResources(v1.ResourceList{fooResource: resource.MustParse("1")})
 			_, status := mnr.PreFilter(context.TODO(), nil, pod, nil)
 			if status != nil {
@@ -679,7 +681,7 @@ func Test_maxNodeResourcesExtendedResourceOnSubsetOfNodes(t *testing.T) {
 	t.Run("pod requesting more than any node has is rejected", func(t *testing.T) {
 		for i := 0; i < extendedResourceTestIterations; i++ {
 			nodesMap, _ := buildTestNodesIncremental(scanOrder, nodesResourceLists)
-			mnr := NewMaxNodeResourcesPredicate(nodesMap, nil, "")
+			mnr := NewMaxNodeResourcesPredicate(nodesMap, nil, nil, "")
 			pod := buildPodRequestingResources(v1.ResourceList{fooResource: resource.MustParse("10")})
 			_, status := mnr.PreFilter(context.TODO(), nil, pod, nil)
 			if status == nil {
@@ -697,7 +699,7 @@ func Test_maxNodeResourcesExtendedResourceOnSubsetOfNodes(t *testing.T) {
 	t.Run("max resources track the highest capacity across all nodes", func(t *testing.T) {
 		for i := 0; i < extendedResourceTestIterations; i++ {
 			nodesMap, vm := buildTestNodesIncremental(scanOrder, nodesResourceLists)
-			mnr := NewMaxNodeResourcesPredicate(nodesMap, nil, "")
+			mnr := NewMaxNodeResourcesPredicate(nodesMap, nil, nil, "")
 			fooIdx := vm.GetIndex(fooResource)
 			if fooIdx < 0 {
 				t.Fatalf("iteration %d: %s not registered in vector map", i, fooResource)
@@ -728,7 +730,7 @@ func Test_maxNodeResourcesExtendedResourceOnNoNode(t *testing.T) {
 	nodesMap, vm := buildTestNodesIncremental([]string{"n1", "n2"}, nodesResourceLists)
 	vm.AddResourceList(pod.Spec.Containers[0].Resources.Requests)
 
-	mnr := NewMaxNodeResourcesPredicate(nodesMap, nil, "")
+	mnr := NewMaxNodeResourcesPredicate(nodesMap, nil, nil, "")
 	_, status := mnr.PreFilter(context.TODO(), nil, pod, nil)
 	if status == nil {
 		t.Fatal("PreFilter() = nil, want rejection")
@@ -750,4 +752,55 @@ func statusEqual(a, b *ksf.Status) bool {
 		return false
 	}
 	return a.Code() == b.Code() && a.Message() == b.Message()
+}
+
+func Test_maxNodeResourcesDRABackedExtendedResource(t *testing.T) {
+	draResource := v1.ResourceName("example.com/hca")
+	missingResource := v1.ResourceName("example.com/bar")
+	deviceClassByResource := extendedresourcecache.NewExtendedResourceCache(klog.Background())
+	deviceClassByResource.OnAdd(&resourceapi.DeviceClass{
+		ObjectMeta: metav1.ObjectMeta{Name: "hca"},
+		Spec:       resourceapi.DeviceClassSpec{ExtendedResourceName: ptr.To(string(draResource))},
+	}, false)
+	nodesResourceLists := map[string]v1.ResourceList{
+		"n1": {
+			v1.ResourceCPU:    resource.MustParse("4"),
+			v1.ResourceMemory: resource.MustParse("16Gi"),
+			v1.ResourcePods:   resource.MustParse("110"),
+		},
+	}
+
+	tests := []struct {
+		name     string
+		requests v1.ResourceList
+		wantFit  bool
+	}{
+		{
+			// No node advertises it: the DRA plugin allocates it from ResourceSlices.
+			name:     "DRA-backed extended resource",
+			requests: v1.ResourceList{draResource: resource.MustParse("8")},
+			wantFit:  true,
+		},
+		{
+			name:     "extended resource no DeviceClass maps",
+			requests: v1.ResourceList{draResource: resource.MustParse("8"), missingResource: resource.MustParse("1")},
+			wantFit:  false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pod := buildPodRequestingResources(tt.requests)
+			nodesMap, vm := buildTestNodesIncremental([]string{"n1"}, nodesResourceLists)
+			vm.AddResourceList(tt.requests)
+
+			mnr := NewMaxNodeResourcesPredicate(nodesMap, nil, deviceClassByResource, "")
+			_, status := mnr.PreFilter(context.TODO(), nil, pod, nil)
+			if tt.wantFit && status != nil {
+				t.Fatalf("PreFilter() = %v, want nil", status.Message())
+			}
+			if !tt.wantFit && (status == nil || !strings.Contains(status.Message(), string(missingResource))) {
+				t.Fatalf("PreFilter() = %v, want a rejection naming %s", status, missingResource)
+			}
+		})
+	}
 }
