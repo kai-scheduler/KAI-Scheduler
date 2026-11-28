@@ -55,13 +55,19 @@ var _ = Describe("Status Updater - Pod Groups Syncing", func() {
 		wg = sync.WaitGroup{}
 		finishUpdatesChan = make(chan struct{})
 		// wait with pod groups update until signal is given.
-		kubeAiSchedClient.SchedulingV2alpha2().(*fakeschedulingv2alpha2.FakeSchedulingV2alpha2).PrependReactor(
-			"update", "podgroups", func(action faketesting.Action) (handled bool, ret runtime.Object, err error) {
-				<-finishUpdatesChan
-				wg.Done()
+		holdStatusWrite := func(action faketesting.Action) (handled bool, ret runtime.Object, err error) {
+			<-finishUpdatesChan
+			wg.Done()
+			return false, nil, nil
+		}
+		fakeSched := kubeAiSchedClient.SchedulingV2alpha2().(*fakeschedulingv2alpha2.FakeSchedulingV2alpha2)
+		fakeSched.PrependReactor("update", "podgroups", holdStatusWrite)
+		fakeSched.PrependReactor("patch", "podgroups", func(action faketesting.Action) (bool, runtime.Object, error) {
+			if action.GetSubresource() != "status" {
 				return false, nil, nil
-			},
-		)
+			}
+			return holdStatusWrite(action)
+		})
 
 		stopCh = make(chan struct{})
 		statusUpdater.Run(stopCh)
@@ -183,12 +189,6 @@ var _ = Describe("Status Updater - Pod Groups Syncing", func() {
 		close(finishUpdatesChan)
 		wg.Wait()
 
-		podGroupsList, _ := kubeAiSchedClient.SchedulingV2alpha2().PodGroups("default").List(context.TODO(), metav1.ListOptions{})
-		podGroupsFromCluster := make([]*schedulingv2alpha2.PodGroup, 0, len(podGroupsList.Items))
-		for _, podGroup := range podGroupsList.Items {
-			podGroupsFromCluster = append(podGroupsFromCluster, podGroup.DeepCopy())
-		}
-
 		Eventually(func() int {
 			numberOfPodGroupInFlight := 0
 			statusUpdater.inFlightPodGroups.Range(func(key any, value any) bool {
@@ -197,6 +197,12 @@ var _ = Describe("Status Updater - Pod Groups Syncing", func() {
 			})
 			return numberOfPodGroupInFlight
 		}, time.Second*20, time.Millisecond*50).Should(Equal(0))
+
+		podGroupsList, _ := kubeAiSchedClient.SchedulingV2alpha2().PodGroups("default").List(context.TODO(), metav1.ListOptions{})
+		podGroupsFromCluster := make([]*schedulingv2alpha2.PodGroup, 0, len(podGroupsList.Items))
+		for _, podGroup := range podGroupsList.Items {
+			podGroupsFromCluster = append(podGroupsFromCluster, podGroup.DeepCopy())
+		}
 
 		statusUpdater.SyncPodGroupsWithPendingUpdates(podGroupsFromCluster)
 
@@ -350,12 +356,17 @@ var _ = Describe("Status Updater - annotation removal across cycles", func() {
 		su := New(kubeClient, kubeAiSchedClient, record.NewFakeRecorder(100), 4, false, nodePoolLabelKey)
 
 		finishUpdates := make(chan struct{})
-		kubeAiSchedClient.SchedulingV2alpha2().(*fakeschedulingv2alpha2.FakeSchedulingV2alpha2).PrependReactor(
-			"update", "podgroups", func(faketesting.Action) (bool, runtime.Object, error) {
+		fakeSched := kubeAiSchedClient.SchedulingV2alpha2().(*fakeschedulingv2alpha2.FakeSchedulingV2alpha2)
+		fakeSched.PrependReactor("update", "podgroups", func(faketesting.Action) (bool, runtime.Object, error) {
+			<-finishUpdates
+			return false, nil, nil
+		})
+		fakeSched.PrependReactor("patch", "podgroups", func(action faketesting.Action) (bool, runtime.Object, error) {
+			if action.GetSubresource() == "status" {
 				<-finishUpdates
-				return false, nil, nil
-			},
-		)
+			}
+			return false, nil, nil
+		})
 		stopCh := make(chan struct{})
 		su.Run(stopCh)
 		defer close(stopCh)
