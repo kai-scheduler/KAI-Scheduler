@@ -280,6 +280,10 @@ func (ni *NodeInfo) isTaskStorageAllocatableOnReleasingOrIdle(task *pod_info.Pod
 }
 
 func (ni *NodeInfo) FittingError(task *pod_info.PodInfo, isGangTask bool) *common_info.TasksFitError {
+	if computeFitError := ni.GpuComputeFitError(task); computeFitError != nil {
+		return computeFitError
+	}
+
 	enoughResources := ni.lessEqualTaskToNodeResources(task, ni.IdleVector)
 	if !enoughResources {
 		totalUsedVector := ni.UsedVector.Clone()
@@ -830,6 +834,7 @@ func (ni *NodeInfo) setAcceptedResources(pi *pod_info.PodInfo) {
 		pi.ResourceReceivedType = pod_info.ReceivedTypeFraction
 		pi.AcceptedGpuRequirement = *resource_info.NewGpuResourceRequirementWithMultiFraction(
 			pi.GpuRequirement.GetNumOfGpuDevices(), ni.getResourceGpuPortion(&pi.GpuRequirement), ni.GetResourceGpuMemory(&pi.GpuRequirement))
+		pi.AcceptedGpuRequirement.SetGpuCompute(pi.GpuRequirement.GpuCompute())
 	} else {
 		pi.ResourceReceivedType = pod_info.ReceivedTypeRegular
 		pi.AcceptedGpuRequirement = *resource_info.NewGpuResourceRequirementWithGpus(

@@ -6,8 +6,10 @@ package node_info
 import (
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
@@ -26,6 +28,12 @@ type GpuSharingNodeInfo struct {
 	ReleasingSharedGPUsMemory map[string]int64
 	AllocatedSharedGPUsMemory map[string]int64
 
+	// Compute, in resource_info.GpuComputeScale units, mirroring the memory maps above.
+	// ReleasingSharedGPUsCompute is net of pipelined reservations and may be negative.
+	UsedSharedGPUsCompute      map[string]int64
+	AllocatedSharedGPUsCompute map[string]int64
+	ReleasingSharedGPUsCompute map[string]int64
+
 	// DRASharedDeviceRefCount counts how many pods on the node reference each
 	// physical DRA GPU device (keyed by driver/pool/device). A device shared
 	// by several pods through one ResourceClaim (status.reservedFor with more
@@ -40,6 +48,10 @@ func newGpuSharingNodeInfo() *GpuSharingNodeInfo {
 		UsedSharedGPUsMemory:      make(map[string]int64),
 		ReleasingSharedGPUsMemory: make(map[string]int64),
 		AllocatedSharedGPUsMemory: make(map[string]int64),
+
+		UsedSharedGPUsCompute:      make(map[string]int64),
+		AllocatedSharedGPUsCompute: make(map[string]int64),
+		ReleasingSharedGPUsCompute: make(map[string]int64),
 
 		DRASharedDeviceRefCount: make(map[string]int),
 	}
@@ -59,6 +71,15 @@ func (g *GpuSharingNodeInfo) Clone() *GpuSharingNodeInfo {
 	}
 	for k, v := range g.AllocatedSharedGPUsMemory {
 		gpuSharingNodeInfo.AllocatedSharedGPUsMemory[k] = v
+	}
+	for k, v := range g.UsedSharedGPUsCompute {
+		gpuSharingNodeInfo.UsedSharedGPUsCompute[k] = v
+	}
+	for k, v := range g.AllocatedSharedGPUsCompute {
+		gpuSharingNodeInfo.AllocatedSharedGPUsCompute[k] = v
+	}
+	for k, v := range g.ReleasingSharedGPUsCompute {
+		gpuSharingNodeInfo.ReleasingSharedGPUsCompute[k] = v
 	}
 	for k, v := range g.DRASharedDeviceRefCount {
 		gpuSharingNodeInfo.DRASharedDeviceRefCount[k] = v
@@ -154,6 +175,7 @@ func (ni *NodeInfo) addSharedGPUTaskResourcesPerPodGroup(task *pod_info.PodInfo,
 	})
 
 	ni.UsedSharedGPUsMemory[gpuGroup] += ni.GetResourceGpuMemory(&task.GpuRequirement)
+	ni.addSharedGPUTaskCompute(task, gpuGroup)
 	singleGpu := resource_info.NewSingleGpuVector(ni.VectorMap)
 
 	switch task.Status {
@@ -237,6 +259,7 @@ func (ni *NodeInfo) removeSharedTaskResourcesPerPodGroup(task *pod_info.PodInfo,
 	})
 
 	ni.UsedSharedGPUsMemory[gpuGroup] -= ni.GetResourceGpuMemory(&task.GpuRequirement)
+	ni.removeSharedGPUTaskCompute(task, gpuGroup)
 	singleGpu := resource_info.NewSingleGpuVector(ni.VectorMap)
 
 	switch task.Status {
@@ -319,6 +342,58 @@ func (ni *NodeInfo) isPipelinedToReleasingGpu(task *pod_info.PodInfo, gpuGroup s
 
 func (ni *NodeInfo) ConsolidateSharedPodInfoToDifferentGPU(ti *pod_info.PodInfo) error {
 	return ni.addTask(ti, true)
+}
+
+// addSharedGPUTaskCompute mirrors the memory ledger branches of addSharedGPUTaskResourcesPerPodGroup.
+// Compute never drives GPU occupancy vectors: a zero-compute (memory-only) pod still occupies the GPU.
+func (ni *NodeInfo) addSharedGPUTaskCompute(task *pod_info.PodInfo, gpuGroup string) {
+	compute := task.GpuRequirement.GpuCompute()
+	if compute == 0 {
+		return
+	}
+	ni.ensureSharedGPUComputeMaps()
+
+	ni.UsedSharedGPUsCompute[gpuGroup] += compute
+	switch task.Status {
+	case pod_status.Releasing:
+		ni.AllocatedSharedGPUsCompute[gpuGroup] += compute
+		ni.ReleasingSharedGPUsCompute[gpuGroup] += compute
+	case pod_status.Pipelined:
+		ni.ReleasingSharedGPUsCompute[gpuGroup] -= compute
+	default:
+		ni.AllocatedSharedGPUsCompute[gpuGroup] += compute
+	}
+}
+
+func (ni *NodeInfo) removeSharedGPUTaskCompute(task *pod_info.PodInfo, gpuGroup string) {
+	compute := task.GpuRequirement.GpuCompute()
+	if compute == 0 {
+		return
+	}
+	ni.ensureSharedGPUComputeMaps()
+
+	ni.UsedSharedGPUsCompute[gpuGroup] -= compute
+	switch task.Status {
+	case pod_status.Releasing:
+		ni.AllocatedSharedGPUsCompute[gpuGroup] -= compute
+		ni.ReleasingSharedGPUsCompute[gpuGroup] -= compute
+	case pod_status.Pipelined:
+		ni.ReleasingSharedGPUsCompute[gpuGroup] += compute
+	default:
+		ni.AllocatedSharedGPUsCompute[gpuGroup] -= compute
+	}
+}
+
+func (ni *NodeInfo) ensureSharedGPUComputeMaps() {
+	if ni.UsedSharedGPUsCompute == nil {
+		ni.UsedSharedGPUsCompute = make(map[string]int64)
+	}
+	if ni.AllocatedSharedGPUsCompute == nil {
+		ni.AllocatedSharedGPUsCompute = make(map[string]int64)
+	}
+	if ni.ReleasingSharedGPUsCompute == nil {
+		ni.ReleasingSharedGPUsCompute = make(map[string]int64)
+	}
 }
 
 func (ni *NodeInfo) isGpuReleasingFromSharedTasks(gpuGroup string) bool {
@@ -444,6 +519,11 @@ func (ni *NodeInfo) fractionTaskGpusAllocatableDeviceCount(pod *pod_info.PodInfo
 }
 
 func (ni *NodeInfo) IsTaskFitOnGpuGroup(task *pod_info.PodInfo, gpuGroup string) bool {
+	return ni.isTaskFitOnGpuGroupWithoutCompute(task, gpuGroup) &&
+		ni.enoughComputeOnGpu(&task.GpuRequirement, gpuGroup)
+}
+
+func (ni *NodeInfo) isTaskFitOnGpuGroupWithoutCompute(task *pod_info.PodInfo, gpuGroup string) bool {
 	return ni.UsedSharedGPUsMemory[gpuGroup] != 0 &&
 		ni.enoughResourcesOnGpu(&task.GpuRequirement, gpuGroup) &&
 		!ni.isAllGpuReleased(gpuGroup) &&
@@ -455,7 +535,68 @@ func (ni *NodeInfo) EnoughIdleResourcesOnGpu(resources *resource_info.GpuResourc
 		// If a gpu group is not found in allocated, it's an indication that this group is pipelined
 		return false
 	}
-	return ni.MemoryOfEveryGpuOnNode-ni.AllocatedSharedGPUsMemory[gpuGroup]-ni.GetResourceGpuMemory(resources) >= 0
+	if ni.MemoryOfEveryGpuOnNode-ni.AllocatedSharedGPUsMemory[gpuGroup]-ni.GetResourceGpuMemory(resources) < 0 {
+		return false
+	}
+	compute := resources.GpuCompute()
+	return compute == 0 || resource_info.GpuComputeScale-ni.AllocatedSharedGPUsCompute[gpuGroup]-compute >= 0
+}
+
+// AvailableSharedGpuCompute returns the compute a new placement may claim on the GPU group,
+// counting capacity that is still releasing.
+func (ni *NodeInfo) AvailableSharedGpuCompute(gpuGroup string) int64 {
+	return resource_info.GpuComputeScale -
+		ni.AllocatedSharedGPUsCompute[gpuGroup] +
+		ni.ReleasingSharedGPUsCompute[gpuGroup]
+}
+
+func (ni *NodeInfo) enoughComputeOnGpu(resources *resource_info.GpuResourceRequirement, gpuGroup string) bool {
+	compute := resources.GpuCompute()
+	return compute == 0 || ni.AvailableSharedGpuCompute(gpuGroup)-compute >= 0
+}
+
+// GpuComputeFitError reports a node that has enough GPU memory for the task but whose eligible GPUs
+// lack the requested compute. It returns nil when compute is not the bottleneck.
+func (ni *NodeInfo) GpuComputeFitError(task *pod_info.PodInfo) *common_info.TasksFitError {
+	compute := task.GpuRequirement.GpuCompute()
+	if compute <= 0 || !task.IsSharedGPURequest() {
+		return nil
+	}
+	requiredDevices := int(task.GpuRequirement.GetNumOfGpuDevices())
+	if requiredDevices <= 0 {
+		return nil
+	}
+
+	var eligibleFreeCompute []int64
+	fittingDevices := 0
+	for gpuGroup := range ni.UsedSharedGPUsMemory {
+		if !ni.isTaskFitOnGpuGroupWithoutCompute(task, gpuGroup) {
+			continue
+		}
+		eligibleFreeCompute = append(eligibleFreeCompute, ni.AvailableSharedGpuCompute(gpuGroup))
+		if ni.enoughComputeOnGpu(&task.GpuRequirement, gpuGroup) {
+			fittingDevices++
+		}
+	}
+	wholeGpus := int(math.Floor(ni.nonAllocatedVector().Get(resource_info.GPUIndex)))
+	for range wholeGpus {
+		eligibleFreeCompute = append(eligibleFreeCompute, resource_info.GpuComputeScale)
+		if compute <= resource_info.GpuComputeScale {
+			fittingDevices++
+		}
+	}
+
+	if len(eligibleFreeCompute) < requiredDevices || fittingDevices >= requiredDevices {
+		return nil
+	}
+
+	// The kth-largest free compute is what limits a k-device request; compute never sums across GPUs.
+	sort.Slice(eligibleFreeCompute, func(i, j int) bool { return eligibleFreeCompute[i] > eligibleFreeCompute[j] })
+	freeCompute := max(eligibleFreeCompute[requiredDevices-1], 0)
+
+	return common_info.NewFitError(task.Name, task.Namespace, ni.Name, fmt.Sprintf(
+		"node %s has enough GPU memory but not enough GPU compute (requested %s, free %s)",
+		ni.Name, resource_info.FormatGpuCompute(compute), resource_info.FormatGpuCompute(freeCompute)))
 }
 
 func (ni *NodeInfo) enoughResourcesOnGpu(resources *resource_info.GpuResourceRequirement, gpuGroup string) bool {
