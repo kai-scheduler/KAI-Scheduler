@@ -366,7 +366,7 @@ func (ssn *Session) SubGroupOrderFn(l, r interface{}) bool {
 }
 
 func (ssn *Session) QueueOrderFn(lQ, rQ *queue_info.QueueInfo, lJob, rJob *podgroup_info.PodGroupInfo,
-	lVictims, rVictims []*podgroup_info.PodGroupInfo,
+	lVictims, rVictims []api.QueueVictimResources,
 ) bool {
 	minNodeGPUMemory := ssn.ClusterInfo.MinNodeGPUMemoryMiB
 	for _, qof := range ssn.QueueOrderFns {

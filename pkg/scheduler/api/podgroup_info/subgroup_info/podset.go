@@ -76,6 +76,12 @@ func (ps *PodSet) AssignTask(ti *pod_info.PodInfo) {
 	ps.podInfos[ti.UID] = ti
 }
 
+// RemoveTask removes a task from this pod set without changing the task itself.
+func (ps *PodSet) RemoveTask(ti *pod_info.PodInfo) {
+	ps.invalidateSchedulingConstraintsSignature()
+	ps.clearOldStatus(ti)
+}
+
 func (ps *PodSet) invalidateSchedulingConstraintsSignature() {
 	ps.schedulingConstraintsSignature = ""
 }

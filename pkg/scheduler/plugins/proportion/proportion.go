@@ -607,7 +607,7 @@ func (pp *proportionPlugin) queueUsageHandlerFn(
 	}
 }
 
-func (pp *proportionPlugin) queueOrder(lQ, rQ *queue_info.QueueInfo, lJob, rJob *podgroup_info.PodGroupInfo, lVictims, rVictims []*podgroup_info.PodGroupInfo, minNodeGPUMemory *int64) int {
+func (pp *proportionPlugin) queueOrder(lQ, rQ *queue_info.QueueInfo, lJob, rJob *podgroup_info.PodGroupInfo, lVictims, rVictims []api.QueueVictimResources, minNodeGPUMemory *int64) int {
 	lQueueAttributes, found := pp.queues[lQ.UID]
 	if !found {
 		log.InfraLogger.Errorf("Failed to find queue: <%v>", lQ.Name)

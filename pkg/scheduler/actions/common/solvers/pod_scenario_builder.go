@@ -4,7 +4,7 @@
 package solvers
 
 import (
-	"golang.org/x/exp/slices"
+	"math"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters"
 	idle_gpus_filter "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus"
@@ -26,6 +26,10 @@ type PodAccumulatedScenarioBuilder struct {
 
 	lastScenario     *solverscenario.ByNodeScenario
 	victimsJobsQueue *utils.JobsOrderByQueues
+
+	// Remainders belong only to this builder. Consumed pods may escape to scenarios,
+	// so removal changes job indexes and aggregates, never the pods themselves.
+	victimRemainders map[common_info.PodGroupID]*podgroup_info.PodGroupInfo
 
 	recordedVictimsTasks map[common_info.PodID]*pod_info.PodInfo
 
@@ -221,16 +225,13 @@ func (asb *PodAccumulatedScenarioBuilder) addNextPotentialVictims() bool {
 			// If any of the tasks of the victim job are recorded victims
 			// we still want to evaluate the job again if there are tasks
 			// that are not recorded victims yet, like elastic jobs
-			var remainingTasks []*pod_info.PodInfo
+			var recorded []*pod_info.PodInfo
 			for _, task := range nextVictimJob.GetAllPodsMap() {
-				if _, ok := asb.recordedVictimsTasks[task.UID]; !ok {
-					remainingTasks = append(remainingTasks, task)
+				if _, ok := asb.recordedVictimsTasks[task.UID]; ok {
+					recorded = append(recorded, task)
 				}
 			}
-			if len(remainingTasks) != 0 {
-				jobToPush := nextVictimJob.CloneWithTasks(remainingTasks)
-				asb.victimsJobsQueue.PushJob(jobToPush)
-			}
+			asb.requeueVictimRemainder(nextVictimJob, recorded)
 			return false
 		}
 	}
@@ -238,21 +239,55 @@ func (asb *PodAccumulatedScenarioBuilder) addNextPotentialVictims() bool {
 	// A job that yielded no victims will yield none again, so re-pushing it would leave the queue
 	// unable to drain. Semi-preemptible jobs sitting at their core are the case that hits this.
 	if jobHasMoreTasks && len(potentialVictimTasks) > 0 {
-		var remainingTasks []*pod_info.PodInfo
-		for _, task := range nextVictimJob.GetAllPodsMap() {
-			if !slices.Contains(potentialVictimTasks, task) {
-				remainingTasks = append(remainingTasks, task)
-			}
-		}
-
-		jobToPush := nextVictimJob.CloneWithTasks(remainingTasks)
-		asb.victimsJobsQueue.PushJob(jobToPush)
+		asb.requeueVictimRemainder(nextVictimJob, potentialVictimTasks)
 	}
 
 	if asb.lastScenario != nil {
 		asb.lastScenario.AddPotentialVictimsTasks(potentialVictimTasks)
 	}
 	return true
+}
+
+func (asb *PodAccumulatedScenarioBuilder) requeueVictimRemainder(job *podgroup_info.PodGroupInfo, consumed []*pod_info.PodInfo) {
+	remainder := asb.victimRemainders[job.UID]
+	if remainder == nil {
+		removed := make(map[common_info.PodID]struct{}, len(consumed))
+		for _, task := range consumed {
+			removed[task.UID] = struct{}{}
+		}
+		remaining := make([]*pod_info.PodInfo, 0, len(job.GetAllPodsMap()))
+		reusable := true
+		for uid, task := range job.GetAllPodsMap() {
+			if _, found := removed[uid]; !found {
+				remaining = append(remaining, task)
+				for _, value := range task.ResReqVector {
+					reusable = reusable && value >= 0 && math.Trunc(value) == value
+				}
+			}
+		}
+		if len(remaining) == 0 {
+			return
+		}
+		remainder = job.CloneWithTasks(remaining)
+		// Fractional sums can round differently after subtraction and change queue-order ties.
+		// Integer sums up to 2^53 stay exact throughout removal.
+		for _, value := range remainder.AllocatedVector {
+			reusable = reusable && value <= 1<<53
+		}
+		if reusable {
+			if asb.victimRemainders == nil {
+				asb.victimRemainders = make(map[common_info.PodGroupID]*podgroup_info.PodGroupInfo)
+			}
+			asb.victimRemainders[job.UID] = remainder
+		}
+	} else {
+		for _, task := range consumed {
+			remainder.RemoveTaskInfo(task)
+		}
+	}
+	if len(remainder.GetAllPodsMap()) > 0 {
+		asb.victimsJobsQueue.PushJob(remainder)
+	}
 }
 
 func (asb *PodAccumulatedScenarioBuilder) isScenarioValid() (bool, string) {
