@@ -40,6 +40,7 @@ type TopologyAwareIdleGpus struct {
 	// processedVictims tracks victim UIDs that have already had their freed GPUs applied to
 	// domainCapacity, preventing double-counting when the same victim appears across calls.
 	processedVictims map[common_info.PodID]bool
+	evictions        *node_info.SharedGpuEvictions
 }
 
 func NewTopologyAwareIdleGpusFilter(
@@ -59,6 +60,7 @@ func NewTopologyAwareIdleGpusFilter(
 		nodeToTopologyDomains: nodeToTopologyDomains,
 		domainsByConstraint:   domainsByConstraint,
 		processedVictims:      make(map[common_info.PodID]bool),
+		evictions:             node_info.NewSharedGpuEvictions(nodeInfosMap),
 	}
 }
 
@@ -81,7 +83,7 @@ func (taf *TopologyAwareIdleGpus) updateDomainCapacityWithVictims(scenario *scen
 
 func (taf *TopologyAwareIdleGpus) applyVictimTasks(victimTasks []*pod_info.PodInfo) {
 	iterateNewVictims(victimTasks, taf.processedVictims, func(victimTask *pod_info.PodInfo) {
-		freedGpus := victimTask.AcceptedGpuRequirement.GetGpusQuota()
+		freedGpus := taf.evictions.Credit(victimTask)
 		if domains, ok := taf.nodeToTopologyDomains[victimTask.NodeName]; ok {
 			for _, domainKey := range domains {
 				taf.domainCapacity[domainKey] += freedGpus
