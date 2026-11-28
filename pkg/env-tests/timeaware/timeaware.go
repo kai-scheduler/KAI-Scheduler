@@ -72,7 +72,13 @@ type TestJobs struct {
 
 type TestNodes struct {
 	GPUs  int `yaml:"GPUs"`
-	Count int `yaml:"count"`
+	Count int `yaml:"count"` // default is 1
+}
+
+func (n *TestNodes) SetDefaults() {
+	if n.Count == 0 {
+		n.Count = 1
+	}
 }
 
 type TimeAwareSimulation struct {
@@ -89,11 +95,17 @@ func (s *TimeAwareSimulation) SetDefaults() {
 	for i := range s.Queues {
 		s.Queues[i].SetDefaults()
 	}
+	for i := range s.Nodes {
+		s.Nodes[i].SetDefaults()
+	}
 	if s.Cycles == nil {
 		s.Cycles = ptr.To(100)
 	}
 	if s.WindowSize == nil {
 		s.WindowSize = ptr.To(5)
+	}
+	if s.HalfLifePeriod == nil {
+		s.HalfLifePeriod = ptr.To(0)
 	}
 	if s.KValue == nil {
 		s.KValue = ptr.To(1.0)
@@ -218,18 +230,8 @@ func RunSimulation(
 		}
 	}()
 
-	var nodes []*corev1.Node
-	for _, node := range simulation.Nodes {
-		nodeConfig := utils.DefaultNodeConfig(fmt.Sprintf("test-node-%d", node.GPUs))
-		nodeConfig.GPUs = node.GPUs
-		nodeObject := utils.CreateNodeObject(ctx, ctrlClient, nodeConfig)
-		nodeObject.ObjectMeta.Labels = map[string]string{
-			"simulation": simulationName,
-		}
-		if err := ctrlClient.Create(ctx, nodeObject); err != nil {
-			return nil, fmt.Errorf("failed to create test node: %w", err), nil
-		}
-		nodes = append(nodes, nodeObject)
+	if err := createNodes(ctx, ctrlClient, simulation.Nodes, simulationName); err != nil {
+		return nil, err, nil
 	}
 
 	var queues []*schedulingv2.Queue
@@ -291,6 +293,25 @@ func RunSimulation(
 	}
 
 	return allocationHistory, err, nil
+}
+
+func createNodes(ctx context.Context, ctrlClient client.Client, nodes []TestNodes, simulationName string) error {
+	nodeIndex := 0
+	for _, node := range nodes {
+		for range node.Count {
+			nodeConfig := utils.DefaultNodeConfig(fmt.Sprintf("test-node-%d", nodeIndex))
+			nodeIndex++
+			nodeConfig.GPUs = node.GPUs
+			nodeObject := utils.CreateNodeObject(ctx, ctrlClient, nodeConfig)
+			nodeObject.ObjectMeta.Labels = map[string]string{
+				"simulation": simulationName,
+			}
+			if err := ctrlClient.Create(ctx, nodeObject); err != nil {
+				return fmt.Errorf("failed to create test node: %w", err)
+			}
+		}
+	}
+	return nil
 }
 
 func cleanupSimulation(ctx context.Context, ctrlClient client.Client, testNamespace *corev1.Namespace, simulationName string) []error {
