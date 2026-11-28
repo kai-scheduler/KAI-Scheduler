@@ -36,7 +36,7 @@ kubectl delete stage pod-complete --ignore-not-found
 kubectl patch schedulingshard default --type merge -p '{"spec":{"args": {"max-consolidation-preemptees": "0", "pyroscope-address": "http://pyroscope.monitoring.svc.cluster.local.:4040"}}}'
 
 # Set binder concurrency
-kubectl patch config.kai.scheduler kai-config --type merge -p '{"spec":{"binder": {"maxConcurrentReconciles": 100}}}'
+kubectl patch config.kai.scheduler kai-config --type merge -p '{"spec":{"binder": {"maxConcurrentReconciles": 200}}}'
 # Set admission replicas
 kubectl patch config.kai.scheduler kai-config --type merge -p '{"spec":{"admission": {"replicas": 4}}}'
 
@@ -45,13 +45,13 @@ kubectl patch config.kai.scheduler kai-config --type merge -p '{"spec":{"admissi
 kubectl patch config.kai.scheduler kai-config --type merge -p '{"spec":{"scheduler":{"service":{"resources":{"requests":{"cpu":"3","memory":"7Gi"},"limits":{"cpu":"5","memory":"7Gi"}}}}}}'
 
 # Binder
-kubectl patch config.kai.scheduler kai-config --type merge -p '{"spec":{"binder":{"service":{"resources":{"requests":{"cpu":"1","memory":"8Gi"},"limits":{"cpu":"2","memory":"8Gi"}},"k8sClientConfig":{"qps":500,"burst":2000}}}}}'
+kubectl patch config.kai.scheduler kai-config --type merge -p '{"spec":{"binder":{"service":{"resources":{"requests":{"cpu":"2","memory":"16Gi"},"limits":{"cpu":"4","memory":"16Gi"}},"k8sClientConfig":{"qps":500,"burst":2000}}}}}'
 
 # pod group controller
 kubectl patch config.kai.scheduler kai-config --type merge -p '{"spec":{"podGroupController":{"service":{"resources":{"requests":{"cpu":"50m","memory":"8000Mi"},"limits":{"cpu":"200m","memory":"8000Mi"}}}}}}'
 
 # queue controller
-kubectl patch config.kai.scheduler kai-config --type merge -p '{"spec":{"queueController":{"service":{"resources":{"requests":{"cpu":"50m","memory":"1000Mi"},"limits":{"cpu":"200m","memory":"1000Mi"}}}}}}'
+kubectl patch config.kai.scheduler kai-config --type merge -p '{"spec":{"queueController":{"service":{"resources":{"requests":{"cpu":"50m","memory":"2Gi"},"limits":{"cpu":"200m","memory":"2Gi"}}}}}}'
 
 # pod grouper
 kubectl patch config.kai.scheduler kai-config --type merge -p '{"spec":{"podGrouper":{"service":{"resources":{"requests":{"cpu":"1","memory":"8Gi"},"limits":{"cpu":"2","memory":"8Gi"}}},"maxConcurrentReconciles":50,"k8sClientConfig":{"qps":500,"burst":1000}}}}'
