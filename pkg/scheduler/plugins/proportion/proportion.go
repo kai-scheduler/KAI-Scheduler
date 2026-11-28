@@ -564,7 +564,9 @@ func (pp *proportionPlugin) queueUsageHandlerFn(
 	return func(event *framework.Event) {
 		job, found := ssn.ClusterInfo.PodGroupInfos[event.Task.Job]
 		if !found {
-			log.InfraLogger.V(7).Infof("Proportion %s: no job <%v> in session, skipping", action, event.Task.Job)
+			log.InfraLogger.V(7).Do(func() {
+				log.InfraLogger.Infof("Proportion %s: no job <%v> in session, skipping", action, event.Task.Job)
+			})
 			return
 		}
 
@@ -572,8 +574,10 @@ func (pp *proportionPlugin) queueUsageHandlerFn(
 		if !found {
 			// The queue is absent once the plugin's session state has been torn down, and for jobs
 			// whose queue was dropped from the snapshot as an orphan.
-			log.InfraLogger.V(7).Infof("Proportion %s: no queue <%v> for job <%v/%v>, skipping",
-				action, job.Queue, job.Namespace, job.Name)
+			log.InfraLogger.V(7).Do(func() {
+				log.InfraLogger.Infof("Proportion %s: no queue <%v> for job <%v/%v>, skipping",
+					action, job.Queue, job.Namespace, job.Name)
+			})
 			return
 		}
 

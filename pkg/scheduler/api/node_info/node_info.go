@@ -251,8 +251,10 @@ func isTaskStorageAllocatableOnCapacities(pvcs []*storageclaim_info.StorageClaim
 			return true
 		}
 
-		log.InfraLogger.V(7).Debugf("PVCs not allocatable on capacity %s due to errors: %v\n",
-			capacity.Name, err)
+		log.InfraLogger.V(7).Do(func() {
+			log.InfraLogger.V(7).Debugf("PVCs not allocatable on capacity %s due to errors: %v\n",
+				capacity.Name, err)
+		})
 	}
 
 	return false

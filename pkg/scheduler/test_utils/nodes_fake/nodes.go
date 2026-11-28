@@ -227,7 +227,9 @@ func buildNodeInfo(
 	}
 
 	if draGPUCount > 0 {
-		log.InfraLogger.V(6).Infof("Node %s has %d DRA GPUs from ResourceSlices", nodeName, draGPUCount)
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof("Node %s has %d DRA GPUs from ResourceSlices", nodeName, draGPUCount)
+		})
 		nodeInfo.AddDRAGPUs(float64(draGPUCount))
 		nodeInfo.HasDRAGPUs = true
 	}

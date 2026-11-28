@@ -76,7 +76,7 @@ func (su *defaultStatusUpdater) updatePod(
 	if err != nil {
 		if isTerminalUpdateError(err) {
 			log.StatusUpdaterLogger.V(5).Do(func() {
-				log.StatusUpdaterLogger.V(5).Infof("Dropping non-retryable pod patch %s/%s: %v", pod.Namespace, pod.Name, err)
+				log.StatusUpdaterLogger.Infof("Dropping non-retryable pod patch %s/%s: %v", pod.Namespace, pod.Name, err)
 			})
 			su.inFlightPods.Delete(key)
 			return
@@ -125,12 +125,16 @@ func (su *defaultStatusUpdater) updatePodGroup(
 
 		if !statusRetryable && !patchRetryable {
 			if statusErr != nil {
-				log.StatusUpdaterLogger.V(5).Infof("Dropping non-retryable pod group status update %s/%s: %v",
-					podGroup.Namespace, podGroup.Name, statusErr)
+				log.StatusUpdaterLogger.V(5).Do(func() {
+					log.StatusUpdaterLogger.Infof("Dropping non-retryable pod group status update %s/%s: %v",
+						podGroup.Namespace, podGroup.Name, statusErr)
+				})
 			}
 			if patchErr != nil {
-				log.StatusUpdaterLogger.V(5).Infof("Dropping non-retryable pod group patch %s/%s: %v",
-					podGroup.Namespace, podGroup.Name, patchErr)
+				log.StatusUpdaterLogger.V(5).Do(func() {
+					log.StatusUpdaterLogger.Infof("Dropping non-retryable pod group patch %s/%s: %v",
+						podGroup.Namespace, podGroup.Name, patchErr)
+				})
 			}
 			su.inFlightPodGroups.Delete(key)
 			return

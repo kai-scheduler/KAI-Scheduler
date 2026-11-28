@@ -21,16 +21,20 @@ func predicateRequired(_ *v1.Pod) bool {
 
 func emptyPredicatePreFilter(predicateName string) k8s_internal.FitPredicatePreFilter {
 	return func(pod *v1.Pod) (sets.Set[string], *ksf.Status) {
-		log.InfraLogger.V(6).Infof(
-			"Checking pod %s/%s empty predicate: %s", pod.Namespace, pod.Name, predicateName)
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof(
+				"Checking pod %s/%s empty predicate: %s", pod.Namespace, pod.Name, predicateName)
+		})
 		return nil, nil
 	}
 }
 
 func failingPredicatePreFilter(predicateName string) k8s_internal.FitPredicatePreFilter {
 	return func(pod *v1.Pod) (sets.Set[string], *ksf.Status) {
-		log.InfraLogger.V(6).Infof(
-			"Checking pod %s/%s failed pre predicate: %s", pod.Namespace, pod.Name, predicateName)
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof(
+				"Checking pod %s/%s failed pre predicate: %s", pod.Namespace, pod.Name, predicateName)
+		})
 		status := ksf.NewStatus(ksf.Unschedulable, "reason1", "reason2")
 		status.WithError(fmt.Errorf("failed pre-predicate %s", predicateName))
 		return nil, status
@@ -39,7 +43,9 @@ func failingPredicatePreFilter(predicateName string) k8s_internal.FitPredicatePr
 
 func failingPredicatePreFilterReasonSameAsError(predicateName string) k8s_internal.FitPredicatePreFilter {
 	return func(pod *v1.Pod) (sets.Set[string], *ksf.Status) {
-		log.InfraLogger.V(6).Infof("Checking pod %s/%s failed pre predicate: %s", pod.Namespace, pod.Name, predicateName)
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof("Checking pod %s/%s failed pre predicate: %s", pod.Namespace, pod.Name, predicateName)
+		})
 		err := fmt.Errorf("failed pre-predicate %s", predicateName)
 		status := ksf.NewStatus(ksf.Unschedulable, err.Error())
 		status.WithError(err)
@@ -49,8 +55,10 @@ func failingPredicatePreFilterReasonSameAsError(predicateName string) k8s_intern
 
 func failingPredicatePreFilterNoReason(predicateName string) k8s_internal.FitPredicatePreFilter {
 	return func(pod *v1.Pod) (sets.Set[string], *ksf.Status) {
-		log.InfraLogger.V(6).Infof("Checking pod %s/%s failed pre predicate: %s",
-			pod.Namespace, pod.Name, predicateName)
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof("Checking pod %s/%s failed pre predicate: %s",
+				pod.Namespace, pod.Name, predicateName)
+		})
 		status := ksf.NewStatus(ksf.Unschedulable).
 			WithError(fmt.Errorf("failed pre-predicate %v", predicateName))
 		return nil, status
@@ -59,27 +67,33 @@ func failingPredicatePreFilterNoReason(predicateName string) k8s_internal.FitPre
 
 func emptyPredicateFilter(predicateName string) k8s_internal.FitPredicateFilter {
 	return func(pod *v1.Pod, nodeInfo *k8sframework.NodeInfo) (bool, []string, error) {
-		log.InfraLogger.V(6).Infof(
-			"Checking pod %s/%s on node %s with empty predicate: %s",
-			pod.Namespace, pod.Name, nodeInfo.Node().Name, predicateName)
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof(
+				"Checking pod %s/%s on node %s with empty predicate: %s",
+				pod.Namespace, pod.Name, nodeInfo.Node().Name, predicateName)
+		})
 		return true, nil, nil
 	}
 }
 
 func failingPredicateFilter(predicateName string) k8s_internal.FitPredicateFilter {
 	return func(pod *v1.Pod, nodeInfo *k8sframework.NodeInfo) (bool, []string, error) {
-		log.InfraLogger.V(6).Infof(
-			"Checking pod %s/%s on node %s with failing predicate: %s",
-			pod.Namespace, pod.Name, nodeInfo.Node().Name, predicateName)
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof(
+				"Checking pod %s/%s on node %s with failing predicate: %s",
+				pod.Namespace, pod.Name, nodeInfo.Node().Name, predicateName)
+		})
 		return false, []string{"reason1", "reason2", "reason3"}, nil
 	}
 }
 
 func failingPredicateFilterWithError(predicateName string) k8s_internal.FitPredicateFilter {
 	return func(pod *v1.Pod, nodeInfo *k8sframework.NodeInfo) (bool, []string, error) {
-		log.InfraLogger.V(6).Infof(
-			"Checking pod %s/%s on node %s with error failing predicate: %s",
-			pod.Namespace, pod.Name, nodeInfo.Node().Name, predicateName)
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof(
+				"Checking pod %s/%s on node %s with error failing predicate: %s",
+				pod.Namespace, pod.Name, nodeInfo.Node().Name, predicateName)
+		})
 		return false, []string{"reason1", "reason2"}, fmt.Errorf("failed with error predicate %v", predicateName)
 	}
 }
